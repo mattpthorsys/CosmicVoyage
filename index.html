@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Voyage TS</title>
+    <style>
+        /* Copy the CSS from your original index.html here */
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: #000000;
+            color: #FFFFFF;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            height: 100vh;
+            flex-direction: column; /* Allow canvas and status bar */
+        }
+        canvas {
+            display: block;
+            background-color: #000000;
+            /* Canvas margin is now handled by JS/TS in fitToScreen */
+        }
+        #statusBar {
+            position: fixed; /* Keep fixed at bottom */
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 5px 10px; /* Keep padding */
+            background-color: #000000; /* Black background */
+            box-sizing: border-box; /* Include padding in width */
+            font-size: 1.5em; /* Base font size (scaled by JS/TS) */
+            height: 4.5em; /* Approx 3 lines based on base font size */
+            overflow: hidden; /* Hide overflow */
+            white-space: pre-wrap; /* Allow wrapping for longer messages */
+            border-top: 1px solid #FFA500; /* Amber border */
+            line-height: 1.4; /* Adjust line spacing if needed */
+            color: #FFA500; /* Default status bar text color */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="statusBar">Initializing systems...</div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
