@@ -5,6 +5,7 @@
 export const CONFIG = {
     // --- Core Settings ---
     SEED: "haunting beauty",
+    LOG_LEVEL: 'INFO', // Logging Level: 'DEBUG', 'INFO', 'WARN', 'ERROR', 'NONE'
     TARGET_RESOLUTION_WIDTH: 1920, // Target reference width (scaling not fully implemented based on this yet)
 
     // --- Font & Display ---
