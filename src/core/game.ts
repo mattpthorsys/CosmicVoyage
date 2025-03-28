@@ -312,8 +312,8 @@ export class Game {
                       this.player.surfaceX = 0; this.player.surfaceY = 0; this.statusMessage = `Docked at ${this.currentStarbase.name}.`;
                  } else {
                       this.state = 'planet'; this.currentPlanet = targetObject; this.currentStarbase = null;
-                      const mapSize = this.currentPlanet.heightmap?.length || CONFIG.PLANET_MAP_BASE_SIZE;
-                      this.player.surfaceX = Math.floor(mapSize / 2); this.player.surfaceY = Math.floor(mapSize / 2); this.statusMessage = `Landed on ${this.currentPlanet.name}.`;
+                      const mapSize = this.currentPlanet!.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
+                      let status = `Landed: <span class="math-inline">\{this\.currentPlanet\!\.name\}\(</span>{this.currentPlanet!.type}) | Surf Pos: <span class="math-inline">\{this\.player\.surfaceX\},</span>{this.player.surfaceY}`;
                  }
                  this.renderer.clear(true);
             } catch(error) { console.error(`Error preparing landing on ${targetObject.name}:`, error); this.statusMessage = `Landing failed: ${error instanceof Error ? error.message : String(error)}`; }
