@@ -156,17 +156,27 @@ export class Game {
 
     // Remove isFine parameter signature
     private _handleInputPlanet(action: string): void {
-        let dx = 0; let dy = 0; // Declare dx/dy INSIDE
+        let dx = 0; let dy = 0; // Declare dx/dy INSIDE function
         switch (action) {
-            case 'MOVE_UP': dy = -1; break; case 'MOVE_DOWN': dy = 1; break;
-            case 'MOVE_LEFT': dx = -1; break; case 'MOVE_RIGHT': dx = 1; break;
+            case 'MOVE_UP': dy = -1; break;
+            case 'MOVE_DOWN': dy = 1; break;
+            case 'MOVE_LEFT': dx = -1; break;
+            case 'MOVE_RIGHT': dx = 1; break;
             case 'LIFTOFF': this._liftoffAction(); break;
             case 'SCAN': this._scanPlanetAction(); break;
             case 'MINE': this._mineAction(); break;
         }
-        if ((dx !== 0 || dy !== 0) && this.currentPlanet) {
-            const mapSize = this.currentPlanet.heightmap?.length || CONFIG.PLANET_MAP_BASE_SIZE;
-            this.player.moveSurface(dx, dy, mapSize);
+    
+        // Apply movement using refactored type guard
+        if (dx !== 0 || dy !== 0) {
+            const planet = this.currentPlanet; // Assign to local variable
+            if (planet) { // Check the local variable (acts as type guard)
+                // Access properties via the local 'planet' variable
+                // Remove the '!' assertion
+                const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
+                // This usage should now clear the TS6133 for mapSize
+                this.player.moveSurface(dx, dy, mapSize);
+            }
         }
     }
 
@@ -215,16 +225,29 @@ export class Game {
     }
 
     // Rename deltaTime parameter to signal not currently used
-    private _updatePlanet(_deltaTime: number): void {
-        if (!this.currentPlanet) { this.state = 'hyperspace'; this.statusMessage = "Planet Err->Hyper."; return; }
-        let status = `Landed: ${this.currentPlanet.name}(${this.currentPlanet.type})|Surf:${this.player.surfaceX},${this.player.surfaceY}`;
-        status += `|[${CONFIG.KEY_BINDINGS.LIFTOFF}] Liftoff`;
-        if (this.currentPlanet.scanned) {
-            status += `|Scan:${this.currentPlanet.primaryResource||'N/A'}(${this.currentPlanet.mineralRichness}),Grav:${this.currentPlanet.gravity.toFixed(2)}g`;
-            if (this.currentPlanet.mineralRichness !== MineralRichness.NONE && this.currentPlanet.type !== 'GasGiant' && this.currentPlanet.type !== 'IceGiant') {
-                 status += `|[${CONFIG.KEY_BINDINGS.MINE}] Mine`;
+    private _updatePlanet(_deltaTime: number): void { // Keep _deltaTime parameter rename
+        const planet = this.currentPlanet; // Assign to local variable first
+        if (!planet) { // Check the local variable
+            console.error("In 'planet' state but currentPlanet is null! Attempting recovery.");
+            this.state = 'hyperspace';
+            this.statusMessage = "Planet error. Reverted to hyperspace.";
+            return;
+        }
+    
+        // Now use 'planet' which TypeScript knows is not null here
+        // Remove the '!' assertions
+        let status = `Landed: <span class="math-inline">\{planet\.name\}\(</span>{planet.type}) | Surf Pos: <span class="math-inline">\{this\.player\.surfaceX\},</span>{this.player.surfaceY}`;
+        status += ` | [${CONFIG.KEY_BINDINGS.LIFTOFF}] Liftoff`;
+    
+        if (planet.scanned) {
+            status += ` | Scan: <span class="math-inline">\{planet\.primaryResource \|\| 'None'\} \(</span>{planet.mineralRichness}), Grav: ${planet.gravity.toFixed(2)}g`;
+            if (planet.mineralRichness !== MineralRichness.NONE && planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
+                 status += ` | [${CONFIG.KEY_BINDINGS.MINE}] Mine`;
             }
-        } else { status += `|[${CONFIG.KEY_BINDINGS.SCAN}] Scan`; }
+        } else {
+            status += ` | [${CONFIG.KEY_BINDINGS.SCAN}] Scan`;
+        }
+        // This usage should now clear the TS6133 for status
         this.statusMessage = status;
     }
 
