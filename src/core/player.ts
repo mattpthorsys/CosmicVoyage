@@ -124,18 +124,26 @@ export class Player {
 
     /** Adds fuel, ensuring it doesn't exceed maxFuel. */
     addFuel(amount: number): void {
+        // Handle non-positive amounts first
+        if (amount <= 0) {
+            if (amount < 0) { // Only warn for negative, not zero
+                 logger.warn(`Attempted to add non-positive fuel amount: ${amount.toFixed(0)}`);
+            }
+             // Do nothing further if amount is zero or negative
+             return;
+        }
+
+        // Proceed with adding positive fuel
         const oldFuel = this.fuel;
         const added = Math.min(amount, this.maxFuel - oldFuel); // Calculate actual fuel added
         this.fuel += added;
         // Use Math.min again just to be safe against floating point issues
-        this.fuel = Math.min(this.maxFuel, this.fuel); // [cite: 54]
+        this.fuel = Math.min(this.maxFuel, this.fuel);
 
-        if (added > 0) {
-            logger.info(`Fuel added: ${added.toFixed(0)}. Total: ${this.fuel.toFixed(0)}/${this.maxFuel} (was ${oldFuel.toFixed(0)})`); // [cite: 54]
-        } else if (amount > 0) {
+        if (added > 0) { // This will now only be true if amount > 0 initially
+            logger.info(`Fuel added: ${added.toFixed(0)}. Total: ${this.fuel.toFixed(0)}/${this.maxFuel} (was ${oldFuel.toFixed(0)})`);
+        } else { // This condition means amount > 0 but the tank was full
             logger.info(`Attempted to add ${amount.toFixed(0)} fuel, but tank is full (${this.fuel.toFixed(0)}/${this.maxFuel}).`);
-        } else {
-            logger.warn(`Attempted to add non-positive fuel amount: ${amount.toFixed(0)}`);
         }
     }
 

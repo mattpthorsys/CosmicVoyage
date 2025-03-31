@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "combine_bash": "./combine_code.sh",
-    "combine": "node ./combine_code.js"
+    "combine": "node ./combine_code.js",
+    "test": "vitest",
+    "test:ui": "vitest --ui"
   },
   "keywords": [],
   "author": "",
@@ -17,9 +19,12 @@
   "devDependencies": {
     "@types/node": "^22.13.14",
     "@types/rot-js": "^2.0.1",
+    "@vitest/ui": "^3.0.9",
     "glob": "^11.0.1",
+    "happy-dom": "^17.4.4",
     "typescript": "^5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "vitest": "^3.0.9"
   },
   "dependencies": {
     "rot-js": "^2.2.1"
