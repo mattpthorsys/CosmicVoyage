@@ -45,31 +45,38 @@ describe('Starbase', () => {
   });
 
   it('should initialize with correct properties', () => {
-    const starbase = new Starbase(baseSeed, mockSystemPrng, systemName);
-
-    // Control the 'random' method of the instance RETURNED BY seedNew
+    // --- Mock Setup ---
+    // Spy on the 'random' method of the specific PRNG instance that Starbase uses
     const randomSpy = vi
       .spyOn(mockStarbasePrngInstance, 'random')
-      .mockReturnValueOnce(0.5) // For orbitDistance random(0.9, 1.1) -> needs 0.5 for factor 1.0
-      .mockReturnValueOnce(0.125); // For orbitAngle random(0, 2PI) -> needs 0.125 for PI/4
+      // Provide return values for the calls made in the Starbase constructor
+      .mockReturnValueOnce(1.0)         // For orbitDistance factor -> results in 1.0
+      .mockReturnValueOnce(Math.PI / 4); // <<< FIX: Return Math.PI / 4 directly for the orbitAngle calculation
 
-    // Assertions
+    // --- Instantiate ---
+    const starbase = new Starbase(baseSeed, mockSystemPrng, systemName);
+
+    // --- Assertions ---
     expect(starbase.name).toBe(`${systemName} Starbase Delta`);
     expect(starbase.type).toBe('Starbase');
 
-    const expectedDist = CONFIG.STARBASE_ORBIT_DISTANCE * 1.0;
+    const expectedDist = CONFIG.STARBASE_ORBIT_DISTANCE * 1.0; // 75000
     const expectedAngle = Math.PI / 4;
 
-    expect(starbase.orbitDistance).toBeCloseTo(expectedDist); // Should be 75000
-    expect(starbase.orbitAngle).toBeCloseTo(expectedAngle);
+    // The core assertions:
+    expect(starbase.orbitDistance).toBeCloseTo(expectedDist);
+    expect(starbase.orbitAngle).toBeCloseTo(expectedAngle); // Should now pass with expectedAngle = PI/4
+
+    // Other assertions
     expect(starbase.systemX).toBeCloseTo(Math.cos(expectedAngle) * expectedDist);
     expect(starbase.systemY).toBeCloseTo(Math.sin(expectedAngle) * expectedDist);
 
-    // Verify the random method on the *correct* mock instance was called
+    // Verify mocks were called as expected
     expect(randomSpy).toHaveBeenCalledTimes(2);
-    expect(randomSpy).toHaveBeenNthCalledWith(1, 0.9, 1.1);
-    expect(randomSpy).toHaveBeenNthCalledWith(2, 0, Math.PI * 2);
+    expect(randomSpy).toHaveBeenNthCalledWith(1, 0.9, 1.1);      // Call for distance factor
+    expect(randomSpy).toHaveBeenNthCalledWith(2, 0, Math.PI * 2); // Call for angle
 
+    // --- Cleanup ---
     randomSpy.mockRestore();
   });
 

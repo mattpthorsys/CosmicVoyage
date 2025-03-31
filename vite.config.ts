@@ -19,5 +19,10 @@ export default defineConfig({
     alias: {
       '@': '/src' // Adjust path if needed based on project root
     }
-  }
+  },
+
+  test: {
+    environment: 'happy-dom', // Use happy-dom for simulating DOM
+    globals: true, // Use Vitest globals (describe, it, expect, etc.)
+  },
 });
