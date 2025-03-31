@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "combine": "./combine_code.sh" 
+    "combine_bash": "./combine_code.sh",
+    "combine": "node ./combine_code.js"
   },
   "keywords": [],
   "author": "",
@@ -16,10 +17,14 @@
   "devDependencies": {
     "@types/node": "^22.13.14",
     "@types/rot-js": "^2.0.1",
+    "glob": "^11.0.1",
     "typescript": "^5.8.2",
     "vite": "^6.2.3"
   },
   "dependencies": {
     "rot-js": "^2.2.1"
+  },
+  "volta": {
+    "node": "20.5.1"
   }
 }
