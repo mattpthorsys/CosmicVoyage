@@ -184,35 +184,41 @@ export class SolarSystem {
 
     /** Finds a planet or starbase near the given system coordinates. */
     getObjectNear(x: number, y: number): Planet | Starbase | null {
-        // logger.debug(`[System:${this.name}] Checking for object near system coords [${x.toFixed(0)}, ${y.toFixed(0)}]`); // Can be noisy
-        // Define interaction radius based on config (adding slight buffer)
-        const checkRadius = CONFIG.SYSTEM_VIEW_SCALE * (CONFIG.PLANET_MAIN_VIEW_RADIUS + 0.5); // Check radius in world units
-        const checkRadiusSq = checkRadius * checkRadius; // Use squared distance for efficiency
-
-        // Check planets
-        for (const planet of this.planets) {
-            if (!planet) continue; // Skip empty slots
-            const dx = planet.systemX - x; // Difference in X
-            const dy = planet.systemY - y; // Difference in Y
-            if ((dx * dx + dy * dy) < checkRadiusSq) { // Check squared distance
-                 // logger.debug(`[System:${this.name}] Found nearby planet: ${planet.name}`); // Noisy
-                return planet; // Return first planet found within radius
-            }
-        }
-
-        // Check starbase if it exists
+        // logger.debug(`[System:${this.name}] Checking for object near system coords [${x.toFixed(0)}, ${y.toFixed(0)}]`);
+    
+        const checkRadius = CONFIG.LANDING_DISTANCE; // Use the updated landing distance
+        const checkRadiusSq = checkRadius * checkRadius; // Use squared distance
+    
+        let closestObject: Planet | Starbase | null = null;
+        let minDistanceSq = checkRadiusSq; // Start with max allowed distance squared
+    
+        // Combine planets and starbase (if exists) into one list to check
+        const objectsToCheck: (Planet | Starbase | null)[] = [...this.planets];
         if (this.starbase) {
-            const dx = this.starbase.systemX - x; //
-            const dy = this.starbase.systemY - y; //
-            if ((dx * dx + dy * dy) < checkRadiusSq) { //
-                 // logger.debug(`[System:${this.name}] Found nearby starbase: ${this.starbase.name}`); // Noisy
-                return this.starbase; // Return starbase if within radius
+            objectsToCheck.push(this.starbase);
+        }
+    
+        // Iterate through all potential objects
+        for (const obj of objectsToCheck) {
+            if (!obj) continue; // Skip empty slots
+    
+            const dx = obj.systemX - x;
+            const dy = obj.systemY - y;
+            const distanceSq = dx * dx + dy * dy;
+    
+            // Check if this object is within range AND closer than the current closest
+            if (distanceSq < minDistanceSq) {
+                minDistanceSq = distanceSq; // Update minimum distance found
+                closestObject = obj;       // Update closest object found
             }
         }
-
-        return null; // No object found nearby
-    }
-
+    
+        // if (closestObject) {
+        //     logger.debug(`[System:${this.name}] Found nearby object: ${closestObject.name} at distSq ${minDistanceSq.toFixed(0)}`);
+        // }
+    
+        return closestObject; // Return the closest object found (or null if none were in range)
+      }
 
     /** Checks if the given coordinates are beyond the system's edge radius (with buffer). */
     isAtEdge(x: number, y: number): boolean {

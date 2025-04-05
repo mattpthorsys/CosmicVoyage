@@ -26,9 +26,10 @@ export const CONFIG = {
 
     // --- Movement / Physics ---
     SYSTEM_MOVE_INCREMENT: 5000, // World units per input step in system view (adjust for speed)
-    SYSTEM_ORBIT_SPEED_FACTOR: 0.05, // How fast planets orbit (higher is faster)
-    LANDING_DISTANCE: 10000, // Max distance from planet/starbase center to allow landing action prompt //
+    SYSTEM_ORBIT_SPEED_FACTOR: 0.01, // How fast planets orbit (higher is faster)
+    LANDING_DISTANCE: 30000, // Max distance from planet/starbase center to allow landing action prompt //
     FINE_CONTROL_FACTOR: 0.1, // Speed reduction factor for fine movement (e.g., holding Shift)
+    BOOST_FACTOR: 5.0, // Multiplier for speed when boosting
 
     // --- Fuel & Economy ---
     HYPERSPACE_FUEL_COST: 10, // Fuel cost to jump between systems (Currently applies on entry)
