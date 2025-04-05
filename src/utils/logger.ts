@@ -160,9 +160,10 @@ export const logger: Logger = {
 
     /** Triggers a browser download for the buffered logs. */
     downloadLogFile(filename?: string): void {
-         const downloadMsgStart = "Preparing log file for download...";
-         // Log the attempt to console *and* buffer
-         _logAndBuffer(LogLevel.INFO, 'INFO', [downloadMsgStart]);
+        logger.info("--- logger.downloadLogFile method entered. ---");
+        const downloadMsgStart = "Preparing log file for download...";
+        // Log the attempt to console *and* buffer
+        _logAndBuffer(LogLevel.INFO, 'INFO', [downloadMsgStart]);
 
          const defaultFilename = `cosmic_voyage_log_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
          const finalFilename = filename || defaultFilename;

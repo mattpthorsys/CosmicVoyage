@@ -104,6 +104,7 @@ export class ActionProcessor {
         message = left ? 'Entered hyperspace.' : 'Must travel further from the star to leave the system.';
         break;
       case 'LAND':
+        logger.info(">>> ActionProcessor calling landOnNearbyObject...");
         const landedObject = this.stateManager.landOnNearbyObject();
         message = landedObject
           ? `Approaching ${landedObject.name}...` // Landing success status handled in state update

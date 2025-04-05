@@ -20,6 +20,9 @@ export class GameStateManager {
   private _currentPlanet: Planet | null = null;
   private _currentStarbase: Starbase | null = null;
 
+  /** Holds the latest status message for the game state manager. */
+  public statusMessage: string = '';
+
   // Dependencies needed for state transitions
   private player: Player;
   private gameSeedPRNG: PRNG;
@@ -122,7 +125,7 @@ export class GameStateManager {
 
   /** Attempts to land on a nearby object. Returns the landed object or null on failure. */
   landOnNearbyObject(): Planet | Starbase | null {
-    logger.debug('[GameStateManager] Attempting Land...');
+    logger.info(`>>> GameStateManager.landOnNearbyObject called. Player system coords: [${this.player.systemX.toFixed(0)}, ${this.player.systemY.toFixed(0)}]`); // <<< ADD THIS
     if (!this._currentSystem) {
       logger.warn('[GameStateManager] Land failed: Not in a system.');
       return null;
@@ -130,6 +133,7 @@ export class GameStateManager {
 
     // Find the closest landable object within range
     const nearbyObject = this._currentSystem.getObjectNear(this.player.systemX, this.player.systemY);
+    logger.info(`>>> GameStateManager: getObjectNear returned: ${nearbyObject?.name ?? 'null'}`);
 
     if (!nearbyObject) {
       logger.debug('[GameStateManager] Land failed: No object within landing distance.');
@@ -137,6 +141,7 @@ export class GameStateManager {
     }
 
     logger.info(`[GameStateManager] Landing on ${nearbyObject.name} (Type: ${nearbyObject.type})...`);
+    logger.info(`>>> GameStateManager: Attempting ensureSurfaceReady for ${nearbyObject.name}...`);
     try {
       // Ensure surface is ready *before* changing state
       nearbyObject.ensureSurfaceReady(); // Logs internally
@@ -168,6 +173,7 @@ export class GameStateManager {
       logger.error(`[GameStateManager] Failed to prepare surface or land on ${nearbyObject.name}:`, error);
       // Revert state changes if surface prep failed? Or handle in Game loop?
       // For now, don't change state and return null.
+      this.statusMessage = `Landing Error on ${nearbyObject.name}: ${error instanceof Error ? error.message : String(error)}`;
       this._currentPlanet = null;
       this._currentStarbase = null;
       // this.state remains 'system'

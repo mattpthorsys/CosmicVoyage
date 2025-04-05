@@ -105,50 +105,69 @@ export class InputManager {
 
   /** Handles keydown events. Arrow function for correct 'this'. */
   private _handleKeyDown = (e: KeyboardEvent): void => {
+    // Log the raw event first
+    logger.debug(`--- Raw KeyDown Received: key='${e.key}' code='${e.code}' ---`); // Changed to debug
+
     if (!this.isListening) return;
 
     const key = e.key;
     const lowerKey = key.toLowerCase();
 
+    // If key is already held, do nothing (prevents OS-level key repeat spamming actions)
     if (this.keysPressed.has(key)) {
-      return; // Ignore repeats
+       // logger.debug(`>>> KeyDown '${key}' already pressed, ignoring repeat.`); // Optional debug
+      return;
     }
 
-    // Prevent default for bound keys
-    if (Object.values(CONFIG.KEY_BINDINGS).includes(key) || key === 'Shift' || key === 'Control') {
-       e.preventDefault();
-    }
-
-
-    logger.debug(`[InputManager] Keydown: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`); // Log Ctrl state
+    // Add the raw key to the pressed set
     this.keysPressed.add(key);
+    logger.debug(`[InputManager] Keydown registered: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`);
 
-    // Handle Modifiers (Shift -> FINE_CONTROL, Ctrl -> BOOST)
-    if (e.shiftKey && !this.activeActions.has('FINE_CONTROL')) {
-        logger.debug(`[InputManager] FINE_CONTROL activated.`);
-        this.activeActions.add('FINE_CONTROL');
-        this.justPressedActions.add('FINE_CONTROL');
+    // --- Handle Modifiers Directly ---
+    // Use justPressedActions to ensure modifier logic runs only on initial press if needed,
+    // but for active state, just add/delete from activeActions.
+    if (e.shiftKey) {
+        if (!this.activeActions.has('FINE_CONTROL')) {
+             logger.debug(`[InputManager] FINE_CONTROL activated.`);
+             this.activeActions.add('FINE_CONTROL');
+             this.justPressedActions.add('FINE_CONTROL'); // Track initial press
+        }
     }
-    if (e.ctrlKey && !this.activeActions.has('BOOST')) { // <<< ADDED: Check for Ctrl
-        logger.debug(`[InputManager] BOOST activated.`);
-        this.activeActions.add('BOOST');
-        this.justPressedActions.add('BOOST');
+    if (e.ctrlKey) {
+        if (!this.activeActions.has('BOOST')) {
+             logger.debug(`[InputManager] BOOST activated.`);
+             this.activeActions.add('BOOST');
+             this.justPressedActions.add('BOOST'); // Track initial press
+        }
     }
 
-
-    // Find corresponding base action from map (ignore modifiers here)
-    if (key !== 'Shift' && key !== 'Control') { // Don't map modifiers themselves as actions here
+    // --- Handle Base Actions (Non-Modifiers) ---
+    if (key !== 'Shift' && key !== 'Control') {
         const action = this.keyToActionMap.get(lowerKey);
+        logger.debug(`>>> KeyDown Mapped Action for '${lowerKey}': ${action ?? 'NONE'}`);
+
         if (action) {
-            if (!this.activeActions.has(action)) {
-                logger.debug(`[InputManager] Action activated: ${action}`);
-                this.activeActions.add(action);
-                this.justPressedActions.add(action);
-            }
+            // Action key was just pressed (wasn't in keysPressed before)
+            logger.debug(`>>> KeyDown Activating Action: ${action}`);
+            // Always add to activeActions when pressed down
+            this.activeActions.add(action);
+            // *Always* add to justPressedActions for this frame, as it's a new press
+            this.justPressedActions.add(action);
+            logger.debug(`>>> KeyDown: Added '${action}' to justPressedActions. Current justPressed: [${Array.from(this.justPressedActions).join(', ')}]`);
+
+            // Prevent default ONLY for keys mapped to actions or known modifiers
+            e.preventDefault();
+            logger.debug(`>>> KeyDown: Prevented default for mapped key '${key}'`);
+        }
+    } else {
+        // If it WAS a modifier key, prevent default anyway if we handle it
+        if (key === 'Shift' || key === 'Control') {
+            e.preventDefault();
+            logger.debug(`>>> KeyDown: Prevented default for modifier key '${key}'`);
         }
     }
   };
-
+  
   private _handleKeyUp = (e: KeyboardEvent): void => {
     if (!this.isListening) return;
 

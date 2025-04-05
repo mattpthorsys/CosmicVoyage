@@ -129,6 +129,9 @@ export class Game {
   // --- Input Processing ---
 
   private _processInput(): void {
+    const justPressedList = Array.from((this.inputManager as any).justPressedActions).join(', ') || 'None';
+    logger.info(`>>> Game._processInput Tick. State: ${this.stateManager.state}. Just Pressed Actions: [${justPressedList}]`);
+
     let dx = 0;
     let dy = 0;
     // Check modifier key status first
@@ -204,6 +207,9 @@ export class Game {
     for (const action of discreteActions) {
          if (this.inputManager.wasActionJustPressed(action)) {
             logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
+            if (action === 'DOWNLOAD_LOG') {
+              logger.info("--- DOWNLOAD_LOG action detected by wasActionJustPressed! ---");
+            }
              // Use ActionProcessor to handle the logic and potential state changes
              const status = this.actionProcessor.processAction(action);
              // Store the status message returned by the processor
