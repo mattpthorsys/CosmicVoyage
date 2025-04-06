@@ -40,19 +40,21 @@ vi.mock('../generation/heightmap', () => {
 
 // --- Test Suite ---
 
+
+
 describe('Planet', () => {
     const systemName = 'TestSystem';
     const planetName = `${systemName} I`;
     const baseSeed = 'system-seed-for-planet';
     let mockSystemPrng: PRNG; // The PRNG instance passed *into* the Planet constructor
-    let mockPlanetPrngInstance: any; // The mocked PRNG instance *used by* the Planet
+    let mockPlanetPrngInstance: IPrng; // The mocked PRNG instance *used by* the Planet
 
     // --- Helper to create PRNG mock instance ---
     // Moved outside beforeEach for clarity, but still uses vi.fn()
-    const createMockPrngInstance = (seedSuffix: string) => {
+    const createMockPrngInstance = (seedSuffix: string): IPrng => {
         // Store the mock function instance so we can spy on it later if needed
         const mockNextFn = vi.fn().mockReturnValue(0.5); // Default underlying 0-1 value
-        return {
+        const mockInstance: IPrng = {
             // Make 'random' mimic the original scaling logic using the mocked 'next'
             random: vi.fn().mockImplementation((min = 0, max = 1) => {
                 return mockNextFn() * (max - min) + min;
@@ -62,7 +64,7 @@ describe('Planet', () => {
             randomInt: vi.fn().mockImplementation((min, max) => Math.floor(min + mockNextFn() * (max - min + 1))),
             choice: vi.fn().mockImplementation((arr) => arr[Math.floor(mockNextFn() * arr.length)]),
             getInitialSeed: () => `mock-${seedSuffix}`,
-            seedNew: vi.fn().mockImplementation((...additionalSeeds: (string | number)[]) => {
+            seedNew: vi.fn().mockImplementation((...additionalSeeds: (string | number)[]): IPrng  => {
                 const internalStateA = 0;
                 const combinedSeedString = internalStateA + ":" + additionalSeeds.join(':');
                 return createMockPrngInstance(combinedSeedString as string);
@@ -70,6 +72,9 @@ describe('Planet', () => {
             seed: 0, a: 0,
             next: mockNextFn, // Expose the underlying mock if needed
         };
+
+        // Return the structured object
+        return mockInstance;
     };
 
     beforeEach(() => {
@@ -84,15 +89,16 @@ describe('Planet', () => {
 
         // Create the PRNG that is passed *into* the Planet constructor
         mockSystemPrng = new PRNG(baseSeed); // OK to use real constructor here
+
         // Mock *its* seedNew method to return our controlled mockPlanetPrngInstance
+        // Spy modification using the adjusted helper
         vi.spyOn(mockSystemPrng, 'seedNew').mockImplementation((seed) => {
-             if (seed === `planet_${planetName}`) { // Match the seed used inside Planet constructor
-                 return mockPlanetPrngInstance;
-             }
-             // Fallback for other seedNew calls (e.g., resource/mineral seeds)
-             // Ensure the fallback also returns a consistent structure
-             return createMockPrngInstance(String(seed)); // Ensure string conversion for fallback
-         });
+            const instance = (seed === `planet_${planetName}`)
+                ? mockPlanetPrngInstance
+                : createMockPrngInstance(String(seed));
+            // Cast the result here, relying on the internal structure being sufficient
+            return instance as unknown as PRNG;
+        });
     });
 
     it('should initialize core properties correctly', () => {
@@ -183,3 +189,71 @@ describe('Planet', () => {
 
     // ... other test suites ...
 });
+
+
+/**
+ * Interface defining the structure and methods expected from a PRNG (Pseudo-Random Number Generator)
+ * instance, specifically tailored for mocking purposes in tests.
+ */
+interface IPrng {
+    /**
+     * Returns a pseudo-random floating-point number.
+     * @param min Optional. The minimum bound (inclusive). Defaults to 0.
+     * @param max Optional. The maximum bound (exclusive). Defaults to 1.
+     * @returns A pseudo-random number in the specified range.
+     */
+    random(min?: number, max?: number): number;
+  
+    /**
+     * Returns a pseudo-random integer number.
+     * @param min The minimum bound (inclusive).
+     * @param max The maximum bound (inclusive).
+     * @returns A pseudo-random integer in the specified range.
+     */
+    randomInt(min: number, max: number): number;
+  
+    /**
+     * Returns a pseudo-randomly selected element from the given array.
+     * @param arr The array to choose from.
+     * @returns A randomly selected element from the array.
+     */
+    choice<T>(arr: T[]): T; // Using generic <T> for type safety
+  
+    /**
+     * Returns the initial seed string associated with this PRNG instance.
+     * (In the mock, this might be a simplified representation).
+     * @returns The initial seed as a string.
+     */
+    getInitialSeed(): string;
+  
+    /**
+     * Creates and returns a new PRNG instance, seeded based on the current
+     * PRNG's internal state and the provided additional seeds.
+     * @param additionalSeeds Variable number of string or number seeds.
+     * @returns A new IPrng instance.
+     */
+    seedNew(...additionalSeeds: (string | number)[]): IPrng; // Note: returns itself (the interface type)
+  
+    /**
+     * Returns the next raw pseudo-random number in the sequence (typically between 0 and 1).
+     * This is often the underlying function used by `random`, `randomInt`, etc.
+     * @returns The next pseudo-random number.
+     */
+    next(): number;
+  
+    // --- Internal State Properties (as defined in the mock) ---
+    // These might not be strictly required by the Planet class itself,
+    // but are part of the mock's structure and might be useful for debugging tests.
+  
+    /**
+     * The current seed value (or part of the internal state).
+     * Type might vary based on the actual PRNG implementation.
+     */
+    seed: number; // Or potentially string | number depending on the real PRNG
+  
+    /**
+     * Another internal state variable (like the 'a' parameter in some PRNG algorithms).
+     * Type might vary based on the actual PRNG implementation.
+     */
+    a: number; // Adjust type if necessary
+  }
