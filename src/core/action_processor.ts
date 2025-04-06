@@ -128,9 +128,11 @@ export class ActionProcessor {
         }
         break;
       case 'LAND': // Correct action is received now
-        logger.info(">>> ActionProcessor calling landOnNearbyObject for LAND action...");
-        const landedObject = this.stateManager.landOnNearbyObject();
-        message = landedObject ? `Approaching ${landedObject.name}...` : 'Nothing nearby to land on.';
+        {
+          logger.info(">>> ActionProcessor calling landOnNearbyObject for LAND action...");
+          const landedObject = this.stateManager.landOnNearbyObject();
+          message = landedObject ? `Approaching ${landedObject.name}...` : 'Nothing nearby to land on.';
+        }
         break;
     }
     if (dx !== 0 || dy !== 0) this.player.moveSystem(dx, dy, isFine);

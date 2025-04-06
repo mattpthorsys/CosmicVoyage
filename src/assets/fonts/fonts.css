@@ -2,9 +2,9 @@
     font-family: 'PxPlus_IBM_CGA';
     /* Paths relative to the 'public' folder */
     src:
-        url('./PxPlus_IBM_CGA.ttf') format('truetype'),
         url('./PxPlus_IBM_CGA.woff2') format('woff2'),
-        url('./PxPlus_IBM_CGA.woff') format('woff');
+        url('./PxPlus_IBM_CGA.woff') format('woff'),
+        url('./PxPlus_IBM_CGA.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
 }

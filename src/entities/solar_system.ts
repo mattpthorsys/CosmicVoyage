@@ -305,7 +305,7 @@ export class SolarSystem {
     
             // Assuming mutable properties in Starbase
             try {
-                const sb = this.starbase as any;
+                const sb = this.starbase as Starbase;
                 sb.orbitAngle = (sb.orbitAngle + angularSpeed) % (Math.PI * 2);
                 if (!Number.isFinite(sb.orbitAngle)) sb.orbitAngle = 0;
     
@@ -317,7 +317,7 @@ export class SolarSystem {
                    logger.error(`[System:${this.name}] CRITICAL: Non-finite position calculated for ${sb.name}. Resetting position.`);
                    sb.systemX = 0; sb.systemY = 0;
                }
-            } catch (e) { /* already handled */ }
+            } catch { /* already handled */ }
         }
       }
 

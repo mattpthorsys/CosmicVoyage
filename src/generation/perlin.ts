@@ -69,7 +69,7 @@ export class PerlinNoise {
         const memKey = `${x.toFixed(precision)},${y.toFixed(precision)}`;
 
         // Use instance memory cache
-        if (this.memory.hasOwnProperty(memKey)) {
+        if (Object.hasOwn(this.memory, memKey)) {
             return this.memory[memKey];
         }
 

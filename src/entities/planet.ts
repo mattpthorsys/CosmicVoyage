@@ -189,7 +189,7 @@ export class Planet {
     getScanInfo(): string[] {
         // Uses the generated characteristics stored in the instance
         logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`);
-        let infoLines: string[] = [
+        const infoLines: string[] = [
              `--- SCAN REPORT: ${this.name} ---`,
              `Type: ${this.type} Planet`,
         ];

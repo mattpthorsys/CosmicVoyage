@@ -68,10 +68,10 @@ function _logAndBuffer(level: LogLevel, levelStr: string, args: (object|string)[
 // --- Logger Object Definition ---
 // Define the logger object structure explicitly for clarity and type safety
 interface Logger {
-    debug(...args: Object[]): void;
-    info(...args: Object[]): void;
-    warn(...args: Object[]): void;
-    error(...args: Object[]): void;
+    debug(...args: object[]): void;
+    info(...args: object[]): void;
+    warn(...args: object[]): void;
+    error(...args: object[]): void;
     setLogLevel(level: LogLevel): void;
     getCurrentLogLevel(): LogLevel;
     clearLogBuffer(): void;
@@ -83,25 +83,25 @@ interface Logger {
 // Export the logger object containing all methods
 export const logger: Logger = {
     /** Logs messages only if the configured level is DEBUG or higher. */
-    debug(...args: Object[]): void {
+    debug(...args: object[]): void {
         if (currentLogLevel >= LogLevel.DEBUG) {
             _logAndBuffer(LogLevel.DEBUG, 'DEBUG', args); // Use internal helper
         }
     },
     /** Logs messages only if the configured level is INFO or higher. */
-    info(...args: Object[]): void {
+    info(...args: object[]): void {
         if (currentLogLevel >= LogLevel.INFO) {
             _logAndBuffer(LogLevel.INFO, 'INFO', args); // Use internal helper
         }
     },
     /** Logs messages only if the configured level is WARN or higher. */
-    warn(...args: Object[]): void {
+    warn(...args: object[]): void {
         if (currentLogLevel >= LogLevel.WARN) {
             _logAndBuffer(LogLevel.WARN, 'WARN', args); // Use internal helper
         }
     },
     /** Logs messages only if the configured level is ERROR or higher. */
-    error(...args: Object[]): void {
+    error(...args: object[]): void {
         if (currentLogLevel >= LogLevel.ERROR) {
             _logAndBuffer(LogLevel.ERROR, 'ERROR', args); // Use internal helper
         }
