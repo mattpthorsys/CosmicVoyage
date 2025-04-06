@@ -118,6 +118,8 @@ export class Game {
 
       // 3. Update Game State & Render
       this._update(deltaTime);
+
+      // 3. Render
       this._render();
 
     } catch (loopError) {
@@ -230,8 +232,7 @@ export class Game {
     const discreteActions: string[] = [
       'ENTER_SYSTEM',
       'LEAVE_SYSTEM',
-      'LAND',
-      'LIFTOFF',
+      'ACTIVATE_LAND_LIFTOFF',
       'SCAN',
       'MINE',
       'TRADE',
