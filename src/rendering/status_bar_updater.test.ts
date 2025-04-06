@@ -1,6 +1,6 @@
 // src/rendering/status_bar_updater.test.ts
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StatusBarUpdater } from './status_bar_updater';
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
