@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "combine_bash": "./combine_code.sh",
-    "combine": "node ./combine_code.js",
+    "combine": "node ./combine_code.cjs",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "lint": "eslint src --ext .ts,.tsx"

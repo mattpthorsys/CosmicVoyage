@@ -25,12 +25,12 @@ vi.mock('../utils/hash', () => ({
 }));
 
 // --- Type Definitions for Mock Helpers (optional but good practice) ---
-type MockRenderer = Partial<Record<keyof RendererFacade, Mock | any>>;
-type MockPlayer = Partial<Record<keyof Player, Mock | any>>;
-type MockSolarSystem = Partial<Record<keyof SolarSystem, Mock | any>> & { getObjectNear: Mock }; // Ensure getObjectNear exists
-type MockPlanet = Partial<Record<keyof Planet, Mock | any>> & { _mockType: 'Planet' };
-type MockStarbase = Partial<Record<keyof Starbase, Mock | any>> & { _mockType: 'Starbase' };
-type MockPrng = Partial<Record<keyof PRNG, Mock | any>>;
+type MockRenderer = Partial<Record<keyof RendererFacade, Mock>>;
+type MockPlayer = Partial<Record<keyof Player, Mock>>;
+type MockSolarSystem = Partial<Record<keyof SolarSystem, Mock>> & { getObjectNear: Mock }; // Ensure getObjectNear exists
+type MockPlanet = Partial<Record<keyof Planet, Mock>> & { _mockType: 'Planet' };
+type MockStarbase = Partial<Record<keyof Starbase, Mock>> & { _mockType: 'Starbase' };
+type MockPrng = Partial<Record<keyof PRNG, Mock>>;
 
 // --- Helper to Create Mock Instances (More Complete) ---
 const createMockRenderer = (): MockRenderer => ({
@@ -59,12 +59,12 @@ const createMockPlayer = (): MockPlayer => {
     realPlayer.addCargo = vi.fn();
 
     // 3. Return modified instance
-    return realPlayer as MockPlayer;
+    return realPlayer as unknown as MockPlayer;
 };
 
 const createMockSystem = (name = 'MockSystem', _type = 'G'): MockSolarSystem => {
     // 1. Create mock PRNG needed for real constructor
-    const mockSystemPrng = createMockPrng(`system_${name}_seed`) as PRNG;
+    const mockSystemPrng = createMockPrng(`system_${name}_seed`) as unknown as PRNG;
 
     // 2. Instantiate real SolarSystem
     // Note: Constructor generates planets/starbase based on PRNG.
@@ -83,7 +83,7 @@ const createMockSystem = (name = 'MockSystem', _type = 'G'): MockSolarSystem => 
 
 const createMockStarbase = (name = 'MockStarbase'): MockStarbase => {
     // 1. Create mock PRNG needed for real constructor
-    const mockStarbasePrng = createMockPrng(`starbase_${name}_seed`) as PRNG;
+    const mockStarbasePrng = createMockPrng(`starbase_${name}_seed`) as unknown as PRNG;
 
     // 2. Instantiate real Starbase
     // Note: Constructor calls ensureSurfaceReady internally
@@ -97,7 +97,7 @@ const createMockStarbase = (name = 'MockStarbase'): MockStarbase => {
     (realStarbase as any)._mockType = 'Starbase';
 
     // 5. Return modified instance
-    return realStarbase as MockStarbase;
+    return realStarbase as unknown as MockStarbase;
 };
 
 const createMockPrng = (seed = 'test-seed'): MockPrng => {
@@ -117,12 +117,12 @@ const createMockPrng = (seed = 'test-seed'): MockPrng => {
     realPrng.choice = vi.fn().mockImplementation((arr) => arr ? arr[Math.floor(0.5 * arr.length)] : undefined);
     realPrng.next = vi.fn().mockReturnValue(0.5);
 
-    return realPrng as MockPrng;
+    return realPrng as unknown as MockPrng;
 };
 
 const createMockPlanet = (name = 'MockPlanet', type = 'Rock'): MockPlanet => {
     // 1. Create a mock PRNG instance needed for the real Planet constructor
-    const mockPlanetPrng = createMockPrng(`planet_${name}_seed`) as PRNG;
+    const mockPlanetPrng = createMockPrng(`planet_${name}_seed`) as unknown as PRNG;
 
     // 2. Instantiate the *real* Planet
     const realPlanet = new Planet(name, type, 10000, 0, mockPlanetPrng, 'G');
@@ -154,11 +154,11 @@ describe('Game', () => {
         mockPrngInstance = createMockPrng('game-seed');
 
         // Use type assertion to satisfy TypeScript, as our mocks are intentionally partial/simplified
-        vi.mocked(RendererFacade).mockImplementation(() => mockRendererInstance as RendererFacade);
-        vi.mocked(Player).mockImplementation(() => mockPlayerInstance as Player);
+        vi.mocked(RendererFacade).mockImplementation(() => mockRendererInstance as unknown as RendererFacade);
+        vi.mocked(Player).mockImplementation(() => mockPlayerInstance as unknown as Player);
         vi.mocked(PRNG).mockImplementation((seed) => {
              const instance = seed ? createMockPrng(String(seed)) : mockPrngInstance;
-             return instance as PRNG; // Use type assertion
+             return instance as unknown as PRNG; // Use type assertion
         });
         vi.mocked(SolarSystem).mockImplementation(() => createMockSystem() as unknown as SolarSystem); // Use type assertion
 

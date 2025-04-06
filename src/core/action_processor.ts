@@ -51,8 +51,8 @@ export class ActionProcessor {
     // but keeping it simple here for illustration based on previous code structure)
     let isFine = false;
     if (effectiveAction.startsWith('FINE_')) {
-        isFine = true;
-        effectiveAction = effectiveAction.substring(5);
+      isFine = true;
+      effectiveAction = effectiveAction.substring(5);
     }
 
     logger.debug(`[ActionProcessor] Processing effective action '${effectiveAction}' in state '${this.stateManager.state}' (Fine: ${isFine})`);
@@ -104,9 +104,10 @@ export class ActionProcessor {
       case 'MOVE_DOWN': dy = 1; break;
       case 'MOVE_LEFT': dx = -1; break;
       case 'MOVE_RIGHT': dx = 1; break;
-      case 'ENTER_SYSTEM': // LAND/LIFTOFF ignored here
+      case 'ENTER_SYSTEM': { // LAND/LIFTOFF ignored here
         const entered = this.stateManager.enterSystem();
         message = entered ? `Entering system: ${this.stateManager.currentSystem?.name}` : 'No star system detected at this location.';
+      }
         break;
     }
     if (dx !== 0 || dy !== 0) this.player.moveWorld(dx, dy);
@@ -121,8 +122,10 @@ export class ActionProcessor {
       case 'MOVE_LEFT': dx = -1; break;
       case 'MOVE_RIGHT': dx = 1; break;
       case 'LEAVE_SYSTEM': // LIFTOFF ignored here
-        const left = this.stateManager.leaveSystem();
-        message = left ? 'Entered hyperspace.' : 'Must travel further from the star to leave the system.';
+        {
+          const left = this.stateManager.leaveSystem();
+          message = left ? 'Entered hyperspace.' : 'Must travel further from the star to leave the system.';
+        }
         break;
       case 'LAND': // Correct action is received now
         logger.info(">>> ActionProcessor calling landOnNearbyObject for LAND action...");
@@ -144,8 +147,10 @@ export class ActionProcessor {
       case 'MOVE_LEFT': dx = -1; break;
       case 'MOVE_RIGHT': dx = 1; break;
       case 'LIFTOFF': // Correct action is received now
-        const lifted = this.stateManager.liftOff();
-        message = lifted ? `Liftoff from ${planet.name} successful.` : 'Liftoff failed.';
+        {
+          const lifted = this.stateManager.liftOff();
+          message = lifted ? `Liftoff from ${planet.name} successful.` : 'Liftoff failed.';
+        }
         break;
       case 'SCAN':
         if (planet.scanned) {
@@ -179,7 +184,7 @@ export class ActionProcessor {
               const actuallyAdded = Math.min(yieldAmount, this.player.cargoCapacity - (this.player.mineralUnits - yieldAmount)); // Recalculate actual amount added
               message = `Mined ${actuallyAdded} units. (${this.player.mineralUnits}/${this.player.cargoCapacity})`;
               if (this.player.mineralUnits >= this.player.cargoCapacity) {
-                  message += ` Cargo hold full!`;
+                message += ` Cargo hold full!`;
               }
             } else {
               message = `Mining failed: Cargo hold full. (${this.player.mineralUnits}/${this.player.cargoCapacity})`;
@@ -207,45 +212,51 @@ export class ActionProcessor {
     let message = '';
     if (!starbase) return 'Error: Starbase data missing!';
     switch (action) {
-        case 'LIFTOFF': // Correct action is received now
-            const lifted = this.stateManager.liftOff();
-            message = lifted ? `Departing ${starbase.name}...` : 'Liftoff failed.';
-            break;
+      case 'LIFTOFF': // Correct action is received now
+        {
+          const lifted = this.stateManager.liftOff();
+          message = lifted ? `Departing ${starbase.name}...` : 'Liftoff failed.';
+        }
+        break;
       case 'TRADE':
         // Basic Trade Logic (Sell all)
-        if (this.player.mineralUnits > 0) {
-          const mineralsToSell = this.player.mineralUnits;
-          const creditsEarned = mineralsToSell * CONFIG.MINERAL_SELL_PRICE;
-          this.player.credits += creditsEarned;
-          this.player.mineralUnits = 0; // Sell all
-          message = `Sold ${mineralsToSell} units for ${creditsEarned} Cr.`;
-          logger.info(`[ActionProcessor] Trade Complete: Sold ${mineralsToSell} minerals for ${creditsEarned} credits.`);
-        } else {
-          message = 'Cargo hold is empty. Nothing to sell.';
-          logger.info('[ActionProcessor] Trade: No minerals to sell.');
+        {
+          if (this.player.mineralUnits > 0) {
+            const mineralsToSell = this.player.mineralUnits;
+            const creditsEarned = mineralsToSell * CONFIG.MINERAL_SELL_PRICE;
+            this.player.credits += creditsEarned;
+            this.player.mineralUnits = 0; // Sell all
+            message = `Sold ${mineralsToSell} units for ${creditsEarned} Cr.`;
+            logger.info(`[ActionProcessor] Trade Complete: Sold ${mineralsToSell} minerals for ${creditsEarned} credits.`);
+          } else {
+            message = 'Cargo hold is empty. Nothing to sell.';
+            logger.info('[ActionProcessor] Trade: No minerals to sell.');
+          }
         }
         break;
       case 'REFUEL':
-        const fuelNeeded = this.player.maxFuel - this.player.fuel;
-        if (fuelNeeded <= 0) {
+        {
+          const fuelNeeded = this.player.maxFuel - this.player.fuel;
+          if (fuelNeeded <= 0) {
             message = 'Fuel tank is already full.';
-        } else {
+          } else {
             const creditsPerUnit = 1 / CONFIG.FUEL_PER_CREDIT;
             const maxAffordableFuel = this.player.credits * CONFIG.FUEL_PER_CREDIT;
             const fuelToBuy = Math.floor(Math.min(fuelNeeded, maxAffordableFuel)); // Buy whole units
             const cost = Math.ceil(fuelToBuy * creditsPerUnit);
 
             if (fuelToBuy <= 0 || cost <= 0 || this.player.credits < cost) {
-                message = `Not enough credits for fuel (Need ${Math.ceil(creditsPerUnit)} Cr/unit).`;
+              message = `Not enough credits for fuel (Need ${Math.ceil(creditsPerUnit)} Cr/unit).`;
             } else {
-                this.player.credits -= cost;
-                this.player.addFuel(fuelToBuy); // Player logs details
-                message = `Purchased ${fuelToBuy} fuel for ${cost} Cr.`;
-                 if (this.player.fuel >= this.player.maxFuel) {
-                    message += ` Tank full!`;
-                 }
-                logger.info(`[ActionProcessor] Refuel Complete: Bought ${fuelToBuy} fuel for ${cost} credits.`);
+              this.player.credits -= cost;
+              this.player.addFuel(fuelToBuy); // Player logs details
+              message = `Purchased ${fuelToBuy} fuel for ${cost} Cr.`;
+              if (this.player.fuel >= this.player.maxFuel) {
+                message += ` Tank full!`;
+              }
+              logger.info(`[ActionProcessor] Refuel Complete: Bought ${fuelToBuy} fuel for ${cost} credits.`);
             }
+          }
         }
         break;
     }

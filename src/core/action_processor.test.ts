@@ -40,7 +40,9 @@ type MockGameStateManager = GameStateManager & {
 };
 type MockPlanet = Planet & {
   scan: vi.Mock;
-  systemPRNG: { random: vi.Mock };
+  systemPRNG: { random: vi.Mock },
+  mineralRichness: MineralRichness,
+  type: string;
 };
 type MockStarbase = Starbase & {
   // No specific actions processed directly by Starbase in ActionProcessor yet
@@ -80,8 +82,8 @@ describe('ActionProcessor', () => {
       systemPRNG: { random: vi.fn().mockReturnValue(1.0) }, // For mining randomness
       scan: vi.fn(() => {
         // Simulate scan results
-        (mockPlanet as any).scanned = true;
-        (mockPlanet as any).primaryResource = 'Testium';
+        mockPlanet.scanned = true;
+        mockPlanet.primaryResource = 'Testium';
       }),
       ensureSurfaceReady: vi.fn(),
     } as unknown as MockPlanet;
@@ -114,7 +116,7 @@ describe('ActionProcessor', () => {
 
   describe('Hyperspace Actions', () => {
     beforeEach(() => {
-      (mockStateManager as any).state = 'hyperspace'; // Set state for tests
+      mockStateManager.state = 'hyperspace'; // Set state for tests
     });
 
     it('should call player.moveWorld for MOVE actions', () => {
@@ -133,7 +135,7 @@ describe('ActionProcessor', () => {
 
   describe('System Actions', () => {
     beforeEach(() => {
-      (mockStateManager as any).state = 'system'; // Set state
+      mockStateManager.state = 'system'; // Set state
     });
 
     it('should call player.moveSystem for MOVE actions (no fine control)', () => {
@@ -165,8 +167,8 @@ describe('ActionProcessor', () => {
 
   describe('Planet Actions', () => {
     beforeEach(() => {
-        (mockStateManager as any).state = 'planet'; // Set state
-        (mockStateManager as any).currentPlanet = mockPlanet; // Set context
+        mockStateManager.state = 'planet'; // Set state
+        mockStateManager.currentPlanet = mockPlanet; // Set context
     });
 
     it('should call player.moveSurface for MOVE actions', () => {
@@ -182,21 +184,21 @@ describe('ActionProcessor', () => {
      });
 
      it('should call planet.scan for SCAN action if not already scanned', () => {
-        (mockPlanet as any).scanned = false;
+        mockPlanet.scanned = false;
         const status = actionProcessor.processAction('SCAN');
         expect(mockPlanet.scan).toHaveBeenCalledOnce();
         expect(status).toContain('scan complete');
      });
 
       it('should return status if planet already scanned on SCAN action', () => {
-        (mockPlanet as any).scanned = true;
+        mockPlanet.scanned = true;
         const status = actionProcessor.processAction('SCAN');
         expect(mockPlanet.scan).not.toHaveBeenCalled();
         expect(status).toContain('already been scanned');
      });
 
       it('should call player.addCargo for MINE action if minerals present', () => {
-        (mockPlanet as any).mineralRichness = MineralRichness.RICH; // Ensure minable
+        mockPlanet.mineralRichness = MineralRichness.RICH; // Ensure minable
         const status = actionProcessor.processAction('MINE');
         expect(mockPlayer.addCargo).toHaveBeenCalledOnce();
         expect(mockPlayer.addCargo).toHaveBeenCalledWith(expect.any(Number)); // Check amount > 0
@@ -204,15 +206,15 @@ describe('ActionProcessor', () => {
       });
 
       it('should return status and not call addCargo if no minerals on MINE action', () => {
-        (mockPlanet as any).mineralRichness = MineralRichness.NONE;
+        mockPlanet.mineralRichness = MineralRichness.NONE;
         const status = actionProcessor.processAction('MINE');
         expect(mockPlayer.addCargo).not.toHaveBeenCalled();
         expect(status).toContain('no significant mineral deposits');
       });
 
       it('should return status if trying to mine a Gas Giant', () => {
-         (mockPlanet as any).type = 'GasGiant';
-         (mockPlanet as any).mineralRichness = MineralRichness.RICH;
+         mockPlanet.type = 'GasGiant';
+         mockPlanet.mineralRichness = MineralRichness.RICH;
          const status = actionProcessor.processAction('MINE');
          expect(mockPlayer.addCargo).not.toHaveBeenCalled();
          expect(status).toContain('Cannot mine GasGiant');
@@ -221,8 +223,8 @@ describe('ActionProcessor', () => {
 
   describe('Starbase Actions', () => {
      beforeEach(() => {
-        (mockStateManager as any).state = 'starbase'; // Set state
-        (mockStateManager as any).currentStarbase = mockStarbase; // Set context
+        mockStateManager.state = 'starbase'; // Set state
+        mockStateManager.currentStarbase = mockStarbase; // Set context
     });
 
      it('should call stateManager.liftOff for LIFTOFF action', () => {

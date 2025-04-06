@@ -14,7 +14,7 @@ export class InputManager {
   // Set of actions currently active based on held keys (e.g., "MOVE_UP", "FINE_CONTROL")
   private activeActions: Set<string> = new Set();
   // Set of actions that became active *this frame* (cleared each update)
-  private justPressedActions: Set<string> = new Set();
+  public justPressedActions: Set<string> = new Set();
 
   private isListening: boolean = false;
   // Memoized mapping from key codes to action names for faster lookups
