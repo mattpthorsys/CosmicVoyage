@@ -1,16 +1,14 @@
-// src/core/action_processor.ts
+// src/core/action_processor.ts - Modified processAction
 
-import { GameStateManager } from './game_state_manager';
+import { GameStateManager, GameState } from './game_state_manager'; // Ensure GameState is imported if needed elsewhere
 import { Player } from './player';
 import { logger } from '../utils/logger';
 import { MineralRichness } from '../constants';
 import { CONFIG } from '../config';
 
-/** Processes actions based on the current game state. */
 export class ActionProcessor {
   private player: Player;
   private stateManager: GameStateManager;
-  // Add other dependencies if needed (e.g., TradeManager, CombatManager)
 
   constructor(player: Player, stateManager: GameStateManager) {
     this.player = player;
@@ -18,36 +16,69 @@ export class ActionProcessor {
     logger.debug('[ActionProcessor] Instance created.');
   }
 
-  /** Processes a single action based on the current game state. Returns status message. */
   processAction(action: string): string {
-    let statusMessage = ''; // Default status
-    let isFine = false;
-    let baseAction = action;
+    const currentState = this.stateManager.state; // deep copy
+    logger.debug(`[ActionProcessor] Processing initial actions [${action}] in state: ${currentState}`);
 
-    if (action.startsWith('FINE_')) {
-      isFine = true;
-      baseAction = action.substring(5);
+    let statusMessage = '';
+    let effectiveAction = action; // Start with the action received from InputManager
+
+    // **** START CONTEXTUAL LOGIC ****
+    // If the ambiguous 'l' key action was pressed, determine the real intent
+    if (action === 'ACTIVATE_LAND_LIFTOFF') {
+      // --- LOGGING STEP 1: Confirm this case is hit ---
+      logger.info(`[ActionProcessor] Handling initial ACTIVATE_LAND_LIFTOFF.`);
+
+      if (currentState === 'system') {
+        effectiveAction = 'LAND'; // Interpret as LAND when in system view
+        logger.info(`[ActionProcessor] In system, so effectiveAction should be LAND (and is ${effectiveAction})`);
+        logger.debug(`[ActionProcessor] Interpreting 'ACTIVATE_LAND_LIFTOFF' as 'LAND' in state 'system'.`);
+      } else if (currentState === 'planet' || currentState === 'starbase') {
+        effectiveAction = 'LIFTOFF'; // Interpret as LIFTOFF when landed/docked
+        logger.info(`[ActionProcessor] In system, so effectiveAction should be LIFTOFF (and is ${effectiveAction})`);
+        logger.debug(`[ActionProcessor] Interpreting 'ACTIVATE_LAND_LIFTOFF' as 'LIFTOFF' in state '${currentState}'.`);
+      } else {
+        // Action 'l' doesn't make sense in other states (e.g., hyperspace)
+        logger.warn(`[ActionProcessor] Action '${action}' triggered in unexpected state '${currentState}'. Ignoring.`);
+        // Return an empty message or specific feedback if desired
+        return `Cannot use that command (${action}) in ${currentState}.`;
+      }
+    }
+    // **** END CONTEXTUAL LOGIC ****
+
+    // Check for fine control only if the effective action is movement
+    // (This check might be better placed in the Game loop before calling processAction,
+    // but keeping it simple here for illustration based on previous code structure)
+    let isFine = false;
+    if (effectiveAction.startsWith('FINE_')) {
+        isFine = true;
+        effectiveAction = effectiveAction.substring(5);
     }
 
-    logger.debug(`[ActionProcessor] Processing action '${baseAction}' in state '${this.stateManager.state}' (Fine: ${isFine})`);
+    logger.debug(`[ActionProcessor] Processing effective action '${effectiveAction}' in state '${this.stateManager.state}' (Fine: ${isFine})`);
 
     try {
-      // --- Handle global actions (already handled in InputManager/Game loop - e.g., DOWNLOAD_LOG) ---
-      // Could add global actions here if needed (pause, menu, etc.)
+      // --- Handle global actions ---
+      // ... (e.g., DOWNLOAD_LOG, QUIT if handled here)
 
       // --- State-specific actions ---
+      // Use the 'effectiveAction' in the switch
       switch (this.stateManager.state) {
         case 'hyperspace':
-          statusMessage = this._processHyperspaceAction(baseAction);
+          // Pass effectiveAction, though LAND/LIFTOFF are ignored here anyway
+          statusMessage = this._processHyperspaceAction(effectiveAction);
           break;
         case 'system':
-          statusMessage = this._processSystemAction(baseAction, isFine);
+          // Pass effectiveAction, _processSystemAction now correctly receives 'LAND'
+          statusMessage = this._processSystemAction(effectiveAction, isFine);
           break;
         case 'planet':
-          statusMessage = this._processPlanetAction(baseAction);
+          // Pass effectiveAction, _processPlanetAction now correctly receives 'LIFTOFF'
+          statusMessage = this._processPlanetAction(effectiveAction);
           break;
         case 'starbase':
-          statusMessage = this._processStarbaseAction(baseAction);
+          // Pass effectiveAction, _processStarbaseAction now correctly receives 'LIFTOFF'
+          statusMessage = this._processStarbaseAction(effectiveAction);
           break;
         default:
           statusMessage = `Unknown game state: ${this.stateManager.state}`;
@@ -55,86 +86,64 @@ export class ActionProcessor {
           break;
       }
     } catch (error) {
-      logger.error(`[ActionProcessor] Error processing action '${baseAction}' in state '${this.stateManager.state}':`, error);
+      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${this.stateManager.state}':`, error);
       statusMessage = `ACTION ERROR: ${error instanceof Error ? error.message : String(error)}`;
     }
 
-    return statusMessage; // Return status to be displayed by Game loop
+    return statusMessage;
   }
 
   // --- Private State-Specific Action Handlers ---
+  // These methods now receive the correctly interpreted action ('LAND' or 'LIFTOFF')
+  // No changes are needed inside these methods for this specific 'l' key issue.
 
   private _processHyperspaceAction(action: string): string {
-    let dx = 0;
-    let dy = 0;
-    let message = '';
-
+    let dx = 0, dy = 0, message = '';
     switch (action) {
       case 'MOVE_UP': dy = -1; break;
       case 'MOVE_DOWN': dy = 1; break;
       case 'MOVE_LEFT': dx = -1; break;
       case 'MOVE_RIGHT': dx = 1; break;
-      case 'ENTER_SYSTEM':
+      case 'ENTER_SYSTEM': // LAND/LIFTOFF ignored here
         const entered = this.stateManager.enterSystem();
-        message = entered
-          ? `Entering system: ${this.stateManager.currentSystem?.name}`
-          : 'No star system detected at this location.';
+        message = entered ? `Entering system: ${this.stateManager.currentSystem?.name}` : 'No star system detected at this location.';
         break;
     }
-
-    if (dx !== 0 || dy !== 0) {
-      this.player.moveWorld(dx, dy); // Player method logs details
-      // Hyperspace updates its own status in the main update loop
-    }
-    return message; // Return specific action status, main status handled by update
+    if (dx !== 0 || dy !== 0) this.player.moveWorld(dx, dy);
+    return message;
   }
 
   private _processSystemAction(action: string, isFine: boolean): string {
-    let dx = 0;
-    let dy = 0;
-    let message = '';
-
+    let dx = 0, dy = 0, message = '';
     switch (action) {
       case 'MOVE_UP': dy = -1; break;
       case 'MOVE_DOWN': dy = 1; break;
       case 'MOVE_LEFT': dx = -1; break;
       case 'MOVE_RIGHT': dx = 1; break;
-      case 'LEAVE_SYSTEM':
+      case 'LEAVE_SYSTEM': // LIFTOFF ignored here
         const left = this.stateManager.leaveSystem();
         message = left ? 'Entered hyperspace.' : 'Must travel further from the star to leave the system.';
         break;
-      case 'LAND':
-        logger.info(">>> ActionProcessor calling landOnNearbyObject...");
+      case 'LAND': // Correct action is received now
+        logger.info(">>> ActionProcessor calling landOnNearbyObject for LAND action...");
         const landedObject = this.stateManager.landOnNearbyObject();
-        message = landedObject
-          ? `Approaching ${landedObject.name}...` // Landing success status handled in state update
-          : 'Nothing nearby to land on.';
+        message = landedObject ? `Approaching ${landedObject.name}...` : 'Nothing nearby to land on.';
         break;
     }
-
-    if (dx !== 0 || dy !== 0) {
-      this.player.moveSystem(dx, dy, isFine); // Player method logs details
-    }
+    if (dx !== 0 || dy !== 0) this.player.moveSystem(dx, dy, isFine);
     return message;
   }
 
   private _processPlanetAction(action: string): string {
-    let dx = 0;
-    let dy = 0;
-    let message = '';
-    const planet = this.stateManager.currentPlanet; // Get current planet context
-
-    if (!planet) {
-      logger.error('[ActionProcessor] Process Planet Action called but currentPlanet is null!');
-      return 'Error: Planet data missing!';
-    }
-
+    let dx = 0, dy = 0, message = '';
+    const planet = this.stateManager.currentPlanet;
+    if (!planet) return 'Error: Planet data missing!';
     switch (action) {
       case 'MOVE_UP': dy = -1; break;
       case 'MOVE_DOWN': dy = 1; break;
       case 'MOVE_LEFT': dx = -1; break;
       case 'MOVE_RIGHT': dx = 1; break;
-      case 'LIFTOFF':
+      case 'LIFTOFF': // Correct action is received now
         const lifted = this.stateManager.liftOff();
         message = lifted ? `Liftoff from ${planet.name} successful.` : 'Liftoff failed.';
         break;
@@ -196,17 +205,12 @@ export class ActionProcessor {
   private _processStarbaseAction(action: string): string {
     const starbase = this.stateManager.currentStarbase;
     let message = '';
-
-    if (!starbase) {
-        logger.error('[ActionProcessor] Process Starbase Action called but currentStarbase is null!');
-        return 'Error: Starbase data missing!';
-    }
-
+    if (!starbase) return 'Error: Starbase data missing!';
     switch (action) {
-      case 'LIFTOFF':
-        const lifted = this.stateManager.liftOff();
-        message = lifted ? `Departing ${starbase.name}...` : 'Liftoff failed.';
-        break;
+        case 'LIFTOFF': // Correct action is received now
+            const lifted = this.stateManager.liftOff();
+            message = lifted ? `Departing ${starbase.name}...` : 'Liftoff failed.';
+            break;
       case 'TRADE':
         // Basic Trade Logic (Sell all)
         if (this.player.mineralUnits > 0) {

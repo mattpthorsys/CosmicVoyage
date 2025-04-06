@@ -233,52 +233,92 @@ export class SolarSystem {
 
     /** Updates the orbital positions of planets and starbases based on elapsed time. */
     updateOrbits(deltaTime: number): void {
-        // logger.debug(`[System:${this.name}] Updating orbits (Delta Time: ${deltaTime.toFixed(3)}s)...`); // Can be noisy
-        // Base speed factor related to distance scale - larger systems might need slower base speeds visually
-        const baseOrbitSpeed = 1.0 / (50000); // Arbitrary base angular speed (radians per unit time at baseline distance)
-        // Combine delta time and speed factor from config
-        const timeScaledSpeedFactor = deltaTime * CONFIG.SYSTEM_ORBIT_SPEED_FACTOR * 10000; // Scale factor incorporating time and config speed
-
-        // Update planets
+        const baseOrbitSpeed = 1.0 / 50000;
+        const timeScaledSpeedFactor = deltaTime * CONFIG.SYSTEM_ORBIT_SPEED_FACTOR * 10000;
+    
+        // --- Update Planets ---
         this.planets.forEach((planet, index) => {
-            if (!planet) return; // Skip empty slots
-            // Approximate orbital speed decrease with distance (~1/sqrt(r) from Kepler's laws, simplified)
-            // Use baseline distance (e.g., 50000) for scaling speed relative to distance
-            const distanceScaleFactor = Math.sqrt(Math.max(1000, planet.orbitDistance) / 50000); // Avoid sqrt(0) or tiny values
-            let angularSpeed = (baseOrbitSpeed / distanceScaleFactor) * timeScaledSpeedFactor; // Calculate angular speed for this planet
-            // Make outer planets slightly slower? Optional realism adjustment.
-            // angularSpeed *= (1 - (index / (CONFIG.MAX_PLANETS_PER_SYSTEM * 2)));
-
-            // Update angle (wrap around 2*PI) and recalculate position
-            planet.orbitAngle = (planet.orbitAngle + angularSpeed) % (Math.PI * 2); // Update angle
-            planet.systemX = Math.cos(planet.orbitAngle) * planet.orbitDistance; // Recalculate X
-            planet.systemY = Math.sin(planet.orbitAngle) * planet.orbitDistance; // Recalculate Y
-             // logger.debug(`[System:${this.name}] Updated orbit for ${planet.name}: Angle=${planet.orbitAngle.toFixed(2)}, Pos=[${planet.systemX.toFixed(0)}, ${planet.systemY.toFixed(0)}]`); // Noisy
+          if (!planet) return;
+    
+          const safeOrbitDistance = Math.max(1000, planet.orbitDistance); // Ensure positive distance
+    
+          // **** START ADDED CHECKS ****
+          let distanceScaleFactor = 1.0; // Default factor
+          const scaleCalcValue = safeOrbitDistance / 50000;
+          if (scaleCalcValue > 0) { // Avoid sqrt of zero or negative
+            distanceScaleFactor = Math.sqrt(scaleCalcValue);
+          } else {
+              logger.warn(`[System:${this.name}] Invalid scaleCalcValue (${scaleCalcValue.toFixed(2)}) for distanceScaleFactor for ${planet.name}. Using default factor.`);
+              distanceScaleFactor = 1.0; // Use a default if calculation is invalid
+          }
+    
+          if (!Number.isFinite(distanceScaleFactor) || distanceScaleFactor <= 0) {
+              logger.warn(`[System:${this.name}] Invalid distanceScaleFactor (${distanceScaleFactor}) calculated for ${planet.name}. Using default factor 1.0.`);
+              distanceScaleFactor = 1.0; // Prevent division by zero/NaN/Infinity
+          }
+          // **** END ADDED CHECKS ****
+    
+          let angularSpeed = (baseOrbitSpeed / distanceScaleFactor) * timeScaledSpeedFactor;
+    
+          // **** START ADDED CHECKS ****
+          if (!Number.isFinite(angularSpeed)) {
+            logger.warn(`[System:${this.name}] Invalid angularSpeed (${angularSpeed}) calculated for ${planet.name}. Resetting angle.`);
+            angularSpeed = 0; // Prevent NaN angle
+          }
+           // **** END ADDED CHECKS ****
+    
+          planet.orbitAngle = (planet.orbitAngle + angularSpeed) % (Math.PI * 2);
+    
+           // **** START ADDED CHECKS ****
+          // Ensure angle is valid before trig functions
+           if (!Number.isFinite(planet.orbitAngle)) {
+             logger.warn(`[System:${this.name}] Invalid orbitAngle (${planet.orbitAngle}) for ${planet.name}. Resetting to 0.`);
+             planet.orbitAngle = 0;
+           }
+           // Ensure orbit distance is valid before multiplication
+           const validOrbitDist = Number.isFinite(planet.orbitDistance) ? planet.orbitDistance : 0;
+           // **** END ADDED CHECKS ****
+    
+          planet.systemX = Math.cos(planet.orbitAngle) * validOrbitDist; // Use validOrbitDist
+          planet.systemY = Math.sin(planet.orbitAngle) * validOrbitDist; // Use validOrbitDist
+    
+           // **** Final Check ****
+           if (!Number.isFinite(planet.systemX) || !Number.isFinite(planet.systemY)) {
+               logger.error(`[System:${this.name}] CRITICAL: Non-finite position calculated for ${planet.name}. Resetting position. Angle: ${planet.orbitAngle}, Dist: ${validOrbitDist}`);
+               planet.systemX = 0;
+               planet.systemY = 0;
+           }
         });
-
-        // Update starbase (if it exists) - Requires mutable properties or an update method in Starbase
+    
+        // --- Update Starbase (similar checks needed) ---
         if (this.starbase) {
-            // Similar speed calculation as planets
-            const distanceScaleFactor = Math.sqrt(Math.max(1000, this.starbase.orbitDistance) / 50000);
-            const angularSpeed = (baseOrbitSpeed / distanceScaleFactor) * timeScaledSpeedFactor;
-
-            // --- IMPORTANT: Update Starbase properties ---
-            // This requires orbitAngle, systemX, systemY in Starbase to be mutable (remove readonly)
-            // OR Starbase needs an updateOrbit(newAngle, newX, newY) method.
-            // Assuming they are mutable for now (remove readonly in starbase.ts):
-             try {
-                 const sb = this.starbase as any; // Use 'any' to bypass readonly temporarily if not fixed in Starbase class
-                 sb.orbitAngle = (sb.orbitAngle + angularSpeed) % (Math.PI * 2); //
-                 sb.systemX = Math.cos(sb.orbitAngle) * sb.orbitDistance; //
-                 sb.systemY = Math.sin(sb.orbitAngle) * sb.orbitDistance; //
-                 // logger.debug(`[System:${this.name}] Updated orbit for ${sb.name}: Angle=${sb.orbitAngle.toFixed(2)}, Pos=[${sb.systemX.toFixed(0)}, ${sb.systemY.toFixed(0)}]`); // Noisy
-             } catch (e) {
-                 logger.error(`[System:${this.name}] Failed to update starbase orbit properties. Ensure orbitAngle, systemX, systemY are mutable in Starbase class.`, e);
-             }
-            /* Alternative: Call an update method if implemented in Starbase
-               this.starbase.updateOrbitPosition(newAngle, newX, newY);
-            */
+            const safeOrbitDistance = Math.max(1000, this.starbase.orbitDistance);
+            let distanceScaleFactor = 1.0;
+            const scaleCalcValue = safeOrbitDistance / 50000;
+            if (scaleCalcValue > 0) distanceScaleFactor = Math.sqrt(scaleCalcValue);
+            else distanceScaleFactor = 1.0;
+    
+            if (!Number.isFinite(distanceScaleFactor) || distanceScaleFactor <= 0) distanceScaleFactor = 1.0;
+    
+            let angularSpeed = (baseOrbitSpeed / distanceScaleFactor) * timeScaledSpeedFactor;
+            if (!Number.isFinite(angularSpeed)) angularSpeed = 0;
+    
+            // Assuming mutable properties in Starbase
+            try {
+                const sb = this.starbase as any;
+                sb.orbitAngle = (sb.orbitAngle + angularSpeed) % (Math.PI * 2);
+                if (!Number.isFinite(sb.orbitAngle)) sb.orbitAngle = 0;
+    
+                const validOrbitDist = Number.isFinite(sb.orbitDistance) ? sb.orbitDistance : 0;
+                sb.systemX = Math.cos(sb.orbitAngle) * validOrbitDist;
+                sb.systemY = Math.sin(sb.orbitAngle) * validOrbitDist;
+    
+                if (!Number.isFinite(sb.systemX) || !Number.isFinite(sb.systemY)) {
+                   logger.error(`[System:${this.name}] CRITICAL: Non-finite position calculated for ${sb.name}. Resetting position.`);
+                   sb.systemX = 0; sb.systemY = 0;
+               }
+            } catch (e) { /* already handled */ }
         }
-    }
+      }
 
 } // End SolarSystem class

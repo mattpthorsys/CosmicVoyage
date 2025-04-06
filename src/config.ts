@@ -44,24 +44,16 @@ export const CONFIG = {
         MOVE_DOWN: 'ArrowDown',
         MOVE_LEFT: 'ArrowLeft',
         MOVE_RIGHT: 'ArrowRight',
-        // Optional diagonal keys (map multiple keys in InputManager later)
-        // MOVE_UP_LEFT: 'Home',
-        // MOVE_UP_RIGHT: 'PageUp',
-        // MOVE_DOWN_LEFT: 'End', //
-        // MOVE_DOWN_RIGHT: 'PageDown',
-        // Actions
-        ENTER_SYSTEM: 'Enter', // Or 'e' etc.
-        LEAVE_SYSTEM: 'Backspace', // Or 'h' etc.
-        LAND: 'l', // Landing - Lowercase L
-        LIFTOFF: 'l', // Liftoff (same key often used) - Lowercase L
-        SCAN: 'v', // Lowercase v
-        MINE: 'm', // Lowercase m //
-        TRADE: 't', // Lowercase t
-        REFUEL: 'r', // Lowercase r
-        DOWNLOAD_LOG: 'p', // <<< Added key binding for log download ('p')
+        ENTER_SYSTEM: 'Enter',
+        LEAVE_SYSTEM: 'Backspace',
+        // Assign 'l' to a single, representative action name
+        ACTIVATE_LAND_LIFTOFF: 'l',
+        SCAN: 'v',
+        MINE: 'm',
+        TRADE: 't',
+        REFUEL: 'r',
+        DOWNLOAD_LOG: 'p',
         QUIT: 'Escape',
-        // Modifiers (Need special handling in InputManager)
-        // FINE_CONTROL: 'Shift',
     },
 
     // --- Planet Surface ---

@@ -33,7 +33,7 @@ export class SceneRenderer {
 
   /** Draws the hyperspace view (stars, nebulae). */
   drawHyperspace(player: Player, gameSeedPRNG: PRNG): void {
-    logger.debug('[SceneRenderer.drawHyperspace] Drawing...');
+    //logger.debug('[SceneRenderer.drawHyperspace] Drawing...');
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     const viewCenterX = Math.floor(cols / 2);

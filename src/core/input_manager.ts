@@ -109,14 +109,16 @@ export class InputManager {
     logger.debug(`--- Raw KeyDown Received: key='${e.key}' code='${e.code}' ---`); // Changed to debug
 
     if (!this.isListening) return;
+    logger.debug('--- iSlistening passed...');
 
     const key = e.key;
     const lowerKey = key.toLowerCase();
 
-    // If key is already held, do nothing (prevents OS-level key repeat spamming actions)
+    // If key is already held (present in keysPressed), ignore the repeat event.
+    // This prevents OS-level key repeat from spamming actions.
     if (this.keysPressed.has(key)) {
-       // logger.debug(`>>> KeyDown '${key}' already pressed, ignoring repeat.`); // Optional debug
-      return;
+      logger.debug(`>>> KeyDown '${key}' repeat ignored.`);
+      return; // Exit early if it's a repeat
     }
 
     // Add the raw key to the pressed set
@@ -182,7 +184,7 @@ export class InputManager {
         logger.debug(`[InputManager] FINE_CONTROL deactivated.`);
         this.activeActions.delete('FINE_CONTROL');
     }
-    if (key === 'Control') { // <<< ADDED: Check for Ctrl release
+    if (key === 'Control') { 
         logger.debug(`[InputManager] BOOST deactivated.`);
         this.activeActions.delete('BOOST');
     }
