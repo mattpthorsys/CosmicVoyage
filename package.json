@@ -1,6 +1,7 @@
 {
   "name": "cosmic-voyage-ts",
   "version": "1.0.0",
+  "type": "module",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -11,18 +12,25 @@
     "combine_bash": "./combine_code.sh",
     "combine": "node ./combine_code.js",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "lint": "eslint src --ext .ts,.tsx"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@eslint/js": "^9.24.0",
     "@types/node": "^22.13.14",
     "@types/rot-js": "^2.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.29.0",
+    "@typescript-eslint/parser": "^8.29.0",
     "@vitest/ui": "^3.0.9",
+    "eslint": "^9.24.0",
     "glob": "^11.0.1",
+    "globals": "^16.0.0",
     "happy-dom": "^17.4.4",
     "typescript": "^5.8.2",
+    "typescript-eslint": "^8.29.0",
     "vite": "^6.2.3",
     "vite-plugin-checker": "^0.9.1",
     "vitest": "^3.0.9"
