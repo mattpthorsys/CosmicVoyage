@@ -51,7 +51,7 @@ describe('InputManager (Refactored)', () => {
       expect(map.size).toBeGreaterThan(0);
       // Check a few key bindings
       expect(map.get(CONFIG.KEY_BINDINGS.MOVE_UP.toLowerCase())).toBe('MOVE_UP');
-      expect(map.get(CONFIG.KEY_BINDINGS.LAND.toLowerCase())).toBe('LAND');
+      expect(map.get(CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toLowerCase())).toBe('LAND');
       expect(map.get('shift')).toBe('FINE_CONTROL'); // Check shift mapping
   });
 
@@ -149,7 +149,7 @@ describe('InputManager (Refactored)', () => {
         const moveEvent = simulateKeyEvent('keydown', CONFIG.KEY_BINDINGS.MOVE_RIGHT);
         expect(moveEvent.preventDefault).toHaveBeenCalled();
 
-        const landEvent = simulateKeyEvent('keydown', CONFIG.KEY_BINDINGS.LAND);
+        const landEvent = simulateKeyEvent('keydown', CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF);
         expect(landEvent.preventDefault).toHaveBeenCalled();
 
         const shiftEvent = simulateKeyEvent('keydown', 'Shift'); // Assuming Shift is used for FINE_CONTROL

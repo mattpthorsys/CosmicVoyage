@@ -12,7 +12,7 @@ import { CONFIG } from '../config';
 import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES } from '../constants';
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
-import { RgbColour, adjustBrightness, hexToRgb, interpolateColour, rgbToHex } from './colour';
+import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex } from './colour';
 
 /** Contains methods for rendering specific game scenes/states. */
 export class SceneRenderer {
@@ -383,7 +383,7 @@ export class SceneRenderer {
       `- [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel Ship`, 7, 9, CONFIG.DEFAULT_FG_COLOR, null
     );
     this.screenBuffer.drawString(
-      `Press [${CONFIG.KEY_BINDINGS.LIFTOFF.toUpperCase()}] to depart.`, 5, 12, CONFIG.DEFAULT_FG_COLOR, null
+      `Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to depart.`, 5, 12, CONFIG.DEFAULT_FG_COLOR, null
     );
 
     // Draw player

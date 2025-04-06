@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest'; // Added Mock type
 import { Game } from './game';
-import { Renderer } from '../rendering/renderer';
+import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
@@ -25,7 +25,7 @@ vi.mock('../utils/hash', () => ({
 }));
 
 // --- Type Definitions for Mock Helpers (optional but good practice) ---
-type MockRenderer = Partial<Record<keyof Renderer, Mock | any>>;
+type MockRenderer = Partial<Record<keyof RendererFacade, Mock | any>>;
 type MockPlayer = Partial<Record<keyof Player, Mock | any>>;
 type MockSolarSystem = Partial<Record<keyof SolarSystem, Mock | any>> & { getObjectNear: Mock }; // Ensure getObjectNear exists
 type MockPlanet = Partial<Record<keyof Planet, Mock | any>> & { _mockType: 'Planet' };
@@ -39,11 +39,7 @@ const createMockRenderer = (): MockRenderer => ({
     updateStatus: vi.fn(),
     clear: vi.fn(),
     renderDiff: vi.fn(),
-    drawChar: vi.fn(),
     drawString: vi.fn(),
-    drawBox: vi.fn(),
-    drawCircle: vi.fn(),
-    drawOrbit: vi.fn(),
     drawHyperspace: vi.fn(),
     drawSolarSystem: vi.fn(),
     drawPlanetSurface: vi.fn(),
@@ -66,7 +62,7 @@ const createMockPlayer = (): MockPlayer => {
     return realPlayer as MockPlayer;
 };
 
-const createMockSystem = (name = 'MockSystem', type = 'G'): MockSolarSystem => {
+const createMockSystem = (name = 'MockSystem', _type = 'G'): MockSolarSystem => {
     // 1. Create mock PRNG needed for real constructor
     const mockSystemPrng = createMockPrng(`system_${name}_seed`) as PRNG;
 
@@ -158,7 +154,7 @@ describe('Game', () => {
         mockPrngInstance = createMockPrng('game-seed');
 
         // Use type assertion to satisfy TypeScript, as our mocks are intentionally partial/simplified
-        vi.mocked(Renderer).mockImplementation(() => mockRendererInstance as Renderer);
+        vi.mocked(RendererFacade).mockImplementation(() => mockRendererInstance as RendererFacade);
         vi.mocked(Player).mockImplementation(() => mockPlayerInstance as Player);
         vi.mocked(PRNG).mockImplementation((seed) => {
              const instance = seed ? createMockPrng(String(seed)) : mockPrngInstance;
@@ -187,7 +183,7 @@ describe('Game', () => {
     it('constructor should initialize dependencies and set initial state', () => {
         const game = new Game('fakeCanvas', 'fakeStatus', 'constructor-seed');
         expect(PRNG).toHaveBeenCalledWith('constructor-seed');
-        expect(Renderer).toHaveBeenCalledWith('fakeCanvas', 'fakeStatus');
+        expect(RendererFacade).toHaveBeenCalledWith('fakeCanvas', 'fakeStatus');
         expect(Player).toHaveBeenCalledOnce();
         expect(mockRendererInstance.fitToScreen).toHaveBeenCalled();
         expect((game as any).state).toBe('hyperspace');

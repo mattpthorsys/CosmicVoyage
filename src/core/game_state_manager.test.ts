@@ -1,7 +1,7 @@
 // src/core/game_state_manager.test.ts
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GameStateManager, GameState } from './game_state_manager';
+import { GameStateManager } from './game_state_manager';
 import { Player } from './player';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
@@ -10,7 +10,6 @@ import { PRNG } from '../utils/prng';
 import { fastHash } from '../utils/hash';
 import { CONFIG } from '../config';
 import { GLYPHS } from '../constants';
-import { logger } from '../utils/logger'; // Mocked below
 
 // --- Mock Dependencies ---
 vi.mock('./player');

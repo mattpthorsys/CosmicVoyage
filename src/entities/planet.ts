@@ -1,7 +1,6 @@
 // src/entities/planet.ts (Refactored)
 
-import { CONFIG } from '../config';
-import { PLANET_TYPES, MineralRichness } from '../constants';
+import { MineralRichness } from '../constants';
 import { PRNG } from '../utils/prng';
 import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';

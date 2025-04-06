@@ -119,7 +119,6 @@ export class SurfaceGenerator {
                     const dx = x - cx;
                     const dy = y - cy;
                     const distSq = dx * dx + dy * dy;
-                    const radiusSq = r * r;
                     if (distSq <= (r + 1) ** 2) {
                         const dist = Math.sqrt(distSq);
                         const currentH = heightmap[y][x];

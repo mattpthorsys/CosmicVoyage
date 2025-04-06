@@ -57,7 +57,7 @@ describe('Logger', () => {
 
         // Check spies
         expect(consoleSpy.debug).not.toHaveBeenCalled();
-        expect(consoleSpy.log).toHaveBeenCalledTimes(1); // <<< Check: Should be exactly 1 now
+        expect(consoleSpy.log).toHaveBeenCalledTimes(1); 
         expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
         expect(consoleSpy.error).toHaveBeenCalledTimes(1);
         expect(consoleSpy.log).toHaveBeenCalledWith(expect.stringContaining('[INFO] Info log'));
@@ -189,13 +189,13 @@ describe('Logger', () => {
             } as unknown as HTMLAnchorElement;
 
             try {
-                createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockLink);
-                 if (!document.body) {
-                      document.body = document.createElement('body');
-                 }
-                appendChildSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => mockLink);
-                removeChildSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => mockLink);
-                createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:http://localhost/fake-blob-url');
+                // createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockLink);
+                //  if (!document.body) {
+                //       document.body = document.createElement('body');
+                //  }
+                // appendChildSpy = vi.spyOn(document.body, 'appendChild').mockImplementation(() => mockLink);
+                // removeChildSpy = vi.spyOn(document.body, 'removeChild').mockImplementation(() => mockLink);
+                // createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:http://localhost/fake-blob-url');
                 revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => { });
             } catch (e) {
                  console.error("Error setting up DOM spies in logger test (downloadLogFile block):", e);

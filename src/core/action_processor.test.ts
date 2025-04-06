@@ -1,5 +1,7 @@
 // src/core/action_processor.test.ts
 
+/// <reference types="vitest/globals" />
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ActionProcessor } from './action_processor';
 import { GameStateManager, GameState } from './game_state_manager';
@@ -8,7 +10,6 @@ import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { MineralRichness } from '../constants';
 import { CONFIG } from '../config';
-import { logger } from '../utils/logger';
 
 // Mock dependencies
 vi.mock('./player');

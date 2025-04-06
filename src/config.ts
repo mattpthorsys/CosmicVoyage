@@ -5,14 +5,14 @@
 export const CONFIG = {
     // --- Core Settings ---
     SEED: "haunting beauty",
-    LOG_LEVEL: 'DEBUG', // Set to DEBUG to capture more detail during testing, INFO for release
+    LOG_LEVEL: 'INFO', // Set to DEBUG to capture more detail during testing, INFO for release
     TARGET_RESOLUTION_WIDTH: 1920, // Target reference width (scaling not fully implemented based on this yet)
 
     // --- Font & Display ---
     CHAR_ASPECT_RATIO: 1.0, // Explicitly 1.0 for square characters assumed by logic
     CHAR_SCALE: 2, // Scales the base font size
     FONT_SIZE_PX: 8, // Base size in pixels
-    FONT_FAMILY: '"Courier New", Courier, monospace', //
+    FONT_FAMILY: '"PxPlus_IBM_CGA", "Courier New", Courier, monospace',
 
     // --- Player / Start ---
     PLAYER_START_X: 0, // Initial world X

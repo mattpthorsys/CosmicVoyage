@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Font Test</title>
+    <style>
+        @font-face {
+            font-family: 'TestCGAFont';
+            /* Relative path to the font in the same folder */
+            src: url('./PxPlus_IBM_CGA.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        body {
+            font-family: 'TestCGAFont', monospace;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <p>Does this text use the CGA font? ABC 123</p>
+    <p style="font-family: monospace;">This is monospace fallback.</p>
+</body>
+</html>

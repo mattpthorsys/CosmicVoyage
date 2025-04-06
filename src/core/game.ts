@@ -2,15 +2,12 @@
 
 import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
-import { SolarSystem } from '../entities/solar_system'; // Still needed for type checks maybe?
-import { Planet } from '../entities/planet';
-import { Starbase } from '../entities/starbase';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { MineralRichness } from '../constants'; // Keep if update logic checks richness
+import { MineralRichness } from '../constants';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
-import { GameStateManager, GameState } from './game_state_manager';
+import { GameStateManager } from './game_state_manager';
 import { ActionProcessor } from './action_processor';
 import { fastHash } from '@/utils/hash';
 
@@ -157,7 +154,7 @@ export class Game {
 
   private _processInput(): void {
     const justPressedList = Array.from((this.inputManager as any).justPressedActions).join(', ') || 'None';
-    logger.info(
+    logger.debug(
       `>>> Game._processInput Tick. State: ${this.stateManager.state}. Just Pressed Actions: [${justPressedList}]`
     );
 

@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Starbase } from './starbase';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { MineralRichness } from '../constants';
 
 // Mock the PRNG module globally
 vi.mock('../utils/prng');
@@ -51,7 +50,7 @@ describe('Starbase', () => {
       .spyOn(mockStarbasePrngInstance, 'random')
       // Provide return values for the calls made in the Starbase constructor
       .mockReturnValueOnce(1.0)         // For orbitDistance factor -> results in 1.0
-      .mockReturnValueOnce(Math.PI / 4); // <<< FIX: Return Math.PI / 4 directly for the orbitAngle calculation
+      .mockReturnValueOnce(Math.PI / 4);
 
     // --- Instantiate ---
     const starbase = new Starbase(baseSeed, mockSystemPrng, systemName);

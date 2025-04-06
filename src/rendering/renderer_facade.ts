@@ -137,7 +137,7 @@ export class RendererFacade {
     this.statusBarUpdater.updateStatus(message);
   }
 
-  // --- Basic Drawing Method Delegation --- <<< ADDED SECTION >>>
+  // --- Basic Drawing Method Delegation ---
 
   /**
    * Draws a string horizontally starting at (x, y) onto the buffer.

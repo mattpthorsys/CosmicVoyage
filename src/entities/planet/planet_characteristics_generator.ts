@@ -1,7 +1,6 @@
 // src/generation/planet_characteristics_generator.ts
 
 import { PRNG } from '../../utils/prng';
-import { CONFIG } from '../../config';
 import { PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, MineralRichness } from '../../constants';
 import { logger } from '../../utils/logger';
 import { Atmosphere, AtmosphereComposition } from '../../entities/planet'; // Import types
@@ -142,7 +141,6 @@ function generateAtmosphereComposition(
 
 /** Calculates surface temperature based on various factors. */
 function calculateSurfaceTemp(
-    prng: PRNG,
     planetType: string,
     orbitDistance: number,
     parentStarType: string,
@@ -277,7 +275,7 @@ export function generatePlanetCharacteristics(
     const { diameter, gravity } = generatePhysical(planetPRNG);
     const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, parentStarType, orbitDistance);
     // Note: Temp calculation now correctly uses the generated atmosphere
-    const surfaceTemp = calculateSurfaceTemp(planetPRNG, planetType, orbitDistance, parentStarType, atmosphere);
+    const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere);
     const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere);
     const lithosphere = generateLithosphere(planetPRNG, planetType);
     const mineralRichness = determineMineralRichness(planetPRNG, planetType);

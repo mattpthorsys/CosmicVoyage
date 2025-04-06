@@ -6,7 +6,6 @@ import { Planet } from './planet';
 import { Starbase } from './starbase';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { SPECTRAL_DISTRIBUTION } from '../constants';
 
 // Mock dependencies
 vi.mock('../utils/prng');
@@ -70,7 +69,7 @@ describe('SolarSystem', () => {
         } as any)
     );
     vi.mocked(Starbase).mockImplementation(
-      (baseNameSeed, systemPRNG, systemName) =>
+      (systemName) =>
         ({
           name: `${systemName} Starbase Delta`,
           orbitDistance: CONFIG.STARBASE_ORBIT_DISTANCE,
@@ -107,7 +106,7 @@ describe('SolarSystem', () => {
       .mockReturnValueOnce(0.99) // 1. Starbase chance (fail)
       .mockReturnValueOnce(0.5) // 2. Orbit factor base 1 -> 12500
       .mockReturnValueOnce(0.5) // 3. Orbit factor base 2 -> 1.65
-      .mockReturnValue(0.5); // <<< ADD Default return for subsequent calls
+      .mockReturnValue(0.5); 
 
     const system = new SolarSystem(starX, starY, mockGamePrng);
 
@@ -266,7 +265,7 @@ describe('SolarSystem', () => {
     const mockOrbits = [10000, 50000, null, 120000, null, null, null, null, null]; // Furthest is 120k
     let planetCallCount = 0;
     // Override the default mock implementation for Planet within this test's scope temporarily
-    const planetMock = vi.mocked(Planet).mockImplementation((name, type, orbitDistance) => {
+    const planetMock = vi.mocked(Planet).mockImplementation((name, type) => {
       const currentOrbit = mockOrbits[planetCallCount] ?? 0; // Use defined orbit or 0
       planetCallCount++;
       // Return a shape consistent with what SolarSystem uses (orbitDistance)

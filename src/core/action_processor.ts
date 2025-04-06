@@ -1,6 +1,6 @@
 // src/core/action_processor.ts - Modified processAction
 
-import { GameStateManager, GameState } from './game_state_manager'; // Ensure GameState is imported if needed elsewhere
+import { GameStateManager } from './game_state_manager'; // Ensure GameState is imported if needed elsewhere
 import { Player } from './player';
 import { logger } from '../utils/logger';
 import { MineralRichness } from '../constants';

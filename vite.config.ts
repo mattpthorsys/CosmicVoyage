@@ -13,6 +13,12 @@ export default defineConfig({
   server: {
     // Open the browser automatically when starting the dev server
     open: true,
+    headers: {
+      // Ensure correct MIME types and allow cross-origin (though likely not needed for localhost)
+      'Access-Control-Allow-Origin': '*',
+      'Content-Security-Policy': "default-src 'self'; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';", // Example CSP, adjust as needed
+      // You might try removing or simplifying CSP if it causes issues
+    }
   },
   // Optional: Define aliases matching tsconfig.json paths
   resolve: {

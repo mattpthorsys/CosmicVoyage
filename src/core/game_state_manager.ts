@@ -125,7 +125,7 @@ export class GameStateManager {
 
   /** Attempts to land on a nearby object. Returns the landed object or null on failure. */
   landOnNearbyObject(): Planet | Starbase | null {
-    logger.info(`>>> GameStateManager.landOnNearbyObject called. Player system coords: [${this.player.systemX.toFixed(0)}, ${this.player.systemY.toFixed(0)}]`); // <<< ADD THIS
+    logger.info(`>>> GameStateManager.landOnNearbyObject called. Player system coords: [${this.player.systemX.toFixed(0)}, ${this.player.systemY.toFixed(0)}]`);
     if (!this._currentSystem) {
       logger.warn('[GameStateManager] Land failed: Not in a system.');
       return null;

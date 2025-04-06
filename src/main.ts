@@ -1,5 +1,7 @@
 // src/main.ts
 
+import './assets/fonts/fonts.css';
+
 // Import logger first to ensure logging is available early
 import { logger } from './utils/logger';
 

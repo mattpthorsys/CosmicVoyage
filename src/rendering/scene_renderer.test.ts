@@ -1,6 +1,6 @@
 // src/rendering/scene_renderer.test.ts
 
-import { describe, it, expect, vi, beforeEach, Mock } from 'vitest'; // Keep Mock from vitest
+import { describe, it, expect, vi, beforeEach } from 'vitest'; // Keep Mock from vitest
 import { SceneRenderer } from './scene_renderer';
 import { ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
@@ -11,9 +11,8 @@ import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { GLYPHS, PLANET_TYPES, SPECTRAL_TYPES } from '../constants';
+import { GLYPHS } from '../constants';
 import { fastHash } from '../utils/hash';
-import { logger } from '../utils/logger';
 
 // Mock dependencies
 vi.mock('./screen_buffer');
@@ -146,7 +145,7 @@ describe('SceneRenderer', () => {
     const worldStarX = mockPlayer.worldX + starX - Math.floor(mockCols / 2);
     const worldStarY = mockPlayer.worldY + starY - Math.floor(mockRows / 2);
     // Add explicit 'any' type to 'call' parameter
-    vi.mocked(fastHash).mockImplementation((x, y, seed) => {
+    vi.mocked(fastHash).mockImplementation((x, y) => {
         return (x === worldStarX && y === worldStarY) ? 0 : 1000;
     });
 

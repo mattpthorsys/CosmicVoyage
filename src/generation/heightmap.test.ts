@@ -77,8 +77,6 @@ describe('HeightmapGenerator', () => {
         const generator = new HeightmapGenerator(targetSize, 0.5, testSeed); // Use roughness 0.5
         const map = generator.generate(initialRange);
 
-        let foundMin = false;
-        let foundMax = false;
         const maxLevel = heightLevels - 1;
 
         for (let y = 0; y < generator.size; y++) {
@@ -87,8 +85,6 @@ describe('HeightmapGenerator', () => {
                 expect(value).toBeGreaterThanOrEqual(0);
                 expect(value).toBeLessThanOrEqual(maxLevel);
                 expect(Number.isInteger(value)).toBe(true);
-                if (value === 0) foundMin = true;
-                if (value === maxLevel) foundMax = true;
             }
         }
          // Check if the normalization likely spread values across the range

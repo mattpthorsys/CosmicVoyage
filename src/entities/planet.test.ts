@@ -3,7 +3,7 @@
 // --- Imports ---
 // Ensure this import is present and TS Server is restarted
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Planet, Atmosphere } from './planet';
+import { Planet } from './planet';
 import { PRNG } from '../utils/prng';
 import { HeightmapGenerator } from '../generation/heightmap'; // Keep original import
 import { CONFIG } from '../config';
@@ -21,7 +21,7 @@ const mockGenerateMethod = vi.fn(() => mockMapData);
 // Mock the HeightmapGenerator module using a factory that returns a class
 vi.mock('../generation/heightmap', () => {
     // Define a mock class constructor
-    const MockHeightmapGenerator = vi.fn().mockImplementation((targetSize, roughness, seed) => {
+    const MockHeightmapGenerator = vi.fn().mockImplementation((_targetSize, roughness) => {
         // Mock instance structure
         return {
             size: mockMapData.length,

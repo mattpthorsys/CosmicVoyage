@@ -237,7 +237,7 @@ export class SolarSystem {
         const timeScaledSpeedFactor = deltaTime * CONFIG.SYSTEM_ORBIT_SPEED_FACTOR * 10000;
     
         // --- Update Planets ---
-        this.planets.forEach((planet, index) => {
+        this.planets.forEach((planet) => {
           if (!planet) return;
     
           const safeOrbitDistance = Math.max(1000, planet.orbitDistance); // Ensure positive distance
