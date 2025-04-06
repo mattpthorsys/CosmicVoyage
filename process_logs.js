@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+// to run in Windows:
+// Get-Content console_logs.txt | node .\process_logs.js
+
+// to run in Linux/MacOS:
+// node .\process_logs.js < console_logs.txt
+
 const readline = require('readline');
 
 // Regex to capture the timestamp and the rest of the message.

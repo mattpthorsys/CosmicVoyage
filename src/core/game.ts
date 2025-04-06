@@ -103,26 +103,33 @@ export class Game {
 
   // --- Core Game Loop ---
 
+  // In src/core/game.ts
+
   private _loop(currentTime: DOMHighResTimeStamp): void {
     if (!this.isRunning) return;
-
     const deltaTime = Math.min(0.1, (currentTime - this.lastUpdateTime) / 1000.0);
     this.lastUpdateTime = currentTime;
 
     try {
-      this._processInput(); // Process one action
+      //  THIS LINE IS CRUCIAL <<<
+      this.inputManager.update(); // Clears justPressedActions for the new frame
+
+      this._processInput(); // Process input based on the *new* justPressed state
       this._update(deltaTime); // Update game state
       this._render(); // Draw the current state
     } catch (loopError) {
       logger.error('[Game] !!!! Uncaught Error in Game Loop !!!!', loopError);
       this.statusMessage = `LOOP ERROR: ${loopError instanceof Error ? loopError.message : String(loopError)}`;
-      try { this._updateStatusBar(); } catch { /* ignore */ } // Try to show status
-      // Optional: Trigger log download
-      // logger.downloadLogFile(`cosmic_voyage_log_ERROR_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`);
+      try {
+        this._updateStatusBar();
+      } catch {
+        /* ignore */
+      }
       this.stopGame();
-      return; // Prevent requesting next frame
+      return;
     }
 
+    // Request next frame only if loop didn't error out
     this.animationFrameId = requestAnimationFrame(this._loop.bind(this));
   }
 
@@ -130,7 +137,9 @@ export class Game {
 
   private _processInput(): void {
     const justPressedList = Array.from((this.inputManager as any).justPressedActions).join(', ') || 'None';
-    logger.info(`>>> Game._processInput Tick. State: ${this.stateManager.state}. Just Pressed Actions: [${justPressedList}]`);
+    logger.info(
+      `>>> Game._processInput Tick. State: ${this.stateManager.state}. Just Pressed Actions: [${justPressedList}]`
+    );
 
     let dx = 0;
     let dy = 0;
@@ -148,89 +157,100 @@ export class Game {
 
     // If movement is detected, apply it based on state and modifiers
     if (dx !== 0 || dy !== 0) {
-        // Get the base movement scale
-        let moveScale = CONFIG.SYSTEM_MOVE_INCREMENT;
+      // Get the base movement scale
+      let moveScale = CONFIG.SYSTEM_MOVE_INCREMENT;
 
-        // Apply boost or fine control (prioritize boost? Or make exclusive?)
-        // Current logic: Apply boost OR fine, not both. If both held, use default speed.
-        if (isBoost && !isFine) {
-            moveScale *= CONFIG.BOOST_FACTOR;
-             logger.debug(`[Game:_processInput] Boost applied. Move scale: ${moveScale}`);
-        } else if (isFine && !isBoost) {
-            moveScale *= CONFIG.FINE_CONTROL_FACTOR;
-             logger.debug(`[Game:_processInput] Fine control applied. Move scale: ${moveScale}`);
-        }
+      // Apply boost or fine control (prioritize boost? Or make exclusive?)
+      // Current logic: Apply boost OR fine, not both. If both held, use default speed.
+      if (isBoost && !isFine) {
+        moveScale *= CONFIG.BOOST_FACTOR;
+        logger.debug(`[Game:_processInput] Boost applied. Move scale: ${moveScale}`);
+      } else if (isFine && !isBoost) {
+        moveScale *= CONFIG.FINE_CONTROL_FACTOR;
+        logger.debug(`[Game:_processInput] Fine control applied. Move scale: ${moveScale}`);
+      }
 
-        // Apply movement based on current game state
-         try {
-            switch (this.stateManager.state) {
-                case 'hyperspace':
-                    // Boost/Fine not implemented for hyperspace, uses raw dx/dy
-                    this.player.moveWorld(dx, dy);
-                    break;
-                case 'system':
-                     // Pass the potentially modified moveScale to player.moveSystem
-                    this.player.moveSystem(dx, dy, isFine, moveScale); // Use updated signature
-                    break;
-                case 'planet':
-                    // Boost/Fine typically not used on surface
-                    const planet = this.stateManager.currentPlanet;
-                    if (planet) {
-                        // Ensure surface is ready before getting map size
-                        planet.ensureSurfaceReady();
-                        const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
-                        this.player.moveSurface(dx, dy, mapSize);
-                    } else {
-                         logger.error("[Game:_processInput] In 'planet' state but currentPlanet is null during movement!");
-                         actionStatusMessage = 'Error: Planet data missing!';
-                    }
-                    break;
-                 case 'starbase':
-                     // No movement expected while docked
-                     break;
+      // Apply movement based on current game state
+      try {
+        switch (this.stateManager.state) {
+          case 'hyperspace':
+            // Boost/Fine not implemented for hyperspace, uses raw dx/dy
+            this.player.moveWorld(dx, dy);
+            break;
+          case 'system':
+            // Pass the potentially modified moveScale to player.moveSystem
+            this.player.moveSystem(dx, dy, isFine, moveScale); // Use updated signature
+            break;
+          case 'planet':
+            // Boost/Fine typically not used on surface
+            const planet = this.stateManager.currentPlanet;
+            if (planet) {
+              // Ensure surface is ready before getting map size
+              planet.ensureSurfaceReady();
+              const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
+              this.player.moveSurface(dx, dy, mapSize);
+            } else {
+              logger.error("[Game:_processInput] In 'planet' state but currentPlanet is null during movement!");
+              actionStatusMessage = 'Error: Planet data missing!';
             }
-        } catch (moveError) {
-             logger.error(`[Game:_processInput] Error during player movement in state '${this.stateManager.state}':`, moveError);
-            actionStatusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
-         }
+            break;
+          case 'starbase':
+            // No movement expected while docked
+            break;
+        }
+      } catch (moveError) {
+        logger.error(
+          `[Game:_processInput] Error during player movement in state '${this.stateManager.state}':`,
+          moveError
+        );
+        actionStatusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
+      }
     } // End of movement handling (dx !== 0 || dy !== 0)
 
     // --- Handle Discrete Actions (Trigger only once per press) ---
     // Define the list of actions that should only trigger once per press
     const discreteActions: string[] = [
-         'ENTER_SYSTEM', 'LEAVE_SYSTEM', 'LAND', 'LIFTOFF',
-         'SCAN', 'MINE', 'TRADE', 'REFUEL', 'DOWNLOAD_LOG', 'QUIT'
-         // Add any other non-movement actions here
+      'ENTER_SYSTEM',
+      'LEAVE_SYSTEM',
+      'LAND',
+      'LIFTOFF',
+      'SCAN',
+      'MINE',
+      'TRADE',
+      'REFUEL',
+      'DOWNLOAD_LOG',
+      'QUIT',
+      // Add any other non-movement actions here
     ];
 
     // Check each discrete action to see if it was just pressed
     for (const action of discreteActions) {
-         if (this.inputManager.wasActionJustPressed(action)) {
-            logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
-            if (action === 'DOWNLOAD_LOG') {
-              logger.info("--- DOWNLOAD_LOG action detected by wasActionJustPressed! ---");
-            }
-             // Use ActionProcessor to handle the logic and potential state changes
-             const status = this.actionProcessor.processAction(action);
-             // Store the status message returned by the processor
-             // This allows discrete actions to provide immediate feedback
-             if (status) {
-                 actionStatusMessage = status;
-             }
-             // Optional: If you want only ONE discrete action per frame, uncomment the break
-             // break;
-         }
+      if (this.inputManager.wasActionJustPressed(action)) {
+        logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
+        if (action === 'DOWNLOAD_LOG') {
+          logger.info('--- DOWNLOAD_LOG action detected by wasActionJustPressed! ---');
+        }
+        // Use ActionProcessor to handle the logic and potential state changes
+        const status = this.actionProcessor.processAction(action);
+        // Store the status message returned by the processor
+        // This allows discrete actions to provide immediate feedback
+        if (status) {
+          actionStatusMessage = status;
+        }
+        // Optional: If you want only ONE discrete action per frame, uncomment the break
+        // break;
+      }
     }
 
     // Update the game's primary status message ONLY if a discrete action
     // provided specific feedback in this frame. Otherwise, the status
     // will be set by the _update method based on the current state.
-     if (actionStatusMessage) {
-         this.statusMessage = actionStatusMessage;
-         // Force an update to the status bar display *now* if needed,
-         // otherwise _updateStatusBar in _update will handle it.
-         // this._updateStatusBar(); // Uncomment if immediate status update is desired
-     }
+    if (actionStatusMessage) {
+      this.statusMessage = actionStatusMessage;
+      // Force an update to the status bar display *now* if needed,
+      // otherwise _updateStatusBar in _update will handle it.
+      // this._updateStatusBar(); // Uncomment if immediate status update is desired
+    }
   }
   // --- Game State Update ---
 
@@ -297,11 +317,15 @@ export class Game {
 
     // Find nearby object for status message context
     const nearbyObject = system.getObjectNear(this.player.systemX, this.player.systemY);
-    let status = `System: ${system.name}(${system.starType}) | Pos: ${this.player.systemX.toFixed(0)},${this.player.systemY.toFixed(0)}`;
+    let status = `System: ${system.name}(${system.starType}) | Pos: ${this.player.systemX.toFixed(
+      0
+    )},${this.player.systemY.toFixed(0)}`;
 
     if (nearbyObject) {
       const dist = Math.sqrt(this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY));
-      status += ` | Near ${nearbyObject.name} (${dist.toFixed(0)} units). Press [${CONFIG.KEY_BINDINGS.LAND.toUpperCase()}] to land.`;
+      status += ` | Near ${nearbyObject.name} (${dist.toFixed(
+        0
+      )} units). Press [${CONFIG.KEY_BINDINGS.LAND.toUpperCase()}] to land.`;
     }
 
     // Check if near edge
@@ -321,9 +345,13 @@ export class Game {
       return 'Planet Error: Data missing. Returned to hyperspace.';
     }
 
-    let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.surfaceX},${this.player.surfaceY} | Press [${CONFIG.KEY_BINDINGS.LIFTOFF.toUpperCase()}] to liftoff.`;
+    let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.surfaceX},${
+      this.player.surfaceY
+    } | Press [${CONFIG.KEY_BINDINGS.LIFTOFF.toUpperCase()}] to liftoff.`;
     if (planet.scanned) {
-      status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness}), Grav: ${planet.gravity.toFixed(2)}g`;
+      status += ` | Scan: ${planet.primaryResource || 'N/A'} (${
+        planet.mineralRichness
+      }), Grav: ${planet.gravity.toFixed(2)}g`;
       if (planet.mineralRichness !== MineralRichness.NONE && planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
         status += ` | Press [${CONFIG.KEY_BINDINGS.MINE.toUpperCase()}] to mine.`;
       }
@@ -335,12 +363,14 @@ export class Game {
 
   private _updateStarbase(_deltaTime: number): string {
     const starbase = this.stateManager.currentStarbase;
-     if (!starbase) {
+    if (!starbase) {
       logger.error('[Game:_updateStarbase] CurrentStarbase is null! Forcing state to hyperspace.');
       this.stateManager.leaveSystem(); // Attempt graceful transition back
       return 'Starbase Error: Data missing. Returned to hyperspace.';
     }
-    return `Docked: ${starbase.name} | Options: [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade, [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel, [${CONFIG.KEY_BINDINGS.LIFTOFF.toUpperCase()}] Liftoff.`;
+    return `Docked: ${
+      starbase.name
+    } | Options: [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade, [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel, [${CONFIG.KEY_BINDINGS.LIFTOFF.toUpperCase()}] Liftoff.`;
   }
 
   // --- Rendering ---
@@ -378,7 +408,11 @@ export class Game {
       logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, error);
       this.stopGame();
       this._renderError(`FATAL RENDER ERROR: ${error instanceof Error ? error.message : String(error)}. Refresh.`);
-      try { this.renderer.renderDiff(); } catch { /* ignore */ } // Attempt to show error
+      try {
+        this.renderer.renderDiff();
+      } catch {
+        /* ignore */
+      } // Attempt to show error
     }
   }
 
@@ -399,5 +433,4 @@ export class Game {
     }/${this.player.cargoCapacity} | Cr: ${this.player.credits}`;
     this.renderer.updateStatus(this.statusMessage + commonStatus);
   }
-
 } // End of Game class

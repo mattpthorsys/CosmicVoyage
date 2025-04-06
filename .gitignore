@@ -2,3 +2,4 @@ node_modules/
 dist/
 errors.txt
 combined_code.txt
+console_logs.txt
