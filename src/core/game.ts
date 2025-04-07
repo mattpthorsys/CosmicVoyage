@@ -51,6 +51,14 @@ export class Game {
     );
   }
 
+  public getGameState(): string {
+    return this.stateManager.state;
+  }
+
+  public checkIfRunning(): boolean {
+    return this.isRunning;
+  }
+
   // --- Game Loop Control ---
 
   startGame(): void {

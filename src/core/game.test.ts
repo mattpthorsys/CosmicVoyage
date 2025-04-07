@@ -87,14 +87,14 @@ const createMockStarbase = (name = 'MockStarbase'): MockStarbase => {
 
     // 2. Instantiate real Starbase
     // Note: Constructor calls ensureSurfaceReady internally
-    const realStarbase = new Starbase(name, mockStarbasePrng, 'ContainingSystem');
+    const realStarbase = new ExtendedStarbase(name, mockStarbasePrng, 'ContainingSystem');
 
     // 3. Overwrite methods with mocks (ensureSurfaceReady was called by constructor, overwrite it again if needed)
     realStarbase.ensureSurfaceReady = vi.fn(); // Overwrite with a fresh mock if constructor side effects matter
     realStarbase.getScanInfo = vi.fn().mockReturnValue(['Mock Starbase Info']);
 
     // 4. Add helper property
-    (realStarbase as any)._mockType = 'Starbase';
+    realStarbase._mockType = 'Starbase';
 
     // 5. Return modified instance
     return realStarbase as unknown as MockStarbase;
@@ -125,7 +125,7 @@ const createMockPlanet = (name = 'MockPlanet', type = 'Rock'): MockPlanet => {
     const mockPlanetPrng = createMockPrng(`planet_${name}_seed`) as unknown as PRNG;
 
     // 2. Instantiate the *real* Planet
-    const realPlanet = new Planet(name, type, 10000, 0, mockPlanetPrng, 'G');
+    const realPlanet = new ExtendedPlanet(name, type, 10000, 0, mockPlanetPrng, 'G');
 
     // 3. Overwrite methods with vi.fn() mocks ON THE INSTANCE
     realPlanet.ensureSurfaceReady = vi.fn();
@@ -134,7 +134,7 @@ const createMockPlanet = (name = 'MockPlanet', type = 'Rock'): MockPlanet => {
     // Add mocks for any other public Planet methods Game might call here...
 
     // 4. Add _mockType helper property
-    (realPlanet as any)._mockType = 'Planet';
+    realPlanet._mockType = 'Planet';
 
     // 5. Return the modified real instance, cast to the intersection type
     return realPlanet as unknown as MockPlanet; // Using stronger assertion
@@ -181,20 +181,20 @@ describe('Game', () => {
     });
 
     it('constructor should initialize dependencies and set initial state', () => {
-        const game = new Game('fakeCanvas', 'fakeStatus', 'constructor-seed');
+        const game = new ExtendedGame('fakeCanvas', 'fakeStatus', 'constructor-seed');
         expect(PRNG).toHaveBeenCalledWith('constructor-seed');
         expect(RendererFacade).toHaveBeenCalledWith('fakeCanvas', 'fakeStatus');
         expect(Player).toHaveBeenCalledOnce();
         expect(mockRendererInstance.fitToScreen).toHaveBeenCalled();
-        expect((game as any).state).toBe('hyperspace');
+        expect(game.getGameState()).toBe('hyperspace');
     });
 
     it('startGame should set isRunning and request animation frame', () => {
-        const game = new Game('c', 's');
+        const game = new ExtendedGame('c', 's', 'constructor-seed');
         const updateSpy = vi.spyOn(game as any, '_update').mockImplementation(()=>{});
         const updateStatusSpy = vi.spyOn(game as any, '_updateStatusBar');
         game.startGame();
-        expect((game as any).isRunning).toBe(true);
+        expect(game.checkIfRunning()).toBe(true);
         expect(window.requestAnimationFrame).toHaveBeenCalledWith(expect.any(Function));
         expect(updateSpy).toHaveBeenCalledOnce();
         expect(updateStatusSpy).toHaveBeenCalledOnce();
@@ -345,3 +345,39 @@ describe('Game', () => {
     });
     // ... rest of tests ...
 });
+
+
+// extended classes for testing purposes
+
+class ExtendedStarbase extends Starbase {
+    public _mockType: string | undefined;
+
+    constructor(name: string, prng: PRNG, containingSystem: string) {
+        super(name, prng, containingSystem);
+        this._mockType = 'Starbase';
+    }
+
+    // Add any additional methods or properties needed for testing
+}
+
+class ExtendedPlanet extends Planet {
+    public _mockType: string | undefined;
+
+    constructor(name: string, type: string, size: number, orbit: number, prng: PRNG, starType: string) {
+        super(name, type, size, orbit, prng, starType);
+        this._mockType = 'Planet';
+    }
+
+    // Add any additional methods or properties needed for testing
+}
+
+class ExtendedGame extends Game {
+    public _mockType: string | undefined;
+
+    constructor(canvasId: string, statusId: string, seed: string) {
+        super(canvasId, statusId, seed);
+        this._mockType = 'Game';
+    }
+
+    // Add any additional methods or properties needed for testing
+}
