@@ -355,12 +355,22 @@ export class Game {
     const hash = fastHash(this.player.worldX, this.player.worldY, baseSeedInt);
     const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
 
-    const baseStatus = `Hyperspace | Loc: ${this.player.worldX},${this.player.worldY}`;
+    const baseStatus = `Hyperspace | Loc: ${this.player.worldX},${this.player.worldY}`;    
+    
     if (isNearStar) {
-      return `${baseStatus} | Near star system. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
-    } else {
-      return baseStatus;
-    }
+      const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
+
+      if (peekedSystem) {
+        const hasStarbase = peekedSystem.starbase;
+        const starbaseText = hasStarbase ? ' (Starbase)' : '';
+        return `${baseStatus} | ${peekedSystem.name}${starbaseText}. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
+      } else {
+        return `${baseStatus} | Near star system. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
+      }
+    } 
+    
+    return baseStatus;
+    
   }
 
   private _updateSystem(deltaTime: number): string {
@@ -505,6 +515,7 @@ export class Game {
     // Combine the state-specific message with common player stats
     const commonStatus = ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${this.player.mineralUnits
       }/${this.player.cargoCapacity} | Cr: ${this.player.credits}`;
-    this.renderer.updateStatus(this.statusMessage + commonStatus);
+    const hasStarbase = this.stateManager.state === 'starbase';
+    this.renderer.updateStatus(this.statusMessage + commonStatus, hasStarbase);
   }
 } // End of Game class

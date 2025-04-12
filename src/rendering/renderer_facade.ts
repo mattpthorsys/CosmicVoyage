@@ -132,9 +132,9 @@ export class RendererFacade {
     this.screenBuffer.renderDiff();
   }
 
-  /** Updates the text content of the status bar element. */
-  updateStatus(message: string): void {
-    this.statusBarUpdater.updateStatus(message);
+  /** Updates the text content of the status bar element.  */
+  updateStatus(message: string, hasStarbase: boolean): void {
+    this.statusBarUpdater.updateStatus(message, hasStarbase);
   }
 
   // --- Basic Drawing Method Delegation ---

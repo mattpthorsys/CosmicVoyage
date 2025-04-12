@@ -78,17 +78,12 @@ export class StatusBarUpdater {
       return;
     }
 
-    const maxChars = this.statusBarMaxChars > 0 ? this.statusBarMaxChars : 240;
-    const truncatedMessage =
-      (message + (hasStarbase ? ' (STARBASE)' : '')).length > maxChars
-        ? (message + (hasStarbase ? ' (STARBASE)' : '')).substring(0, maxChars - 3) +
-          '...'
-        : message + (hasStarbase ? ' (STARBASE)' : '');
+    let updatedMessage = message;
+    if (hasStarbase) {
+      updatedMessage += ' (STARBASE)';
+    }
 
     // Update DOM only if text content has actually changed to avoid unnecessary reflows
-    if (this.statusBarElement.textContent !== truncatedMessage) {
-      // logger.debug(`[StatusBarUpdater.updateStatus] Updating status bar text (truncated: ${message.length > maxChars}).`); // Noisy
-      this.statusBarElement.textContent = truncatedMessage;
-    }
+    this.statusBarElement.textContent = updatedMessage;
   }
 }

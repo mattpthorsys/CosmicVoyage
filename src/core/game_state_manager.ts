@@ -19,6 +19,7 @@ export class GameStateManager {
   private _currentSystem: SolarSystem | null = null;
   private _currentPlanet: Planet | null = null;
   private _currentStarbase: Starbase | null = null;
+  private peekedSystem: SolarSystem | null = null;
 
   /** Holds the latest status message for the game state manager. */
   public statusMessage: string = '';
@@ -230,5 +231,38 @@ export class GameStateManager {
     logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Lifted off from ${liftedFromName})`);
     this.onStateChange(); // Call the callback
     return true;
+  }
+
+  /**
+   * Checks if a system exists at the given world coordinates and returns a
+   * temporary SolarSystem object with basic information if it does.
+   */
+  peekAtSystem(worldX: number, worldY: number): SolarSystem | null {
+    logger.debug(`[GameStateManager] Peeking at system at: ${worldX}, ${worldY}`);
+
+    const baseSeedInt = this.gameSeedPRNG.seed;
+    const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
+    const hash = fastHash(worldX, worldY, baseSeedInt);
+    const isStarCell = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
+
+    if (!isStarCell) {
+      logger.debug(`[GameStateManager] No star found at: ${worldX}, ${worldY}`);
+      return null;
+    }
+
+    try {
+      // Create a temporary system for peeking
+      const tempSystem = new SolarSystem(worldX, worldY, this.gameSeedPRNG);
+      logger.debug(`[GameStateManager] Peeked at system: ${tempSystem.name} (${tempSystem.starType})`);
+      return tempSystem;
+    } catch (error) {
+      logger.error(`[GameStateManager] Error peeking at system at ${worldX}, ${worldY}:`, error);
+      return null;
+    }
+  }
+
+  /** Attempts to leave the current system. Returns true on success, false otherwise. */
+  resetPeekedSystem() {
+    this.peekedSystem = null;
   }
 }
