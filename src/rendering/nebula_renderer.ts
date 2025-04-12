@@ -94,7 +94,10 @@ export class NebulaRenderer {
         return Math.max(0, 1 - scaledNoise * (1 / (1 - adjustedSparsity)));
       };
 
-      const alpha = gradient(maskNoiseVal, CONFIG.NEBULA_SPARSITY);
+      let alpha = gradient(maskNoiseVal, CONFIG.NEBULA_SPARSITY);
+
+      // Apply nebula intensity adjustment
+      alpha = Math.min(1, alpha * CONFIG.NEBULA_INTENSITY);
 
       if (alpha < 1) {
         // Interpolate between nebula color and black based on alpha
