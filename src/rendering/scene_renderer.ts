@@ -188,11 +188,12 @@ export class SceneRenderer {
       return;
     }
 
-    // Draw border and clear background
+    // Draw border
     this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', null);
     for (let y = 0; y < mapHeight; ++y) {
       for (let x = 0; x < mapWidth; ++x) {
-        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, this.screenBuffer.getDefaultBgColor());
+        // Changed to use opaque background clear
+        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOR);
       }
     }
 
@@ -206,32 +207,51 @@ export class SceneRenderer {
       return null;
     };
 
-    // Draw star
-    const starPos = worldToMinimap(0, 0);
-    if (starPos) {
-      const starInfo = SPECTRAL_TYPES[system.starType];
-      this.screenBuffer.drawChar(starInfo?.char || '*', starPos.x, starPos.y, starInfo?.color || '#FFFFFF', null);
+    // 1. Clear the background
+    for (let y = 0; y < mapHeight; ++y) {
+      for (let x = 0; x < mapWidth; ++x) {
+        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOR);
+      }
     }
-    // Draw planets
+
+    // 2. Draw Planets (with black opaque background)
     system.planets.forEach(p => {
       if (!p) return;
       const planetPos = worldToMinimap(p.systemX, p.systemY);
       if (planetPos) {
+        // Use size to determine the planet icon
+        let planetIcon = '.';
+        if (PLANET_TYPES[p.type].size >= 20) planetIcon = 'O';
+        else if (PLANET_TYPES[p.type].size >= 10) planetIcon = 'o';
         const planetColor = PLANET_TYPES[p.type]?.colors[4] || '#CCCCCC';
-        this.screenBuffer.drawChar(GLYPHS.PLANET_ICON, planetPos.x, planetPos.y, planetColor, null);
+        // Opaque black background for planets
+        this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOR);
       }
     });
-    // Draw starbase
+
+    // 3. Draw Star (with black opaque background) - always centered
+    const starPos = worldToMinimap(0, 0);
+    if (starPos) {
+      const starInfo = SPECTRAL_TYPES[system.starType];
+      const starColor = starInfo?.color || '#FFFFFF';
+      // Opaque black background for the star
+      this.screenBuffer.drawChar('*', starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOR);
+    }
+
+    // 4. Draw starbase (if exists, with transparent background)
     if (system.starbase) {
       const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
       if (sbPos) {
-        this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOR, null);
+        // Transparent background for starbase
+        this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOR, null); 
       }
     }
-    // Draw player
+
+    // 5. Draw player (with transparent background)
     const playerPos = worldToMinimap(player.systemX, player.systemY);
     if (playerPos) {
-      this.screenBuffer.drawChar(CONFIG.PLAYER_CHAR, playerPos.x, playerPos.y, CONFIG.PLAYER_COLOR, null);
+      // Transparent background for player
+      this.screenBuffer.drawChar(CONFIG.PLAYER_CHAR, playerPos.x, playerPos.y, CONFIG.PLAYER_COLOR, null); 
     }
   }
 
