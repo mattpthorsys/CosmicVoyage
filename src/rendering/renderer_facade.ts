@@ -1,11 +1,10 @@
 /* FILE: src/rendering/renderer_facade.ts */
-// src/rendering/renderer_facade.ts
+// src/rendering/renderer_facade.ts (Removed Overlay Buffer)
 
 import { ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
 import { SceneRenderer } from './scene_renderer';
-// Note: Using the aliased import name provided in your code
 import { StatusBarUpdater as ImportedStatusBarUpdater } from './status_bar_updater';
 import { Player } from '../core/player';
 import { SolarSystem } from '../entities/solar_system';
@@ -25,14 +24,15 @@ export class RendererFacade {
   private ctx: CanvasRenderingContext2D;
   private screenBuffer: ScreenBuffer; // Main buffer
   private backgroundScreenBuffer: ScreenBuffer; // Star background buffer
+  // REMOVED: private overlayScreenBuffer: ScreenBuffer;
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private sceneRenderer: SceneRenderer;
-  private statusBarUpdater: ImportedStatusBarUpdater; // Using the imported alias
+  private statusBarUpdater: ImportedStatusBarUpdater;
 
+  // Removed createTransparentBuffers parameter as overlay is gone
   constructor(canvasId: string, statusBarId: string) {
-    logger.info('[RendererFacade] Constructing...');
-    // --- Get DOM Elements ---
+    logger.info('[RendererFacade] Constructing instance...');
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
 
@@ -46,7 +46,7 @@ export class RendererFacade {
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
-    // Use alpha: true to allow blending between layers if needed
+    // Ensure alpha is true for potential future transparency needs (like hyperspace stars)
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) {
       const msg = 'Failed to get 2D rendering context from canvas.';
@@ -56,21 +56,24 @@ export class RendererFacade {
 
     this.canvas = canvas;
     this.ctx = ctx;
-    // --- Instantiate Rendering Components ---
+    // Instantiate Buffers
     this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false); // Main buffer (solid default bg)
-    this.backgroundScreenBuffer = new ScreenBuffer(this.canvas, this.ctx, true); // Background buffer (transparent default bg)
-    this.drawingContext = new DrawingContext(this.screenBuffer); // Drawing context targets main buffer
+    this.backgroundScreenBuffer = new ScreenBuffer(this.canvas, this.ctx, true); // Background buffer (transparent default)
+    // REMOVED: Overlay buffer instantiation
+
+    // Instantiate other components
+    this.drawingContext = new DrawingContext(this.screenBuffer); // Targets main buffer
     this.nebulaRenderer = new NebulaRenderer();
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement);
-    // SceneRenderer needs the main buffer/context
+    // SceneRenderer only needs main buffer components now
     this.sceneRenderer = new SceneRenderer(
       this.screenBuffer,
       this.drawingContext,
       this.nebulaRenderer
+      // REMOVED: overlayScreenBuffer argument
     );
     logger.info('[RendererFacade] All components instantiated.');
 
-    // Perform initial screen fit
     this.fitToScreen();
     logger.info('[RendererFacade] Construction complete.');
   }
@@ -91,9 +94,10 @@ export class RendererFacade {
     this.canvas.width = cols * charWidthPx;
     this.canvas.height = rows * charHeightPx;
 
-    // Update BOTH buffers
+    // Update buffers that still exist
     this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
     this.backgroundScreenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
+    // REMOVED: overlayScreenBuffer.updateDimensions(...)
 
     this.statusBarUpdater.updateMaxChars(charWidthPx, charHeightPx);
 
@@ -105,7 +109,9 @@ export class RendererFacade {
     )}px`;
 
     this.nebulaRenderer.clearCache();
-    this.backgroundScreenBuffer.clear(false); // Reset internal state only
+    this.backgroundScreenBuffer.clear(false);
+    this.screenBuffer.clear(false);
+    // REMOVED: overlayScreenBuffer.clear(false);
     logger.info(
       `[RendererFacade.fitToScreen] Resized complete. Grid: ${cols}x${rows}`
     );
@@ -113,13 +119,11 @@ export class RendererFacade {
 
   /**
    * Resets internal buffers and optionally clears the physical canvas.
-   * MODIFIED: Calls clear on both buffers.
    */
   clear(physicalClear: boolean = true): void {
-    // The first clear handles the physical canvas clearing if physicalClear is true
     this.screenBuffer.clear(physicalClear);
-    // The second clear only needs to reset internal state, so pass false
     this.backgroundScreenBuffer.clear(false);
+    // REMOVED: overlayScreenBuffer.clear(false);
   }
 
 
@@ -134,17 +138,17 @@ export class RendererFacade {
   }
 
   /**
-   * ADDED: Renders the entire content of the specified buffer.
-   * @param isBackground If true, renders the background buffer, otherwise the main buffer.
+   * Renders the entire content of the specified buffer.
    */
-  renderBufferFull(isBackground: boolean = false): void {
-    if (isBackground) {
-      this.backgroundScreenBuffer.renderFull();
-    } else {
-      this.screenBuffer.renderFull();
+    renderBufferFull(isBackground: boolean = false): void {
+        if (isBackground) {
+            this.backgroundScreenBuffer.renderFull();
+        } else {
+            this.screenBuffer.renderFull();
+        }
     }
-  }
 
+    // REMOVED: renderOverlayFull() method
 
   /** Updates the text content of the status bar element. */
   updateStatus(message: string, hasStarbase: boolean): void {
@@ -159,29 +163,20 @@ export class RendererFacade {
     fgColor?: string | null,
     bgColor?: string | null
   ): void {
-    // Default background for drawString on main buffer should be the buffer's default (likely black)
     this.screenBuffer.drawString(text, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
   }
 
   // --- Scene Drawing Method Delegation ---
-
   drawHyperspace(player: Player, gameSeedPRNG: PRNG): void {
     this.sceneRenderer.drawHyperspace(player, gameSeedPRNG);
   }
-
   drawSolarSystem(player: Player, system: SolarSystem): void {
-    // This draws to the main screenBuffer via sceneRenderer
     this.sceneRenderer.drawSolarSystem(player, system);
   }
-
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
-     // This draws to the main screenBuffer via sceneRenderer
     this.sceneRenderer.drawPlanetSurface(player, landedObject);
   }
-
   drawStarBackground(player: Player): void {
-    // Pass the background buffer instance to the scene renderer method
-    // This populates the backgroundScreenBuffer.newBuffer
     this.sceneRenderer.drawStarBackground(player, this.backgroundScreenBuffer);
   }
 }

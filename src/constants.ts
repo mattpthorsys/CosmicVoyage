@@ -80,3 +80,55 @@ export const ATMOSPHERE_GASES: string[] = [
     'Water Vapor', 'Methane', 'Ammonia', 'Neon', 'Xenon', 'Carbon Monoxide',
     'Ethane', 'Chlorine', 'Fluorine', 'Sulfur Dioxide'
 ];
+
+// Interface for element properties
+export interface ElementInfo {
+    name: string;
+    symbol: string; // Short symbol (e.g., Fe, Si, H2O)
+    description: string; // Brief description
+    baseValue: number; // Base credits per unit
+    baseFrequency: number; // General rarity (e.g., 1.0 = common, 0.1 = rare, 0.01 = very rare)
+    // Optional: Add typeAffinity later: Record<string, number> // e.g., { Rock: 1.5, Molten: 0.8 } - Multiplier for frequency based on planet type
+}
+
+// Define elements relevant to mining
+export const ELEMENTS: Record<string, ElementInfo> = {
+    // --- Abundant Base & Industrial Metals ---
+    'IRON': { name: 'Iron', symbol: 'Fe', description: 'Core industrial metal for steel production.', baseValue: 3, baseFrequency: 1.0 },
+    'ALUMINIUM': { name: 'Aluminium', symbol: 'Al', description: 'Lightweight, corrosion-resistant metal (requires significant energy to refine).', baseValue: 4, baseFrequency: 0.8 },
+    'SILICON': { name: 'Silicon', symbol: 'Si', description: 'Basis of rock (silicates) and crucial for semiconductors.', baseValue: 2, baseFrequency: 1.0 },
+    'TITANIUM': { name: 'Titanium', symbol: 'Ti', description: 'Strong, light, corrosion-resistant metal for aerospace and high-tech.', baseValue: 10, baseFrequency: 0.3 },
+    'MAGNESIUM': { name: 'Magnesium', symbol: 'Mg', description: 'Very lightweight structural metal, often alloyed.', baseValue: 5, baseFrequency: 0.6 },
+    'COPPER': { name: 'Copper', symbol: 'Cu', description: 'Excellent electrical conductor.', baseValue: 7, baseFrequency: 0.5 },
+    'ZINC': { name: 'Zinc', symbol: 'Zn', description: 'Used for galvanizing steel and in alloys like brass.', baseValue: 6, baseFrequency: 0.45 },
+    'LEAD': { name: 'Lead', symbol: 'Pb', description: 'Dense metal used in batteries and radiation shielding.', baseValue: 5, baseFrequency: 0.4 },
+    'NICKEL': { name: 'Nickel', symbol: 'Ni', description: 'Key component in stainless steel and batteries.', baseValue: 8, baseFrequency: 0.35 },
+    'TIN': { name: 'Tin', symbol: 'Sn', description: 'Used in solder and corrosion-resistant coatings.', baseValue: 9, baseFrequency: 0.3 },
+
+    // --- Precious & Noble Metals ---
+    'GOLD': { name: 'Gold', symbol: 'Au', description: 'Highly valuable, inert precious metal.', baseValue: 100, baseFrequency: 0.01 },
+    'SILVER': { name: 'Silver', symbol: 'Ag', description: 'Precious metal with excellent conductivity.', baseValue: 20, baseFrequency: 0.05 },
+    'PLATINUM': { name: 'Platinum', symbol: 'Pt', description: 'Rare, valuable catalytic and jewelry metal.', baseValue: 80, baseFrequency: 0.008 },
+    'PALLADIUM': { name: 'Palladium', symbol: 'Pd', description: 'Platinum-group metal used in catalysts and electronics.', baseValue: 70, baseFrequency: 0.007 },
+    'RHODIUM': { name: 'Rhodium', symbol: 'Rh', description: 'Extremely rare, hard, silvery-white platinum-group metal.', baseValue: 150, baseFrequency: 0.001 },
+
+    // --- Tech & Energy Metals ---
+    'LITHIUM': { name: 'Lithium', symbol: 'Li', description: 'Light alkali metal crucial for modern batteries.', baseValue: 15, baseFrequency: 0.15 },
+    'COBALT': { name: 'Cobalt', symbol: 'Co', description: 'Used in high-performance alloys and battery cathodes.', baseValue: 25, baseFrequency: 0.1 },
+    'TUNGSTEN': { name: 'Tungsten', symbol: 'W', description: 'Metal with very high melting point, used in filaments and alloys.', baseValue: 18, baseFrequency: 0.12 },
+    'URANIUM': { name: 'Uranium', symbol: 'U', description: 'Heavy radioactive metal used for nuclear fuel.', baseValue: 40, baseFrequency: 0.03 },
+    'THORIUM': { name: 'Thorium', symbol: 'Th', description: 'Radioactive metal, potential alternative nuclear fuel.', baseValue: 30, baseFrequency: 0.04 },
+    'NEODYMIUM': { name: 'Neodymium', symbol: 'Nd', description: 'Rare earth element vital for strong magnets.', baseValue: 50, baseFrequency: 0.02 },
+    'DYSPROSIUM': { name: 'Dysprosium', symbol: 'Dy', description: 'Rare earth element used in high-performance magnets at high temps.', baseValue: 60, baseFrequency: 0.015 },
+    'GALLIUM': { name: 'Gallium', symbol: 'Ga', description: 'Metal used in semiconductors and alloys with low melting points.', baseValue: 35, baseFrequency: 0.05 },
+    'GERMANIUM': { name: 'Germanium', symbol: 'Ge', description: 'Metalloid used in fiber optics and infrared optics.', baseValue: 45, baseFrequency: 0.04 },
+    'INDIUM': { name: 'Indium', symbol: 'In', description: 'Soft metal used for coatings and transparent electrodes (like in LCDs).', baseValue: 65, baseFrequency: 0.01 },
+
+    // --- Non-Metals & Others ---
+    'SULFUR': { name: 'Sulfur', symbol: 'S', description: 'Essential non-metal used in chemical production (e.g., sulfuric acid).', baseValue: 4, baseFrequency: 0.5 },
+    'PHOSPHORUS': { name: 'Phosphorus', symbol: 'P', description: 'Non-metal essential for life (found in phosphates), used in fertilizers.', baseValue: 3, baseFrequency: 0.4 },
+    'POTASSIUM': { name: 'Potassium', symbol: 'K', description: 'Alkali metal (often mined as potash) used in fertilizers.', baseValue: 3, baseFrequency: 0.7 },
+    'HELIUM': { name: 'Helium', symbol: 'He', description: 'Inert gas found in natural gas deposits, used in cryogenics.', baseValue: 12, baseFrequency: 0.1 }, // Usually extracted, not mined directly
+    'BORON': { name: 'Boron', symbol: 'B', description: 'Metalloid used in glass (borosilicate) and high-strength materials.', baseValue: 14, baseFrequency: 0.08 },
+
+};
