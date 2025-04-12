@@ -165,7 +165,7 @@ export class ScreenBuffer {
     x: number,
     y: number,
     fgColor: string | null = this.defaultFgColor,
-    bgColor: string | null = this.defaultBgColor // null BG means transparent
+    bgColor: string | null = null // null BG means transparent
   ): void {
     x = Math.floor(x);
     y = Math.floor(y);
@@ -184,10 +184,9 @@ export class ScreenBuffer {
       return;
     }
 
-    const isTransparent = bgColor === null;
+    const isTransparent = bgColor ? false : true;
 
-    // todo: there is a problem with assigning a transparent background - for now we'll use the default background colour
-    const finalBgColor = isTransparent ? CONFIG.DEFAULT_BG_COLOUR : bgColor || this.defaultBgColor;
+    const finalBgColor = isTransparent ? CONFIG.TRANSPARENT_COLOUR : bgColor || this.defaultBgColor;
 
     this.newBuffer[index] = {
       char: char || ' ', // Use space if char is null

@@ -95,5 +95,5 @@ export const CONFIG = {
     ORBIT_COLOUR_MAIN: '#777777',
     ORBIT_COLOUR_MINIMAP: '#444444',
     STARBASE_COLOUR: '#00FFFF', // Colour for starbase icon, orbit, interior highlight
-    TRANSPARENT_COLOUR: '#00FFFFFF'
+    TRANSPARENT_COLOUR: '#FFFFFF00'
 };
