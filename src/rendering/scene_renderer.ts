@@ -388,16 +388,16 @@ export class SceneRenderer {
       `[SceneRenderer.drawStarbaseInterior] Drawing interior: ${starbase.name}`
     );
     const cols = this.screenBuffer.getCols();
-    const rows = this.screenBuffer.getRows();
+    const rows = this.screenBuffer.getRows();    
 
     // Draw background box
-    this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOR, null, ' ', null, '#111111');
+    this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOR, '#000000', ' ');
 
     // Draw text elements
-    this.screenBuffer.drawString('== Starbase Docking Bay ==', 5, 3, CONFIG.STARBASE_COLOR, null);
-    this.screenBuffer.drawString('Services:', 5, 6, CONFIG.DEFAULT_FG_COLOR, null);
+    this.screenBuffer.drawString('== Starbase Docking Bay ==', 5, 3, CONFIG.STARBASE_COLOR, '#000000');
+    this.screenBuffer.drawString('Services:', 5, 6, CONFIG.DEFAULT_FG_COLOR, '#000000');
     this.screenBuffer.drawString(
-      `- [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade Commodities`, 7, 8, CONFIG.DEFAULT_FG_COLOR, null
+      `- [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade Commodities`, 7, 8, CONFIG.DEFAULT_FG_COLOR, '#000000'
     );
     this.screenBuffer.drawString(
       `- [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel Ship`, 7, 9, CONFIG.DEFAULT_FG_COLOR, null

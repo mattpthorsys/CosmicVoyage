@@ -82,7 +82,7 @@ export const CONFIG = {
     MAX_PLANETS_PER_SYSTEM: 9,
     PLANET_MAIN_VIEW_RADIUS: 3, // Character radius for planets/starbases in main view
     MINIMAP_SIZE_FACTOR: 0.15, // Fraction of screen width for minimap
-    STARBASE_PROBABILITY: 0.03, // Chance a system has a starbase
+    STARBASE_PROBABILITY: 0.2, // Chance a system has a starbase
     STARBASE_ORBIT_DISTANCE: 75000, // Base orbit distance for starbases
 
     // --- Colours --- (Using Australian spelling based on user preference)

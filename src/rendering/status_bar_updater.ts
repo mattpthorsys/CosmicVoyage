@@ -70,7 +70,7 @@ export class StatusBarUpdater {
   }
 
   /** Updates the text content of the status bar element, handling truncation. */
-  updateStatus(message: string): void {
+  updateStatus(message: string, hasStarbase: boolean): void {
     if (!this.statusBarElement) {
       logger.warn(
         '[StatusBarUpdater.updateStatus] Called but statusBarElement is missing.'
@@ -80,9 +80,10 @@ export class StatusBarUpdater {
 
     const maxChars = this.statusBarMaxChars > 0 ? this.statusBarMaxChars : 240;
     const truncatedMessage =
-      message.length > maxChars
-        ? message.substring(0, maxChars - 3) + '...'
-        : message;
+      (message + (hasStarbase ? ' (STARBASE)' : '')).length > maxChars
+        ? (message + (hasStarbase ? ' (STARBASE)' : '')).substring(0, maxChars - 3) +
+          '...'
+        : message + (hasStarbase ? ' (STARBASE)' : '');
 
     // Update DOM only if text content has actually changed to avoid unnecessary reflows
     if (this.statusBarElement.textContent !== truncatedMessage) {
