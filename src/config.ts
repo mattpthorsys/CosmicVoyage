@@ -1,4 +1,5 @@
-// src/config.ts (Added DOWNLOAD_LOG binding)
+/* FILE: src/config.ts */
+// src/config.ts (Adjusted Star Background Colors)
 
 // Basic types for configuration values - can be expanded later if needed
 // We are letting TypeScript infer most types here for simplicity during the initial port.
@@ -87,6 +88,20 @@ export const CONFIG = {
     STARBASE_PROBABILITY: 0.2, // Chance a system has a starbase
     STARBASE_ORBIT_DISTANCE: 75000, // Base orbit distance for starbases
 
+    // --- System View Star Background --- MODIFIED ---
+    STAR_BACKGROUND_COLORS: [ // RGBA hex (#RRGGBBAA) - Reduced alpha to '40' (~25%)
+        '#6A8DFF40', // Darker transparent blue
+        '#FF9A5A40', // Darker transparent red/orange
+        '#80808040', // Darker transparent grey
+    ],
+    STAR_BACKGROUND_CHARS: ['.', ',', '`'], // Dim star characters
+    STAR_BACKGROUND_LAYERS: [ // Define layers with parallax factor and density
+        { factor: 0.1, density: 0.006, scale: 1000 }, // Slowest, sparsest layer
+        { factor: 0.05, density: 0.004, scale: 800 }, // Faster, slightly denser
+    ],
+    // --- END MODIFIED ---
+
+
     // --- Colours --- (Using Australian spelling based on user preference)
     DEFAULT_BG_COLOUR: '#000000',
     DEFAULT_FG_COLOUR: '#FFFFFF',
@@ -95,5 +110,5 @@ export const CONFIG = {
     ORBIT_COLOUR_MAIN: '#777777',
     ORBIT_COLOUR_MINIMAP: '#444444',
     STARBASE_COLOUR: '#00FFFF', // Colour for starbase icon, orbit, interior highlight
-    TRANSPARENT_COLOUR: '#FFFFFF00'
+    TRANSPARENT_COLOUR: 'transparent' // Use CSS transparent keyword
 };

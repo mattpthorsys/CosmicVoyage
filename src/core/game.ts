@@ -1,4 +1,5 @@
-// src/core/game.ts (Refactored)
+/* FILE: src/core/game.ts */
+// src/core/game.ts (Refactored + Full Render Logic)
 
 import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
@@ -9,7 +10,9 @@ import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager } from './game_state_manager';
 import { ActionProcessor } from './action_processor';
-import { fastHash } from '@/utils/hash';
+import { fastHash } from '@/utils/hash'; // Assuming alias setup
+import { Planet } from '@/entities/planet';
+import { Starbase } from '@/entities/starbase';
 
 /** Main game class - Coordinates components and manages the loop. */
 export class Game {
@@ -20,7 +23,6 @@ export class Game {
   private readonly inputManager: InputManager;
   private readonly stateManager: GameStateManager;
   private readonly actionProcessor: ActionProcessor;
-
   // Game Loop State
   private lastUpdateTime: number = 0;
   private isRunning: boolean = false;
@@ -29,8 +31,9 @@ export class Game {
   // Status Message
   private statusMessage: string = 'Initializing Systems...';
 
-  private clearOnNextRender: boolean = false;
-  private currentState: string | null = null;
+  // Flag to force full clear/redraw (e.g., on state change, resize)
+  private forceFullRender: boolean = true; // Start with true for initial draw
+
   constructor(canvasId: string, statusBarId: string, seed?: string | number) {
     logger.info('[Game] Constructing instance...');
     const initialSeed = seed !== undefined ? String(seed) : String(Date.now());
@@ -40,33 +43,29 @@ export class Game {
     this.renderer = new RendererFacade(canvasId, statusBarId); // Renderer handles DOM init
     this.player = new Player(); // Uses CONFIG defaults
     this.inputManager = new InputManager();
-    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, () => this._clearOnStateChange()); // Inject dependencies
+    // Pass callback to GameStateManager to set the forceFullRender flag
+    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, () => this._forceFullRenderOnStateChange());
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager); // Inject dependencies
 
     // Event Listeners
     window.addEventListener('resize', this._handleResize.bind(this));
-    this._handleResize(); // Initial fit
+    this._handleResize(); // Initial fit (will also set forceFullRender)
 
     logger.info(
-      `[Game] Instance constructed. Seed: "${this.gameSeedPRNG.getInitialSeed()}", Initial State: '${this.stateManager.state
-      }'`
+      `[Game] Instance constructed. Seed: "${this.gameSeedPRNG.getInitialSeed()}", Initial State: '${this.stateManager.state}'`
     );
   }
 
-  private _clearOnStateChange() {
-    this.clearOnNextRender = true;
+  // Callback for GameStateManager to trigger a full render on state change
+  private _forceFullRenderOnStateChange() {
+    this.forceFullRender = true;
+    logger.debug('[Game] State change detected, forcing full render on next frame.');
   }
 
-  public getGameState(): string {
-    return this.stateManager.state;
-  }
-
-  public checkIfRunning(): boolean {
-    return this.isRunning;
-  }
+  public getGameState(): string { return this.stateManager.state; }
+  public checkIfRunning(): boolean { return this.isRunning; }
 
   // --- Game Loop Control ---
-
   startGame(): void {
     if (this.isRunning) {
       logger.warn('[Game] startGame called but game is already running.');
@@ -77,6 +76,7 @@ export class Game {
     this.lastUpdateTime = performance.now();
     this.inputManager.startListening(); // Start listening for input
     this.inputManager.clearState(); // Clear any old input
+    this.forceFullRender = true; // Ensure first frame is a full render
 
     // Initial update and render
     this._update(0); // Initial update with zero delta time
@@ -86,328 +86,268 @@ export class Game {
   }
 
   stopGame(): void {
+    // (Stop game logic remains the same)
     if (!this.isRunning) return;
     logger.info('[Game] Stopping game loop...');
     this.isRunning = false;
     this.inputManager.stopListening(); // Stop listening for input
     if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      logger.debug(`[Game] Cancelled animation frame: ${this.animationFrameId}`);
-      this.animationFrameId = null;
+        cancelAnimationFrame(this.animationFrameId);
+        logger.debug(`[Game] Cancelled animation frame: ${this.animationFrameId}`);
+        this.animationFrameId = null;
     }
-    this.renderer.updateStatus('Game stopped. Refresh to restart.');
+    this.renderer.updateStatus('Game stopped. Refresh to restart.', false); // Added hasStarbase=false
     logger.info('[Game] Game loop stopped.');
   }
 
   // --- Event Handlers ---
-
   private _handleResize(): void {
     logger.debug('[Game] Handling window resize...');
     this.renderer.fitToScreen(); // Renderer logs size details
+    this.forceFullRender = true; // Force full render after resize
     if (this.isRunning) {
       logger.debug('[Game] Triggering render after resize.');
-      this._render(); // Re-render immediately
+      this._render(); // Re-render immediately if running
     }
     this.lastUpdateTime = performance.now(); // Prevent large delta jump
   }
 
   // --- Core Game Loop ---
-
   private _loop(currentTime: DOMHighResTimeStamp): void {
     if (!this.isRunning) return;
 
-    const deltaTime = Math.min(0.1, (currentTime - this.lastUpdateTime) / 1000.0);
+    const deltaTime = Math.min(0.1, (currentTime - this.lastUpdateTime) / 1000.0); // Prevent large jumps
     this.lastUpdateTime = currentTime;
 
     try {
-      // 1. Process Input FIRST - Use the state from the *previous* frame's events
-      this._processInput(); // Checks justPressedActions populated by previous frame's events
+        // 1. Process Input FIRST
+        this._processInput();
 
-      // 2. Update Input Manager State SECOND - Clear justPressedActions for the *next* frame
-      this.inputManager.update(); // Now safe to clear for the upcoming frame
+        // 2. Update Input Manager State SECOND
+        this.inputManager.update();
 
-      // 3. Update Game State & Render
-      this._update(deltaTime);
+        // 3. Update Game State
+        this._update(deltaTime);
 
-      // 3. Render
-      this._render();
+        // 4. Render
+        this._render();
+
+        // Reset force flag AFTER rendering is complete for this frame
+        if (this.forceFullRender) {
+            this.forceFullRender = false;
+        }
 
     } catch (loopError) {
-      const currentState = this.stateManager.state;
-      let errorMessage = 'Unknown Update Error';
-      let errorStack = 'N/A';
-      if (loopError instanceof Error) {
-        errorMessage = loopError.message;
-        errorStack = loopError.stack || 'No stack available';
-      } else {
-        try { // Try to stringify non-standard errors
-          errorMessage = JSON.stringify(loopError);
-        } catch {
-          errorMessage = String(loopError); // Fallback to string conversion
-        }
-      }
-      logger.error(`[Game:_update:${currentState}] Error during update: ${errorMessage}`, { // Log message separately
-        errorObject: loopError, // Log original object for inspection if needed
-        stack: errorStack
-      });
-      // **** END IMPROVED LOGGING ****
+       // (Error handling remains the same)
+        const currentState = this.stateManager.state; // Get state at time of error
+        let errorMessage = 'Unknown Loop Error';
+        let errorStack = 'N/A';
 
-      this.statusMessage = `UPDATE ERROR: ${errorMessage}`; // Show better message
-      try {
-        this._updateStatusBar();
-      } catch { /* ignore */ }
-      this.stopGame();
-      return;
+        if (loopError instanceof Error) {
+            errorMessage = loopError.message;
+            errorStack = loopError.stack || 'No stack available';
+        } else {
+            try { errorMessage = JSON.stringify(loopError); } catch { errorMessage = String(loopError); }
+        }
+
+        logger.error(`[Game:_loop:${currentState}] Error during game loop: ${errorMessage}`, {
+            errorObject: loopError,
+            stack: errorStack
+        });
+
+        this.statusMessage = `FATAL ERROR: ${errorMessage}. Refresh required.`;
+        try { this._updateStatusBar(); } catch { /* ignore */ } // Attempt to show error
+        this.stopGame(); // Stop the loop on error
+        return; // Don't request another frame
     }
 
-    requestAnimationFrame(this._loop.bind(this));
+    // Request the next frame
+    this.animationFrameId = requestAnimationFrame(this._loop.bind(this));
   }
 
+
   // --- Input Processing ---
-
   private _processInput(): void {
+    // (Input processing logic remains the same)
     const justPressedList = Array.from(this.inputManager.justPressedActions).join(', ') || 'None';
-    logger.debug(
-      `>>> Game._processInput Tick. State: ${this.stateManager.state}. Just Pressed Actions: [${justPressedList}]`
-    );
+    // logger.debug(
+    //   `>>> Game._processInput Tick. State: ${this.stateManager.state}. Just Pressed Actions: [${justPressedList}]`
+    // ); // Can be noisy
 
-    let dx = 0;
-    let dy = 0;
-    // Check modifier key status first
-    const isFine = this.inputManager.isActionActive('FINE_CONTROL');
-    const isBoost = this.inputManager.isActionActive('BOOST');
     let actionStatusMessage = ''; // To store status from discrete actions
 
-    // --- Handle Continuous Movement ---
-    // Check which movement actions are currently active
+    // Handle discrete actions first
+    const discreteActions: string[] = [
+        'ENTER_SYSTEM', 'LEAVE_SYSTEM', 'ACTIVATE_LAND_LIFTOFF',
+        'SCAN', 'MINE', 'TRADE', 'REFUEL', 'DOWNLOAD_LOG', 'QUIT'
+    ];
+
+    for (const action of discreteActions) {
+        if (this.inputManager.wasActionJustPressed(action)) {
+            logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
+            if (action === 'DOWNLOAD_LOG') {
+                 logger.info('--- DOWNLOAD_LOG action detected by wasActionJustPressed! ---');
+            }
+            const status = this.actionProcessor.processAction(action);
+            if (status) { actionStatusMessage = status; }
+            if (action === 'QUIT') {
+                 this.stopGame();
+                 logger.info('[Game] Quit action processed.');
+                 return;
+            }
+            // break; // Optional: Only one discrete action per frame
+        }
+    }
+
+    // Handle continuous movement AFTER potentially changing state
+    let dx = 0, dy = 0;
     if (this.inputManager.isActionActive('MOVE_UP')) dy -= 1;
     if (this.inputManager.isActionActive('MOVE_DOWN')) dy += 1;
     if (this.inputManager.isActionActive('MOVE_LEFT')) dx -= 1;
     if (this.inputManager.isActionActive('MOVE_RIGHT')) dx += 1;
 
-    // If movement is detected, apply it based on state and modifiers
     if (dx !== 0 || dy !== 0) {
-      // Get the base movement scale
-      let moveScale = CONFIG.SYSTEM_MOVE_INCREMENT;
+        const isFine = this.inputManager.isActionActive('FINE_CONTROL');
+        const isBoost = this.inputManager.isActionActive('BOOST');
+        let useFine = isFine && !isBoost;
+        let useBoost = isBoost && !isFine;
 
-      // Apply boost or fine control (prioritize boost? Or make exclusive?)
-      // Current logic: Apply boost OR fine, not both. If both held, use default speed.
-      if (isBoost && !isFine) {
-        moveScale *= CONFIG.BOOST_FACTOR;
-        logger.debug(`[Game:_processInput] Boost applied. Move scale: ${moveScale}`);
-      } else if (isFine && !isBoost) {
-        moveScale *= CONFIG.FINE_CONTROL_FACTOR;
-        logger.debug(`[Game:_processInput] Fine control applied. Move scale: ${moveScale}`);
-      }
-
-      // Apply movement based on current game state
-      try {
-        switch (this.stateManager.state) {
-          case 'hyperspace':
-            // Boost/Fine not implemented for hyperspace, uses raw dx/dy
-            this.player.moveWorld(dx, dy);
-            break;
-          case 'system':
-            // Pass the potentially modified moveScale to player.moveSystem
-            this.player.moveSystem(dx, dy, isFine); // Use updated signature
-            break;
-          case 'planet':
-            // Boost/Fine typically not used on surface
-            {
-              const planet = this.stateManager.currentPlanet;
-              if (planet) {
-                // Ensure surface is ready before getting map size
-                planet.ensureSurfaceReady();
-                const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
-                this.player.moveSurface(dx, dy, mapSize);
-              } else {
-                logger.error("[Game:_processInput] In 'planet' state but currentPlanet is null during movement!");
-                actionStatusMessage = 'Error: Planet data missing!';
-              }
+        try {
+            switch (this.stateManager.state) {
+                case 'hyperspace':
+                    this.player.moveWorld(dx, dy);
+                    break;
+                case 'system':
+                    let moveScale = CONFIG.SYSTEM_MOVE_INCREMENT;
+                    if (useBoost) moveScale *= CONFIG.BOOST_FACTOR;
+                    this.player.moveSystem(dx, dy, useFine);
+                    break;
+                case 'planet':
+                    {
+                        const planet = this.stateManager.currentPlanet;
+                        if (planet) {
+                            planet.ensureSurfaceReady();
+                            const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
+                            this.player.moveSurface(dx, dy, mapSize);
+                        } else {
+                            logger.error("[Game:_processInput] In 'planet' state but currentPlanet is null during movement!");
+                            actionStatusMessage = 'Error: Planet data missing!';
+                        }
+                    }
+                    break;
+                case 'starbase': break; // No movement
             }
-            break;
-          case 'starbase':
-            // No movement expected while docked
-            break;
+        } catch (moveError) {
+            logger.error(`[Game:_processInput] Error during player movement in state '${this.stateManager.state}':`, moveError);
+            actionStatusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
         }
-      } catch (moveError) {
-        logger.error(
-          `[Game:_processInput] Error during player movement in state '${this.stateManager.state}':`,
-          moveError
-        );
-        actionStatusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
-      }
-    } // End of movement handling (dx !== 0 || dy !== 0)
-
-    // --- Handle Discrete Actions (Trigger only once per press) ---
-    // Define the list of actions that should only trigger once per press
-    const discreteActions: string[] = [
-      'ENTER_SYSTEM',
-
-      'ACTIVATE_LAND_LIFTOFF',
-      'SCAN',
-      'MINE',
-      'TRADE',
-      'REFUEL',
-      'DOWNLOAD_LOG',
-      'QUIT',
-      // Add any other non-movement actions here
-    ];
-
-    // Check each discrete action to see if it was just pressed
-    for (const action of discreteActions) {
-      if (this.inputManager.wasActionJustPressed(action)) {
-        logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
-        if (action === 'DOWNLOAD_LOG') {
-          logger.info('--- DOWNLOAD_LOG action detected by wasActionJustPressed! ---');
-        }
-        // Use ActionProcessor to handle the logic and potential state changes
-        const status = this.actionProcessor.processAction(action);
-        // Store the status message returned by the processor
-        // This allows discrete actions to provide immediate feedback
-        if (status) {
-          actionStatusMessage = status;
-        }
-        // Optional: If you want only ONE discrete action per frame, uncomment the break
-        // break;
-      }
     }
 
-    // Update the game's primary status message ONLY if a discrete action
-    // provided specific feedback in this frame. Otherwise, the status
-    // will be set by the _update method based on the current state.
+    // Update status message if a discrete action provided feedback
     if (actionStatusMessage) {
-      this.statusMessage = actionStatusMessage;
-      // Force an update to the status bar display *now* if needed,
-      // otherwise _updateStatusBar in _update will handle it.
-      // this._updateStatusBar(); // Uncomment if immediate status update is desired
+        this.statusMessage = actionStatusMessage;
     }
   }
+
+
   // --- Game State Update ---
-
   private _update(deltaTime: number): void {
+    // (Update logic and status message determination remains the same)
     try {
-      // Get current state from manager AFTER input processing
-      const currentState = this.stateManager.state; // Defined inside 'try'
-      // logger.debug(`Updating state: ${currentState}`); // Noisy
+      const currentState = this.stateManager.state;
+      let stateUpdateStatus = '';
 
-      // Delegate to state-specific update logic
       switch (currentState) {
         case 'hyperspace':
-          this.statusMessage = this._updateHyperspace(deltaTime);
+          stateUpdateStatus = this._updateHyperspace(deltaTime);
           break;
         case 'system':
-          this.statusMessage = this._updateSystem(deltaTime);
+          stateUpdateStatus = this._updateSystem(deltaTime);
           break;
         case 'planet':
-          this.statusMessage = this._updatePlanet(deltaTime);
+          stateUpdateStatus = this._updatePlanet(deltaTime);
           break;
         case 'starbase':
-          this.statusMessage = this._updateStarbase(deltaTime);
+          stateUpdateStatus = this._updateStarbase(deltaTime);
           break;
         default:
-          // Handle unexpected state if necessary
           logger.warn(`[Game:_update] Encountered unexpected state: ${currentState}`);
-          this.statusMessage = `Error: Unexpected state ${currentState}`;
+          stateUpdateStatus = `Error: Unexpected state ${currentState}`;
           break;
       }
-      // Update the status bar with the message generated by the state update
-      this._updateStatusBar();
-    } catch (loopError) {
-      // **** CORRECTED CATCH BLOCK ****
-      let errorMessage = 'Unknown Update Error';
-      let errorStack = 'N/A';
-      // Get the state *at the time of the error* using the state manager
-      const stateWhenErrorOccurred = this.stateManager.state;
-      if (loopError instanceof Error) {
-        errorMessage = loopError.message;
-        errorStack = loopError.stack || 'No stack available';
-      } else {
-        try {
-          errorMessage = JSON.stringify(loopError);
-        } catch {
-          errorMessage = String(loopError);
-        }
-      }
-      // Use stateWhenErrorOccurred in the log message
-      logger.error(`[Game:_update:${stateWhenErrorOccurred}] Error during update: ${errorMessage}`, {
-        errorObject: loopError,
-        stack: errorStack
-      });
-      // **** END CORRECTION ****
 
-      this.statusMessage = `UPDATE ERROR: ${errorMessage}`;
-      try {
-        this._updateStatusBar();
-      } catch { /* ignore */ }
-      this.stopGame();
-      return;
+      // Only overwrite status if state logic returned something *and*
+      // no discrete action status was set in _processInput this frame.
+      // Check if statusMessage still holds default/previous state info.
+      const wasActionStatusSet = this.statusMessage.includes('ACTION ERROR') || this.statusMessage.includes('Mining') || this.statusMessage.includes('Scan') || this.statusMessage.includes('Sold') || this.statusMessage.includes('Purchased') || this.statusMessage.includes('Entering system') || this.statusMessage.includes('Entered hyperspace') || this.statusMessage.includes('Approaching') || this.statusMessage.includes('Departing') || this.statusMessage.includes('Nothing nearby') || this.statusMessage.includes('Must travel further') || this.statusMessage.includes('Liftoff') || this.statusMessage.includes('No star system detected') || this.statusMessage.includes('already scanned') || this.statusMessage.includes('Cannot mine') || this.statusMessage.includes('Cargo hold is empty') || this.statusMessage.includes('Fuel tank is already full') || this.statusMessage.includes('Not enough credits') || this.statusMessage.includes('Move Error') || this.statusMessage.includes('Surface Error');
+
+      if (stateUpdateStatus && !wasActionStatusSet) {
+          this.statusMessage = stateUpdateStatus;
+      }
+
+      // Update the status bar display at the end of the update cycle
+      this._updateStatusBar();
+
+    } catch (updateError) {
+        // (Error handling remains the same)
+        const stateWhenErrorOccurred = this.stateManager.state;
+        let errorMessage = 'Unknown Update Error';
+        if (updateError instanceof Error) errorMessage = updateError.message;
+        else try { errorMessage = JSON.stringify(updateError); } catch { errorMessage = String(updateError); }
+        logger.error(`[Game:_update:${stateWhenErrorOccurred}] Error during update logic: ${errorMessage}`, { errorObject: updateError });
+
+        this.statusMessage = `UPDATE ERROR: ${errorMessage}`;
+        try { this._updateStatusBar(); } catch { /* ignore */ }
+        this.stopGame();
+        throw updateError;
     }
   }
 
-  // State-specific update methods now primarily DETERMINE the status message
-  // Actual state changes are handled by GameStateManager via ActionProcessor
-
+  // State-specific update methods remain the same
   private _updateHyperspace(_deltaTime: number): string {
-    // Check if near a star
     const baseSeedInt = this.gameSeedPRNG.seed;
     const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
     const hash = fastHash(this.player.worldX, this.player.worldY, baseSeedInt);
     const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
+    const baseStatus = `Hyperspace | Loc: ${this.player.worldX},${this.player.worldY}`;
 
-    const baseStatus = `Hyperspace | Loc: ${this.player.worldX},${this.player.worldY}`;    
-    
     if (isNearStar) {
       const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
-
       if (peekedSystem) {
-        const hasStarbase = peekedSystem.starbase;
-        const starbaseText = hasStarbase ? ' (Starbase)' : '';
-        return `${baseStatus} | ${peekedSystem.name}${starbaseText}. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
+        const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
+        return `${baseStatus} | Near ${peekedSystem.name}${starbaseText}. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
       } else {
-        return `${baseStatus} | Near star system. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
+         return `${baseStatus} | Near star system. Press [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] to enter.`;
       }
-    } 
-    
+    } else {
+      this.stateManager.resetPeekedSystem();
+    }
     return baseStatus;
-    
   }
 
   private _updateSystem(deltaTime: number): string {
     const system = this.stateManager.currentSystem;
     if (!system) {
-      // This should ideally not happen if state transitions are correct
       logger.error('[Game:_updateSystem] CurrentSystem is null! Forcing state to hyperspace.');
-      // Force transition back via StateManager if needed, or handle here temporarily
-      this.stateManager.leaveSystem(); // Attempt graceful transition back
+      this.stateManager.leaveSystem();
       return 'System Error: Data missing. Returned to hyperspace.';
     }
-
-    system.updateOrbits(deltaTime); // Update object positions
-
-    // Find nearby object for status message context
+    system.updateOrbits(deltaTime);
     const nearbyObject = system.getObjectNear(this.player.systemX, this.player.systemY);
-    let status = `System: ${system.name}(${system.starType}) | Pos: ${this.player.systemX.toFixed(
-      0
-    )},${this.player.systemY.toFixed(0)}`;
-
+    let status = `System: ${system.name}(${system.starType}) | Pos: ${this.player.systemX.toFixed(0)},${this.player.systemY.toFixed(0)}`;
     if (nearbyObject) {
       const dist = Math.sqrt(this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY));
-      status += ` | Near ${nearbyObject.name} (${dist.toFixed(
-        0
-      )} units). Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to land.`;
+      status += ` | Near ${nearbyObject.name} (${dist.toFixed(0)} units). Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to land/dock.`;
     }
-
-    // Check if player is at system edge, and trigger hyperspace jump if so
-    const distFromStarSq = this.player.distanceSqToSystemCoords(0, 0);
-    const edgeThresholdSq = system.edgeRadius ** 2;
-    if (distFromStarSq >= edgeThresholdSq) {
-      this.stateManager.leaveSystem(); // Auto-jump to hyperspace
-    } 
+    if (system.isAtEdge(this.player.systemX, this.player.systemY)) {
+       logger.info(`[Game:_updateSystem] Player reached edge of system ${system.name}. Automatically transitioning to hyperspace.`);
+       this.stateManager.leaveSystem(); // Will trigger forceFullRender
+    } else if (this.isPlayerNearExit()) {
+        status += ` | Near system edge. Press [${CONFIG.KEY_BINDINGS.LEAVE_SYSTEM.toUpperCase()}] to leave.`
+    }
     return status;
   }
 
-  /** Checks if the player is far enough from the star to leave the system */
   private isPlayerNearExit(): boolean {
     const system = this.stateManager.currentSystem;
     return system ? this.player.distanceSqToSystemCoords(0, 0) > (system.edgeRadius * 0.75) ** 2 : false;
@@ -417,21 +357,20 @@ export class Game {
     const planet = this.stateManager.currentPlanet;
     if (!planet) {
       logger.error('[Game:_updatePlanet] CurrentPlanet is null! Forcing state to hyperspace.');
-      this.stateManager.leaveSystem(); // Attempt graceful transition back
+      this.stateManager.leaveSystem();
       return 'Planet Error: Data missing. Returned to hyperspace.';
     }
-
-    let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.surfaceX},${this.player.surfaceY
-      } | Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to liftoff.`;
+    let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.surfaceX},${this.player.surfaceY} | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${planet.surfaceTemp}K`;
+    const actions = [`[${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Liftoff`];
     if (planet.scanned) {
-      status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness
-        }), Grav: ${planet.gravity.toFixed(2)}g`;
-      if (planet.mineralRichness !== MineralRichness.NONE && planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
-        status += ` | Press [${CONFIG.KEY_BINDINGS.MINE.toUpperCase()}] to mine.`;
-      }
+         status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;
+         if (planet.mineralRichness !== MineralRichness.NONE && planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
+            actions.push(`[${CONFIG.KEY_BINDINGS.MINE.toUpperCase()}] Mine`);
+         }
     } else {
-      status += ` | Press [${CONFIG.KEY_BINDINGS.SCAN.toUpperCase()}] to scan surface.`;
+         actions.push(`[${CONFIG.KEY_BINDINGS.SCAN.toUpperCase()}] Scan`);
     }
+    status += ` | Actions: ${actions.join(', ')}.`;
     return status;
   }
 
@@ -439,82 +378,100 @@ export class Game {
     const starbase = this.stateManager.currentStarbase;
     if (!starbase) {
       logger.error('[Game:_updateStarbase] CurrentStarbase is null! Forcing state to hyperspace.');
-      this.stateManager.leaveSystem(); // Attempt graceful transition back
+      this.stateManager.leaveSystem();
       return 'Starbase Error: Data missing. Returned to hyperspace.';
     }
-    return `Docked: ${starbase.name
-      } | Options: [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade, [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel, [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Liftoff.`;
+    const actions = [
+         `[${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade`,
+         `[${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel`,
+         `[${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Depart`
+    ];
+    return `Docked: ${starbase.name} | Actions: ${actions.join(', ')}.`;
   }
 
   // --- Rendering ---
-
   private _render(): void {
     const currentState = this.stateManager.state;
-    //logger.debug(`[Game:_render] Rendering state: '${currentState}'`);
+    // logger.debug(`[Game:_render] Rendering state: '${currentState}', ForceFullRender: ${this.forceFullRender}`); // Debug
 
     try {
-      if (this.clearOnNextRender) {
-        this.clearOnNextRender = false;
+        // --- Clear ---
+        // Always clear physically at the start of the render cycle now
         this.renderer.clear(true);
-        this.currentState = this.stateManager.state;
-      }
-      switch (currentState) {
-        case 'hyperspace':
-          this.renderer.drawHyperspace(this.player, this.gameSeedPRNG);
-          break;
-        case 'system':
-          {
-            const system = this.stateManager.currentSystem;
-            if (system) this.renderer.drawSolarSystem(this.player, system);
-            else this._renderError('System data missing for render!');
-          }
-          break;
-        case 'planet':
-          {
-            const planet = this.stateManager.currentPlanet;
-            if (planet) this.renderer.drawPlanetSurface(this.player, planet);
-            else this._renderError('Planet data missing for render!');
-          }
-          break;
-        case 'starbase':
-          {
-            const starbase = this.stateManager.currentStarbase;
-            if (starbase) this.renderer.drawPlanetSurface(this.player, starbase);
-            else this._renderError('Starbase data missing for render!');
-          }
-          break;
-        default:
-          this._renderError(`Unknown game state: ${currentState}`);
-      }
-      // Render differences AFTER scene drawing is complete
-      this.renderer.renderDiff();
+
+        // --- Draw Background Layer (System State Only) ---
+        if (currentState === 'system') {
+            // 1. Populate the background buffer
+            this.renderer.drawStarBackground(this.player);
+            // 2. Render the background buffer to the canvas
+            // Use full render instead of diff
+            this.renderer.renderBufferFull(true); // Render background first
+        }
+
+        // --- Draw Main Scene Layer ---
+        // 3. Populate the main buffer
+        switch (currentState) {
+            case 'hyperspace':
+                this.renderer.drawHyperspace(this.player, this.gameSeedPRNG);
+                break;
+            case 'system':
+                const system = this.stateManager.currentSystem;
+                // Ensure drawSolarSystem uses transparent background fills (null)
+                if (system) this.renderer.drawSolarSystem(this.player, system);
+                else this._renderError('System data missing for render!');
+                break;
+            case 'planet':
+                 const planet = this.stateManager.currentPlanet;
+                 if (planet) {
+                     planet.ensureSurfaceReady(); // Ensure data is ready
+                     this.renderer.drawPlanetSurface(this.player, planet);
+                 } else {
+                     this._renderError('Planet data missing for render!');
+                 }
+                break;
+            case 'starbase':
+                 const starbase = this.stateManager.currentStarbase;
+                 if (starbase) {
+                     starbase.ensureSurfaceReady(); // Ensure data is ready
+                     this.renderer.drawPlanetSurface(this.player, starbase);
+                 } else {
+                     this._renderError('Starbase data missing for render!');
+                 }
+                break;
+            default:
+                this._renderError(`Unknown game state: ${currentState}`);
+        }
+
+        // 4. Render the main buffer to the canvas
+        // Use full render instead of diff
+        this.renderer.renderBufferFull(false); // Render main buffer last
+
     } catch (error) {
-      logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, error);
-      this.stopGame();
-      this._renderError(`FATAL RENDER ERROR: ${error instanceof Error ? error.message : String(error)}. Refresh.`);
-      try {
-        this.renderer.renderDiff();
-      } catch {
-        /* ignore */
-      } // Attempt to show error
+      // (Error handling remains the same)
+        logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, error);
+        this.stopGame();
+        this._renderError(`FATAL RENDER ERROR: ${error instanceof Error ? error.message : String(error)}. Refresh.`);
+        try {
+            this.renderer.renderBufferFull(false); // Attempt to draw error message
+        } catch { /* ignore further errors */ }
     }
   }
 
 
   /** Helper to render an error message directly to the canvas. */
   private _renderError(message: string): void {
+    // (Error rendering remains the same)
     logger.error(`[Game:_renderError] Displaying: ${message}`);
-    this.renderer.clear(true); // Physically clear
-    this.renderer.drawString(message, 1, 1, '#FF0000', CONFIG.DEFAULT_BG_COLOUR);
-    this.statusMessage = `ERROR: ${message}`; // Also update status bar text
+    this.renderer.clear(true); // Physically clear canvas and buffers
+    this.renderer.drawString(message, 1, 1, '#FF0000', CONFIG.DEFAULT_BG_COLOUR); // Solid BG for error text
+    this.statusMessage = `ERROR: ${message}`;
     this._updateStatusBar();
   }
 
   /** Updates the status bar text via the renderer. */
   private _updateStatusBar(): void {
-    // Combine the state-specific message with common player stats
-    const commonStatus = ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${this.player.mineralUnits
-      }/${this.player.cargoCapacity} | Cr: ${this.player.credits}`;
+    // (Status bar update logic remains the same)
+    const commonStatus = ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${this.player.mineralUnits}/${this.player.cargoCapacity} | Cr: ${this.player.credits}`;
     const hasStarbase = this.stateManager.state === 'starbase';
     this.renderer.updateStatus(this.statusMessage + commonStatus, hasStarbase);
   }

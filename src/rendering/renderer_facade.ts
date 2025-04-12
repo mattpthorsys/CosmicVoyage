@@ -1,3 +1,4 @@
+/* FILE: src/rendering/renderer_facade.ts */
 // src/rendering/renderer_facade.ts
 
 import { ScreenBuffer } from './screen_buffer';
@@ -22,7 +23,8 @@ import { CONFIG } from '../config';
 export class RendererFacade {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private screenBuffer: ScreenBuffer;
+  private screenBuffer: ScreenBuffer; // Main buffer
+  private backgroundScreenBuffer: ScreenBuffer; // Star background buffer
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private sceneRenderer: SceneRenderer;
@@ -30,7 +32,6 @@ export class RendererFacade {
 
   constructor(canvasId: string, statusBarId: string) {
     logger.info('[RendererFacade] Constructing...');
-
     // --- Get DOM Elements ---
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
@@ -45,7 +46,8 @@ export class RendererFacade {
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
-    const ctx = canvas.getContext('2d', { alpha: false }); // Disable alpha for potential perf boost
+    // Use alpha: true to allow blending between layers if needed
+    const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) {
       const msg = 'Failed to get 2D rendering context from canvas.';
       logger.error(`[RendererFacade] ${msg}`);
@@ -54,21 +56,18 @@ export class RendererFacade {
 
     this.canvas = canvas;
     this.ctx = ctx;
-
     // --- Instantiate Rendering Components ---
-    // Order matters: ScreenBuffer needs canvas/context first.
-    this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx);
-    this.drawingContext = new DrawingContext(this.screenBuffer);
+    this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false); // Main buffer (solid default bg)
+    this.backgroundScreenBuffer = new ScreenBuffer(this.canvas, this.ctx, true); // Background buffer (transparent default bg)
+    this.drawingContext = new DrawingContext(this.screenBuffer); // Drawing context targets main buffer
     this.nebulaRenderer = new NebulaRenderer();
-    // Use the aliased import name here
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement);
-    // SceneRenderer needs the others
+    // SceneRenderer needs the main buffer/context
     this.sceneRenderer = new SceneRenderer(
       this.screenBuffer,
       this.drawingContext,
       this.nebulaRenderer
     );
-
     logger.info('[RendererFacade] All components instantiated.');
 
     // Perform initial screen fit
@@ -79,34 +78,25 @@ export class RendererFacade {
   /** Adjusts canvas size and rendering parameters to fit the window or container. */
   fitToScreen(): void {
     logger.debug('[RendererFacade.fitToScreen] Adjusting...');
-
-    // Calculate character size based on config
     const baseCharHeight = CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE;
     const baseCharWidth = baseCharHeight * CONFIG.CHAR_ASPECT_RATIO;
-
-    // Estimate status bar height roughly first to calculate available space
-    const roughStatusBarHeightPx = baseCharHeight * 0.85 * 1.4 * 3 + 10; // ~3 lines + padding
-    const availableHeight = Math.max(100, window.innerHeight - roughStatusBarHeightPx); // Min height
-    const availableWidth = Math.max(100, window.innerWidth); // Min width
-
-    // Determine grid size
+    const roughStatusBarHeightPx = baseCharHeight * 0.85 * 1.4 * 3 + 10;
+    const availableHeight = Math.max(100, window.innerHeight - roughStatusBarHeightPx);
+    const availableWidth = Math.max(100, window.innerWidth);
     const cols = Math.max(1, Math.floor(availableWidth / baseCharWidth));
     const rows = Math.max(1, Math.floor(availableHeight / baseCharHeight));
     const charWidthPx = baseCharWidth;
     const charHeightPx = baseCharHeight;
 
-    // Update canvas dimensions
     this.canvas.width = cols * charWidthPx;
     this.canvas.height = rows * charHeightPx;
 
-    // Update ScreenBuffer dimensions and context font
+    // Update BOTH buffers
     this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
+    this.backgroundScreenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
 
-    // Update status bar (calculates max chars based on new dimensions)
     this.statusBarUpdater.updateMaxChars(charWidthPx, charHeightPx);
 
-    // Center canvas horizontally and position vertically above status bar
-    // Using your updated logic with getStatusBarElement()
     const finalStatusBarHeightPx = this.statusBarUpdater.getStatusBarElement().offsetHeight || roughStatusBarHeightPx;
     this.canvas.style.marginLeft = `${Math.max(0, (window.innerWidth - this.canvas.width) / 2)}px`;
     this.canvas.style.marginTop = `${Math.max(
@@ -114,44 +104,63 @@ export class RendererFacade {
       (window.innerHeight - finalStatusBarHeightPx - this.canvas.height) / 2
     )}px`;
 
-    // Clear nebula cache on resize as background needs redraw
     this.nebulaRenderer.clearCache();
-
+    this.backgroundScreenBuffer.clear(false); // Reset internal state only
     logger.info(
       `[RendererFacade.fitToScreen] Resized complete. Grid: ${cols}x${rows}`
     );
   }
 
-  /** Resets the drawing buffers and optionally clears the physical canvas. */
+  /**
+   * Resets internal buffers and optionally clears the physical canvas.
+   * MODIFIED: Calls clear on both buffers.
+   */
   clear(physicalClear: boolean = true): void {
+    // The first clear handles the physical canvas clearing if physicalClear is true
     this.screenBuffer.clear(physicalClear);
+    // The second clear only needs to reset internal state, so pass false
+    this.backgroundScreenBuffer.clear(false);
   }
 
-  /** Compares the new buffer to the screen buffer and draws only the changed cells. */
+
+  /** Compares the main buffer to the screen buffer and draws only the changed cells. */
   renderDiff(): void {
     this.screenBuffer.renderDiff();
   }
 
-  /** Updates the text content of the status bar element.  */
+  /** Renders the background buffer changes. */
+  renderBackgroundDiff(): void {
+    this.backgroundScreenBuffer.renderDiff();
+  }
+
+  /**
+   * ADDED: Renders the entire content of the specified buffer.
+   * @param isBackground If true, renders the background buffer, otherwise the main buffer.
+   */
+  renderBufferFull(isBackground: boolean = false): void {
+    if (isBackground) {
+      this.backgroundScreenBuffer.renderFull();
+    } else {
+      this.screenBuffer.renderFull();
+    }
+  }
+
+
+  /** Updates the text content of the status bar element. */
   updateStatus(message: string, hasStarbase: boolean): void {
     this.statusBarUpdater.updateStatus(message, hasStarbase);
   }
 
-  // --- Basic Drawing Method Delegation ---
-
-  /**
-   * Draws a string horizontally starting at (x, y) onto the buffer.
-   * Delegates to ScreenBuffer.
-   */
+  // --- Basic Drawing Method Delegation (targets MAIN buffer) ---
   drawString(
     text: string,
     x: number,
     y: number,
-    fgColor?: string | null, // Optional colours, defaults handled by ScreenBuffer
+    fgColor?: string | null,
     bgColor?: string | null
   ): void {
-    // Pass defaults as null if not provided, ScreenBuffer will use its own defaults
-    this.screenBuffer.drawString(text, x, y, fgColor === undefined ? null : fgColor, bgColor === undefined ? null : bgColor);
+    // Default background for drawString on main buffer should be the buffer's default (likely black)
+    this.screenBuffer.drawString(text, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
   }
 
   // --- Scene Drawing Method Delegation ---
@@ -161,12 +170,18 @@ export class RendererFacade {
   }
 
   drawSolarSystem(player: Player, system: SolarSystem): void {
+    // This draws to the main screenBuffer via sceneRenderer
     this.sceneRenderer.drawSolarSystem(player, system);
   }
 
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
+     // This draws to the main screenBuffer via sceneRenderer
     this.sceneRenderer.drawPlanetSurface(player, landedObject);
   }
 
-  // Add other potential methods if needed, e.g., drawing UI elements directly
+  drawStarBackground(player: Player): void {
+    // Pass the background buffer instance to the scene renderer method
+    // This populates the backgroundScreenBuffer.newBuffer
+    this.sceneRenderer.drawStarBackground(player, this.backgroundScreenBuffer);
+  }
 }
