@@ -69,7 +69,7 @@ export class SceneRenderer {
           if (starInfo) {
             // Adjust brightness slightly based on hash for twinkling effect?
             const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1);
-            const starBaseRgb = hexToRgb(starInfo.color);
+            const starBaseRgb = hexToRgb(starInfo.colour);
             const finalStarRgb = adjustBrightness(
               starBaseRgb,
               brightnessFactor
@@ -93,7 +93,7 @@ export class SceneRenderer {
 
     // Draw player character last, on top
     this.screenBuffer.drawChar(
-      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOR, null
+      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOUR, null
     );
   }
 
@@ -115,13 +115,13 @@ export class SceneRenderer {
     // draw it here cell by cell.
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        this.screenBuffer.drawChar(null, x, y, null, CONFIG.DEFAULT_BG_COLOR);
+        this.screenBuffer.drawChar(null, x, y, null, CONFIG.DEFAULT_BG_COLOUR);
       }
     }
 
     // --- Draw Star ---
     const starInfo = SPECTRAL_TYPES[system.starType];
-    const starColor = starInfo?.color || '#FFFFFF';
+    const starColor = starInfo?.colour || '#FFFFFF';
     const starChar = starInfo?.char || '*';
     const starViewX = Math.floor((0 - viewWorldStartX) / viewScale);
     const starViewY = Math.floor((0 - viewWorldStartY) / viewScale);
@@ -138,9 +138,9 @@ export class SceneRenderer {
       }
       const planetViewX = Math.floor((planet.systemX - viewWorldStartX) / viewScale);
       const planetViewY = Math.floor((planet.systemY - viewWorldStartY) / viewScale);
-      const planetColor = PLANET_TYPES[planet.type]?.colors[4] || '#CCCCCC';
+      const planetColor = PLANET_TYPES[planet.type]?.colours[4] || '#CCCCCC';
       this.drawingContext.drawCircle(
-        planetViewX, planetViewY, 0, GLYPHS.PLANET_ICON, planetColor, planetColor
+        planetViewX, planetViewY, 0, GLYPHS.PLANET_ICON, planetColor, CONFIG.DEFAULT_BG_COLOUR
       );
     });
 
@@ -149,19 +149,19 @@ export class SceneRenderer {
       const orbitViewRadius = Math.round(sb.orbitDistance / viewScale);
       if (orbitViewRadius > 1) {
         this.drawingContext.drawOrbit(
-          starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOR
+          starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOUR
         );
       }
       const sbViewX = Math.floor((sb.systemX - viewWorldStartX) / viewScale);
       const sbViewY = Math.floor((sb.systemY - viewWorldStartY) / viewScale);
       this.drawingContext.drawCircle(
-        sbViewX, sbViewY, 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOR, CONFIG.STARBASE_COLOR
+        sbViewX, sbViewY, 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR
       );
     }
 
     // --- Draw Player Ship ---
     this.screenBuffer.drawChar(
-      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOR, null
+      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOUR, CONFIG.DEFAULT_BG_COLOUR
     );
 
     // --- Draw Minimap ---
@@ -189,11 +189,11 @@ export class SceneRenderer {
     }
 
     // Draw border
-    this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', null);
+    this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', CONFIG.DEFAULT_BG_COLOUR);
     for (let y = 0; y < mapHeight; ++y) {
       for (let x = 0; x < mapWidth; ++x) {
         // Changed to use opaque background clear
-        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOR);
+        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, CONFIG.DEFAULT_BG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
       }
     }
 
@@ -210,7 +210,7 @@ export class SceneRenderer {
     // 1. Clear the background
     for (let y = 0; y < mapHeight; ++y) {
       for (let x = 0; x < mapWidth; ++x) {
-        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOR);
+        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOUR);
       }
     }
 
@@ -223,9 +223,9 @@ export class SceneRenderer {
         let planetIcon = '.';
         if (PLANET_TYPES[p.type].size >= 20) planetIcon = 'O';
         else if (PLANET_TYPES[p.type].size >= 10) planetIcon = 'o';
-        const planetColor = PLANET_TYPES[p.type]?.colors[4] || '#CCCCCC';
+        const planetColor = PLANET_TYPES[p.type]?.colours[4] || '#CCCCCC';
         // Opaque black background for planets
-        this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOR);
+        this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOUR);
       }
     });
 
@@ -233,9 +233,9 @@ export class SceneRenderer {
     const starPos = worldToMinimap(0, 0);
     if (starPos) {
       const starInfo = SPECTRAL_TYPES[system.starType];
-      const starColor = starInfo?.color || '#FFFFFF';
+      const starColor = starInfo?.colour || '#FFFFFF';
       // Opaque black background for the star
-      this.screenBuffer.drawChar('*', starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOR);
+      this.screenBuffer.drawChar('*', starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
     }
 
     // 4. Draw starbase (if exists, with transparent background)
@@ -243,7 +243,7 @@ export class SceneRenderer {
       const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
       if (sbPos) {
         // Transparent background for starbase
-        this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOR, null); 
+        this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR); 
       }
     }
 
@@ -251,7 +251,7 @@ export class SceneRenderer {
     const playerPos = worldToMinimap(player.systemX, player.systemY);
     if (playerPos) {
       // Transparent background for player
-      this.screenBuffer.drawChar(CONFIG.PLAYER_CHAR, playerPos.x, playerPos.y, CONFIG.PLAYER_COLOR, null); 
+      this.screenBuffer.drawChar(CONFIG.PLAYER_CHAR, playerPos.x, playerPos.y, CONFIG.PLAYER_COLOUR, CONFIG.DEFAULT_BG_COLOUR); 
     }
   }
 
@@ -279,7 +279,7 @@ export class SceneRenderer {
     logger.debug(
       `[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`
     );
-    // Ensure surface data is ready (heightmap/colors) - this should have been called by Game before changing state
+    // Ensure surface data is ready (heightmap/colours) - this should have been called by Game before changing state
     if (!planet.heightmap || !planet.heightLevelColors) {
       logger.error(
         `[SceneRenderer.drawSolidPlanetSurface] Surface data missing for ${planet.name}. Ensure ensureSurfaceReady was called.`
@@ -310,7 +310,7 @@ export class SceneRenderer {
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
 
-        // Get color for the height level
+        // Get colour for the height level
         const terrainColor = heightColors[height] || '#FF00FF'; // Fallback pink
 
         // Draw terrain block
@@ -320,7 +320,7 @@ export class SceneRenderer {
 
     // Draw player character at the center
     this.screenBuffer.drawChar(
-      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOR, null
+      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOUR, null
     );
 
     // Draw heightmap legend
@@ -349,8 +349,8 @@ export class SceneRenderer {
 
     for (let y = 0; y < rows; y++) {
       const baseColorIndex = Math.floor((y / rows) * numColors);
-      const color1 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex))];
-      const color2 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex + 1))];
+      const colour1 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex))];
+      const colour2 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex + 1))];
 
       for (let x = 0; x < cols; x++) {
         // Combine noise and sine waves for swirling effect
@@ -359,7 +359,7 @@ export class SceneRenderer {
             Math.sin(x * 0.1 + y * 0.05 + staticPrng.random() * 5) * 0.3 +
             0.5) % 1.0;
         const bandColor = interpolateColour(
-          color1, color2, Math.max(0, Math.min(1, interpFactor))
+          colour1, colour2, Math.max(0, Math.min(1, interpFactor))
         );
 
         // Add brightness variation
@@ -378,7 +378,7 @@ export class SceneRenderer {
 
     // Draw player
     this.screenBuffer.drawChar(
-      player.char, Math.floor(cols / 2), Math.floor(rows / 2), CONFIG.PLAYER_COLOR, null
+      player.char, Math.floor(cols / 2), Math.floor(rows / 2), CONFIG.PLAYER_COLOUR, null
     );
   }
 
@@ -391,28 +391,28 @@ export class SceneRenderer {
     const rows = this.screenBuffer.getRows();    
 
     // Draw background box
-    this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOR, '#000000', ' ');
+    this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR, ' ');
 
     // Draw text elements
-    this.screenBuffer.drawString('== Starbase Docking Bay ==', 5, 3, CONFIG.STARBASE_COLOR, '#000000');
-    this.screenBuffer.drawString('Services:', 5, 6, CONFIG.DEFAULT_FG_COLOR, '#000000');
+    this.screenBuffer.drawString('== Starbase Docking Bay ==', 5, 3, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('Services:', 5, 6, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
     this.screenBuffer.drawString(
-      `- [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade Commodities`, 7, 8, CONFIG.DEFAULT_FG_COLOR, '#000000'
+      `- [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade Commodities`, 7, 8, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR
     );
     this.screenBuffer.drawString(
-      `- [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel Ship`, 7, 9, CONFIG.DEFAULT_FG_COLOR, null
+      `- [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel Ship`, 7, 9, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR
     );
     this.screenBuffer.drawString(
-      `Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to depart.`, 5, 12, CONFIG.DEFAULT_FG_COLOR, null
+      `Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to depart.`, 5, 12, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR
     );
 
     // Draw player
     this.screenBuffer.drawChar(
-      player.char, Math.floor(cols / 2), Math.floor(rows / 2), CONFIG.PLAYER_COLOR, null
+      player.char, Math.floor(cols / 2), Math.floor(rows / 2), CONFIG.PLAYER_COLOUR, null
     );
   }
 
-  /** Draws a legend for the heightmap colors on the planet surface view. */
+  /** Draws a legend for the heightmap colours on the planet surface view. */
   private drawHeightmapLegend(planet: Planet): void {
     if (!planet.heightLevelColors || planet.heightLevelColors.length === 0) return;
 
@@ -425,17 +425,17 @@ export class SceneRenderer {
     const numColors = planet.heightLevelColors.length;
 
     for (let i = 0; i < legendHeight; i++) {
-      // Map legend bar position to color index
-      const colorIndex = Math.floor(((i / (legendHeight - 1)) * (numColors - 1)));
-      const color = planet.heightLevelColors[colorIndex] || '#FF00FF'; // Fallback pink
+      // Map legend bar position to colour index
+      const colourIndex = Math.floor(((i / (legendHeight - 1)) * (numColors - 1)));
+      const colour = planet.heightLevelColors[colourIndex] || '#FF00FF'; // Fallback pink
 
       // Draw swatch block
       for (let w = 0; w < legendWidth; ++w) {
-        this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, color, color);
+        this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour);
       }
     }
     // Optional min/max labels
-    this.screenBuffer.drawString("High", startX - 4, startY, CONFIG.DEFAULT_FG_COLOR, null);
-    this.screenBuffer.drawString("Low", startX - 3, startY + legendHeight - 1, CONFIG.DEFAULT_FG_COLOR, null);
+    this.screenBuffer.drawString("High", startX - 4, startY, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString("Low", startX - 3, startY + legendHeight - 1, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
   }
 }

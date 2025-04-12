@@ -505,7 +505,7 @@ export class Game {
   private _renderError(message: string): void {
     logger.error(`[Game:_renderError] Displaying: ${message}`);
     this.renderer.clear(true); // Physically clear
-    this.renderer.drawString(message, 1, 1, '#FF0000', CONFIG.DEFAULT_BG_COLOR);
+    this.renderer.drawString(message, 1, 1, '#FF0000', CONFIG.DEFAULT_BG_COLOUR);
     this.statusMessage = `ERROR: ${message}`; // Also update status bar text
     this._updateStatusBar();
   }

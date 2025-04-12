@@ -15,7 +15,7 @@ export interface SurfaceData {
     rgbPaletteCache: RgbColour[] | null;
 }
 
-/** Generates surface data (heightmap, colors, palettes) for a planet. */
+/** Generates surface data (heightmap, colours, palettes) for a planet. */
 export class SurfaceGenerator {
     private prng: PRNG;
     private planetType: string;
@@ -50,20 +50,20 @@ export class SurfaceGenerator {
                 if (this.planetType === 'Lunar' || (this.planetType === 'Rock' && this.atmosphere.density === 'None')) {
                     heightmap = this.addCratersToHeightmap(heightmap); // Modifies map in place, logs internally
                 }
-                // Generate colors based on the final heightmap
-                rgbPaletteCache = this.generateRgbPaletteCache(); // Need this for color generation
+                // Generate colours based on the final heightmap
+                rgbPaletteCache = this.generateRgbPaletteCache(); // Need this for colour generation
                 if(rgbPaletteCache) {
                     heightLevelColors = this.generateHeightLevelColors(rgbPaletteCache); // Logs internally
-                    logger.info(`[SurfaceGen:${this.planetType}] Generated heightmap (${heightmap.length}x${heightmap.length}) and height level colors.`);
+                    logger.info(`[SurfaceGen:${this.planetType}] Generated heightmap (${heightmap.length}x${heightmap.length}) and height level colours.`);
                 } else {
-                     logger.error(`[SurfaceGen:${this.planetType}] Failed to generate RGB palette, cannot generate height level colors.`);
-                     // Heightmap was generated, but colors failed. Decide how to handle - return partial?
-                     // For now, nullify colors if palette fails.
+                     logger.error(`[SurfaceGen:${this.planetType}] Failed to generate RGB palette, cannot generate height level colours.`);
+                     // Heightmap was generated, but colours failed. Decide how to handle - return partial?
+                     // For now, nullify colours if palette fails.
                      heightLevelColors = null;
                 }
             } else {
-                 logger.error(`[SurfaceGen:${this.planetType}] Heightmap generation failed. Cannot generate colors.`);
-                 // Ensure colors are null if map failed
+                 logger.error(`[SurfaceGen:${this.planetType}] Heightmap generation failed. Cannot generate colours.`);
+                 // Ensure colours are null if map failed
                  heightLevelColors = null;
                  rgbPaletteCache = null;
             }
@@ -142,32 +142,32 @@ export class SurfaceGenerator {
     /** Generates or retrieves the RGB palette cache for the planet type. */
     private generateRgbPaletteCache(): RgbColour[] | null {
          logger.debug(`[SurfaceGen:${this.planetType}] Generating/retrieving RGB palette cache...`);
-         const planetPaletteHex = PLANET_TYPES[this.planetType]?.colors;
+         const planetPaletteHex = PLANET_TYPES[this.planetType]?.colours;
          if (!planetPaletteHex || planetPaletteHex.length === 0) {
-             logger.error(`[SurfaceGen:${this.planetType}] Planet visual data (color palette) missing or empty.`);
+             logger.error(`[SurfaceGen:${this.planetType}] Planet visual data (colour palette) missing or empty.`);
              return null;
          }
          try {
              const cache = planetPaletteHex.map(hex => hexToRgb(hex));
-             logger.debug(`[SurfaceGen:${this.planetType}] RGB palette cache ready (${cache.length} colors).`);
+             logger.debug(`[SurfaceGen:${this.planetType}] RGB palette cache ready (${cache.length} colours).`);
              return cache;
          } catch (e) {
-             logger.error(`[SurfaceGen:${this.planetType}] Failed to parse color palette:`, e);
+             logger.error(`[SurfaceGen:${this.planetType}] Failed to parse colour palette:`, e);
              return null;
          }
      }
 
-    /** Generates the array of hex color strings for each height level. */
+    /** Generates the array of hex colour strings for each height level. */
     private generateHeightLevelColors(rgbPalette: RgbColour[]): string[] | null {
         if (!rgbPalette || rgbPalette.length < 1) {
-            logger.error(`[SurfaceGen:${this.planetType}] Cannot generate height colors: RGB palette cache is invalid or empty.`);
+            logger.error(`[SurfaceGen:${this.planetType}] Cannot generate height colours: RGB palette cache is invalid or empty.`);
             return null;
         }
 
-        logger.info(`[SurfaceGen:${this.planetType}] Generating height level colors...`);
+        logger.info(`[SurfaceGen:${this.planetType}] Generating height level colours...`);
         const numPaletteColours = rgbPalette.length;
         const heightLevelColors = new Array<string>(CONFIG.PLANET_HEIGHT_LEVELS);
-        logger.debug(`[SurfaceGen:${this.planetType}] Interpolating ${numPaletteColours} palette colors across ${CONFIG.PLANET_HEIGHT_LEVELS} height levels...`);
+        logger.debug(`[SurfaceGen:${this.planetType}] Interpolating ${numPaletteColours} palette colours across ${CONFIG.PLANET_HEIGHT_LEVELS} height levels...`);
 
         for (let h = 0; h < CONFIG.PLANET_HEIGHT_LEVELS; h++) {
             const colourIndexFloat = (h / (CONFIG.PLANET_HEIGHT_LEVELS - 1)) * (numPaletteColours - 1);
@@ -181,12 +181,12 @@ export class SurfaceGenerator {
             } else if (index1 < numPaletteColours && index2 < numPaletteColours) {
                 terrainRgb = interpolateColour(rgbPalette[index1], rgbPalette[index2], factor);
             } else {
-                 logger.warn(`[SurfaceGen:${this.planetType}] Height color generation encountered invalid palette indices (${index1}, ${index2}) at height ${h}. Using fallback.`);
+                 logger.warn(`[SurfaceGen:${this.planetType}] Height colour generation encountered invalid palette indices (${index1}, ${index2}) at height ${h}. Using fallback.`);
                  terrainRgb = rgbPalette[index1]; // Fallback
             }
             heightLevelColors[h] = rgbToHex(terrainRgb.r, terrainRgb.g, terrainRgb.b);
         }
-        logger.info(`[SurfaceGen:${this.planetType}] Height level colors generated successfully.`);
+        logger.info(`[SurfaceGen:${this.planetType}] Height level colours generated successfully.`);
         return heightLevelColors;
     }
 }

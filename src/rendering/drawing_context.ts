@@ -3,6 +3,7 @@
 import { ScreenBuffer } from './screen_buffer';
 import { GLYPHS } from '../constants';
 import { logger } from '../utils/logger';
+import { CONFIG } from '@/config';
 
 /** Provides higher-level drawing primitives using a ScreenBuffer. */
 export class DrawingContext {
@@ -20,10 +21,10 @@ export class DrawingContext {
     width: number,
     height: number,
     fgColor: string | null = this.screenBuffer.getDefaultBgColor(), // Use ScreenBuffer defaults
-    bgColor: string | null = null, // Background for the border characters
-    fillChar: string | null = null, // Character to fill the inside with
-    fillFg: string | null = fgColor, // FG color for the fill character
-    fillBg: string | null = null // BG color for the fill area (often null/transparent)
+    bgColor: string | null = CONFIG.DEFAULT_BG_COLOUR, // Background for the border characters
+    fillChar: string | null = ' ', // Character to fill the inside with
+    fillFg: string | null = fgColor, // FG colour for the fill character
+    fillBg: string | null = bgColor // BG colour for the fill area (often null/transparent)
   ): void {
     // logger.debug(`[DrawingContext.drawBox] Drawing box at [${x},${y}], size ${width}x${height}`); // Noisy
     const ex = x + width - 1;
@@ -81,7 +82,7 @@ export class DrawingContext {
     cy: number,
     radius: number,
     char: string,
-    color: string | null,
+    colour: string | null,
     minX: number = 0,
     minY: number = 0,
     maxX: number = this.screenBuffer.getCols() - 1,
@@ -109,7 +110,7 @@ export class DrawingContext {
         // Check against provided bounds
         if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
           // Use null background for orbits to make them transparent overlays
-          this.screenBuffer.drawChar(char, screenX, screenY, color, null);
+          this.screenBuffer.drawChar(char, screenX, screenY, colour, '#000000');
         }
       });
     };

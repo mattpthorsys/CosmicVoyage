@@ -18,8 +18,8 @@ export class StatusBarUpdater {
 
     // Apply initial styling from config (can be moved to facade if preferred)
     this.statusBarElement.style.fontFamily = CONFIG.FONT_FAMILY;
-    this.statusBarElement.style.color = CONFIG.STATUS_BAR_FG_COLOR;
-    this.statusBarElement.style.backgroundColor = CONFIG.STATUS_BAR_BG_COLOR;
+    this.statusBarElement.style.color = CONFIG.STATUS_BAR_FG_COLOUR;
+    this.statusBarElement.style.backgroundColor = CONFIG.STATUS_BAR_BG_COLOUR;
     this.statusBarElement.style.whiteSpace = 'pre-wrap';
     this.statusBarElement.style.lineHeight = '1.4';
     this.statusBarElement.style.overflow = 'hidden'; // Ensure overflow is hidden

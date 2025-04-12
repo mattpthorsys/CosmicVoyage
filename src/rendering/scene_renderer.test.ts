@@ -73,7 +73,7 @@ describe('SceneRenderer', () => {
       drawString: vi.fn(),
       getCols: vi.fn().mockReturnValue(mockCols),
       getRows: vi.fn().mockReturnValue(mockRows),
-      getDefaultBgColor: vi.fn().mockReturnValue(CONFIG.DEFAULT_BG_COLOR),
+      getDefaultBgColor: vi.fn().mockReturnValue(CONFIG.DEFAULT_BG_COLOUR),
       // No need to mock methods not directly used by SceneRenderer here
     } as unknown as MockScreenBuffer;
 
@@ -84,7 +84,7 @@ describe('SceneRenderer', () => {
     } as unknown as MockDrawingContext;
 
     mockNebulaRenderer = {
-      getBackgroundColor: vi.fn().mockReturnValue(CONFIG.DEFAULT_BG_COLOR),
+      getBackgroundColor: vi.fn().mockReturnValue(CONFIG.DEFAULT_BG_COLOUR),
       clearCache: vi.fn(),
     } as unknown as MockNebulaRenderer;
 
@@ -161,7 +161,7 @@ describe('SceneRenderer', () => {
     const playerCall: [string, number, number, string | null, string | null] | undefined = 
         vi.mocked(mockScreenBuffer.drawChar).mock.calls.find((call: [string, number, number, string | null, string | null]) => call[0] === mockPlayer.char);
     expect(playerCall).toEqual([
-        mockPlayer.char, Math.floor(mockCols / 2), Math.floor(mockRows / 2), CONFIG.PLAYER_COLOR, null
+        mockPlayer.char, Math.floor(mockCols / 2), Math.floor(mockRows / 2), CONFIG.PLAYER_COLOUR, null
     ]);
   });
 
@@ -169,12 +169,12 @@ describe('SceneRenderer', () => {
      const minimapSpy = vi.spyOn(sceneRenderer as any, 'drawSystemMinimap');
      sceneRenderer.drawSolarSystem(mockPlayer, mockSystem);
 
-     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(null, 0, 0, null, CONFIG.DEFAULT_BG_COLOR); // Background clear check
+     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(null, 0, 0, null, CONFIG.DEFAULT_BG_COLOUR); // Background clear check
      expect(mockDrawingContext.drawCircle).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 1, expect.any(String), expect.any(String), expect.any(String)); // Star
      expect(mockDrawingContext.drawOrbit).toHaveBeenCalledTimes(3); // Orbits
      expect(mockDrawingContext.drawCircle).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 0, GLYPHS.PLANET_ICON, expect.any(String), expect.any(String)); // Planet
-     expect(mockDrawingContext.drawCircle).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOR, CONFIG.STARBASE_COLOR); // Starbase
-     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOR, null); // Player
+     expect(mockDrawingContext.drawCircle).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOUR, CONFIG.STARBASE_COLOUR); // Starbase
+     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOUR, null); // Player
      expect(minimapSpy).toHaveBeenCalledOnce();
      minimapSpy.mockRestore();
   });
@@ -185,7 +185,7 @@ describe('SceneRenderer', () => {
     expect(mockDrawingContext.drawBox).toHaveBeenCalledOnce();
     expect(mockDrawingContext.drawBox).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), expect.any(Number), expect.any(Number), '#888888', null); // Border
     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(null, expect.any(Number), expect.any(Number), null, expect.any(String)); // BG clear
-    expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(CONFIG.PLAYER_CHAR, expect.any(Number), expect.any(Number), CONFIG.PLAYER_COLOR, null); // Player
+    expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(CONFIG.PLAYER_CHAR, expect.any(Number), expect.any(Number), CONFIG.PLAYER_COLOUR, null); // Player
    });
 
   describe('drawPlanetSurface', () => {
@@ -213,12 +213,12 @@ describe('SceneRenderer', () => {
 
   it('drawSolidPlanetSurface should draw terrain and player', () => {
      const legendSpy = vi.spyOn(sceneRenderer as any, 'drawHeightmapLegend');
-     // We need to ensure the mock planet has heightmap and colors for this test
+     // We need to ensure the mock planet has heightmap and colours for this test
      sceneRenderer.drawPlanetSurface(mockPlayer, mockSolidPlanet);
 
      expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(GLYPHS.BLOCK, expect.any(Number), expect.any(Number), '#111', '#111');
      expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(GLYPHS.BLOCK, expect.any(Number), expect.any(Number), '#333', '#333');
-     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOR, null);
+     expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOUR, null);
      expect(legendSpy).toHaveBeenCalledWith(mockSolidPlanet);
      legendSpy.mockRestore();
   });
@@ -228,19 +228,19 @@ describe('SceneRenderer', () => {
         sceneRenderer.drawPlanetSurface(mockPlayer, mockGasGiant);
 
         expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(expect.stringMatching(/[\u2591\u2592\u2593 ]/), expect.any(Number), expect.any(Number), expect.stringMatching(/^#[0-9A-F]{6}$/), expect.stringMatching(/^#[0-9A-F]{6}$/));
-        expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOR, null);
+        expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOUR, null);
    });
 
    it('drawStarbaseInterior should draw box, text, and player', () => {
         sceneRenderer.drawPlanetSurface(mockPlayer, mockStarbase);
 
         expect(mockDrawingContext.drawBox).toHaveBeenCalledOnce();
-        expect(mockScreenBuffer.drawString).toHaveBeenCalledWith(expect.stringContaining('Starbase Docking Bay'), expect.any(Number), expect.any(Number), CONFIG.STARBASE_COLOR, null);
-        expect(mockScreenBuffer.drawString).toHaveBeenCalledWith(expect.stringContaining('Trade Commodities'), expect.any(Number), expect.any(Number), CONFIG.DEFAULT_FG_COLOR, null);
-        expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOR, null);
+        expect(mockScreenBuffer.drawString).toHaveBeenCalledWith(expect.stringContaining('Starbase Docking Bay'), expect.any(Number), expect.any(Number), CONFIG.STARBASE_COLOUR, null);
+        expect(mockScreenBuffer.drawString).toHaveBeenCalledWith(expect.stringContaining('Trade Commodities'), expect.any(Number), expect.any(Number), CONFIG.DEFAULT_FG_COLOUR, null);
+        expect(mockScreenBuffer.drawChar).toHaveBeenCalledWith(mockPlayer.char, Math.floor(mockCols/2), Math.floor(mockRows/2), CONFIG.PLAYER_COLOUR, null);
    });
 
-   it('drawHeightmapLegend should draw color blocks and labels', () => {
+   it('drawHeightmapLegend should draw colour blocks and labels', () => {
        // Call via drawSolidPlanetSurface which needs heightLevelColors
        sceneRenderer.drawPlanetSurface(mockPlayer, mockSolidPlanet);
 
@@ -259,7 +259,7 @@ describe('SceneRenderer', () => {
         (call: DrawCharCall): call is DrawCharCall => call[0] === GLYPHS.BLOCK
     );
     expect(blockCalls.length).toBeGreaterThanOrEqual(legendHeight);
-       expect(mockScreenBuffer.drawString).toHaveBeenCalledWith("High", expect.any(Number), expect.any(Number), CONFIG.DEFAULT_FG_COLOR, null);
-       expect(mockScreenBuffer.drawString).toHaveBeenCalledWith("Low", expect.any(Number), expect.any(Number), CONFIG.DEFAULT_FG_COLOR, null);
+       expect(mockScreenBuffer.drawString).toHaveBeenCalledWith("High", expect.any(Number), expect.any(Number), CONFIG.DEFAULT_FG_COLOUR, null);
+       expect(mockScreenBuffer.drawString).toHaveBeenCalledWith("Low", expect.any(Number), expect.any(Number), CONFIG.DEFAULT_FG_COLOUR, null);
    });
 });

@@ -18,7 +18,7 @@ export const CONFIG = {
     PLAYER_START_X: 0, // Initial world X
     PLAYER_START_Y: 0, // Initial world Y
     PLAYER_CHAR: '@',
-    PLAYER_COLOR: '#00FF00',
+    PLAYER_COLOUR: '#00A0A0',
     INITIAL_FUEL: 500,
     MAX_FUEL: 500,
     INITIAL_CARGO_CAPACITY: 100,
@@ -60,7 +60,7 @@ export const CONFIG = {
     PLANET_MAP_BASE_SIZE: 256, // Target size for heightmap generation (actual will be power of 2 + 1)
     // PLANET_MAP_DETAIL_SCALE: 1.0, // Controls zoom level on surface (not currently used) //
     PLANET_SURFACE_ROUGHNESS: 0.7, // Diamond-Square roughness factor
-    PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colors
+    PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colours
     MINING_RATE_FACTOR: 5, // Base number of minerals mined per action (scales with richness)
 
     // --- Hyperspace Generation ---
@@ -70,7 +70,7 @@ export const CONFIG = {
     NEBULA_INTENSITY: 1, // How much nebula colour affects background (0-1)
     NEBULA_SPARSITY: 0.4
     , // Probability of a nebula pixel being black (0-1)
-    NEBULA_COLORS: [ // Base colours for nebula interpolation //
+    NEBULA_COLOURS: [ // Base colours for nebula interpolation //
         { r: 90, g: 0, b: 70 },
         { r: 0, g: 10, b: 90 },
         { r: 0, g: 80, b: 10 },
@@ -88,11 +88,12 @@ export const CONFIG = {
     STARBASE_ORBIT_DISTANCE: 75000, // Base orbit distance for starbases
 
     // --- Colours --- (Using Australian spelling based on user preference)
-    DEFAULT_BG_COLOR: '#000000',
-    DEFAULT_FG_COLOR: '#FFFFFF',
-    STATUS_BAR_FG_COLOR: '#FFA500', //
-    STATUS_BAR_BG_COLOR: '#000000', //
-    ORBIT_COLOR_MAIN: '#777777',
-    ORBIT_COLOR_MINIMAP: '#444444',
-    STARBASE_COLOR: '#00FFFF', // Colour for starbase icon, orbit, interior highlight
+    DEFAULT_BG_COLOUR: '#000000',
+    DEFAULT_FG_COLOUR: '#FFFFFF',
+    STATUS_BAR_FG_COLOUR: '#FFA500', //
+    STATUS_BAR_BG_COLOUR: '#000000', //
+    ORBIT_COLOUR_MAIN: '#777777',
+    ORBIT_COLOUR_MINIMAP: '#444444',
+    STARBASE_COLOUR: '#00FFFF', // Colour for starbase icon, orbit, interior highlight
+    TRANSPARENT_COLOUR: '#00FFFFFF'
 };

@@ -6,8 +6,8 @@ import { logger } from '../utils/logger';
 /** Represents the state of a single character cell on the screen buffer. */
 export interface CellState {
   char: string | null; // Character to display (' ' or null for empty)
-  fg: string | null; // Hex color string or null for default
-  bg: string | null; // Hex color string or null for transparent/default
+  fg: string | null; // Hex colour string or null for default
+  bg: string | null; // Hex colour string or null for transparent/default
   isTransparentBg: boolean; // Flag if background should be transparent
 }
 
@@ -36,7 +36,7 @@ export class ScreenBuffer {
     this.ctx = context;
 
     this.defaultBgColor = null; // Transparent by default
-    this.defaultFgColor = CONFIG.DEFAULT_FG_COLOR;
+    this.defaultFgColor = CONFIG.DEFAULT_FG_COLOUR;
     this.defaultCellState = Object.freeze({
       char: null,
       fg: null,
@@ -185,7 +185,9 @@ export class ScreenBuffer {
     }
 
     const isTransparent = bgColor === null;
-    const finalBgColor = isTransparent ? null : bgColor || this.defaultBgColor;
+
+    // todo: there is a problem with assigning a transparent background - for now we'll use the default background colour
+    const finalBgColor = isTransparent ? CONFIG.DEFAULT_BG_COLOUR : bgColor || this.defaultBgColor;
 
     this.newBuffer[index] = {
       char: char || ' ', // Use space if char is null
@@ -291,14 +293,14 @@ export class ScreenBuffer {
     fgColor: string | null,
     bgColor: string | null,
     isTransparentBg: boolean,
-    oldBgColor: string | null // Background color currently on canvas at this cell
+    oldBgColor: string | null // Background colour currently on canvas at this cell
   ): void {
     const px = x * this.charWidthPx;
     const py = y * this.charHeightPx;
 
-    // Determine the background color to draw
-    // If new background is transparent, use the OLD background color (or default)
-    // If new background is solid, use the new background color (or default)
+    // Determine the background colour to draw
+    // If new background is transparent, use the OLD background colour (or default)
+    // If new background is solid, use the new background colour (or default)
     const drawBgColor = isTransparentBg
       ? oldBgColor || this.defaultBgColor
       : bgColor || this.defaultBgColor;
@@ -309,7 +311,7 @@ export class ScreenBuffer {
 
     // If there's a character to draw (and it's not just a space for clearing)
     if (char && char !== ' ') {
-      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground color
+      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground colour
       // Draw the character
       // Adjustments might be needed based on font metrics if alignment looks off
       this.ctx.fillText(char, px, py);

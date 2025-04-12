@@ -58,7 +58,7 @@ export class Starbase {
         logger.debug(`[Starbase:${this.name}] ensureSurfaceReady called. Setting up placeholder render data.`); // Add log
         // Define a single colour for the 'surface' if not already set
         if (!this.heightLevelColors) {
-            this.heightLevelColors = [CONFIG.STARBASE_COLOR]; //
+            this.heightLevelColors = [CONFIG.STARBASE_COLOUR]; //
             logger.debug(`[Starbase:${this.name}] HeightLevelColors initialized.`);
         }
         // Define a minimal heightmap (e.g., a single cell) if not already set

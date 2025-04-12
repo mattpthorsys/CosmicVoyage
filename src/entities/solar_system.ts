@@ -66,7 +66,7 @@ export class SolarSystem {
     private generateSystemName(): string {
         logger.debug(`[System] Generating system name...`);
         // Lists of prefixes and rules for naming
-        const prefixes = ['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta','Iota','Kappa','Lambda','Mu','Nu','Xi','Omicron','Pi','Rho','Sigma','Tau','Upsilon','Phi','Chi','Psi','Omega','Proxima','Cygnus','Kepler','Gliese','HD','Trappist','Luyten','Wolf','Ross','Barnard']; //
+        const prefixes = ['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta','Iota','Kappa','Lambda','Mu','Nu','Xi','Omicron','Pi','Rho','Sigma','Tau','Upsilon','Phi','Chi','Psi','Omega','Proxima','Cygnus','Kepler','Gliese','HD','Trappist','Luyten','Wolf','Ross','Barnard', 'Benfblunk', 'Harwoe', 'Smerg', 'Hiss']; //
         const number = this.systemPRNG.randomInt(1, 999); // Random number component
         const suffix = String.fromCharCode(65 + this.systemPRNG.randomInt(0, 25)); // Random capital letter suffix (A-Z)
         const name = `${this.systemPRNG.choice(prefixes)}-${number}${suffix}`; // Combine parts

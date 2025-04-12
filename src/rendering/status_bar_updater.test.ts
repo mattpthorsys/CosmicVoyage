@@ -42,8 +42,8 @@ describe('StatusBarUpdater', () => {
 
   it('constructor should apply initial styles', () => {
     expect(mockStatusBarElement.style.fontFamily).toBe(CONFIG.FONT_FAMILY);
-    expect(mockStatusBarElement.style.color).toBe(CONFIG.STATUS_BAR_FG_COLOR);
-    expect(mockStatusBarElement.style.backgroundColor).toBe(CONFIG.STATUS_BAR_BG_COLOR);
+    expect(mockStatusBarElement.style.color).toBe(CONFIG.STATUS_BAR_FG_COLOUR);
+    expect(mockStatusBarElement.style.backgroundColor).toBe(CONFIG.STATUS_BAR_BG_COLOUR);
     expect(mockStatusBarElement.style.whiteSpace).toBe('pre-wrap');
     expect(mockStatusBarElement.style.lineHeight).toBe('1.4');
     expect(mockStatusBarElement.style.overflow).toBe('hidden');
