@@ -199,7 +199,7 @@ export class Game {
                 case 'starbase': break;
             }
         } catch (moveError) {
-            logger.error(`[Game:_processInput] Error during player movement in state '${this.stateManager.state}':`, moveError);
+            logger.error(`[Game:_processInput] Error during player movement in state '${this.stateManager.state}': ${moveError}`);
             actionStatusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
         }
     }
@@ -382,7 +382,7 @@ export class Game {
         // REMOVED: Call to renderOverlayFull
 
     } catch (error) {
-        logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, error);
+        logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!! ${error}`);
         this.stopGame();
         this._renderError(`FATAL RENDER ERROR: ${error instanceof Error ? error.message : String(error)}. Refresh.`);
         try {
@@ -409,7 +409,7 @@ export class Game {
     try {
         currentCargoTotal = this.player.getCurrentCargoTotal();
     } catch (e) {
-        logger.error("[Game:_updateStatusBar] Error getting current cargo total:", e);
+        logger.error(`[Game:_updateStatusBar] Error getting current cargo total: ${e}`);
     }
     const commonStatus = ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${currentCargoTotal}/${this.player.cargoCapacity} | Cr: ${this.player.credits}`;
     const hasStarbase = this.stateManager.state === 'starbase';

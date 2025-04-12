@@ -60,7 +60,7 @@ export class StatusBarUpdater {
       }
     } catch (e) {
       logger.warn(
-        '[StatusBarUpdater.updateMaxChars] Could not accurately calculate status bar width for truncation.', e
+        `[StatusBarUpdater.updateMaxChars] Could not accurately calculate status bar width for truncation. ${e}`
       );
       this.statusBarMaxChars = 240; // Fallback
     }

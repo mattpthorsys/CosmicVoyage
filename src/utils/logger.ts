@@ -68,14 +68,17 @@ function _logAndBuffer(level: LogLevel, levelStr: string, args: (object|string)[
 // --- Logger Object Definition ---
 // Define the logger object structure explicitly for clarity and type safety
 interface Logger {
-    debug(...args: object[]): void;
-    info(...args: object[]): void;
-    warn(...args: object[]): void;
-    error(...args: object[]): void;
+    // *** MODIFIED: Changed object[] to a specific Union Type[] ***
+    debug(...args: (string | number | boolean | object | null | undefined)[]): void;
+    info(...args: (string | number | boolean | object | null | undefined)[]): void;
+    warn(...args: (string | number | boolean | object | null | undefined)[]): void;
+    error(...args: (string | number | boolean | object | null | undefined)[]): void;
+    // *** END MODIFICATION ***
+
     setLogLevel(level: LogLevel): void;
     getCurrentLogLevel(): LogLevel;
     clearLogBuffer(): void;
-    getLogBufferAsString(includeHeader?: boolean): string; // Made optional
+    getLogBufferAsString(includeHeader?: boolean): string;
     downloadLogFile(filename?: string): void;
 }
 

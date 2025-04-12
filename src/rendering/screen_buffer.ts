@@ -161,7 +161,7 @@ export class ScreenBuffer {
         logger.warn(`[ScreenBuffer.clear] Buffer length mismatch after clear. Grid: ${size}, Screen: ${this.screenBuffer.length}, New: ${this.newBuffer.length}`);
     }
 
-    logger.info('[ScreenBuffer.clear] Internal buffers reset to default state.');
+    logger.debug('[ScreenBuffer.clear] Internal buffers reset to default state.');
   }
 
 

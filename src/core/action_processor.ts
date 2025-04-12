@@ -73,7 +73,7 @@ export class ActionProcessor {
           break; //
       }
     } catch (error) { //
-      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${this.stateManager.state}':`, error); //
+      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${this.stateManager.state}': ${error}`); //
       statusMessage = `ACTION ERROR: ${error instanceof Error ? error.message : String(error)}`; //
     }
 
@@ -212,7 +212,7 @@ export class ActionProcessor {
                 }
                 // --- END UPDATED MINING LOGIC ---
              } catch(mineError) {
-                 logger.error(`[ActionProcessor] Error during MINE action on ${planet.name}:`, mineError);
+                 logger.error(`[ActionProcessor] Error during MINE action on ${planet.name}: ${mineError}`);
                  message = `Mining Error: ${mineError instanceof Error ? mineError.message : String(mineError)}`;
              }
         }

@@ -180,7 +180,7 @@ export class Planet { //
 
             logger.info(`[Planet:${this.name}] Surface data generated successfully.`); //
         } catch (error) { //
-            logger.error(`[Planet:${this.name}] Surface data generation failed:`, error); //
+            logger.error(`[Planet:${this.name}] Surface data generation failed: ${error}`); //
             this._surfaceData = null; // Ensure it's null on failure
             throw error; // Re-throw after logging
         }

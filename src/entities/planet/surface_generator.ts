@@ -97,7 +97,7 @@ export class SurfaceGenerator {
             logger.info(`[SurfaceGen:${this.planetType}] Generated ${generatedMap.length}x${generatedMap.length} heightmap.`);
             return generatedMap;
         } catch (error) {
-            logger.error(`[SurfaceGen:${this.planetType}] Heightmap generation failed:`, error);
+            logger.error(`[SurfaceGen:${this.planetType}] Heightmap generation failed: ${error}`);
             return null;
         }
     }
@@ -162,7 +162,7 @@ export class SurfaceGenerator {
              logger.debug(`[SurfaceGen:${this.planetType}] RGB palette cache ready (${cache.length} colours).`); //
              return cache; //
          } catch (e) { //
-             logger.error(`[SurfaceGen:${this.planetType}] Failed to parse colour palette:`, e); //
+             logger.error(`[SurfaceGen:${this.planetType}] Failed to parse colour palette: ${e}`); //
              return null; //
          }
      }
