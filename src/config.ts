@@ -72,8 +72,8 @@ export const CONFIG = {
     , // Probability of a nebula pixel being black (0-1)
     NEBULA_COLORS: [ // Base colours for nebula interpolation //
         { r: 90, g: 0, b: 70 },
-        { r: 0, g: 30, b: 90 },
-        { r: 90, g: 10, b: 10 },
+        { r: 0, g: 10, b: 90 },
+        { r: 0, g: 80, b: 10 },
     ],
     NEBULA_CACHE_PRECISION: 1, // Decimal places for Perlin noise cache keys
     CELL_BLOCK_SIZE: 3, // Optimization: Draw background in blocks (reduces Perlin calls)
