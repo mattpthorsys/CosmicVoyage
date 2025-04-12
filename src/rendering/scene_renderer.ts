@@ -10,7 +10,7 @@ import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { PRNG } from '../utils/prng'; // Ensure PRNG is imported
 import { CONFIG } from '../config';
-import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES } from '../constants';
+import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, SPECTRAL_DISTRIBUTION } from '../constants';
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex } from './colour';
@@ -41,47 +41,54 @@ export class SceneRenderer {
     const viewCenterY = Math.floor(rows / 2);
     const startWorldX = player.worldX - viewCenterX;
     const startWorldY = player.worldY - viewCenterY;
-    const baseSeedInt = gameSeedPRNG.seed;
+    const baseSeedInt = gameSeedPRNG.seed; //
     const starPresenceThreshold = Math.floor(
       CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE
-    );
-
+    ); //
     // Loop through visible grid cells
     for (let viewY = 0; viewY < rows; viewY++) {
       for (let viewX = 0; viewX < cols; viewX++) {
-        const worldX = startWorldX + viewX;
-        const worldY = startWorldY + viewY;
+        const worldX = startWorldX + viewX; //
+        const worldY = startWorldY + viewY; //
 
         // --- Draw Nebula Background ---
-        const finalBg = this.nebulaRenderer.getBackgroundColor(worldX, worldY);
-
+        const finalBg = this.nebulaRenderer.getBackgroundColor(worldX, worldY); //
         // --- Draw Stars (on top of nebula) ---
-        const hash = fastHash(worldX, worldY, baseSeedInt);
+        const hash = fastHash(worldX, worldY, baseSeedInt); //
         const isStarCell =
-          (hash % CONFIG.STAR_CHECK_HASH_SCALE) < starPresenceThreshold;
-
+          (hash % CONFIG.STAR_CHECK_HASH_SCALE) < starPresenceThreshold; //
         if (isStarCell) {
           // Generate star details using a PRNG seeded specifically for this star location
-          const starSeed = `star_${worldX},${worldY}`;
-          const starPRNG = gameSeedPRNG.seedNew(starSeed);
-          const starType = starPRNG.choice(Object.keys(SPECTRAL_TYPES))!;
-          const starInfo = SPECTRAL_TYPES[starType];
+          const starSeed = `star_${worldX},${worldY}`; //
+          const starPRNG = gameSeedPRNG.seedNew(starSeed); //
 
+          // -- START CORRECTION --
+          // Use SPECTRAL_DISTRIBUTION for weighted selection, matching SolarSystem constructor
+          const starType = starPRNG.choice(SPECTRAL_DISTRIBUTION)!; // Ensure this uses the correct distribution array
+          // const starType = starPRNG.choice(Object.keys(SPECTRAL_TYPES))!; // Original incorrect line
+          // -- END CORRECTION --
+
+          const starInfo = SPECTRAL_TYPES[starType]; //
           if (starInfo) {
             // Adjust brightness slightly based on hash for twinkling effect?
-            const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1); // Example
-            const starBaseRgb = hexToRgb(starInfo.colour);
+            const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1); //
+            // Example
+            const starBaseRgb = hexToRgb(starInfo.colour); //
             const finalStarRgb = adjustBrightness(starBaseRgb, brightnessFactor);
-            const finalStarHex = rgbToHex(finalStarRgb.r, finalStarRgb.g, finalStarRgb.b);
-
+            const finalStarHex = rgbToHex(finalStarRgb.r, finalStarRgb.g, finalStarRgb.b); //
             // Draw star character with transparent background over the nebula
-            this.screenBuffer.drawChar(starInfo.char, viewX, viewY, finalStarHex, null); // Null BG
+            this.screenBuffer.drawChar(starInfo.char, viewX, viewY, finalStarHex, null); //
+            // Null BG
           } else {
-            this.screenBuffer.drawChar('?', viewX, viewY, '#FF00FF', null); // Fallback, Null BG
+            // Log error if starType from distribution didn't match SPECTRAL_TYPES keys
+            logger.error(`[SceneRenderer.drawHyperspace] Could not find star info for type "${starType}" chosen from distribution.`);
+            this.screenBuffer.drawChar('?', viewX, viewY, '#FF00FF', null); //
+            // Fallback, Null BG
           }
         } else {
           // Not a star cell, just draw the background
-          this.screenBuffer.drawChar(null, viewX, viewY, null, finalBg); // Solid BG
+          this.screenBuffer.drawChar(null, viewX, viewY, null, finalBg); //
+          // Solid BG
         }
       }
     }
@@ -89,7 +96,7 @@ export class SceneRenderer {
     // Draw player character last, on top
     this.screenBuffer.drawChar(
       player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOUR, null // Null BG
-    );
+    ); //
   }
 
   /** ADDED: Draws the scrolling star background for the system view. */
