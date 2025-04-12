@@ -1,11 +1,12 @@
+/* FILE: src/core/input_manager.ts */
 // src/core/input_manager.ts
 
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
-
 /**
  * Handles keyboard input, tracking currently held keys, active actions,
- * and actions that were just pressed. Supports continuous actions (like movement)
+ * and actions that were just pressed.
+ * Supports continuous actions (like movement)
  * and discrete actions (like landing).
  */
 export class InputManager {
@@ -15,11 +16,9 @@ export class InputManager {
   private activeActions: Set<string> = new Set();
   // Set of actions that became active *this frame* (cleared each update)
   public justPressedActions: Set<string> = new Set();
-
   private isListening: boolean = false;
   // Memoized mapping from key codes to action names for faster lookups
   private keyToActionMap: Map<string, string> = new Map();
-
   constructor() {
     logger.debug('[InputManager] Instance created.');
     this._buildKeyToActionMap();
@@ -74,7 +73,8 @@ export class InputManager {
 
 
   /**
-   * Updates the manager's state. Should be called once per game loop tick,
+   * Updates the manager's state.
+   * Should be called once per game loop tick,
    * typically *before* processing input for the frame.
    * Clears the "just pressed" actions from the previous frame.
    */
@@ -109,7 +109,7 @@ export class InputManager {
     logger.debug(`--- Raw KeyDown Received: key='${e.key}' code='${e.code}' ---`); // Changed to debug
 
     if (!this.isListening) return;
-    logger.debug('--- iSlistening passed...');
+    logger.debug('--- isListening passed...');
 
     const key = e.key;
     const lowerKey = key.toLowerCase();
@@ -156,7 +156,6 @@ export class InputManager {
             // *Always* add to justPressedActions for this frame, as it's a new press
             this.justPressedActions.add(action);
             logger.debug(`>>> KeyDown: Added '${action}' to justPressedActions. Current justPressed: [${Array.from(this.justPressedActions).join(', ')}]`);
-
             // Prevent default ONLY for keys mapped to actions or known modifiers
             e.preventDefault();
             logger.debug(`>>> KeyDown: Prevented default for mapped key '${key}'`);
@@ -169,7 +168,6 @@ export class InputManager {
         }
     }
   };
-  
   private _handleKeyUp = (e: KeyboardEvent): void => {
     if (!this.isListening) return;
 
@@ -178,13 +176,12 @@ export class InputManager {
 
     logger.debug(`[InputManager] Keyup: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`); // Log Ctrl state
     this.keysPressed.delete(key);
-
     // Handle Modifier Releases
     if (key === 'Shift') {
         logger.debug(`[InputManager] FINE_CONTROL deactivated.`);
         this.activeActions.delete('FINE_CONTROL');
     }
-    if (key === 'Control') { 
+    if (key === 'Control') {
         logger.debug(`[InputManager] BOOST deactivated.`);
         this.activeActions.delete('BOOST');
     }

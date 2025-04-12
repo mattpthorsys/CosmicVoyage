@@ -53,6 +53,7 @@ export const CONFIG = {
         MINE: 'm',
         TRADE: 't',
         REFUEL: 'r',
+        PEEK_SYSTEM: 's', // *** ADDED: Key for peeking at system info ***
         DOWNLOAD_LOG: 'p',
         QUIT: 'Escape',
     },
@@ -110,5 +111,14 @@ export const CONFIG = {
     ORBIT_COLOUR_MAIN: '#777777',
     ORBIT_COLOUR_MINIMAP: '#444444',
     STARBASE_COLOUR: '#00FFFF', // Colour for starbase icon, orbit, interior highlight
-    TRANSPARENT_COLOUR: 'transparent' // Use CSS transparent keyword
+    TRANSPARENT_COLOUR: 'transparent', // Use CSS transparent keyword
+
+    // --- Popup --- *** NEW SECTION ***
+    POPUP_BG_COLOUR: '#ADD8E6', // Light Blue
+    POPUP_FG_COLOUR: '#000000', // Black
+    POPUP_BORDER_COLOUR: '#000000', // Black
+    POPUP_MAX_WIDTH_FRACTION: 0.6, // Max 60% of screen width
+    POPUP_MAX_HEIGHT_FRACTION: 0.7, // Max 70% of screen height
+    POPUP_PADDING_X: 2, // Horizontal padding in characters
+    POPUP_PADDING_Y: 1, // Vertical padding in characters
 };
