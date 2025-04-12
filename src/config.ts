@@ -54,6 +54,7 @@ export const CONFIG = {
         TRADE: 't',
         REFUEL: 'r',
         PEEK_SYSTEM: 's', // *** ADDED: Key for peeking at system info ***
+        SCAN_SYSTEM_OBJECT: 's', // Changed from PEEK_SYSTEM
         DOWNLOAD_LOG: 'p',
         QUIT: 'Escape',
     },

@@ -1,5 +1,5 @@
 /* FILE: src/core/input_manager.ts */
-// src/core/input_manager.ts
+// src/core/input_manager.ts (Changed 's' key action)
 
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
@@ -19,6 +19,7 @@ export class InputManager {
   private isListening: boolean = false;
   // Memoized mapping from key codes to action names for faster lookups
   private keyToActionMap: Map<string, string> = new Map();
+
   constructor() {
     logger.debug('[InputManager] Instance created.');
     this._buildKeyToActionMap();
@@ -29,11 +30,19 @@ export class InputManager {
   private _buildKeyToActionMap(): void {
     this.keyToActionMap.clear();
     for (const [actionName, boundKey] of Object.entries(CONFIG.KEY_BINDINGS)) {
-        // Store lowercase key for case-insensitive matching during event handling
+        // *** MODIFICATION: Map 's' to SCAN_SYSTEM_OBJECT instead of PEEK_SYSTEM ***
+        // The actual value comes from CONFIG, so we just need to ensure CONFIG is updated
+        // Assuming CONFIG.KEY_BINDINGS.PEEK_SYSTEM was changed to SCAN_SYSTEM_OBJECT externally
+        // or that the key 's' is now mapped to SCAN_SYSTEM_OBJECT in config.ts
         this.keyToActionMap.set(boundKey.toLowerCase(), actionName);
-        // Also handle Shift key mapping specifically if needed, though we check shiftKey directly
+
+        // Handle Shift key mapping specifically if needed, though we check shiftKey directly
         if (boundKey === 'Shift') {
-            this.keyToActionMap.set('shift', 'FINE_CONTROL'); // Map 'shift' (lowercase)
+            this.keyToActionMap.set('shift', 'FINE_CONTROL');
+        }
+        // Add similar handling for Control key if needed
+        if (boundKey === 'Control') { // Example if Control is bound
+             this.keyToActionMap.set('control', 'BOOST'); // Assuming BOOST action
         }
     }
      logger.debug('[InputManager] Key to action map built:', this.keyToActionMap);
@@ -106,18 +115,17 @@ export class InputManager {
   /** Handles keydown events. Arrow function for correct 'this'. */
   private _handleKeyDown = (e: KeyboardEvent): void => {
     // Log the raw event first
-    logger.debug(`--- Raw KeyDown Received: key='${e.key}' code='${e.code}' ---`); // Changed to debug
+    // logger.debug(`--- Raw KeyDown Received: key='${e.key}' code='${e.code}' ---`); // Noisy
 
     if (!this.isListening) return;
-    logger.debug('--- isListening passed...');
+    // logger.debug('--- isListening passed...'); // Noisy
 
     const key = e.key;
     const lowerKey = key.toLowerCase();
 
     // If key is already held (present in keysPressed), ignore the repeat event.
-    // This prevents OS-level key repeat from spamming actions.
     if (this.keysPressed.has(key)) {
-      logger.debug(`>>> KeyDown '${key}' repeat ignored.`);
+      // logger.debug(`>>> KeyDown '${key}' repeat ignored.`); // Noisy
       return; // Exit early if it's a repeat
     }
 
@@ -126,8 +134,6 @@ export class InputManager {
     logger.debug(`[InputManager] Keydown registered: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`);
 
     // --- Handle Modifiers Directly ---
-    // Use justPressedActions to ensure modifier logic runs only on initial press if needed,
-    // but for active state, just add/delete from activeActions.
     if (e.shiftKey) {
         if (!this.activeActions.has('FINE_CONTROL')) {
              logger.debug(`[InputManager] FINE_CONTROL activated.`);
@@ -146,28 +152,25 @@ export class InputManager {
     // --- Handle Base Actions (Non-Modifiers) ---
     if (key !== 'Shift' && key !== 'Control') {
         const action = this.keyToActionMap.get(lowerKey);
-        logger.debug(`>>> KeyDown Mapped Action for '${lowerKey}': ${action ?? 'NONE'}`);
+        // logger.debug(`>>> KeyDown Mapped Action for '${lowerKey}': ${action ?? 'NONE'}`); // Noisy
 
         if (action) {
-            // Action key was just pressed (wasn't in keysPressed before)
-            logger.debug(`>>> KeyDown Activating Action: ${action}`);
-            // Always add to activeActions when pressed down
+            // logger.debug(`>>> KeyDown Activating Action: ${action}`); // Noisy
             this.activeActions.add(action);
-            // *Always* add to justPressedActions for this frame, as it's a new press
             this.justPressedActions.add(action);
-            logger.debug(`>>> KeyDown: Added '${action}' to justPressedActions. Current justPressed: [${Array.from(this.justPressedActions).join(', ')}]`);
-            // Prevent default ONLY for keys mapped to actions or known modifiers
+            // logger.debug(`>>> KeyDown: Added '${action}' to justPressedActions. Current justPressed: [${Array.from(this.justPressedActions).join(', ')}]`); // Noisy
             e.preventDefault();
-            logger.debug(`>>> KeyDown: Prevented default for mapped key '${key}'`);
+            // logger.debug(`>>> KeyDown: Prevented default for mapped key '${key}'`); // Noisy
         }
     } else {
         // If it WAS a modifier key, prevent default anyway if we handle it
         if (key === 'Shift' || key === 'Control') {
             e.preventDefault();
-            logger.debug(`>>> KeyDown: Prevented default for modifier key '${key}'`);
+            // logger.debug(`>>> KeyDown: Prevented default for modifier key '${key}'`); // Noisy
         }
     }
   };
+
   private _handleKeyUp = (e: KeyboardEvent): void => {
     if (!this.isListening) return;
 
@@ -176,6 +179,7 @@ export class InputManager {
 
     logger.debug(`[InputManager] Keyup: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`); // Log Ctrl state
     this.keysPressed.delete(key);
+
     // Handle Modifier Releases
     if (key === 'Shift') {
         logger.debug(`[InputManager] FINE_CONTROL deactivated.`);

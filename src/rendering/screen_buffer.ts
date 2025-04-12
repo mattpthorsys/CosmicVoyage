@@ -1,5 +1,5 @@
 /* FILE: src/rendering/screen_buffer.ts */
-// src/rendering/screen_buffer.ts
+// src/rendering/screen_buffer.ts (Added copyBufferFrom method)
 
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
@@ -17,6 +17,7 @@ export class ScreenBuffer {
 
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
+
   // Character grid dimensions
   private charWidthPx: number = 0;
   private charHeightPx: number = 0;
@@ -45,7 +46,6 @@ export class ScreenBuffer {
       bg: isTransparent ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR,
       isTransparentBg: isTransparent, // Default transparency matches buffer type
     });
-
     this.defaultFgColor = CONFIG.DEFAULT_FG_COLOUR;
     // defaultBgColor also depends on the buffer's transparency setting
     this.defaultBgColor = isTransparent ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR;
@@ -109,7 +109,6 @@ export class ScreenBuffer {
     this.charHeightPx = charHeight;
 
     // Update canvas context font settings
-    // Note: Context settings are shared, this will affect both buffers if drawn sequentially
     this.ctx.font = `${this.charHeightPx}px ${CONFIG.FONT_FAMILY}`;
     this.ctx.textBaseline = 'top';
 
@@ -139,7 +138,6 @@ export class ScreenBuffer {
     logger.debug(
       `[ScreenBuffer.clear] Clearing buffers (Physical Clear: ${physicalClear})...`
     );
-
     if (physicalClear && this.canvas.width > 0 && this.canvas.height > 0) {
       // Clear the entire physical canvas area this buffer controls
       logger.debug(`[ScreenBuffer.clear] Physically clearing canvas area ${this.canvas.width}x${this.canvas.height}`);
@@ -194,9 +192,7 @@ export class ScreenBuffer {
     }
 
     // Determine if the provided background implies transparency
-    // Use null or the specific transparent color keyword
     const isTransparentUpdate = (bgColor === null || bgColor === CONFIG.TRANSPARENT_COLOUR);
-
     // Use the provided background color, or fall back to the buffer's default background
     const finalBgColor = isTransparentUpdate ? CONFIG.TRANSPARENT_COLOUR : (bgColor || this.defaultBgColor);
 
@@ -223,9 +219,35 @@ export class ScreenBuffer {
   }
 
   /**
-   * ADDED: Renders the entire content of the newBuffer to the canvas.
-   * Use this when a full redraw is needed instead of diffing.
+   * *** NEW METHOD ***
+   * Copies the content of another ScreenBuffer's *rendered* state (screenBuffer)
+   * into this buffer's *drawing* state (newBuffer).
+   * Assumes dimensions match. Used for compositing layers.
    */
+  copyBufferFrom(sourceBuffer: ScreenBuffer): void {
+      if (this.cols !== sourceBuffer.getCols() || this.rows !== sourceBuffer.getRows()) {
+          logger.error(`[ScreenBuffer.copyBufferFrom] Buffer dimension mismatch! Cannot copy. Target: ${this.cols}x${this.rows}, Source: ${sourceBuffer.getCols()}x${sourceBuffer.getRows()}`);
+          return;
+      }
+
+      const size = this.cols * this.rows;
+      const sourceScreen = sourceBuffer.screenBuffer; // Access internal array directly
+
+      if (sourceScreen.length !== size || this.newBuffer.length !== size) {
+           logger.error(`[ScreenBuffer.copyBufferFrom] Internal buffer length mismatch! Target: ${this.newBuffer.length}, Source: ${sourceScreen.length}, Expected: ${size}`);
+           return;
+      }
+
+      logger.debug(`[ScreenBuffer.copyBufferFrom] Copying ${size} cells from source buffer.`);
+      for (let i = 0; i < size; i++) {
+          // Copy the state directly into the newBuffer for drawing
+          // We copy the source's *screenBuffer* (last rendered state)
+          this.newBuffer[i] = sourceScreen[i] || this.defaultCellState;
+      }
+  }
+
+
+  /** Renders the entire content of the newBuffer to the canvas. */
   renderFull(): void {
       const startTime = performance.now();
       const size = this.cols * this.rows;
@@ -264,9 +286,12 @@ export class ScreenBuffer {
       }
 
       const endTime = performance.now();
-      logger.debug(
-          `[ScreenBuffer.renderFull] Completed: ${cellsDrawn} cells drawn (full render) in ${(endTime - startTime).toFixed(2)} ms`
-      );
+      // Reduce logging frequency if needed
+      // if (cellsDrawn > 0) {
+      //   logger.debug(
+      //       `[ScreenBuffer.renderFull] Completed: ${cellsDrawn} cells drawn (full render) in ${(endTime - startTime).toFixed(2)} ms`
+      //   );
+      // }
   }
 
 
@@ -297,7 +322,7 @@ export class ScreenBuffer {
         oldState === this.defaultCellState &&
         newState === this.defaultCellState
       ) {
-          // Ensure newBuffer is still reset even if we skip drawing
+           // Ensure newBuffer is still reset even if we skip drawing
            if (this.newBuffer[i] !== this.defaultCellState) {
                this.newBuffer[i] = this.defaultCellState;
            }
@@ -338,11 +363,11 @@ export class ScreenBuffer {
 
     const endTime = performance.now();
     if (cellsDrawn > 0) {
-      logger.debug(
-        `[ScreenBuffer.renderDiff] Completed: ${cellsDrawn} cells drawn in ${(
-          endTime - startTime
-        ).toFixed(2)} ms`
-      );
+      // logger.debug( // Can be noisy
+      //   `[ScreenBuffer.renderDiff] Completed: ${cellsDrawn} cells drawn in ${(
+      //     endTime - startTime
+      //   ).toFixed(2)} ms`
+      // );
     }
   }
 
@@ -354,18 +379,15 @@ export class ScreenBuffer {
     fgColor: string | null,
     bgColor: string | null,
     isTransparentBg: boolean,
-    _oldBgColor: string | null // Keep param for signature compatibility, but might not be needed for full render
+    _oldBgColor: string | null // Keep param for signature compatibility
   ): void {
     const px = x * this.charWidthPx;
     const py = y * this.charHeightPx;
 
     // Determine the background colour to draw for this cell
-    // If the new state requests transparency, we clear the rect.
-    // Otherwise, we fill with the specified bg color or the buffer's default solid bg.
     const drawBgColor = isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : (bgColor || this.defaultBgColor);
 
-    // Optimization: Only clearRect or fillRect if the background is NOT transparent *or* if there's a foreground char.
-    // If background is transparent AND char is null/space, we don't need to do anything.
+    // Optimization: Only clearRect or fillRect if the background is NOT transparent *or* if there's a non-space foreground char.
     const charToDraw = char || ' '; // Treat null as space
 
     if (drawBgColor !== CONFIG.TRANSPARENT_COLOUR) {
@@ -374,16 +396,14 @@ export class ScreenBuffer {
         this.ctx.fillRect(px, py, this.charWidthPx, this.charHeightPx);
     } else if (charToDraw !== ' ') {
         // If background IS transparent, but we have a char, clear the area first
-        // This ensures the character's anti-aliasing blends with cleared background, not old content
         this.ctx.clearRect(px, py, this.charWidthPx, this.charHeightPx);
     }
     // Else (transparent bg AND no char), do nothing for background.
 
     // If there's a non-space character to draw
     if (charToDraw !== ' ') {
-      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground colour (can be RGBA)
+      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground colour
       // Draw the character
-      // Adjustments might be needed based on font metrics if alignment looks off
       this.ctx.fillText(charToDraw, px, py);
       // logger.debug(`Drew char '${char}' at px [${px}, ${py}]`); // Extremely noisy
     }
