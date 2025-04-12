@@ -67,11 +67,13 @@ export const CONFIG = {
     STAR_DENSITY: 0.008, // Approximate fraction of cells containing a star check
     STAR_CHECK_HASH_SCALE: 10000, // Divisor for hash check
     NEBULA_SCALE: 0.05, // Perlin noise scale for nebulae
-    NEBULA_INTENSITY: 0.8, // How much nebula colour affects background (0-1)
+    NEBULA_INTENSITY: 1, // How much nebula colour affects background (0-1)
+    NEBULA_SPARSITY: 0.5
+    , // Probability of a nebula pixel being black (0-1)
     NEBULA_COLORS: [ // Base colours for nebula interpolation //
-        { r: 60, g: 20, b: 70 },
-        { r: 20, g: 50, b: 80 },
-        { r: 90, g: 30, b: 30 },
+        { r: 90, g: 0, b: 70 },
+        { r: 0, g: 30, b: 90 },
+        { r: 90, g: 10, b: 10 },
     ],
     NEBULA_CACHE_PRECISION: 1, // Decimal places for Perlin noise cache keys
     CELL_BLOCK_SIZE: 3, // Optimization: Draw background in blocks (reduces Perlin calls)
