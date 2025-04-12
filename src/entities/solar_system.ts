@@ -1,6 +1,7 @@
-// src/entities/solar_system.ts (Moved ORBITAL_CONSTANT to class level and reduced value)
+// src/entities/solar_system.ts (Incorporates Star Mass into Orbit Calculation)
 
 import { CONFIG } from '../config';
+// Import SPECTRAL_TYPES which now includes mass
 import { SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants';
 import { PRNG } from '../utils/prng';
 import { Planet } from './planet';
@@ -8,18 +9,19 @@ import { Starbase } from './starbase';
 import { logger } from '../utils/logger';
 
 export class SolarSystem {
-    // Adjust this value to globally speed up or slow down orbital mechanics.
-    // Smaller value = slower orbits, larger value = faster orbits.
-    private static readonly REALISTIC_ORBIT_SPEED_CONSTANT = 5e3; // Tunable constant
+    // --- Constant for Base Orbital Speed Control ---
+    // This acts as the proportionality constant, adjusted by sqrt(StarMass)
+    // Adjusted based on user feedback.
+    private static readonly BASE_ORBITAL_CONSTANT = 5e2;
 
-    readonly starX: number; // World coordinate X where this system is centered
-    readonly starY: number; // World coordinate Y
-    readonly systemPRNG: PRNG; // PRNG seeded specifically for this system's generation
-    readonly starType: string; // Spectral type (e.g., 'G', 'M')
-    readonly name: string; // Procedurally generated name
-    readonly planets: (Planet | null)[]; // Array holding planets, null slots for empty orbits
-    readonly starbase: Starbase | null; // Optional starbase in the system
-    readonly edgeRadius: number; // Approx radius encompassing the outermost object for rendering/exit checks
+    readonly starX: number;
+    readonly starY: number;
+    readonly systemPRNG: PRNG;
+    readonly starType: string;
+    readonly name: string;
+    readonly planets: (Planet | null)[];
+    readonly starbase: Starbase | null;
+    readonly edgeRadius: number;
 
     constructor(starX: number, starY: number, gameSeedPRNG: PRNG) {
         this.starX = starX;
@@ -188,41 +190,46 @@ export class SolarSystem {
     /** Updates the orbital positions of planets and starbases based on elapsed time. */
     updateOrbits(deltaTime: number): void {
 
-        // Used to scale the constant based on deltaTime
-        // Keep existing scaling? Or adjust/remove if REALISTIC_ORBIT_SPEED_CONSTANT handles it all? Let's keep it for now.
+        // Calculate time factor once
         const timeScaledSpeedFactor = deltaTime * CONFIG.SYSTEM_ORBIT_SPEED_FACTOR * 10000;
+
+        // --- Calculate Effective Orbital Constant based on Star Mass ---
+        const starInfo = SPECTRAL_TYPES[this.starType];
+        // Default to 1.0 solar mass if type or mass is unknown
+        const starMassInSolarMasses = starInfo?.mass ?? 1.0;
+        // Factor is proportional to sqrt(Mass) according to v = sqrt(GM/r) -> ω ∝ sqrt(M)
+        const starMassFactor = Math.sqrt(Math.max(0.01, starMassInSolarMasses)); // Ensure mass factor is positive
+        const effectiveOrbitalConstant = SolarSystem.BASE_ORBITAL_CONSTANT * starMassFactor;
+        // --- End Star Mass Calculation ---
+
 
         // --- Update Planets ---
         this.planets.forEach((planet) => {
             if (!planet) return;
 
-            const safeOrbitDistance = Math.max(1000, planet.orbitDistance); // Ensure positive distance
+            const safeOrbitDistance = Math.max(1000, planet.orbitDistance);
 
-            // --- Realistic Angular Speed Calculation ---
-            // Use the class constant REALISTIC_ORBIT_SPEED_CONSTANT
-            let angularSpeed = (SolarSystem.REALISTIC_ORBIT_SPEED_CONSTANT / (safeOrbitDistance ** 1.5)) * timeScaledSpeedFactor;
+            // --- Realistic Angular Speed Calculation (Using Effective Constant) ---
+            let angularSpeed = (effectiveOrbitalConstant / (safeOrbitDistance ** 1.5)) * timeScaledSpeedFactor;
 
             // Safety check for calculated speed
             if (!Number.isFinite(angularSpeed)) {
                 logger.warn(`[System:${this.name}] Invalid angularSpeed (${angularSpeed}) calculated for ${planet.name}. Resetting angle.`);
-                angularSpeed = 0; // Prevent NaN angle
+                angularSpeed = 0;
             }
 
             // --- Update Angle and Position ---
             planet.orbitAngle = (planet.orbitAngle + angularSpeed) % (Math.PI * 2);
 
-            // Ensure angle is valid before trig functions
             if (!Number.isFinite(planet.orbitAngle)) {
                 logger.warn(`[System:${this.name}] Invalid orbitAngle (${planet.orbitAngle}) for ${planet.name}. Resetting to 0.`);
                 planet.orbitAngle = 0;
             }
-            // Ensure orbit distance is valid before multiplication
             const validOrbitDist = Number.isFinite(planet.orbitDistance) ? planet.orbitDistance : 0;
 
             planet.systemX = Math.cos(planet.orbitAngle) * validOrbitDist;
             planet.systemY = Math.sin(planet.orbitAngle) * validOrbitDist;
 
-            // Final Check for position
             if (!Number.isFinite(planet.systemX) || !Number.isFinite(planet.systemY)) {
                 logger.error(`[System:${this.name}] CRITICAL: Non-finite position calculated for ${planet.name}. Resetting position. Angle: ${planet.orbitAngle}, Dist: ${validOrbitDist}`);
                 planet.systemX = 0;
@@ -230,16 +237,14 @@ export class SolarSystem {
             }
         });
 
-        // --- Update Starbase (Apply the same realistic physics) ---
+        // --- Update Starbase (using the same effective constant) ---
         if (this.starbase) {
-            const sb = this.starbase as Starbase; // Assuming mutable properties
+            const sb = this.starbase as Starbase;
             const safeOrbitDistance = Math.max(1000, sb.orbitDistance);
 
-            // --- Realistic Angular Speed Calculation ---
-            // Use the class constant REALISTIC_ORBIT_SPEED_CONSTANT
-            let angularSpeed = (SolarSystem.REALISTIC_ORBIT_SPEED_CONSTANT / (safeOrbitDistance ** 1.5)) * timeScaledSpeedFactor;
+            // --- Realistic Angular Speed Calculation (Using Effective Constant) ---
+            let angularSpeed = (effectiveOrbitalConstant / (safeOrbitDistance ** 1.5)) * timeScaledSpeedFactor;
 
-            // Safety check
             if (!Number.isFinite(angularSpeed)) {
                  logger.warn(`[System:${this.name}] Invalid angularSpeed (${angularSpeed}) calculated for ${sb.name}. Resetting angle.`);
                  angularSpeed = 0;
@@ -254,7 +259,6 @@ export class SolarSystem {
                 sb.systemX = Math.cos(sb.orbitAngle) * validOrbitDist;
                 sb.systemY = Math.sin(sb.orbitAngle) * validOrbitDist;
 
-                // Final check
                 if (!Number.isFinite(sb.systemX) || !Number.isFinite(sb.systemY)) {
                    logger.error(`[System:${this.name}] CRITICAL: Non-finite position calculated for ${sb.name}. Resetting position.`);
                    sb.systemX = 0; sb.systemY = 0;

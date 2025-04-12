@@ -1,4 +1,4 @@
-// src/constants.ts
+// src/constants.ts (Added mass property to SPECTRAL_TYPES)
 
 // --- Glyphs ---
 // Using const assertion to make these string literal types
@@ -32,29 +32,30 @@ export enum MineralRichness {
 
 // --- Star Data ---
 // Define an interface for the structure of star type data
+// *** ADDED mass property ***
 interface SpectralTypeInfo {
     temp: number;
     colour: string;
     char: string; // Explicitly allow any of the star glyphs
     brightness: number;
+    mass: number; // Mass in solar masses (relative to Sol=1.0)
 }
 
 // Use Record<string, T> for dictionary-like objects with string keys
+// *** ADDED mass values (examples) ***
 export const SPECTRAL_TYPES: Record<string, SpectralTypeInfo> = {
-    'O': { temp: 40000, colour: '#6A8DFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.5 },
-    'B': { temp: 20000, colour: '#8FABFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.3 },
-    'A': { temp: 8500,  colour: '#DDE5FF', char: GLYPHS.STAR_MEDIUM, brightness: 1.1 },
-    'F': { temp: 6500,  colour: '#FFFFFF', char: GLYPHS.STAR_MEDIUM, brightness: 1.0 },
-    'G': { temp: 5500,  colour: '#FFFACD', char: GLYPHS.STAR_MEDIUM, brightness: 0.9 },
-    'K': { temp: 4500,  colour: '#FFC864', char: GLYPHS.STAR_DIM,   brightness: 0.7 },
-    'M': { temp: 3000,  colour: '#FF9A5A', char: GLYPHS.STAR_DIM,   brightness: 0.5 },
+    'O': { temp: 40000, colour: '#6A8DFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.5, mass: 60.0 }, // Example mass
+    'B': { temp: 20000, colour: '#8FABFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.3, mass: 10.0 }, // Example mass
+    'A': { temp: 8500,  colour: '#DDE5FF', char: GLYPHS.STAR_MEDIUM, brightness: 1.1, mass: 2.0 },  // Example mass
+    'F': { temp: 6500,  colour: '#FFFFFF', char: GLYPHS.STAR_MEDIUM, brightness: 1.0, mass: 1.3 },  // Example mass
+    'G': { temp: 5500,  colour: '#FFFACD', char: GLYPHS.STAR_MEDIUM, brightness: 0.9, mass: 1.0 },  // Example mass (like Sol)
+    'K': { temp: 4500,  colour: '#FFC864', char: GLYPHS.STAR_DIM,   brightness: 0.7, mass: 0.7 },  // Example mass
+    'M': { temp: 3000,  colour: '#FF9A5A', char: GLYPHS.STAR_DIM,   brightness: 0.5, mass: 0.3 },  // Example mass
 };
-
 // Define the keys explicitly for type safety if needed, though string[] works fine.
 export const SPECTRAL_DISTRIBUTION: string[] = [
     'M', 'M', 'M', 'M', 'M', 'M', 'M', 'M', 'K', 'K', 'K', 'G', 'G', 'F', 'A', 'B', 'O'
 ];
-
 
 // --- Planet Data ---
 interface PlanetTypeInfo {
@@ -71,7 +72,6 @@ export const PLANET_TYPES: Record<string, PlanetTypeInfo> = {
     'IceGiant': { colours: ['#003060', '#004080', '#0050A0', '#0060C0', '#3377D0', '#6699E0', '#99BBF0', '#CCE6FF', '#E6F2FF'], baseTemp: 100 },
     'Frozen':   { colours: ['#A0C0C0', '#C0D0D0', '#E0E8E8', '#F0F4F4', '#FFFFFF', '#F8F8F8', '#E8E8E8', '#D8D8D8', '#C8C8C8'], baseTemp: 50 }
 };
-
 // Could use an enum, but string array is simple enough for now.
 export const ATMOSPHERE_DENSITIES: string[] = ['None', 'Thin', 'Earth-like', 'Thick'];
 
@@ -131,4 +131,9 @@ export const ELEMENTS: Record<string, ElementInfo> = {
     'HELIUM': { name: 'Helium', symbol: 'He', description: 'Inert gas found in natural gas deposits, used in cryogenics.', baseValue: 12, baseFrequency: 0.1 }, // Usually extracted, not mined directly
     'BORON': { name: 'Boron', symbol: 'B', description: 'Metalloid used in glass (borosilicate) and high-strength materials.', baseValue: 14, baseFrequency: 0.08 },
 
+    // --- Ices (Example, add more if needed) ---
+    // Frequencies need careful tuning relative to planet types/temps
+    'WATER_ICE': { name: 'Water Ice', symbol: 'H₂O', description: 'Frozen water, essential volatile.', baseValue: 1, baseFrequency: 0.6 },
+    'AMMONIA_ICE': { name: 'Ammonia Ice', symbol: 'NH₃', description: 'Frozen ammonia, common in outer systems.', baseValue: 2, baseFrequency: 0.3 },
+    'METHANE_ICE': { name: 'Methane Ice', symbol: 'CH₄', description: 'Frozen methane, very volatile.', baseValue: 2, baseFrequency: 0.2 },
 };
