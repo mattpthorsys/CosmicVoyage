@@ -29,6 +29,8 @@ export class Game {
   // Status Message
   private statusMessage: string = 'Initializing Systems...';
 
+  private clearOnNextRender: boolean = false;
+  private currentState: string | null = null;
   constructor(canvasId: string, statusBarId: string, seed?: string | number) {
     logger.info('[Game] Constructing instance...');
     const initialSeed = seed !== undefined ? String(seed) : String(Date.now());
@@ -38,7 +40,7 @@ export class Game {
     this.renderer = new RendererFacade(canvasId, statusBarId); // Renderer handles DOM init
     this.player = new Player(); // Uses CONFIG defaults
     this.inputManager = new InputManager();
-    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG); // Inject dependencies
+    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, () => this._clearOnStateChange()); // Inject dependencies
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager); // Inject dependencies
 
     // Event Listeners
@@ -49,6 +51,10 @@ export class Game {
       `[Game] Instance constructed. Seed: "${this.gameSeedPRNG.getInitialSeed()}", Initial State: '${this.stateManager.state
       }'`
     );
+  }
+
+  private _clearOnStateChange() {
+    this.clearOnNextRender = true;
   }
 
   public getGameState(): string {
@@ -431,6 +437,11 @@ export class Game {
     //logger.debug(`[Game:_render] Rendering state: '${currentState}'`);
 
     try {
+      if (this.clearOnNextRender) {
+        this.clearOnNextRender = false;
+        this.renderer.clear(true);
+        this.currentState = this.stateManager.state;
+      }
       switch (currentState) {
         case 'hyperspace':
           this.renderer.drawHyperspace(this.player, this.gameSeedPRNG);
@@ -472,6 +483,7 @@ export class Game {
       } // Attempt to show error
     }
   }
+
 
   /** Helper to render an error message directly to the canvas. */
   private _renderError(message: string): void {

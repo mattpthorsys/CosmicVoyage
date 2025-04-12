@@ -27,16 +27,19 @@ export class GameStateManager {
   private player: Player;
   private gameSeedPRNG: PRNG;
 
-  constructor(player: Player, gameSeedPRNG: PRNG) {
+  private onStateChange: () => void; // Add the callback property
+
+  constructor(player: Player, gameSeedPRNG: PRNG, onStateChange: () => void) {
     this._state = 'hyperspace'; // Initial state
     this.player = player;
     this.gameSeedPRNG = gameSeedPRNG;
+    this.onStateChange = onStateChange; // Initialize the callback
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
   }
 
   // --- Getters for current state and context ---
   get state(): GameState {
-    return this._state;
+    return this._state; // No change needed in getter
   }
   get currentSystem(): SolarSystem | null {
     return this._currentSystem;
@@ -84,6 +87,7 @@ export class GameStateManager {
       this._currentPlanet = null;
       this._currentStarbase = null;
       logger.info(`[GameStateManager] State changed: 'hyperspace' -> 'system' (Entered ${system.name})`);
+      this.onStateChange(); // Call the callback
       return true; // Indicate success
     } catch (error) {
       logger.error(
@@ -116,6 +120,7 @@ export class GameStateManager {
       this._currentStarbase = null;
       this.player.char = CONFIG.PLAYER_CHAR; // Set char for hyperspace
       logger.info(`[GameStateManager] State changed: 'system' -> 'hyperspace' (Left system)`);
+      this.onStateChange(); // Call the callback
       return true;
     } else {
       logger.debug('[GameStateManager] Leave System failed: Player not close enough to system edge.');
@@ -168,6 +173,7 @@ export class GameStateManager {
 
       this.player.char = CONFIG.PLAYER_CHAR; // Set char for surface/docked state
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Landed/Docked at ${nearbyObject.name})`);
+      this.onStateChange(); // Call the callback
       return nearbyObject; // Return the object landed on/docked at
     } catch (error) {
       logger.error(`[GameStateManager] Failed to prepare surface or land on ${nearbyObject.name}:`, error);
@@ -222,6 +228,7 @@ export class GameStateManager {
     this._currentPlanet = null;
     this._currentStarbase = null;
     logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Lifted off from ${liftedFromName})`);
+    this.onStateChange(); // Call the callback
     return true;
   }
 }
