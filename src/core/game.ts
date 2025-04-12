@@ -243,7 +243,7 @@ export class Game {
     // Define the list of actions that should only trigger once per press
     const discreteActions: string[] = [
       'ENTER_SYSTEM',
-      'LEAVE_SYSTEM',
+
       'ACTIVATE_LAND_LIFTOFF',
       'SCAN',
       'MINE',
@@ -388,13 +388,19 @@ export class Game {
       )} units). Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to land.`;
     }
 
-    // Check if near edge
+    // Check if player is at system edge, and trigger hyperspace jump if so
     const distFromStarSq = this.player.distanceSqToSystemCoords(0, 0);
-    const edgeThresholdSq = (system.edgeRadius * 0.9) ** 2;
-    if (distFromStarSq > edgeThresholdSq) {
-      status += ` | Approaching system edge. Press [${CONFIG.KEY_BINDINGS.LEAVE_SYSTEM.toUpperCase()}] to leave.`;
-    }
+    const edgeThresholdSq = system.edgeRadius ** 2;
+    if (distFromStarSq >= edgeThresholdSq) {
+      this.stateManager.leaveSystem(); // Auto-jump to hyperspace
+    } 
     return status;
+  }
+
+  /** Checks if the player is far enough from the star to leave the system */
+  private isPlayerNearExit(): boolean {
+    const system = this.stateManager.currentSystem;
+    return system ? this.player.distanceSqToSystemCoords(0, 0) > (system.edgeRadius * 0.75) ** 2 : false;
   }
 
   private _updatePlanet(_deltaTime: number): string {
