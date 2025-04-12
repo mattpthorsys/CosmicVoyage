@@ -31,18 +31,25 @@ export class ScreenBuffer {
   private readonly defaultBgColor: string;
   private readonly defaultFgColor: string;
 
-  constructor(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) {
+  private isTransparent = false;
+
+  constructor(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, isTransparent: boolean = false) {
     this.canvas = canvas;
     this.ctx = context;
 
-    this.defaultBgColor = null; // Transparent by default
-    this.defaultFgColor = CONFIG.DEFAULT_FG_COLOUR;
+
     this.defaultCellState = Object.freeze({
       char: null,
       fg: null,
       bg: null, // Transparent by default
       isTransparentBg: true, // Transparent by default
     });
+
+    if(isTransparent)
+      this.isTransparent = true;
+
+    this.defaultFgColor = CONFIG.DEFAULT_FG_COLOUR;
+    this.defaultBgColor = this.isTransparent ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR;
 
     logger.debug('[ScreenBuffer] Instance created.');
   }
