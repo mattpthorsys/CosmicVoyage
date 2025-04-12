@@ -35,13 +35,13 @@ export class ScreenBuffer {
     this.canvas = canvas;
     this.ctx = context;
 
-    this.defaultBgColor = CONFIG.DEFAULT_BG_COLOR;
+    this.defaultBgColor = null; // Transparent by default
     this.defaultFgColor = CONFIG.DEFAULT_FG_COLOR;
     this.defaultCellState = Object.freeze({
       char: null,
       fg: null,
-      bg: null,
-      isTransparentBg: false,
+      bg: null, // Transparent by default
+      isTransparentBg: true, // Transparent by default
     });
 
     logger.debug('[ScreenBuffer] Instance created.');
@@ -146,13 +146,6 @@ export class ScreenBuffer {
     logger.debug(
       `[ScreenBuffer.clear] Clearing buffers (Physical Clear: ${physicalClear})...`
     );
-    if (physicalClear) {
-      this.ctx.fillStyle = this.defaultBgColor;
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      logger.debug(
-        '[ScreenBuffer.clear] Physical canvas cleared with default background.'
-      );
-    }
     // Reset both buffers to the default state
     for (let i = 0; i < this.newBuffer.length; i++) {
       if (i < this.screenBuffer.length) {
