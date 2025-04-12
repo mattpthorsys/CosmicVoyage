@@ -147,7 +147,7 @@ export class RendererFacade {
     text: string,
     x: number,
     y: number,
-    fgColor?: string | null, // Optional colors, defaults handled by ScreenBuffer
+    fgColor?: string | null, // Optional colours, defaults handled by ScreenBuffer
     bgColor?: string | null
   ): void {
     // Pass defaults as null if not provided, ScreenBuffer will use its own defaults
