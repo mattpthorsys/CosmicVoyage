@@ -30,6 +30,9 @@ export class GameStateManager {
 
   private onStateChange: () => void; // Add the callback property
 
+  /** A callback function to clear the play area */
+  public clearPlayArea: () => void = () => {};
+
   constructor(player: Player, gameSeedPRNG: PRNG, onStateChange: () => void) {
     this._state = 'hyperspace'; // Initial state
     this.player = player;
@@ -37,6 +40,7 @@ export class GameStateManager {
     this.onStateChange = onStateChange; // Initialize the callback
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
   }
+
 
   // --- Getters for current state and context ---
   get state(): GameState {
@@ -55,6 +59,12 @@ export class GameStateManager {
   // --- State Transition Logic ---
 
   /** Attempts to enter a system from hyperspace. Returns true on success, false otherwise. */
+  setState(newState: GameState) {
+    if (newState === 'system') {
+      this.clearPlayArea();
+    }
+  }
+  
   enterSystem(): boolean {
     logger.debug(`[GameStateManager] Attempting Enter System at World: ${this.player.worldX},${this.player.worldY}`);
     const baseSeedInt = this.gameSeedPRNG.seed;
