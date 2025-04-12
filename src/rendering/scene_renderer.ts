@@ -161,7 +161,6 @@ export class SceneRenderer {
     const viewWorldStartY = player.systemY - viewCenterY * viewScale;
 
     // --- Clear background (to transparent) ---
-    // THIS IS THE KEY CHANGE FOR THE STAR BACKGROUND TO SHOW THROUGH
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         this.screenBuffer.drawChar(null, x, y, null, null); // Use null background for main scene
@@ -169,59 +168,85 @@ export class SceneRenderer {
     }
 
     // --- Draw Star ---
-    const starInfo = SPECTRAL_TYPES[system.starType];
-    const starColor = starInfo?.colour || '#FFFFFF';
-    const starChar = starInfo?.char || '*';
-    const starViewX = Math.floor((0 - viewWorldStartX) / viewScale);
-    const starViewY = Math.floor((0 - viewWorldStartY) / viewScale);
-    // Draw star with null background so it doesn't obscure starfield
-    this.drawingContext.drawCircle(starViewX, starViewY, 1, starChar, starColor, null);
+    const starInfo = SPECTRAL_TYPES[system.starType]; //
+    const starColor = starInfo?.colour || '#FFFFFF'; //
+    const starViewX = Math.floor((0 - viewWorldStartX) / viewScale); //
+    const starViewY = Math.floor((0 - viewWorldStartY) / viewScale); //
+
+    // -- START ADDED: Determine Radius based on Star Type --
+    let starRadius = 1; // Default radius
+    switch (system.starType) {
+        case 'O': starRadius = 7; break;
+        case 'B': starRadius = 6; break;
+        case 'A': starRadius = 5; break;
+        case 'F': starRadius = 4; break;
+        case 'G': starRadius = 4; break; // G and F can share a size
+        case 'K': starRadius = 3; break;
+        case 'M': starRadius = 2; break;
+        default: starRadius = 1; // Fallback for unknown types
+    }
+    logger.debug(`[SceneRenderer.drawSolarSystem] Star type ${system.starType}, using radius ${starRadius}`);
+    // -- END ADDED: Determine Radius --
+
+    // -- START MODIFIED STAR RENDERING --
+    // 1. Fill the star with Dark Shade using the calculated radius
+    this.drawingContext.drawCircle(
+        starViewX,
+        starViewY,
+        starRadius, // Use calculated radius
+        GLYPHS.SHADE_DARK, // Fill character
+        starColor, // Foreground
+        starColor  // Background (solid fill)
+    );
+
+    // 2. Outline the star with Medium Shade using the calculated radius
+    this.drawingContext.drawOrbit(
+        starViewX,
+        starViewY,
+        starRadius, // Use calculated radius
+        GLYPHS.SHADE_MEDIUM, // Outline character
+        starColor, // Foreground
+        0, 0, cols - 1, rows - 1 // Bounds check parameters
+    );
+    // -- END MODIFIED STAR RENDERING --
 
     // --- Draw Orbits and Planets/Starbase ---
-    system.planets.forEach((planet) => {
-      if (!planet) return;
-      const orbitViewRadius = Math.round(planet.orbitDistance / viewScale);
-      if (orbitViewRadius > 1) {
-        // Orbits should also have null background
-        this.drawingContext.drawOrbit(
-          starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.ORBIT_COLOUR_MAIN, 0, 0, cols-1, rows-1
+    system.planets.forEach((planet) => { //
+        if (!planet) return;
+        const orbitViewRadius = Math.round(planet.orbitDistance / viewScale);
+        if (orbitViewRadius > 1) {
+            this.drawingContext.drawOrbit(
+                starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.ORBIT_COLOUR_MAIN, 0, 0, cols - 1, rows - 1 //
+            );
+        }
+        const planetViewX = Math.floor((planet.systemX - viewWorldStartX) / viewScale); //
+        const planetViewY = Math.floor((planet.systemY - viewWorldStartY) / viewScale); //
+        const planetColor = PLANET_TYPES[planet.type]?.colours[4] || '#CCCCCC'; //
+        this.drawingContext.drawCircle(
+            planetViewX, planetViewY, 0, GLYPHS.PLANET_ICON, planetColor, null //
         );
-      }
-      const planetViewX = Math.floor((planet.systemX - viewWorldStartX) / viewScale);
-      const planetViewY = Math.floor((planet.systemY - viewWorldStartY) / viewScale);
-      const planetColor = PLANET_TYPES[planet.type]?.colours[4] || '#CCCCCC';
-      // Draw planet with null background
-      this.drawingContext.drawCircle(
-        planetViewX, planetViewY, 0, GLYPHS.PLANET_ICON, planetColor, null
-      );
     });
-
-    if (system.starbase) {
-      const sb = system.starbase;
-      const orbitViewRadius = Math.round(sb.orbitDistance / viewScale);
-      if (orbitViewRadius > 1) {
-        // Starbase orbit with null background
-        this.drawingContext.drawOrbit(
-          starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOUR, 0, 0, cols-1, rows-1
+    if (system.starbase) { //
+        const sb = system.starbase;
+        const orbitViewRadius = Math.round(sb.orbitDistance / viewScale); //
+        if (orbitViewRadius > 1) { //
+            this.drawingContext.drawOrbit(
+                starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOUR, 0, 0, cols - 1, rows - 1 //
+            );
+        }
+        const sbViewX = Math.floor((sb.systemX - viewWorldStartX) / viewScale); //
+        const sbViewY = Math.floor((sb.systemY - viewWorldStartY) / viewScale); //
+        this.drawingContext.drawCircle(
+            sbViewX, sbViewY, 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOUR, null //
         );
-      }
-      const sbViewX = Math.floor((sb.systemX - viewWorldStartX) / viewScale);
-      const sbViewY = Math.floor((sb.systemY - viewWorldStartY) / viewScale);
-      // Draw starbase with null background
-      this.drawingContext.drawCircle(
-        sbViewX, sbViewY, 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOUR, null
-      );
     }
 
     // --- Draw Player Ship ---
-    // Draw player with null background
     this.screenBuffer.drawChar(
-      player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOUR, null
+        player.char, viewCenterX, viewCenterY, CONFIG.PLAYER_COLOUR, null //
     );
-
     // --- Draw Minimap ---
-    // Minimap should likely retain its solid background
-    this.drawSystemMinimap(system, player);
+    this.drawSystemMinimap(system, player); //
   }
 
   /** Draws the minimap for the solar system view. */
