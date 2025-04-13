@@ -1,6 +1,6 @@
-// src/entities/planet.ts (Added Mined Location Tracking)
+// src/entities/planet.ts (Store Density)
 
-import { MineralRichness, ELEMENTS, PLANET_TYPES } from '../constants'; // Added ELEMENTS
+import { MineralRichness, ELEMENTS, PLANET_TYPES } from '../constants';
 import { PRNG } from '../utils/prng';
 import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';
@@ -8,9 +8,9 @@ import { logger } from '../utils/logger';
 import { generatePlanetCharacteristics, PlanetCharacteristics } from './planet/planet_characteristics_generator';
 // Import the generator and data interface
 import { SurfaceGenerator, SurfaceData } from './planet/surface_generator';
-
 // Re-export needed types if they aren't in a shared file
-export type AtmosphereComposition = Record<string, number>; //
+export type AtmosphereComposition = Record<string, number>;
+//
 export interface Atmosphere { //
     density: string; //
     pressure: number; //
@@ -29,7 +29,8 @@ export class Planet { //
 
     // Physical Characteristics (Generated)
     public readonly diameter: number; //
-    public readonly gravity: number; //
+    public readonly density: number; // *** NEW: Store density ***
+    public readonly gravity: number; // Now calculated by generator
     public readonly surfaceTemp: number; //
     public readonly atmosphere: Atmosphere; //
     public readonly hydrosphere: string; //
@@ -41,7 +42,7 @@ export class Planet { //
     public readonly elementAbundance: Record<string, number>; // Overall planet abundance
     public scanned: boolean = false; //
     public primaryResource: string | null = null; // Determined by scan()
-    public minedLocations: Set<string> = new Set(); // *** NEW: Track depleted locations (key: "x,y") ***
+    public minedLocations: Set<string> = new Set(); // Track depleted locations (key: "x,y")
 
     // Generation & State
     public readonly systemPRNG: PRNG; //
@@ -79,7 +80,8 @@ export class Planet { //
             parentStarType
         );
         this.diameter = characteristics.diameter; //
-        this.gravity = characteristics.gravity; //
+        this.density = characteristics.density; // *** Store density ***
+        this.gravity = characteristics.gravity; // Store calculated gravity
         this.atmosphere = characteristics.atmosphere; //
         this.surfaceTemp = characteristics.surfaceTemp; //
         this.hydrosphere = characteristics.hydrosphere; //
@@ -94,6 +96,7 @@ export class Planet { //
 
         // Map seed for surface generation
         this.mapSeed = this.systemPRNG.getInitialSeed() + "_map"; //
+
         // Log summary
         const topElements = Object.entries(this.elementAbundance)
                                   .filter(([, abundance]) => abundance > 0)
@@ -101,7 +104,9 @@ export class Planet { //
                                   .slice(0, 3) // Get top 3
                                   .map(([key]) => ELEMENTS[key]?.name || key) // Use proper name if available
                                   .join(', ');
-        logger.info(`[Planet:${this.name}] Constructed. Type=${this.type}, Orbit=${this.orbitDistance.toFixed(0)}, Temp=${this.surfaceTemp}K, Minerals=${this.mineralRichness}. Top Elements: [${topElements || 'None'}]`); //
+
+        logger.info(`[Planet:${this.name}] Constructed. Type=${this.type}, Orbit=${this.orbitDistance.toFixed(0)}, Temp=${this.surfaceTemp}K, Gravity=${this.gravity.toFixed(2)}g, Density=${this.density.toFixed(2)}g/cm³, Minerals=${this.mineralRichness}. Top Elements: [${topElements || 'None'}]`); // Updated log
+        //
 
         // Do NOT generate surface data in constructor for lazy loading
     }
@@ -136,7 +141,6 @@ export class Planet { //
          return this._surfaceData?.surfaceElementMap ?? null; // Access from _surfaceData
      }
 
-
     /** Ensures surface data (including element map) is generated and cached if needed. Throws on failure. */
     ensureSurfaceReady(): void { //
         if (this._surfaceData) { //
@@ -157,15 +161,13 @@ export class Planet { //
                 throw new Error("Surface generator returned null data."); //
             }
 
-            // --- MODIFIED CHECK ---
-            // More robust check: Ensure required data exists and is non-empty if expected
+            // Robust check: Ensure required data exists and is non-empty if expected
             const isSolid = this.type !== 'GasGiant' && this.type !== 'IceGiant'; //
             if (isSolid &&
                 (!this._surfaceData.heightmap || this._surfaceData.heightmap.length === 0 || // Check map exists and has rows
                  !this._surfaceData.heightLevelColors || this._surfaceData.heightLevelColors.length === 0 || // Check colors exist and have entries
                  !this._surfaceData.surfaceElementMap || this._surfaceData.surfaceElementMap.length === 0) // Check element map exists and has rows
             ) {
-                 // Log the specific missing/empty data for better debugging
                  const missing = [];
                  if (!this._surfaceData.heightmap || this._surfaceData.heightmap.length === 0) missing.push("heightmap");
                  if (!this._surfaceData.heightLevelColors || this._surfaceData.heightLevelColors.length === 0) missing.push("heightLevelColors");
@@ -176,7 +178,6 @@ export class Planet { //
             if (!isSolid && (!this._surfaceData.rgbPaletteCache || this._surfaceData.rgbPaletteCache.length === 0)) { // Check palette exists and has entries
                  throw new Error("Surface generator returned incomplete data for gas/ice giant (missing/empty palette)."); //
             }
-            // --- END MODIFIED CHECK ---
 
             logger.info(`[Planet:${this.name}] Surface data generated successfully.`); //
         } catch (error) { //
@@ -188,7 +189,6 @@ export class Planet { //
 
     /** Performs a scan, determining the primary resource based on abundance. */
     scan(): void { //
-        // ... (Scan logic remains the same) ...
          if (this.scanned) { //
             logger.info(`[Planet:${this.name}] Scan attempted, but already scanned.`); //
             return; //
@@ -199,15 +199,18 @@ export class Planet { //
         let highestAbundance = -1; //
         let potentialResource = 'None Detected'; //
 
+        // Prioritize more valuable non-common elements
         const valuableElements = Object.entries(this.elementAbundance)
             .filter(([key, abundance]) => abundance > 0 && !['SILICON', 'WATER_ICE', 'CARBON', 'IRON', 'ALUMINIUM', 'MAGNESIUM', 'SULFUR', 'PHOSPHORUS', 'POTASSIUM'].includes(key))
-            .sort(([, a], [, b]) => b - a);
+            .sort(([, a], [, b]) => b - a); // Sort descending by abundance
+
         if (valuableElements.length > 0) {
              const [key, abundance] = valuableElements[0];
              this.primaryResource = ELEMENTS[key]?.name || key;
              highestAbundance = abundance;
              potentialResource = this.primaryResource;
         } else {
+             // If no valuable elements, find the most abundant common one
              const anyElements = Object.entries(this.elementAbundance)
                                       .filter(([, abundance]) => abundance > 0)
                                       .sort(([, a], [, b]) => b - a);
@@ -221,34 +224,36 @@ export class Planet { //
              }
         }
 
+         // Bonus check for exceptional richness yielding a rare resource override
          if (this.mineralRichness === MineralRichness.EXCEPTIONAL && this.systemPRNG.random() < 0.2) {
                 const rareResources = ['GOLD', 'PLATINUM', 'PALLADIUM', 'RHODIUM', 'URANIUM', 'NEODYMIUM', 'DYSPROSIUM', 'INDIUM'];
-                const chosenRareKey = this.systemPRNG.choice(rareResources.filter(r => this.elementAbundance[r] > 0))!;
-                 if (chosenRareKey) {
-                    const oldResource = this.primaryResource;
-                    this.primaryResource = ELEMENTS[chosenRareKey]?.name || chosenRareKey;
-                    logger.info(`[Planet:${this.name}] Exceptional richness yielded rare resource: ${this.primaryResource} (overwriting ${oldResource})`);
-                    potentialResource = this.primaryResource;
+                // Choose from rare resources that *actually exist* on the planet
+                 const possibleRares = rareResources.filter(r => this.elementAbundance[r] > 0);
+                 if (possibleRares.length > 0) {
+                     const chosenRareKey = this.systemPRNG.choice(possibleRares)!;
+                     const oldResource = this.primaryResource;
+                     this.primaryResource = ELEMENTS[chosenRareKey]?.name || chosenRareKey;
+                     logger.info(`[Planet:${this.name}] Exceptional richness yielded rare resource: ${this.primaryResource} (overwriting ${oldResource})`);
+                     potentialResource = this.primaryResource; // Update the potential resource as well
                  }
         }
 
-        logger.info(`[Planet:${this.name}] Scan complete. Primary Resource: ${potentialResource} (Abundance Value: ${highestAbundance.toFixed(0)}), Richness Category: ${this.mineralRichness}`);
+        logger.info(`[Planet:${this.name}] Scan complete. Primary Resource: ${potentialResource} (Abundance Value: ${highestAbundance.toFixed(0)}), Richness Category: ${this.mineralRichness}`); //
     }
-
 
     /** Returns multi-line scan information for the planet. */
     getScanInfo(): string[] { //
-        // ... (getScanInfo logic remains the same) ...
          logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`); //
         const infoLines: string[] = [ //
              `--- SCAN REPORT: ${this.name} ---`, //
              `Type: ${this.type} Planet`, //
         ];
         if (this.type === 'GasGiant' || this.type === 'IceGiant') { //
+            // Gas/Ice Giant specific info
              const compositionString = Object.entries(this.atmosphere.composition) //
                  .filter(([, p]) => p > 0).sort(([, a], [, b]) => b - a) //
                  .map(([gas, percent]) => `${gas}: ${percent}%`).join(', ') || "Trace Gases"; //
-            infoLines.push(`Diameter: ${this.diameter} km | Gravity: ${this.gravity.toFixed(2)} G (at 1 bar level)`); //
+            infoLines.push(`Diameter: ${this.diameter.toLocaleString()} km | Density: ${this.density.toFixed(2)} g/cm³ | Gravity: ${this.gravity.toFixed(2)} G (at 1 bar level)`); // Added Density
             infoLines.push(`Effective Temp: ${this.surfaceTemp} K (cloud tops)`); //
             infoLines.push(`Atmosphere: ${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar at cloud tops)`); //
             infoLines.push(`Composition: ${compositionString}`); //
@@ -260,10 +265,11 @@ export class Planet { //
                 .slice(0, 3)
                 .map(([key]) => ELEMENTS[key]?.name || key)
                 .join(', ');
-            infoLines.push(`Notable Resources: ${topElements || 'Trace Amounts'}`);
+            infoLines.push(`Notable Resources: ${topElements || 'Trace Amounts'}`); //
             infoLines.push(`Refueling: Possible via atmospheric scoop.`); //
         } else {
-            infoLines.push(`Diameter: ${this.diameter} km | Gravity: ${this.gravity.toFixed(2)} G`); //
+             // Solid planet specific info
+            infoLines.push(`Diameter: ${this.diameter.toLocaleString()} km | Density: ${this.density.toFixed(2)} g/cm³ | Gravity: ${this.gravity.toFixed(2)} G`); // Added Density
             infoLines.push(`Surface Temp (Avg): ${this.surfaceTemp} K`); //
             infoLines.push(`Atmosphere: ${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar)`); //
 
@@ -294,7 +300,6 @@ export class Planet { //
         return infoLines; //
     }
 
-    // *** NEW: Methods for mined location tracking ***
     /** Checks if a specific surface coordinate has been mined. */
     isMined(x: number, y: number): boolean {
         return this.minedLocations.has(`${x},${y}`);
@@ -308,6 +313,5 @@ export class Planet { //
              logger.debug(`[Planet:${this.name}] Marked location [${x},${y}] as mined.`);
         }
     }
-    // *** END NEW ***
 
 } // End Planet class //
