@@ -214,6 +214,18 @@ export class Game {
                 // Action processor requested a scan
                 // *** Call the dedicated scan handler ***
                 this._handleScanRequest(actionResult.requestScan);
+            } else if (actionResult && typeof actionResult === 'object' && 'requestSystemPeek' in actionResult) {
+                // Action processor requested a system peek (hyperspace scan action)
+                logger.debug("[Game:_processInput] Handling requestSystemPeek...");
+                const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
+                if (peekedSystem) {
+                    // System found, trigger the scan popup directly with the peeked system
+                    this.statusMessage = STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name);
+                    this._triggerScanPopup(peekedSystem); // Pass the SolarSystem object
+                } else {
+                    // No system found at player's location
+                    this.statusMessage = STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL;
+                }
             }
             // Reflect any status message set by the state manager during an action event
             // (e.g., if land/liftoff set a message)
