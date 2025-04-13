@@ -1,18 +1,18 @@
-// src/core/action_processor.ts (Added SCAN_SYSTEM_OBJECT action)
+// src/core/action_processor.ts (Fixed hyperspace scan return type)
 
 import { GameStateManager } from './game_state_manager';
 import { Player } from './player';
 import { logger } from '../utils/logger';
 import { MineralRichness, ELEMENTS } from '../constants';
-// Import ELEMENTS
 import { CONFIG } from '../config';
 import { PRNG } from '../utils/prng';
-// Import PRNG
-import { Planet } from '../entities/planet'; // Import Planet
-import { Starbase } from '../entities/starbase'; // Import Starbase
+import { Planet } from '../entities/planet';
+import { Starbase } from '../entities/starbase';
+import { SolarSystem } from '@/entities/solar_system'; // Import SolarSystem
 
 // Define a type for the result of processAction, which can include a scan target
-export type ActionProcessResult = string | { scanTarget: Planet | Starbase | 'Star' } | null;
+// *** UPDATED: scanTarget can now also be a SolarSystem ***
+export type ActionProcessResult = string | { scanTarget: Planet | Starbase | 'Star' | SolarSystem } | null;
 
 
 export class ActionProcessor {
@@ -25,13 +25,14 @@ export class ActionProcessor {
     logger.debug('[ActionProcessor] Instance created.');
   }
 
-  // *** UPDATED Return Type ***
+  // Return type updated
   processAction(action: string): ActionProcessResult {
     const currentState = this.stateManager.state;
     logger.debug(`[ActionProcessor] Processing initial actions [${action}] in state: ${currentState}`);
 
     let statusMessage: string = '';
-    let scanTargetResult: { scanTarget: Planet | Starbase | 'Star' } | null = null; // Store scan target
+    // Update scanTargetResult type
+    let scanTargetResult: { scanTarget: Planet | Starbase | 'Star' | SolarSystem } | null = null;
     let effectiveAction = action;
 
     // Contextual logic for ACTIVATE_LAND_LIFTOFF
@@ -52,6 +53,7 @@ export class ActionProcessor {
     }
 
     logger.debug(`[ActionProcessor] Processing effective action '${effectiveAction}' in state '${this.stateManager.state}'`);
+
     try {
       // Handle global actions
       if (effectiveAction === 'DOWNLOAD_LOG') {
@@ -63,20 +65,45 @@ export class ActionProcessor {
       // State-specific actions
       switch (this.stateManager.state) {
         case 'hyperspace':
-          statusMessage = this._processHyperspaceAction(effectiveAction);
+          const hyperspaceResult = this._processHyperspaceAction(effectiveAction);
+          if (typeof hyperspaceResult === 'string') {
+            statusMessage = hyperspaceResult;
+          } else if (hyperspaceResult && hyperspaceResult.scanTarget) {
+            scanTargetResult = hyperspaceResult; // Store the scan target object
+            // Determine target type for message
+             let targetName = 'Unknown Target';
+             if (hyperspaceResult.scanTarget instanceof SolarSystem) {
+                 targetName = `Star (${hyperspaceResult.scanTarget.name})`;
+             } // Should only be SolarSystem from hyperspace scan
+            statusMessage = `Scanning ${targetName}...`;
+          }
           break;
         case 'system':
-          // *** MODIFIED: Handle scan target result ***
           const systemResult = this._processSystemAction(effectiveAction);
           if (typeof systemResult === 'string') {
             statusMessage = systemResult;
           } else if (systemResult && systemResult.scanTarget) {
             scanTargetResult = systemResult; // Store the scan target object
-            statusMessage = `Scanning ${systemResult.scanTarget === 'Star' ? 'local star' : systemResult.scanTarget.name}...`;
+            // Determine target type for message
+            let targetName = 'Unknown Target';
+            if (systemResult.scanTarget === 'Star') {
+                 targetName = 'local star';
+            } else if (systemResult.scanTarget instanceof Planet || systemResult.scanTarget instanceof Starbase) {
+                targetName = systemResult.scanTarget.name;
+            } else if (systemResult.scanTarget instanceof SolarSystem){ // Should not happen in system state, but check
+                 targetName = `Star (${systemResult.scanTarget.name})`
+            }
+            statusMessage = `Scanning ${targetName}...`;
           }
           break;
         case 'planet':
-          statusMessage = this._processPlanetAction(effectiveAction);
+          const planetResult = this._processPlanetAction(effectiveAction);
+           if (typeof planetResult === 'string') {
+               statusMessage = planetResult;
+           } else if (planetResult && planetResult.scanTarget){ // Scan action on planet surface?
+               scanTargetResult = planetResult;
+                statusMessage = `Scanning local vicinity...`; // Or specific message
+           }
           break;
         case 'starbase':
           statusMessage = this._processStarbaseAction(effectiveAction);
@@ -87,32 +114,43 @@ export class ActionProcessor {
           break;
       }
     } catch (error) {
-      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${this.stateManager.state}':`, error);
+      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${this.stateManager.state}': ${error}`);
       statusMessage = `ACTION ERROR: ${error instanceof Error ? error.message : String(error)}`;
     }
 
-    // *** MODIFIED: Return scan target or status message ***
+    // Return scan target if found, otherwise the status message
     return scanTargetResult || statusMessage;
   }
 
   // --- Private State-Specific Action Handlers ---
 
-  private _processHyperspaceAction(action: string): string {
+  // *** UPDATED Return Type ***
+  private _processHyperspaceAction(action: string): ActionProcessResult {
     let message = '';
     switch (action) {
       case 'ENTER_SYSTEM': {
         const entered = this.stateManager.enterSystem();
         message = entered ? `Entering system: ${this.stateManager.currentSystem?.name}` : 'No star system detected at this location.';
-      }
         break;
-      // PEEK_SYSTEM (now potentially unbound or used for something else)
-      // case 'PEEK_SYSTEM': ...
-      // Movement actions (like MOVE_UP etc.) don't return messages here as they are handled by Game loop
+      }
+      case 'SCAN_SYSTEM_OBJECT': {
+          const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
+          if (peekedSystem) {
+                logger.debug(`[ActionProcessor] SCAN_SYSTEM_OBJECT in hyperspace: Found system ${peekedSystem.name}. Returning system object.`);
+                // *** FIX: Return the system object itself ***
+                return { scanTarget: peekedSystem };
+            } else {
+                logger.debug(`[ActionProcessor] SCAN_SYSTEM_OBJECT in hyperspace: No system found at player location.`);
+                message = 'Nothing nearby to scan.';
+            }
+        break;
+      }
     }
+    // Return string message if not scanning
     return message;
   }
 
-  // *** UPDATED Return Type ***
+  // Return type updated
   private _processSystemAction(action: string): ActionProcessResult {
     let message = '';
     switch (action) {
@@ -129,7 +167,6 @@ export class ActionProcessor {
           message = landedObject ? `Approaching ${landedObject.name}...` : 'Nothing nearby to land on.';
         }
         break;
-      // *** NEW: SCAN_SYSTEM_OBJECT Action ***
       case 'SCAN_SYSTEM_OBJECT':
         {
             const system = this.stateManager.currentSystem;
@@ -144,13 +181,11 @@ export class ActionProcessor {
 
             // Find distance to star
             const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
-
             // Determine target: Scan star if it's closer OR if no other object is within double landing distance
             const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
-
             if (distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
                 logger.debug(`[ActionProcessor] SCAN_SYSTEM_OBJECT: Star is closer (DistSq: ${distSqToStar.toFixed(0)}). Scanning star.`);
-                return { scanTarget: 'Star' };
+                return { scanTarget: 'Star' }; // Keep 'Star' string here for system view context
             } else if (nearbyObject && distSqToObject < scanThresholdSq) {
                 logger.debug(`[ActionProcessor] SCAN_SYSTEM_OBJECT: Nearby object ${nearbyObject.name} found (DistSq: ${distSqToObject.toFixed(0)}). Scanning object.`);
                 return { scanTarget: nearbyObject };
@@ -160,15 +195,16 @@ export class ActionProcessor {
             }
         }
         break;
-       // Movement actions (like MOVE_UP etc.) don't return messages here
     }
     return message; // Return string message if not scanning
   }
 
-  private _processPlanetAction(action: string): string {
+  // Return type updated
+  private _processPlanetAction(action: string): ActionProcessResult {
     let message = '';
     const planet = this.stateManager.currentPlanet;
     if (!planet) return 'Error: Planet data missing!';
+
     switch (action) {
       case 'LIFTOFF':
         {
@@ -179,11 +215,15 @@ export class ActionProcessor {
       case 'SCAN':
         if (planet.scanned) {
           message = `${planet.name} has already been scanned. (${planet.mineralRichness})`;
+          // Already scanned, maybe just return the scan info again?
+          return { scanTarget: planet };
         } else {
           planet.scan();
           message = `${planet.name} scan complete. Primary: ${planet.primaryResource || 'N/A'}. Richness: ${planet.mineralRichness}.`;
+          // Return scan target to trigger popup
+           return { scanTarget: planet };
         }
-        break;
+        // break; // No break needed if returning
       case 'MINE':
         if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
           message = `Cannot mine surface of ${planet.type}.`;
@@ -242,14 +282,13 @@ export class ActionProcessor {
                     message = 'Found no mineable elements at this location.';
                 }
              } catch(mineError) {
-                 logger.error(`[ActionProcessor] Error during MINE action on ${planet.name}:`, mineError);
+                 logger.error(`[ActionProcessor] Error during MINE action on ${planet.name}: ${mineError}`);
                  message = `Mining Error: ${mineError instanceof Error ? mineError.message : String(mineError)}`;
              }
         }
         break; // End MINE case
-       // Movement actions (like MOVE_UP etc.) don't return messages here
     }
-    return message;
+    return message; // Return string message if not scanning
   }
 
   private _processStarbaseAction(action: string): string {
@@ -278,7 +317,7 @@ export class ActionProcessor {
                  const amount = currentCargo[elementKey];
                  const elementInfo = ELEMENTS[elementKey];
                  if (amount > 0 && elementInfo) {
-                      const valuePerUnit = elementInfo.baseValue;
+                      const valuePerUnit = elementInfo.baseValue; // Use defined base value
                       const creditsEarned = amount * valuePerUnit;
                       totalCreditsEarned += creditsEarned;
                       soldItemsLog.push(`${amount} ${elementInfo.name}`);
@@ -287,8 +326,8 @@ export class ActionProcessor {
                  }
               }
 
-              this.player.credits += totalCreditsEarned;
-              this.player.clearCargo();
+              this.player.credits += totalCreditsEarned; // Add total earnings
+              this.player.clearCargo(); // Use new method to empty cargo
 
               message = `Sold ${soldItemsLog.join(', ')} (${totalUnitsSold} units) for ${totalCreditsEarned} Cr.`;
               logger.info(`[ActionProcessor] Trade Complete: Sold ${totalUnitsSold} units for ${totalCreditsEarned} credits.`);
@@ -303,14 +342,14 @@ export class ActionProcessor {
           } else {
             const creditsPerUnit = 1 / CONFIG.FUEL_PER_CREDIT;
             const maxAffordableFuel = this.player.credits * CONFIG.FUEL_PER_CREDIT;
-            const fuelToBuy = Math.floor(Math.min(fuelNeeded, maxAffordableFuel));
-            const cost = Math.ceil(fuelToBuy * creditsPerUnit);
+            const fuelToBuy = Math.floor(Math.min(fuelNeeded, maxAffordableFuel)); // Buy whole units
+            const cost = Math.ceil(fuelToBuy * creditsPerUnit); // Calculate cost (round up?)
 
-            if (fuelToBuy <= 0 || this.player.credits < cost) {
+            if (fuelToBuy <= 0 || this.player.credits < cost) { // Check if can afford *calculated* cost
               message = `Not enough credits for fuel (Need ${creditsPerUnit.toFixed(1)} Cr/unit). Have ${this.player.credits} Cr.`;
             } else {
               this.player.credits -= cost;
-              this.player.addFuel(fuelToBuy);
+              this.player.addFuel(fuelToBuy); // Player logs details
               message = `Purchased ${fuelToBuy} fuel for ${cost} Cr.`;
               if (this.player.fuel >= this.player.maxFuel) {
                 message += ` Tank full!`;

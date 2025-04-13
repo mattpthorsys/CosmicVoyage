@@ -1,24 +1,23 @@
 /* FILE: src/core/game.ts */
-// src/core/game.ts (Revised rendering order for system view)
+// src/core/game.ts (Using Event Manager, fixed hyperspace scan popup)
 
 import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { MineralRichness, SPECTRAL_TYPES, ELEMENTS } from '../constants'; // Import ELEMENTS
+import { MineralRichness, SPECTRAL_TYPES, ELEMENTS } from '../constants';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
-// Import GameState type
-import { ActionProcessor, ActionProcessResult } from './action_processor'; // Import ActionProcessResult type
+import { ActionProcessor, ActionProcessResult } from './action_processor';
 import { fastHash } from '@/utils/hash';
-// Assuming alias setup
 import { Planet } from '@/entities/planet';
 import { Starbase } from '@/entities/starbase';
-import { SolarSystem } from '@/entities/solar_system'; // Import SolarSystem
+import { SolarSystem } from '@/entities/solar_system';
+import { eventManager, GameEvents } from './event_manager'; // Import Event Manager
 
-// Define type for scan target (including star info)
-type ScanTarget = Planet | Starbase | { type: 'Star', name: string, starType: string };
+// *** UPDATED: Include SolarSystem in ScanTarget type ***
+type ScanTarget = Planet | Starbase | { type: 'Star', name: string, starType: string } | SolarSystem;
 
 /** Main game class - Coordinates components and manages the loop. */
 export class Game {
@@ -36,10 +35,10 @@ export class Game {
   private animationFrameId: number | null = null;
 
   // Status Message
-  private statusMessage: string = 'Initializing Systems...';
+  private statusMessage: string = 'Initializing Systems...'; // Default message
 
   // Flag to force full clear/redraw
-  private forceFullRender: boolean = true;
+  private forceFullRender: boolean = true; // Start with true for initial render
 
   // --- Popup State ---
   private popupState: 'inactive' | 'opening' | 'active' | 'closing' = 'inactive';
@@ -55,23 +54,40 @@ export class Game {
     logger.info('[Game] Constructing instance...');
     const initialSeed = seed !== undefined ? String(seed) : String(Date.now());
     this.gameSeedPRNG = new PRNG(initialSeed);
-    this.renderer = new RendererFacade(canvasId, statusBarId);
+    this.renderer = new RendererFacade(canvasId, statusBarId); // RendererFacade now subscribes to status updates internally
     this.player = new Player();
     this.inputManager = new InputManager();
-    // Ensure the GameStateManager callback is bound correctly
-    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this._forceFullRenderOnStateChange.bind(this));
+
+    // *** Pass GameStateManager WITHOUT the callback ***
+    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG);
+
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
+
+    // --- Subscribe to Game State Changes ---
+    eventManager.subscribe(GameEvents.GAME_STATE_CHANGED, this._handleGameStateChange.bind(this));
+
+    // Add resize listener
     window.addEventListener('resize', this._handleResize.bind(this));
     this._handleResize(); // Initial fit
+
     logger.info(
       `[Game] Instance constructed. Seed: "${this.gameSeedPRNG.getInitialSeed()}", Initial State: '${this.stateManager.state}'`
     );
   }
 
-  // Callback for GameStateManager to signal a state change requires a full render
-  private _forceFullRenderOnStateChange() {
+  /** Handles the gameStateChanged event from the event manager. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private _handleGameStateChange(_newState: GameState): void {
     this.forceFullRender = true;
-    logger.debug('[Game] State change detected, forcing full render on next frame.');
+    logger.debug('[Game] State change event received, forcing full render on next frame.');
+    // Clear popups on state change? Or allow them to persist across? Let's clear them.
+    if (this.popupState !== 'inactive') {
+        this.popupState = 'inactive';
+        this.popupContent = null;
+        logger.debug('[Game] Closing active popup due to game state change.');
+    }
+    // Clear status message on major state changes like landing/leaving
+    this.statusMessage = ''; // Clear message on state change
   }
 
   public getGameState(): GameState { return this.stateManager.state; }
@@ -99,7 +115,11 @@ export class Game {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;
     }
-    this.renderer.updateStatus('Game stopped. Refresh to restart.', false);
+    // Publish final status update
+    eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
+        message: 'Game stopped. Refresh to restart.',
+        hasStarbase: false // Doesn't matter when stopped
+    });
     logger.info('[Game] Game loop stopped.');
   }
 
@@ -108,25 +128,26 @@ export class Game {
     logger.debug('[Game] Handling window resize...');
     this.renderer.fitToScreen();
     this.forceFullRender = true; // Force redraw after resize
-    this.lastUpdateTime = performance.now();
+    this.lastUpdateTime = performance.now(); // Reset time to avoid large deltaTime jump
   }
 
   // --- Core Game Loop ---
   private _loop(currentTime: DOMHighResTimeStamp): void {
     if (!this.isRunning) return;
-
     const deltaTime = Math.min(0.1, (currentTime - this.lastUpdateTime) / 1000.0); // Cap at 100ms
     this.lastUpdateTime = currentTime;
 
     try {
-        this._processInput();
-        this.inputManager.update();
-        this._update(deltaTime);
-        this._render(); // Render handles clearing internally now
+        this._processInput(); // Handles input and potentially sets statusMessage or triggers popups
+        this.inputManager.update(); // Clears justPressed state for next frame
+        this._update(deltaTime); // Updates game logic, popup state, potentially sets statusMessage
+        this._render(); // Renders the current state
 
-        if (this.forceFullRender) this.forceFullRender = false; // Reset flag *after* render
+        // Reset flag *after* render logic has potentially used it
+        if (this.forceFullRender) this.forceFullRender = false;
 
     } catch (loopError) {
+        // Handle loop errors (same as before)
         const currentState = this.stateManager.state;
         let errorMessage = 'Unknown Loop Error';
         let errorStack = 'N/A';
@@ -136,11 +157,12 @@ export class Game {
         } else { try { errorMessage = JSON.stringify(loopError); } catch { errorMessage = String(loopError); } }
         logger.error(`[Game:_loop:${currentState}] Error during game loop: ${errorMessage}`, { errorObject: loopError, stack: errorStack });
         this.statusMessage = `FATAL LOOP ERROR: ${errorMessage}. Refresh required.`;
-        try { this._updateStatusBar(); } catch { /* ignore */ }
+        try { this._publishStatusUpdate(); } catch { /* ignore */ } // Publish final error status
         this.stopGame();
         return;
     }
 
+    // Request next frame
     this.animationFrameId = requestAnimationFrame(this._loop.bind(this));
   }
 
@@ -149,21 +171,25 @@ export class Game {
   private _processInput(): void {
     // --- Check for Popup Closing First ---
     if (this.popupState === 'active') {
+        // Allow closing with various keys
         if (this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
             this.inputManager.wasActionJustPressed('MOVE_RIGHT') ||
             this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') || // Backspace
             this.inputManager.wasActionJustPressed('QUIT') ||          // Escape
             this.inputManager.wasActionJustPressed('ENTER_SYSTEM')) { // Enter
             logger.info('[Game:_processInput] Closing popup via key press.');
-            this.popupState = 'closing';
-            this.forceFullRender = true;
-            this.statusMessage = '';
-            return;
+            this.popupState = 'closing'; // Start closing animation
+            this.forceFullRender = true; // Need to redraw during closing
+            this.statusMessage = ''; // Clear status when closing popup
+            return; // Don't process other input when closing
         }
+        // Don't process game actions while popup is active
+        return;
     }
 
+    // Block input while popup is opening or closing
     if (this.popupState === 'opening' || this.popupState === 'closing') {
-        return; // Block input while animating
+        return;
     }
 
     // --- Process Normal Actions (if popup is inactive) ---
@@ -173,40 +199,53 @@ export class Game {
     const discreteActions: string[] = [
         'ENTER_SYSTEM', 'LEAVE_SYSTEM', 'ACTIVATE_LAND_LIFTOFF',
         'SCAN', // Planet surface scan
-        'SCAN_SYSTEM_OBJECT', // NEW: System view scan
+        'SCAN_SYSTEM_OBJECT', // System view scan
         'MINE', 'TRADE', 'REFUEL',
         'DOWNLOAD_LOG', 'QUIT'
     ];
-
     for (const action of discreteActions) {
         if (this.inputManager.wasActionJustPressed(action)) {
             logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
             actionResult = this.actionProcessor.processAction(action);
-            actionTaken = true;
-            if (action === 'QUIT') { this.stopGame(); return; }
-            break;
+            actionTaken = true; // Mark that an action was handled
+
+            if (action === 'QUIT') {
+                 eventManager.publish(GameEvents.GAME_QUIT); // Publish quit event
+                 this.stopGame();
+                 return; // Exit immediately
+            }
+            break; // Only process one discrete action per frame
         }
     }
 
     // --- Handle Action Results ---
     if (actionTaken) {
         if (typeof actionResult === 'string') {
+            // Action processor returned a status message
             this.statusMessage = actionResult;
         } else if (actionResult && typeof actionResult === 'object' && 'scanTarget' in actionResult) {
+            // Action processor returned a scan target - trigger the popup
             if (actionResult.scanTarget) { // Check if target is not null/undefined
                  this._triggerScanPopup(actionResult.scanTarget);
-                 this.statusMessage = `Scanning ${actionResult.scanTarget === 'Star' ? 'local star' : actionResult.scanTarget.name}...`; // Set scanning message
+                 // Set status based on target type
+                  let targetName = 'Unknown Target';
+                  if (actionResult.scanTarget === 'Star') {
+                      targetName = 'local star';
+                  } else if (actionResult.scanTarget instanceof SolarSystem){
+                      targetName = `star system ${actionResult.scanTarget.name}`;
+                  } else if (actionResult.scanTarget instanceof Planet || actionResult.scanTarget instanceof Starbase) {
+                      targetName = actionResult.scanTarget.name;
+                  }
+                 this.statusMessage = `Scanning ${targetName}...`;
             } else {
-                // This case shouldn't happen if ActionProcessor works correctly, but handle it.
                 logger.warn("[Game:_processInput] ActionProcessor returned scanTarget object but target was null/undefined.");
                 this.statusMessage = "Scan Error: Invalid target.";
             }
         }
-        // else: actionResult is null, do nothing (action was likely invalid)
     }
 
     // --- Process Movement (only if no discrete action was processed this frame) ---
-    if (!actionTaken) {
+    if (!actionTaken && this.popupState === 'inactive') { // Also ensure popup isn't active
         let dx = 0, dy = 0;
         if (this.inputManager.isActionActive('MOVE_UP')) dy -= 1;
         if (this.inputManager.isActionActive('MOVE_DOWN')) dy += 1;
@@ -216,34 +255,36 @@ export class Game {
         if (dx !== 0 || dy !== 0) {
              // Clear non-sticky status messages on movement
             if (this.statusMessage === '' || // Clear if empty
-                !(this.statusMessage.toLowerCase().includes('error') || // Don't clear errors
+                !(this.statusMessage.toLowerCase().includes('error') || // Don't clear errors/failures/results
                   this.statusMessage.toLowerCase().includes('fail') ||
                   this.statusMessage.toLowerCase().includes('cannot') ||
                   this.statusMessage.startsWith('Mined') ||
                   this.statusMessage.startsWith('Sold') ||
-                  this.statusMessage.startsWith('Scan') || // Don't clear scan messages immediately
+                  this.statusMessage.startsWith('Scan') || // Let scan message persist briefly
                   this.statusMessage.startsWith('Purchased')))
             {
-                this.statusMessage = ''; // Clear previous status on move
+                this.statusMessage = ''; // Clear previous non-sticky status on move
             }
 
             const isFine = this.inputManager.isActionActive('FINE_CONTROL');
-            const isBoost = this.inputManager.isActionActive('BOOST');
-            let useFine = isFine && !isBoost;
+            const isBoost = this.inputManager.isActionActive('BOOST'); // Assuming BOOST is handled if needed
+            let useFine = isFine && !isBoost; // Example logic
 
             try {
-                switch (this.stateManager.state) {
+                // Use a separate variable to avoid direct state modification in switch
+                const currentGameState = this.stateManager.state;
+                switch (currentGameState) {
                     case 'hyperspace': this.player.moveWorld(dx, dy); break;
                     case 'system': this.player.moveSystem(dx, dy, useFine); break;
                     case 'planet': {
                         const planet = this.stateManager.currentPlanet;
                         if (planet) {
                             try {
-                                planet.ensureSurfaceReady();
+                                planet.ensureSurfaceReady(); // Ensure map exists
                                 const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
                                 this.player.moveSurface(dx, dy, mapSize);
                             } catch (surfaceError) {
-                                logger.error(`[Game:_processInput] Error preparing surface for move:`, surfaceError);
+                                logger.error(`[Game:_processInput] Error preparing surface for move: ${surfaceError}`);
                                 this.statusMessage = `Surface Error: Failed to move.`;
                             }
                         } else {
@@ -251,10 +292,10 @@ export class Game {
                             logger.error('[Game:_processInput] Player in planet state but currentPlanet is null.');
                         }
                     } break;
-                    case 'starbase': break;
+                    case 'starbase': /* Movement might be disabled or different in starbase */ break;
                 }
             } catch (moveError) {
-                logger.error(`[Game:_processInput] Move Error:`, moveError);
+                logger.error(`[Game:_processInput] Move Error: ${moveError}`);
                 this.statusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
             }
         }
@@ -262,52 +303,64 @@ export class Game {
   } // End _processInput
 
   // --- Helper to trigger and format popups ---
-  private _triggerScanPopup(target: ScanTarget): void {
+  // *** UPDATED: Signature accepts SolarSystem ***
+  private _triggerScanPopup(target: ScanTarget | string): void {
       let lines: string[] | null = null;
       try {
-        if (target === 'Star' || (typeof target === 'object' && target?.type === 'Star')) { // Robust check for star
-            const system = this.stateManager.currentSystem;
-            if (system) {
-                lines = this._formatStarScanPopup(system);
-            } else {
-                logger.error("[Game:_triggerScanPopup] Cannot format star scan: current system is null.");
-                this.statusMessage = "Error: System data missing for star scan.";
-                return;
-            }
+        let targetName = 'Unknown Target';
+        // *** UPDATED: Check for SolarSystem instance (for hyperspace star scan) ***
+         if (target instanceof SolarSystem) {
+            lines = this._formatStarScanPopup(target); // Pass system object
+            targetName = `Star (${target.name})`;
+        } else if (target === 'Star') { // Still handle 'Star' string for system-view scan
+             const system = this.stateManager.currentSystem; // Get system from state manager
+             if (system) {
+                 lines = this._formatStarScanPopup(system);
+                 targetName = `Star (${system.name})`;
+             } else {
+                 logger.error("[Game:_triggerScanPopup] Cannot format star scan: current system is null (when target is 'Star' string).");
+                 this.statusMessage = "Error: System data missing for star scan.";
+                 return;
+             }
         } else if (target instanceof Planet || target instanceof Starbase) {
-            lines = target.getScanInfo();
+            targetName = target.name;
+            lines = target.getScanInfo(); // Get initial info
+            // If it's a planet and not scanned, perform the scan and get updated info
             if (target instanceof Planet && !target.scanned) {
-                target.scan();
-                lines = target.getScanInfo();
+                target.scan(); // This updates the planet's internal state
+                lines = target.getScanInfo(); // Get the potentially updated info
             }
         } else {
-             logger.error("[Game:_triggerScanPopup] Unknown scan target type:", target);
+             logger.error("[Game:_triggerScanPopup] Unknown or invalid scan target type:", target);
              this.statusMessage = "Error: Unknown object type for scan.";
              return;
         }
 
-        if (lines && lines.length > 0) { // Ensure lines were generated
+        // Proceed if lines were successfully generated
+        if (lines && lines.length > 0) {
+            // Add standard closing instruction
+            if (lines[lines.length - 1] !== "") lines.push(""); // Add spacer if needed
+            lines.push("← Close →"); // Use actual arrow characters
+
+            // Set popup state for activation
             this.popupContent = lines;
-            if (this.popupContent[this.popupContent.length - 1] !== "") {
-                 this.popupContent.push(""); // Add spacer
-            }
-            this.popupContent.push("← Close →");
-            this.popupTotalChars = this.popupContent.reduce((sum, line) => sum + line.length, 0) + this.popupContent.length -1;
-            this.popupState = 'opening';
-            this.popupOpenCloseProgress = 0;
-            this.popupTextProgress = 0;
-            this.forceFullRender = true;
-            logger.info(`[Game] Opening scan popup for ${target === 'Star' || target.type === 'Star' ? 'Star' : target.name}`);
+            this.popupTotalChars = this.popupContent.reduce((sum, line) => sum + line.length, 0) + this.popupContent.length -1; // Account for newlines
+            this.popupState = 'opening'; // Start opening animation
+            this.popupOpenCloseProgress = 0; // Reset progress
+            this.popupTextProgress = 0; // Reset text progress
+            this.forceFullRender = true; // Need to redraw for animation
+            logger.info(`[Game] Opening scan popup for ${targetName}`);
         } else {
              this.statusMessage = "Error: Failed to generate scan information.";
-             logger.error("[Game:_triggerScanPopup] Generated scan lines array was null or empty.");
+             logger.error("[Game:_triggerScanPopup] Generated scan lines array was null or empty for target:", targetName);
         }
       } catch (error) {
-           logger.error(`[Game:_triggerScanPopup] Error generating scan popup content:`, error);
+           logger.error(`[Game:_triggerScanPopup] Error generating scan popup content: ${error}`);
            this.statusMessage = `Scan Error: ${error instanceof Error ? error.message : 'Failed to get info'}`;
       }
   }
 
+  // Formatting function remains the same, accepts SolarSystem object
   private _formatStarScanPopup(system: SolarSystem): string[] {
       const lines: string[] = [];
       const starInfo = SPECTRAL_TYPES[system.starType];
@@ -316,7 +369,7 @@ export class Game {
       if (starInfo) {
           lines.push(`Temperature: ~${starInfo.temp.toLocaleString()} K`);
           lines.push(`Luminosity: ~${starInfo.brightness.toFixed(1)} (Rel. Sol)`);
-          lines.push(`Mass: ~${starInfo.mass.toFixed(1)} Solar Masses`); // Now includes mass
+          lines.push(`Mass: ~${starInfo.mass.toFixed(1)} Solar Masses`);
           lines.push(`Colour Index: ${starInfo.colour}`);
       } else {
           lines.push(`Temperature: Unknown`);
@@ -332,6 +385,7 @@ export class Game {
   // --- Game State Update ---
   private _update(deltaTime: number): void {
     // --- Update Popup Animation State ---
+    let blockGameUpdates = false;
     switch (this.popupState) {
         case 'opening':
             this.popupOpenCloseProgress += this.popupAnimationSpeed * deltaTime;
@@ -341,7 +395,8 @@ export class Game {
                 logger.debug('[Game:_update] Popup finished opening.');
             }
             this.forceFullRender = true; // Need redraw during opening
-            break; // Still need to update status bar below
+            blockGameUpdates = true; // Block updates while opening
+            break;
         case 'active':
             // Advance typing effect
             if (this.popupTextProgress < this.popupTotalChars) {
@@ -349,10 +404,10 @@ export class Game {
                 this.popupTextProgress = Math.min(this.popupTotalChars, Math.floor(this.popupTextProgress));
                  this.forceFullRender = true; // Need redraw during typing
             }
-            // Update status bar for active popup
+            // Set specific status message for active popup
             this.statusMessage = `Scan Details [←] Close [→]`;
-            this._updateStatusBar(); // Update status bar immediately
-            return; // Skip normal game updates when popup is fully active
+            blockGameUpdates = true; // Block game updates when popup is fully active
+            break;
         case 'closing':
             this.popupOpenCloseProgress -= this.popupAnimationSpeed * deltaTime;
             if (this.popupOpenCloseProgress <= 0) {
@@ -360,60 +415,62 @@ export class Game {
                 this.popupState = 'inactive';
                 this.popupContent = null; // Clear content after closing
                 logger.debug('[Game:_update] Popup finished closing.');
-                this.statusMessage = ''; // Clear status message after popup closes
+                this.statusMessage = ''; // Clear status message after popup closes fully
             }
              this.forceFullRender = true; // Need redraw during closing
-            break; // Still need to update status bar below
+             blockGameUpdates = true; // Block updates while closing
+            break;
         case 'inactive':
-            // --- Normal Game State Updates ---
-            try {
-              const currentState = this.stateManager.state;
-              let stateUpdateStatus = ''; // Holds status from state-specific updates
-              switch (currentState) {
-                case 'hyperspace': stateUpdateStatus = this._updateHyperspace(deltaTime); break;
-                case 'system': stateUpdateStatus = this._updateSystem(deltaTime); break;
-                case 'planet': stateUpdateStatus = this._updatePlanet(deltaTime); break;
-                case 'starbase': stateUpdateStatus = this._updateStarbase(deltaTime); break;
-                default: stateUpdateStatus = `Error: Unexpected state ${currentState}`; logger.warn(stateUpdateStatus);
-              }
-               // Update status message ONLY if it wasn't set by a discrete action this frame
-               if (stateUpdateStatus && this.statusMessage === '') {
-                   this.statusMessage = stateUpdateStatus;
-               }
-            } catch (updateError) {
-                 const stateWhenErrorOccurred = this.stateManager.state;
-                 let errorMessage = 'Unknown Update Error';
-                 if (updateError instanceof Error) errorMessage = updateError.message;
-                 else try { errorMessage = JSON.stringify(updateError); } catch { errorMessage = String(updateError); }
-                 logger.error(`[Game:_update:${stateWhenErrorOccurred}] Error during update logic: ${errorMessage}`, { errorObject: updateError });
-                 this.statusMessage = `UPDATE ERROR: ${errorMessage}`;
-                 this.stopGame(); // Stop on update error
-                 // Optionally re-throw if error should halt execution immediately
-                 // throw updateError;
-            }
-            break; // End inactive case
+            // Do nothing related to popups
+            break;
     } // End popupState switch
 
-    // Update status bar regardless of popup animation state (except when fully active)
-    this._updateStatusBar();
+    // --- Perform Normal Game State Updates ONLY if not blocked by popup ---
+    if (!blockGameUpdates) {
+        try {
+          const currentState = this.stateManager.state;
+          let stateUpdateStatus = ''; // Holds status from state-specific updates
 
+          switch (currentState) {
+            case 'hyperspace': stateUpdateStatus = this._updateHyperspace(deltaTime); break;
+            case 'system': stateUpdateStatus = this._updateSystem(deltaTime); break;
+            case 'planet': stateUpdateStatus = this._updatePlanet(deltaTime); break;
+            case 'starbase': stateUpdateStatus = this._updateStarbase(deltaTime); break;
+            default: stateUpdateStatus = `Error: Unexpected state ${currentState}`; logger.warn(stateUpdateStatus);
+          }
+
+          // Update status message ONLY if it wasn't set by a discrete action this frame
+          // and the popup isn't controlling it
+           if (stateUpdateStatus && this.statusMessage === '') {
+               this.statusMessage = stateUpdateStatus;
+           }
+        } catch (updateError) {
+             const stateWhenErrorOccurred = this.stateManager.state;
+             let errorMessage = 'Unknown Update Error';
+             if (updateError instanceof Error) errorMessage = updateError.message;
+             else try { errorMessage = JSON.stringify(updateError); } catch { errorMessage = String(updateError); }
+             logger.error(`[Game:_update:${stateWhenErrorOccurred}] Error during update logic: ${errorMessage}`, { errorObject: updateError });
+             this.statusMessage = `UPDATE ERROR: ${errorMessage}`;
+             this.stopGame(); // Stop on update error
+        }
+    }
+
+    // Publish status update needed EVENT (regardless of popup state, statusMessage reflects current info)
+    this._publishStatusUpdate();
   } // End _update
 
 
-  // --- State-specific update methods ---
+  // --- State-specific update methods (logic remains the same) ---
   private _updateHyperspace(_deltaTime: number): string {
-    // ... (content unchanged from previous version) ...
     const baseSeedInt = this.gameSeedPRNG.seed;
     const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
     const hash = fastHash(this.player.worldX, this.player.worldY, baseSeedInt);
     const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
-
     let baseStatus = `Hyperspace | Loc: ${this.player.worldX},${this.player.worldY}`;
     if (isNearStar) {
       const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
       if (peekedSystem) {
         const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
-        // Use SCAN_SYSTEM_OBJECT key for details now
         baseStatus += ` | Near ${peekedSystem.name}${starbaseText}. [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
       } else {
         baseStatus += ` | Near star system. [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
@@ -425,11 +482,10 @@ export class Game {
   }
 
   private _updateSystem(deltaTime: number): string {
-    // ... (content unchanged from previous version) ...
     const system = this.stateManager.currentSystem;
     if (!system) {
         logger.error("[Game:_updateSystem] In 'system' state but currentSystem is null! Attempting recovery to hyperspace.");
-        this.stateManager.leaveSystem();
+        this.stateManager.leaveSystem(); // This will publish state change
         return 'System Error: Data missing. Returning to hyperspace.';
     }
     system.updateOrbits(deltaTime);
@@ -441,7 +497,7 @@ export class Game {
       status += ` | Near ${nearbyObject.name} (${dist.toFixed(0)} u). [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Land/Dock / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
     } else if (this.isPlayerNearExit()) {
          const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
-        const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
+         const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
         if (distSqToStar < scanThresholdSq) {
              status += ` | [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star / [${CONFIG.KEY_BINDINGS.LEAVE_SYSTEM.toUpperCase()}] Leave System`;
         } else {
@@ -449,7 +505,7 @@ export class Game {
         }
     } else {
          const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
-        const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
+         const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
         if (distSqToStar < scanThresholdSq) {
              status += ` | [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star`;
         }
@@ -458,20 +514,18 @@ export class Game {
   }
 
   private isPlayerNearExit(): boolean {
-    // ... (content unchanged from previous version) ...
     const system = this.stateManager.currentSystem;
     if (!system) return false;
     const distSq = this.player.distanceSqToSystemCoords(0, 0);
-    const exitThresholdSq = (system.edgeRadius * 0.75) ** 2;
+    const exitThresholdSq = (system.edgeRadius * 0.75) ** 2; // Example threshold
     return distSq > exitThresholdSq;
   }
 
   private _updatePlanet(_deltaTime: number): string {
-    // ... (content unchanged from previous version) ...
      const planet = this.stateManager.currentPlanet;
-    if (!planet) {
+     if (!planet) {
         logger.error("[Game:_updatePlanet] In 'planet' state but currentPlanet is null! Attempting recovery to hyperspace.");
-        this.stateManager.leaveSystem();
+        this.stateManager.leaveSystem(); // This will publish state change
         return 'Planet Error: Data missing. Returning to hyperspace.';
     }
     let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.surfaceX},${this.player.surfaceY} | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${planet.surfaceTemp}K`;
@@ -479,12 +533,13 @@ export class Game {
     if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
         if (planet.scanned) {
             status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;
+            // Check if location is already mined before adding Mine action
             if (planet.mineralRichness !== MineralRichness.NONE && !planet.isMined(this.player.surfaceX, this.player.surfaceY)) {
                 actions.push(`[${CONFIG.KEY_BINDINGS.MINE.toUpperCase()}] Mine`);
             }
         } else {
             actions.push(`[${CONFIG.KEY_BINDINGS.SCAN.toUpperCase()}] Scan`);
-            status += ` | Scan: Required (Potential: ${planet.mineralRichness})`;
+            status += ` | Scan: Required (Potential: ${planet.mineralRichness}).`;
         }
     } else {
         status += ` | Scan: N/A (${planet.type})`;
@@ -494,11 +549,10 @@ export class Game {
   }
 
   private _updateStarbase(_deltaTime: number): string {
-    // ... (content unchanged from previous version) ...
     const starbase = this.stateManager.currentStarbase;
     if (!starbase) {
         logger.error("[Game:_updateStarbase] In 'starbase' state but currentStarbase is null! Attempting recovery to hyperspace.");
-        this.stateManager.leaveSystem();
+        this.stateManager.leaveSystem(); // This will publish state change
         return 'Starbase Error: Data missing. Returning to hyperspace.';
     }
     const actions = [
@@ -513,25 +567,20 @@ export class Game {
   private _render(): void {
     const currentState = this.stateManager.state;
     try {
-        // --- Start Rendering ---
-        // Clear the physical canvas. Always needed unless doing complex diff rendering.
-        // For simplicity with background layers and popups, always clearing is safer.
-        this.renderer.clear(true);
+        // Clear the physical canvas if rendering background or if forced
+        if (currentState === 'system' || this.forceFullRender) {
+            this.renderer.clear(true);
+        }
 
         // --- Draw Background Layer (Only in System View) ---
         if (currentState === 'system') {
-            this.renderer.drawStarBackground(this.player);
-            // Draw background content into the background buffer
-            // *** RENDER the background buffer to the canvas ***
-            this.renderer.renderBufferFull(true);
-             // If a popup is opening/closing, this background might get drawn over.
+            this.renderer.drawStarBackground(this.player); // Populates background buffer
+            this.renderer.renderBufferFull(true); // Renders background buffer to canvas
         }
 
         // --- Draw Main Scene (populates main buffer) ---
         switch (currentState) {
-            case 'hyperspace':
-                this.renderer.drawHyperspace(this.player, this.gameSeedPRNG);
-                break;
+            case 'hyperspace': this.renderer.drawHyperspace(this.player, this.gameSeedPRNG); break;
             case 'system':
                 const system = this.stateManager.currentSystem;
                 if (system) this.renderer.drawSolarSystem(this.player, system);
@@ -541,10 +590,10 @@ export class Game {
                 const planet = this.stateManager.currentPlanet;
                 if (planet) {
                    try {
-                       planet.ensureSurfaceReady();
+                       planet.ensureSurfaceReady(); // Make sure data is ready
                        this.renderer.drawPlanetSurface(this.player, planet);
                    } catch (surfaceError) {
-                        logger.error(`[Game:_render] Error ensuring surface ready for ${planet.name}:`, surfaceError);
+                        logger.error(`[Game:_render] Error ensuring surface ready for ${planet.name}: ${surfaceError}`);
                         this._renderError(`Surface Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`);
                    }
                 } else { this._renderError('Planet data missing for render!'); }
@@ -553,11 +602,11 @@ export class Game {
                 const starbase = this.stateManager.currentStarbase;
                 if (starbase) {
                      try {
-                         starbase.ensureSurfaceReady();
-                         this.renderer.drawPlanetSurface(this.player, starbase);
+                         starbase.ensureSurfaceReady(); // Make sure data is ready
+                         this.renderer.drawPlanetSurface(this.player, starbase); // Use same func for starbase interior
                      } catch (surfaceError) {
-                          logger.error(`[Game:_render] Error ensuring starbase ready for ${starbase.name}:`, surfaceError);
-                         this._renderError(`Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`);
+                          logger.error(`[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`);
+                          this._renderError(`Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`);
                      }
                 } else { this._renderError('Starbase data missing for render!'); }
                 break;
@@ -576,42 +625,44 @@ export class Game {
 
         // --- Render the main buffer (scene + potential popup) to the canvas ---
         // This draws ON TOP of the star background rendered earlier (if in system view)
-        this.renderer.renderBufferFull(false);
-
+        this.renderer.renderBufferFull(false); // Render main buffer
 
     } catch (error) {
-        logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, error);
+        logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!! ${error}`);
         this.stopGame();
         try {
            this._renderError(`FATAL RENDER ERROR: ${error instanceof Error ? error.message : String(error)}. Refresh.`);
-           this.renderer.renderBufferFull(false); // Attempt one last render
-        } catch { /* ignore secondary error */ }
+           this.renderer.renderBufferFull(false); // Attempt one last render of the error message
+        } catch { /* ignore secondary error during error render */ }
     }
   }
 
 
   /** Helper to render an error message directly to the canvas buffer. */
   private _renderError(message: string): void {
-    // ... (content unchanged) ...
     logger.error(`[Game:_renderError] Displaying: ${message}`);
-    this.renderer.clear(true);
+    this.renderer.clear(true); // Clear everything first
     this.renderer.drawString(message, 1, 1, '#FF0000', CONFIG.DEFAULT_BG_COLOUR);
-    this.statusMessage = `ERROR: ${message}`;
-    this._updateStatusBar();
+    this.statusMessage = `ERROR: ${message}`; // Update status message as well
+    this._publishStatusUpdate(); // Publish the error status
   }
 
-  /** Updates the status bar text via the renderer. */
-  private _updateStatusBar(): void {
-    // ... (content unchanged) ...
+  /** Composes the status string and PUBLISHES it via the event manager. */
+  private _publishStatusUpdate(): void {
     let currentCargoTotal = 0;
-    try { currentCargoTotal = this.player.getCurrentCargoTotal(); }
-    catch (e) { logger.error(`[Game:_updateStatusBar] Error getting cargo total: ${e}`); }
-    const commonStatus = ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${currentCargoTotal}/${this.player.cargoCapacity} | Cr: ${this.player.credits}`;
-    const finalStatus = (this.popupState === 'active')
-                        ? this.statusMessage
-                        : this.statusMessage + commonStatus;
-    const hasStarbase = this.stateManager.state === 'starbase';
-    this.renderer.updateStatus(finalStatus, hasStarbase);
+    try { currentCargoTotal = this.player.getCurrentCargoTotal(); } // Add try-catch
+    catch (e) { logger.error(`[Game:_publishStatusUpdate] Error getting cargo total: ${e}`); }
+
+    // Don't append common status if popup is active and controlling the message
+    const commonStatus = (this.popupState === 'active')
+                        ? ''
+                        : ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${currentCargoTotal}/${this.player.cargoCapacity} | Cr: ${this.player.credits.toLocaleString()}`;
+
+    const finalStatus = this.statusMessage + commonStatus;
+    const hasStarbase = this.stateManager.state === 'starbase'; // Used for potential special formatting
+
+    // Publish event for the renderer/status bar updater to handle
+    eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
   }
 
 } // End of Game class
