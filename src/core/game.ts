@@ -14,6 +14,7 @@ import { Planet } from '@/entities/planet';
 import { Starbase } from '@/entities/starbase';
 import { SolarSystem } from '@/entities/solar_system';
 import { eventManager, GameEvents } from './event_manager';
+import { MovementSystem } from '@/systems/movement_system';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star', name: string, starType: string } | SolarSystem;
@@ -27,6 +28,7 @@ export class Game {
     private readonly inputManager: InputManager;
     private readonly stateManager: GameStateManager;
     private readonly actionProcessor: ActionProcessor;
+    private readonly movementSystem: MovementSystem;
 
     // Game Loop State, Status, Flags, Popup State... (remain the same)
     private lastUpdateTime: number = 0;
@@ -53,6 +55,7 @@ export class Game {
         // Pass player AND stateManager, as ActionProcessor still needs peekAtSystem
         this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG);
         this.actionProcessor = new ActionProcessor(this.player, this.stateManager); // Pass dependencies
+        this.movementSystem = new MovementSystem(this.player);
 
         // Subscribe to Game State Changes
         eventManager.subscribe(GameEvents.GAME_STATE_CHANGED, this._handleGameStateChange.bind(this));
@@ -112,6 +115,9 @@ export class Game {
         if (this.animationFrameId !== null) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
+        }
+        if (this.movementSystem) {
+            this.movementSystem.destroy(); // Unsubscribe event listener
         }
         eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
             message: 'Game stopped. Refresh to restart.',
@@ -217,7 +223,7 @@ export class Game {
             } else if (actionResult && typeof actionResult === 'object' && 'requestSystemPeek' in actionResult) {
                 // Action processor requested a system peek (hyperspace scan action)
                 logger.debug("[Game:_processInput] Handling requestSystemPeek...");
-                const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
+                const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
                 if (peekedSystem) {
                     // System found, trigger the scan popup directly with the peeked system
                     this.statusMessage = STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name);
@@ -260,30 +266,45 @@ export class Game {
                 let useFine = isFine && !isBoost;
 
                 try {
-                    switch (currentState) {
-                        case 'hyperspace': this.player.moveWorld(dx, dy); break;
-                        case 'system': this.player.moveSystem(dx, dy, useFine); break;
-                        case 'planet': {
-                            const planet = this.stateManager.currentPlanet;
-                            if (planet) {
-                                try {
-                                    planet.ensureSurfaceReady();
-                                    const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
-                                    this.player.moveSurface(dx, dy, mapSize);
-                                } catch (surfaceError) {
-                                    logger.error(`[Game:_processInput] Error preparing surface for move: ${surfaceError}`);
-                                    this.statusMessage = `Surface Error: Failed to move.`;
-                                }
-                            } else {
-                                this.statusMessage = 'Error: Planet data missing for surface move!';
-                                logger.error('[Game:_processInput] Player in planet state but currentPlanet is null.');
+                    // Define the payload for the event
+                    // (Ensure this matches the expected structure in MovementSystem.handleMoveRequest)
+                    const moveData: any = { // Use 'any' temporarily or define MoveRequestData interface
+                        dx,
+                        dy,
+                        isFineControl: useFine,
+                        isBoost: isBoost, // Pass boost state if needed by system
+                        context: currentState // Pass the current game state
+                    };
+
+                    // Add specific context needed for surface movement
+                    if (currentState === 'planet') {
+                         const planet = this.stateManager.currentPlanet;
+                         if (planet) {
+                            // Ensure surface is ready before allowing move request on planet
+                            try {
+                                 planet.ensureSurfaceReady(); // Ensure map is available
+                                 moveData.surfaceContext = {
+                                     mapSize: planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE
+                                 };
+                            } catch (surfaceError) {
+                                logger.error(`[Game:_processInput] Error ensuring surface ready for move: ${surfaceError}`);
+                                this.statusMessage = STATUS_MESSAGES.ERROR_SURFACE_PREP('Cannot move');
+                                return; // Exit movement processing for this frame
                             }
-                        } break;
-                        case 'starbase': /* Movement disabled */ break;
+                         } else {
+                              logger.error('[Game:_processInput] Player in planet state but currentPlanet is null during move.');
+                              this.statusMessage = STATUS_MESSAGES.ERROR_DATA_MISSING('Planet');
+                              return; // Exit movement processing
+                         }
                     }
-                } catch (moveError) {
-                    logger.error(`[Game:_processInput] Move Error: ${moveError}`);
-                    this.statusMessage = `Move Error: ${moveError instanceof Error ? moveError.message : String(moveError)}`;
+
+                    // Publish the event
+                    eventManager.publish(GameEvents.MOVE_REQUESTED, moveData);
+                    // logger.debug(`[Game:_processInput] Published MOVE_REQUESTED event:`, moveData); // Can be noisy
+
+                } catch (error) { // Catch errors during data gathering or publishing
+                     logger.error(`[Game:_processInput] Error preparing or publishing move request: ${error}`);
+                     this.statusMessage = `Move Error: ${error instanceof Error ? error.message : String(error)}`;
                 }
             }
         }
@@ -300,7 +321,7 @@ export class Game {
         if (scanType === 'system_object') {
             if (currentState === 'hyperspace') {
                 // *** Find target for hyperspace scan ***
-                const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
+                const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
                 if (peekedSystem) {
                     // Comment: Target for hyperspace scan is the peeked SolarSystem object itself.
                     targetToScan = peekedSystem;
@@ -314,7 +335,8 @@ export class Game {
                 if (!system) {
                     scanStatusMessage = 'Scan Error: System data missing.';
                 } else {
-                    const nearbyObject = system.getObjectNear(this.player.systemX, this.player.systemY);
+                    const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
+                    //let status = `System: ${system.name} (${system.starType}) | Pos: ${this.player.position.systemX.toFixed(0)},${this.player.position.systemY.toFixed(0)}`;
                     const distSqToObject = nearbyObject ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY) : Infinity;
                     const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
                     const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
@@ -325,7 +347,7 @@ export class Game {
                             name: system.name, // Use the system's name (often the star's name)
                             starType: system.starType // Get the star type from the system
                         };
-                        scanStatusMessage =  STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
+                        scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
                     } else if (nearbyObject && distSqToObject < scanThresholdSq) {
                         // Comment: Target for system scan (near object) is the Planet/Starbase object.
                         targetToScan = nearbyObject;
@@ -374,20 +396,27 @@ export class Game {
             if (target instanceof SolarSystem) {
                 lines = this._formatStarScanPopup(target); // Pass system object
                 targetName = `Star (${target.name})`;
-            }else if (typeof target === 'object' && target !== null && 'type' in target && target.type === 'Star') {
-                // Target is the { type: 'Star', name: ..., starType: ... } object
+            } else if (typeof target === 'object' && target !== null && 'type' in target && target.type === 'Star') {
+                // --- Explicit Type Assertion ---
+                // Assign target to a new const with the explicitly asserted type within this block
+                const starTarget = target as { type: 'Star', name: string, starType: string };
+                // --- End Assertion ---
+
                 // We need the *current* system context to format the popup fully
                 const system = this.stateManager.currentSystem;
-                if (system && system.name === target.name && system.starType === target.starType) {
+
+                // Now use starTarget for property access
+                if (system && system.name === starTarget.name && system.starType === starTarget.starType) {
                     lines = this._formatStarScanPopup(system); // Format using the current system
                     targetName = `Star (${system.name})`;
                 } else {
-                    // Fallback if current system doesn't match the object data (shouldn't happen often)
+                    // Fallback if current system doesn't match the object data
                     logger.error("[Game:_triggerScanPopup] Mismatch between star object data and current system state.");
-                    lines = [`--- STELLAR SCAN: ${target.name} ---`, `Spectral Type: ${target.starType}`, '(System context mismatch)'];
-                    targetName = `Star (${target.name})`;
+                    // Use starTarget for property access
+                    lines = [`--- STELLAR SCAN: ${starTarget.name} ---`, `Spectral Type: ${starTarget.starType}`, '(System context mismatch)'];
+                    targetName = `Star (${starTarget.name})`;
                 }
-           }  else if (target instanceof Planet || target instanceof Starbase) { // Handle Planet/Starbase
+            } else if (target instanceof Planet || target instanceof Starbase) { // Handle Planet/Starbase
                 targetName = target.name;
                 lines = target.getScanInfo();
                 if (target instanceof Planet && !target.scanned) {
@@ -512,11 +541,11 @@ export class Game {
     private _updateHyperspace(_deltaTime: number): string {
         const baseSeedInt = this.gameSeedPRNG.seed;
         const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-        const hash = fastHash(this.player.worldX, this.player.worldY, baseSeedInt);
+        const hash = fastHash(this.player.position.worldX, this.player.position.worldY, baseSeedInt);
         const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
-        let baseStatus = `Hyperspace | Loc: ${this.player.worldX},${this.player.worldY}`;
+        let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY}`;
         if (isNearStar) {
-            const peekedSystem = this.stateManager.peekAtSystem(this.player.worldX, this.player.worldY);
+            const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
             if (peekedSystem) {
                 const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
                 baseStatus += ` | Near ${peekedSystem.name}${starbaseText}. [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
@@ -537,8 +566,8 @@ export class Game {
             return 'System Error: Data missing. Returning to hyperspace.';
         }
         system.updateOrbits(deltaTime);
-        const nearbyObject = system.getObjectNear(this.player.systemX, this.player.systemY);
-        let status = `System: ${system.name} (${system.starType}) | Pos: ${this.player.systemX.toFixed(0)},${this.player.systemY.toFixed(0)}`;
+        const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
+        let status = `System: ${system.name} (${system.starType}) | Pos: ${this.player.position.systemX.toFixed(0)},${this.player.position.systemY.toFixed(0)}`;
         if (nearbyObject) {
             const dist = Math.sqrt(this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY));
             status += ` | Near ${nearbyObject.name} (${dist.toFixed(0)} u). [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Land/Dock / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
@@ -575,12 +604,12 @@ export class Game {
             eventManager.publish(GameEvents.LEAVE_SYSTEM_REQUESTED);
             return 'Planet Error: Data missing. Returning to hyperspace.';
         }
-        let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.surfaceX},${this.player.surfaceY} | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${planet.surfaceTemp}K`;
+        let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.position.surfaceX},${this.player.position.surfaceY} | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${planet.surfaceTemp}K`;
         const actions = [`[${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Liftoff`];
         if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
             if (planet.scanned) {
                 status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;
-                if (planet.mineralRichness !== MineralRichness.NONE && !planet.isMined(this.player.surfaceX, this.player.surfaceY)) {
+                if (planet.mineralRichness !== MineralRichness.NONE && !planet.isMined(this.player.position.surfaceX, this.player.position.surfaceY)) {
                     actions.push(`[${CONFIG.KEY_BINDINGS.MINE.toUpperCase()}] Mine`);
                 }
             } else {
@@ -684,12 +713,18 @@ export class Game {
     /** Composes the status string and PUBLISHES it via the event manager. */
     private _publishStatusUpdate(): void {
         let currentCargoTotal = 0;
-        try { currentCargoTotal = this.player.getCurrentCargoTotal(); }
-        catch (e) { logger.error(`[Game:_publishStatusUpdate] Error getting cargo total: ${e}`); }
+        try {
+            // This method was updated correctly in Player class to use cargoHold
+            currentCargoTotal = this.player.getCurrentCargoTotal();
+        } catch (e) {
+            logger.error(`[Game:_publishStatusUpdate] Error getting cargo total: ${e}`);
+        }
 
         const commonStatus = (this.popupState === 'active')
             ? ''
-            : ` | Fuel: ${this.player.fuel.toFixed(0)}/${this.player.maxFuel} | Cargo: ${currentCargoTotal}/${this.player.cargoCapacity} | Cr: ${this.player.credits.toLocaleString()}`;
+            // *** FIX: Access properties via components ***
+            : ` | Fuel: ${this.player.resources.fuel.toFixed(0)}/${this.player.resources.maxFuel} | Cargo: ${currentCargoTotal}/${this.player.cargoHold.capacity} | Cr: ${this.player.resources.credits.toLocaleString()}`;
+        // *** END FIX ***
 
         const finalStatus = this.statusMessage + commonStatus;
         const hasStarbase = this.stateManager.state === 'starbase';
@@ -705,7 +740,7 @@ export class Game {
             return;
         }
 
-        const currentCargo = { ...this.player.cargo }; // Copy cargo before clearing
+        const currentCargo = { ...this.player.cargoHold.items }; // Copy cargo before clearing
         const totalUnitsSold = this.player.getCurrentCargoTotal();
 
         if (totalUnitsSold <= 0) {
@@ -731,7 +766,7 @@ export class Game {
         }
 
         // Perform player state modifications
-        this.player.credits += totalCreditsEarned;
+        this.player.resources.credits += totalCreditsEarned;
         this.player.clearCargo(); // Clears the actual cargo
 
         // Set status and publish result event
@@ -740,10 +775,10 @@ export class Game {
         eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, {
             itemsSold: currentCargo, // Send what was sold
             creditsEarned: totalCreditsEarned,
-            newCredits: this.player.credits
+            newCredits: this.player.resources.credits
         });
         eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, { // Also publish general credit change
-            newCredits: this.player.credits,
+            newCredits: this.player.resources.credits,
             amountChanged: totalCreditsEarned
         });
     }
@@ -757,8 +792,7 @@ export class Game {
             return;
         }
 
-        const starbase = this.stateManager.currentStarbase;
-        const fuelNeeded = this.player.maxFuel - this.player.fuel;
+        const fuelNeeded = this.player.resources.maxFuel - this.player.resources.fuel;
 
         if (fuelNeeded <= 0) {
             this.statusMessage = STATUS_MESSAGES.STARBASE_REFUEL_FULL;
@@ -766,34 +800,33 @@ export class Game {
         }
 
         const creditsPerUnit = 1 / CONFIG.FUEL_PER_CREDIT; // Cost per unit of fuel
-        const maxAffordableFuel = this.player.credits * CONFIG.FUEL_PER_CREDIT; // How much fuel player can buy
+        const maxAffordableFuel = this.player.resources.credits * CONFIG.FUEL_PER_CREDIT; // How much fuel player can buy
         const fuelToBuy = Math.floor(Math.min(fuelNeeded, maxAffordableFuel)); // Buy whole units, limited by need and funds
         const cost = Math.ceil(fuelToBuy * creditsPerUnit); // Cost, rounded up to nearest credit? Or use precise cost? Let's use ceil for now.
 
-        if (fuelToBuy <= 0 || this.player.credits < cost) {
-            this.statusMessage = `Not enough credits for fuel (Need ${creditsPerUnit.toFixed(1)} Cr/unit). Have ${this.player.credits} Cr.`;
+        if (fuelToBuy <= 0 || this.player.resources.credits < cost) {
+            this.statusMessage = `Not enough credits for fuel (Need ${creditsPerUnit.toFixed(1)} Cr/unit). Have ${this.player.resources.credits} Cr.`;
             eventManager.publish(GameEvents.ACTION_FAILED, { action: 'REFUEL', reason: 'Insufficient credits' });
         } else {
-            const oldFuel = this.player.fuel;
-            const oldCredits = this.player.credits;
+            const oldFuel = this.player.resources.fuel;
 
-            this.player.credits -= cost;
+            this.player.resources.credits -= cost;
             this.player.addFuel(fuelToBuy); // Player method handles max fuel clamp
 
             this.statusMessage = `Purchased ${fuelToBuy} fuel for ${cost} Cr.`;
-            if (this.player.fuel >= this.player.maxFuel) {
+            if (this.player.resources.fuel >= this.player.resources.maxFuel) {
                 this.statusMessage += ` Tank full!`;
             }
             logger.info(`[Game:_handleRefuelRequest] Refuel Complete: Bought ${fuelToBuy} fuel for ${cost} credits.`);
 
             // Publish events
             eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
-                newFuel: this.player.fuel,
-                maxFuel: this.player.maxFuel,
-                amountChanged: this.player.fuel - oldFuel
+                newFuel: this.player.resources.fuel,
+                maxFuel: this.player.resources.maxFuel,
+                amountChanged: this.player.resources.fuel - oldFuel
             });
             eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-                newCredits: this.player.credits,
+                newCredits: this.player.resources.credits,
                 amountChanged: -cost
             });
         }
@@ -838,8 +871,8 @@ export class Game {
                 throw new Error("Surface element map data is missing after ensureSurfaceReady.");
             }
 
-            const currentX = this.player.surfaceX;
-            const currentY = this.player.surfaceY;
+            const currentX = this.player.position.surfaceX;
+            const currentY = this.player.position.surfaceY;
 
             // Check bounds for safety
             if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length) {
@@ -879,15 +912,15 @@ export class Game {
 
                     if (actuallyAdded > 0) {
                         planet.markMined(currentX, currentY); // Mark as mined *after* successful yield
-                        this.statusMessage = `Mined ${actuallyAdded} units of <span class="math-inline">\{elementInfo?\.name \|\| elementKey\}\. \(</span>{this.player.getCurrentCargoTotal()}/${this.player.cargoCapacity})`;
-                        if (this.player.getCurrentCargoTotal() >= this.player.cargoCapacity) {
+                        this.statusMessage = `Mined ${actuallyAdded} units of <span class="math-inline">\{elementInfo?\.name \|\| elementKey\}\. \(</span>{this.player.getCurrentCargoTotal()}/${this.player.cargoHold.capacity})`;
+                        if (this.player.getCurrentCargoTotal() >= this.player.cargoHold.capacity) {
                             this.statusMessage += ` Cargo hold full!`;
                         }
                         // Publish PLAYER_CARGO_ADDED event
                         eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, {
                             elementKey: elementKey,
                             amountAdded: actuallyAdded,
-                            newAmount: this.player.cargo[elementKey] || 0,
+                            newAmount: this.player.cargoHold.items[elementKey] || 0,
                             newTotalCargo: this.player.getCurrentCargoTotal()
                         });
                         // Trigger render update as surface overlay might change

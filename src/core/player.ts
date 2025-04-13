@@ -1,209 +1,126 @@
-// src/core/player.ts (Complete File with Modifications)
+// FILE: src/core/player.ts
+// MODIFIED: To use Component data structures
 
 import { CONFIG } from '../config';
-import { GLYPHS } from '../constants';
-import { logger } from '../utils/logger'; // Import the logger
+import { logger } from '../utils/logger';
+// *** ADD: Import Component interfaces and helper functions ***
+import {
+    PositionComponent, RenderComponent, ResourceComponent, CargoComponent,
+    createDefaultPosition, createDefaultRender, createDefaultResource, createDefaultCargo
+} from './components'; // Assuming components.ts is in the same directory
+
 
 export class Player {
-    // Coordinates
-    worldX: number; // Hyperspace grid
-    worldY: number; // Hyperspace grid
-    systemX: number; // Relative within a solar system (large scale)
-    systemY: number; // Relative within a solar system (large scale)
-    surfaceX: number; // Grid position on a planet/starbase surface
-    surfaceY: number; // Grid position on a planet/starbase surface
+    // --- ADD Component Properties ---
+    public position: PositionComponent;
+    public render: RenderComponent;
+    public resources: ResourceComponent;
+    public cargoHold: CargoComponent;
 
-    // Representation
-    char: string; // Current character representation (e.g., '@', '^', 'v', '<', '>')
-    shipDirection: string; // Visual orientation in system view
-
-    // Resources & Stats
-    credits: number; //
-    fuel: number; //
-    maxFuel: number; //
-    cargoCapacity: number; // Total units of space
-    cargo: Record<string, number>; // NEW: Stores quantity of each element key (e.g., { 'IRON': 50, 'GOLD': 2 })
-
+    // Constructor: Initializes components with default values
     constructor(
-        startX: number = CONFIG.PLAYER_START_X, //
-        startY: number = CONFIG.PLAYER_START_Y, //
-        char: string = CONFIG.PLAYER_CHAR //
+        // Optional: Keep startX/startY if needed for initial position setup, otherwise remove
+        startX: number = CONFIG.PLAYER_START_X,
+        startY: number = CONFIG.PLAYER_START_Y,
+        startChar: string = CONFIG.PLAYER_CHAR
     ) {
-        this.worldX = startX; //
-        this.worldY = startY; //
-        this.systemX = 0; // Reset when entering system
-        this.systemY = 0; // Reset when entering system
-        this.surfaceX = 0; // Reset upon landing
-        this.surfaceY = 0; // Reset upon landing
-        this.char = char; //
-        this.shipDirection = GLYPHS.SHIP_NORTH; // Default visual direction (system view)
-        this.credits = CONFIG.INITIAL_CREDITS; //
-        this.fuel = CONFIG.INITIAL_FUEL; //
-        this.maxFuel = CONFIG.MAX_FUEL; //
-        this.cargoCapacity = CONFIG.INITIAL_CARGO_CAPACITY; //
-        this.cargo = {}; // Initialize cargo as an empty object
+        // --- Initialize Components ---
+        this.position = createDefaultPosition();
+        // Set initial world position from constructor args or defaults
+        this.position.worldX = startX;
+        this.position.worldY = startY;
+        // System/Surface positions remain 0 initially
 
-        // Log initial state comprehensively
-        logger.info(`Player initialized. Start World: [${this.worldX}, ${this.worldY}], Char: ${this.char}, Credits: ${this.credits}, Fuel: ${this.fuel}/${this.maxFuel}, Cargo Cap: ${this.cargoCapacity}`); //
-    }
-
-    /** Moves the player in the hyperspace world grid. */
-    moveWorld(dx: number, dy: number): void { //
-        const oldX = this.worldX; //
-        const oldY = this.worldY; //
-        this.worldX += dx; //
-        this.worldY += dy; //
-        // Character is always '@' in hyperspace, ensure it's set
-        this.char = CONFIG.PLAYER_CHAR; //
-        logger.debug(`Player moved HYPERSPACE: [${oldX},${oldY}] -> [${this.worldX},${this.worldY}] (Delta: ${dx},${dy})`); //
-    }
-
-    /** Moves the player within the solar system coordinate space. */
-    moveSystem(dx: number, dy: number, isFineControl: boolean = false): void { //
-        const oldX = this.systemX; //
-        const oldY = this.systemY; //
-        let moveScale = CONFIG.SYSTEM_MOVE_INCREMENT; // Units per base input step
-        if (isFineControl) { //
-            moveScale *= CONFIG.FINE_CONTROL_FACTOR; //
-            logger.debug(`Fine control active, move scale: ${moveScale.toFixed(1)}`); //
+        this.render = createDefaultRender(startChar, CONFIG.PLAYER_COLOUR /*, GLYPHS.SHIP_NORTH */);
+        if (this.render.directionGlyph === undefined) { // Ensure default if not set
+            this.render.directionGlyph = '^'; // Or import GLYPHS just for this default
         }
 
-        // dx and dy represent direction (-1, 0, or 1)
-        const moveX = dx * moveScale; //
-        const moveY = dy * moveScale; //
-        this.systemX += moveX; //
-        this.systemY += moveY; //
+        this.resources = createDefaultResource(
+            CONFIG.INITIAL_CREDITS,
+            CONFIG.INITIAL_FUEL,
+            CONFIG.MAX_FUEL
+        );
 
-        const oldShipDirection = this.shipDirection; //
-        // Update visual direction based on movement vector
-        if (dx !== 0 || dy !== 0) { //
-            if (Math.abs(dx) > Math.abs(dy)) { // Horizontal movement dominant
-                this.shipDirection = dx > 0 ? GLYPHS.SHIP_EAST : GLYPHS.SHIP_WEST; //
-            } else { // Vertical movement dominant or equal
-                this.shipDirection = dy > 0 ? GLYPHS.SHIP_SOUTH : GLYPHS.SHIP_NORTH; //
-            }
-        }
-        // Update visible character to match orientation
-        this.char = this.shipDirection; //
+        this.cargoHold = createDefaultCargo(CONFIG.INITIAL_CARGO_CAPACITY);
 
-        logger.debug(`Player moved SYSTEM: [${oldX.toFixed(0)},${oldY.toFixed(0)}] -> [${this.systemX.toFixed(0)},${this.systemY.toFixed(0)}] (Delta: ${moveX.toFixed(0)},${moveY.toFixed(0)}, Scale: ${moveScale.toFixed(0)})`); //
-        if (oldShipDirection !== this.shipDirection) { //
-            logger.debug(`Player direction changed: ${oldShipDirection} -> ${this.shipDirection}`); //
-        }
+        logger.info(`Player components initialized. Start World: [${this.position.worldX}, ${this.position.worldY}], Char: ${this.render.char}, Credits: ${this.resources.credits}, Fuel: ${this.resources.fuel}/${this.resources.maxFuel}, Cargo Cap: ${this.cargoHold.capacity}`);
     }
 
-    /** Moves the player on a planet's surface grid, handling wrapping. */
-    moveSurface(dx: number, dy: number, mapSize: number): void { //
-        if (mapSize <= 0) { //
-            // Use logger for warnings or errors now
-            logger.error(`Attempted surface move with invalid mapSize: ${mapSize}`); //
-            return; //
-        }
-        const oldX = this.surfaceX; //
-        const oldY = this.surfaceY; //
-
-        this.surfaceX += dx; //
-        this.surfaceY += dy; //
-
-        // Wrap around map edges using modulo
-        this.surfaceX = (this.surfaceX % mapSize + mapSize) % mapSize; //
-        this.surfaceY = (this.surfaceY % mapSize + mapSize) % mapSize; //
-
-        // Character is always '@' on surface, ensure it's set
-        this.char = CONFIG.PLAYER_CHAR; //
-        logger.debug(`Player moved SURFACE: [${oldX},${oldY}] -> [${this.surfaceX},${this.surfaceY}] (Delta: ${dx},${dy}, MapSize: ${mapSize})`); //
+    /** Calculates the squared distance from the player to target system coordinates. (NEEDS UPDATE) */
+    distanceSqToSystemCoords(targetX: number, targetY: number): number {
+        const dx = targetX - this.position.systemX; // Access via component
+        const dy = targetY - this.position.systemY; // Access via component
+        return dx * dx + dy * dy;
     }
 
-    /** Calculates the squared distance from the player to target system coordinates. */
-    distanceSqToSystemCoords(targetX: number, targetY: number): number { //
-        const dx = targetX - this.systemX; //
-        const dy = targetY - this.systemY; //
-        // Logging this would likely be too noisy as it's called frequently in updates
-        return dx * dx + dy * dy; //
-    }
-
-    /** Adds fuel, ensuring it doesn't exceed maxFuel. */
-    addFuel(amount: number): void { //
-        // Handle non-positive amounts first
-        if (amount <= 0) { //
-            if (amount < 0) { // Only warn for negative, not zero
-                 logger.warn(`Attempted to add non-positive fuel amount: ${amount.toFixed(0)}`); //
-            }
-             // Do nothing further if amount is zero or negative
-             return; //
-        }
-
-        // Proceed with adding positive fuel
-        const oldFuel = this.fuel; //
-        const added = Math.min(amount, this.maxFuel - oldFuel); // Calculate actual fuel added
-        this.fuel += added; //
-        // Use Math.min again just to be safe against floating point issues
-        this.fuel = Math.min(this.maxFuel, this.fuel); //
-        if (added > 0) { // This will now only be true if amount > 0 initially
-            logger.info(`Fuel added: ${added.toFixed(0)}. Total: ${this.fuel.toFixed(0)}/${this.maxFuel} (was ${oldFuel.toFixed(0)})`); //
-        } else { // This condition means amount > 0 but the tank was full
-            logger.info(`Attempted to add ${amount.toFixed(0)} fuel, but tank is full (${this.fuel.toFixed(0)}/${this.maxFuel}).`); //
-        }
-    }
-
-    /** Calculates the current total units of cargo held. */
-    getCurrentCargoTotal(): number {
-        return Object.values(this.cargo).reduce((sum, quantity) => sum + quantity, 0);
-    }
-
-    /**
-     * Adds a specific amount of an element to the cargo hold.
-     * Returns the amount actually added (can be less than requested if full).
-     */
-    addCargo(elementKey: string, amount: number): number { // Modified signature
+    /** Adds fuel, ensuring it doesn't exceed maxFuel. (NEEDS UPDATE) */
+    addFuel(amount: number): void {
         if (amount <= 0) {
-             logger.warn(`Attempted to add non-positive cargo amount: ${amount} of ${elementKey}`);
-             return 0; // Nothing added
+            if (amount < 0) logger.warn(`Attempted to add non-positive fuel amount: ${amount.toFixed(0)}`);
+            return;
         }
-
-        const currentTotal = this.getCurrentCargoTotal();
-        const availableCapacity = this.cargoCapacity - currentTotal;
-
-        if (availableCapacity <= 0) {
-            logger.warn(`Failed to add ${amount} ${elementKey}: Cargo already full (${currentTotal}/${this.cargoCapacity}).`);
-            return 0; // Nothing added
+        const oldFuel = this.resources.fuel;
+        const added = Math.min(amount, this.resources.maxFuel - oldFuel);
+        this.resources.fuel += added; // Modify component data
+        this.resources.fuel = Math.min(this.resources.maxFuel, this.resources.fuel);
+        if (added > 0) {
+            logger.info(`Fuel added: ${added.toFixed(0)}. Total: ${this.resources.fuel.toFixed(0)}/${this.resources.maxFuel} (was ${oldFuel.toFixed(0)})`);
+        } else {
+            logger.info(`Attempted to add ${amount.toFixed(0)} fuel, but tank is full (${this.resources.fuel.toFixed(0)}/${this.resources.maxFuel}).`);
         }
-
-        const amountToAdd = Math.min(amount, availableCapacity); // Can only add up to available space
-        const oldElementAmount = this.cargo[elementKey] || 0;
-        this.cargo[elementKey] = oldElementAmount + amountToAdd; // Add to existing or initialize
-
-        logger.info(`Cargo Added: ${amountToAdd} units of ${elementKey}. Total Cargo: ${currentTotal + amountToAdd}/${this.cargoCapacity}. (${elementKey}: ${this.cargo[elementKey]})`);
-
-        if (amountToAdd < amount) {
-             logger.warn(`Could only add ${amountToAdd} units of ${elementKey} (requested ${amount}). Cargo hold now full.`);
-        }
-
-        return amountToAdd; // Return the amount actually added
     }
 
-    /** Removes all cargo of a specific element. Returns the amount removed. */
+    /** Calculates the current total units of cargo held. (NEEDS UPDATE) */
+    getCurrentCargoTotal(): number {
+        return Object.values(this.cargoHold.items).reduce((sum, quantity) => sum + quantity, 0); // Access via component
+    }
+
+    /** Adds a specific amount of an element to the cargo hold. (NEEDS UPDATE) */
+    addCargo(elementKey: string, amount: number): number {
+        if (amount <= 0) {
+            logger.warn(`Attempted to add non-positive cargo amount: ${amount} of ${elementKey}`);
+            return 0;
+        }
+        const currentTotal = this.getCurrentCargoTotal();
+        const availableCapacity = this.cargoHold.capacity - currentTotal; // Access via component
+        if (availableCapacity <= 0) {
+            logger.warn(`Failed to add ${amount} ${elementKey}: Cargo already full (${currentTotal}/${this.cargoHold.capacity}).`);
+            return 0;
+        }
+        const amountToAdd = Math.min(amount, availableCapacity);
+        const oldElementAmount = this.cargoHold.items[elementKey] || 0; // Access via component
+        this.cargoHold.items[elementKey] = oldElementAmount + amountToAdd; // Modify component data
+
+        logger.info(`Cargo Added: ${amountToAdd} units of ${elementKey}. Total Cargo: ${currentTotal + amountToAdd}/${this.cargoHold.capacity}. (${elementKey}: ${this.cargoHold.items[elementKey]})`);
+        if (amountToAdd < amount) {
+            logger.warn(`Could only add ${amountToAdd} units of ${elementKey} (requested ${amount}). Cargo hold now full.`);
+        }
+        return amountToAdd;
+    }
+
+    /** Removes all cargo of a specific element. (NEEDS UPDATE) */
     removeCargoType(elementKey: string): number {
-        const amount = this.cargo[elementKey] || 0;
+        const amount = this.cargoHold.items[elementKey] || 0; // Access via component
         if (amount > 0) {
-            delete this.cargo[elementKey];
+            delete this.cargoHold.items[elementKey]; // Modify component data
             logger.info(`Removed all ${amount} units of ${elementKey} from cargo.`);
             return amount;
         }
         return 0;
     }
 
-    /** Removes all cargo. Returns a record of the cargo removed. */
+    /** Removes all cargo. Returns a record of the cargo removed. (NEEDS UPDATE) */
     clearCargo(): Record<string, number> {
-        const removedCargo = { ...this.cargo };
-        this.cargo = {};
+        const removedCargo = { ...this.cargoHold.items }; // Access via component
+        this.cargoHold.items = {}; // Modify component data
         const totalRemoved = Object.values(removedCargo).reduce((s, q) => s + q, 0);
         if (totalRemoved > 0) {
-             logger.info(`Cleared all cargo (${totalRemoved} units). Contents: ${JSON.stringify(removedCargo)}`);
+            logger.info(`Cleared all cargo (${totalRemoved} units). Contents: ${JSON.stringify(removedCargo)}`);
         } else {
-             logger.info(`Cleared cargo (was already empty).`);
+            logger.info(`Cleared cargo (was already empty).`);
         }
         return removedCargo;
     }
 
-} // End Player class //
+} // End Player class

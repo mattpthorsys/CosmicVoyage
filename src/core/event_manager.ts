@@ -48,10 +48,10 @@ class EventManager {
         const listenersToNotify = [...this.listeners.get(eventName)!];
         listenersToNotify.forEach(callback => {
             try {
-                 callback(data);
+                callback(data);
             } catch (error) {
-                 console.error(`[EventManager] Error in listener for event "${eventName}":`, error);
-                 // logger.error(`[EventManager] Error in listener for event "${eventName}":`, error);
+                console.error(`[EventManager] Error in listener for event "${eventName}":`, error);
+                // logger.error(`[EventManager] Error in listener for event "${eventName}":`, error);
             }
         });
     }
@@ -84,6 +84,7 @@ export const GameEvents = {
     TRADE_REQUESTED: 'tradeRequested',         // data: null -> Handled by Game
     REFUEL_REQUESTED: 'refuelRequested',       // data: null -> Handled by Game
     MINE_REQUESTED: 'mineRequested',           // data: null -> Handled by Game
+    MOVE_REQUESTED: 'moveRequested', // data: MoveRequestData (defined in movement_system.ts)
     // Note: Scan requests are handled differently now (see Game/ActionProcessor)
 
     // Player Actions/Updates (From ActionProcessor/Player -> Game/UI)
