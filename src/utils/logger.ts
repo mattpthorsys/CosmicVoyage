@@ -11,6 +11,8 @@ export enum LogLevel {
     DEBUG = 4,
 }
 
+export type LogDataype = (string | number | boolean | object | null | unknown | undefined);
+
 // --- Log Buffering ---
 let logBuffer: string[] = [];
 const MAX_LOG_BUFFER_SIZE = 20000; // Max number of log lines to keep in memory
@@ -62,7 +64,7 @@ function _logAndBuffer(level: LogLevel, levelStr: string, message: string): void
 }
 
 // Helper function to stringify arguments before joining
-function formatArgs(...args: (string | number | boolean | object | null | undefined)[]): string {
+function formatArgs(...args: LogDataype[]): string {
     return args.map(arg => {
         if (typeof arg === 'object' && arg !== null) {
             try { return JSON.stringify(arg); } catch { return String(arg); }
@@ -72,12 +74,14 @@ function formatArgs(...args: (string | number | boolean | object | null | undefi
 }
 
 
+
+
 // --- Logger Object Definition ---
 interface Logger {
-    debug(...args: (string | number | boolean | object | null | undefined)[]): void;
-    info(...args: (string | number | boolean | object | null | undefined)[]): void;
-    warn(...args: (string | number | boolean | object | null | undefined)[]): void;
-    error(...args: (string | number | boolean | object | null | undefined)[]): void;
+    debug(...args: LogDataype[]): void;
+    info(...args: LogDataype[]): void;
+    warn(...args: LogDataype[]): void;
+    error(...args: LogDataype[]): void;
 
     setLogLevel(level: LogLevel): void;
     getCurrentLogLevel(): LogLevel;
@@ -90,14 +94,14 @@ interface Logger {
 // Export the logger object containing all methods
 export const logger: Logger = {
     /** Logs messages only if the configured level is DEBUG or higher. */
-    debug(...args: (string | number | boolean | object | null | undefined)[]): void {
+    debug(...args: LogDataype[]): void {
         if (currentLogLevel >= LogLevel.DEBUG) {
             // *** MODIFIED: Format message before calling internal helper ***
             _logAndBuffer(LogLevel.DEBUG, 'DEBUG', formatArgs(...args));
         }
     },
     /** Logs messages only if the configured level is INFO or higher. */
-    info(...args: (string | number | boolean | object | null | undefined)[]): void {
+    info(...args: LogDataype[]): void {
         if (currentLogLevel >= LogLevel.INFO) {
              // *** MODIFIED: Format message before calling internal helper ***
             _logAndBuffer(LogLevel.INFO, 'INFO', formatArgs(...args));
