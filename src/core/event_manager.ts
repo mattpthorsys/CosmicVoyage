@@ -81,6 +81,9 @@ export const GameEvents = {
     LEAVE_SYSTEM_REQUESTED: 'leaveSystemRequested', // data: null
     LAND_REQUESTED: 'landRequested',           // data: null
     LIFTOFF_REQUESTED: 'liftoffRequested',        // data: null
+    TRADE_REQUESTED: 'tradeRequested',         // data: null -> Handled by Game
+    REFUEL_REQUESTED: 'refuelRequested',       // data: null -> Handled by Game
+    MINE_REQUESTED: 'mineRequested',           // data: null -> Handled by Game
     // Note: Scan requests are handled differently now (see Game/ActionProcessor)
 
     // Player Actions/Updates (From ActionProcessor/Player -> Game/UI)
@@ -90,6 +93,7 @@ export const GameEvents = {
     PLAYER_CARGO_SOLD: 'playerCargoSold',   // data: { items: Record<string, number>, creditsEarned: number }
     PLAYER_FUEL_CHANGED: 'playerFuelChanged', // data: { newFuel: number, maxFuel: number, amountChanged: number }
     PLAYER_CREDITS_CHANGED: 'playerCreditsChanged',// data: { newCredits: number, amountChanged: number }
+    ACTION_FAILED: 'actionFailed',             // data: { action: string, reason: string }
 
     // UI Updates (From Game -> Renderer/UI)
     STATUS_UPDATE_NEEDED: 'statusUpdateNeeded', // data: { message: string, hasStarbase: boolean }

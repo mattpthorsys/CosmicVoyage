@@ -1,0 +1,52 @@
+Okay, here is a comprehensive prompt designed to brief an LLM on the refactoring plan and current progress for the Cosmic Voyage project. It includes a clear instruction to continue with the next step.
+
+Context Prompt for Cosmic Voyage Refactoring:
+
+Project: Cosmic Voyage (TypeScript/Vite ASCII space roguelike game)
+
+Overall Goal: Refactor the existing codebase to make it more modular, understandable, maintainable, and extensible.
+
+Methodology: We are following an incremental, multi-step refactoring plan, aiming to avoid breaking functionality at each stage.
+
+Refactoring Plan (5 Steps):
+
+    Introduce Event Bus/Mediator: Decouple core components using a custom pub/sub event manager (src/core/event_manager.ts). (Status: Mostly Complete)
+    Refine State Management & Entity Logic: Separate data (Components) from logic (Systems), moving towards an ECS-lite pattern for entities like Player, Planet, etc. (Status: Not Started)
+    Modularize Generation Logic: Break down large generator files (planet_characteristics_generator.ts, surface_generator.ts) into smaller, focused modules. (Status: Not Started)
+    Separate Input Mapping from Action Execution: Ensure InputManager purely maps raw input to abstract actions, while Game (or dedicated systems) handles action consequences based on game state. (Status: Not Started)
+    Organize Configuration and Constants: Improve clarity and structure within config.ts and constants.ts. (Status: Not Started)
+
+Current Progress (Step 1 Completion Details):
+
+    A custom singleton EventManager has been created and implemented in src/core/event_manager.ts.
+    Decoupling via Events - Completed:
+        GameStateManager no longer uses a callback to notify Game of state changes. It now publishes GAME_STATE_CHANGED, SYSTEM_ENTERED, SYSTEM_LEFT, PLANET_LANDED, STARBASE_DOCKED, LIFT_OFF events, which Game subscribes to.
+        Game no longer calls RendererFacade.updateStatus directly. It now publishes STATUS_UPDATE_NEEDED events, which RendererFacade subscribes to handle updates via its internal StatusBarUpdater.
+        ActionProcessor no longer calls GameStateManager methods directly for state transitions. It now publishes ENTER_SYSTEM_REQUESTED, LEAVE_SYSTEM_REQUESTED, LAND_REQUESTED, LIFTOFF_REQUESTED events, which GameStateManager subscribes to.
+        ActionProcessor no longer directly modifies Player state for actions like trade, refuel, or mine. It publishes TRADE_REQUESTED, REFUEL_REQUESTED, MINE_REQUESTED events. Game subscribes to these, checks player state (credits, cargo, fuel), performs the action on the Player object, and publishes result events (e.g., PLAYER_CARGO_SOLD, PLAYER_FUEL_CHANGED, ACTION_FAILED).
+        Game no longer calls Player movement methods (moveWorld, moveSystem, moveSurface) directly from its input handling. It now publishes a MOVE_REQUESTED event containing direction, context, and fine control status. Game also subscribes to this event in a separate handler (_handleMoveRequest) to execute the actual player movement.
+    Scan Logic Refactoring: The ActionProcessor now only signals the intent to scan by returning a { requestScan: 'context' } object. The Game class (_handleScanRequest method) receives this signal, determines the actual scan target based on the current game state and context (peeking in hyperspace, checking nearby objects/star in system, using current planet), and then triggers the scan popup (_triggerScanPopup).
+
+(Files significantly modified so far: src/core/event_manager.ts, src/core/game_state_manager.ts, src/core/action_processor.ts, src/core/game.ts, src/rendering/renderer_facade.ts)
+
+Instruction:
+
+Please proceed with Step 2 of the refactoring plan: Refine State Management & Entity Logic.
+
+Your first task for Step 2 should be to:
+
+    Analyze the Player class (src/core/player.ts).
+    Identify potential data "Components" within the Player class (e.g., Position, Cargo, Fuel, RenderRepresentation).
+    Outline a plan to extract these components into separate interfaces or classes, explaining how the Player class would be modified to hold these components instead of direct properties. Avoid making code changes in this first part of Step 2, just provide the analysis and plan.
+
+
+Our immedate task:
+
+Continue with step 1 - identify what still needs to be done and action it. Do this in SMALL steps - don't overdo it and get yourself confused. Step by careful considered step so as not to inadvertently break things.
+
+Some things to remember:
+
+If a lot of detailed changes have happened within a single file, rewrite the whole file - and make it clear that the file is a whole rewrite.
+If it's a moderate cut and paste but not worth doing a full rewrite, indicate this clearly and also indicate clearly where to put the code.
+If it's just one or two lines, indicate this clearly and also indicate clearly where to put the code.
+Remember to take care and carefully consider each change.
