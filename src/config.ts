@@ -122,4 +122,12 @@ export const CONFIG = {
     POPUP_MAX_HEIGHT_FRACTION: 0.7, // Max 70% of screen height
     POPUP_PADDING_X: 2, // Horizontal padding in characters
     POPUP_PADDING_Y: 1, // Vertical padding in characters
+
+    SYSTEM_EDGE_LEAVE_FACTOR: 0.8,       // Player must be beyond this fraction of edgeRadius to leave
+    STAR_SCAN_DISTANCE_MULTIPLIER: 2.0,  // Scan star if distance < LANDING_DISTANCE * this value
+    LIFTOFF_DISTANCE_FACTOR: 0.1,      // How far from the object center player appears after liftoff (fraction of LANDING_DISTANCE)
+    ORBIT_TIME_SCALE_FACTOR: 10000,    // Multiplier for deltaTime in orbit calculations
+
+    // --- UI Text ---
+    POPUP_CLOSE_TEXT: "← Close →",
 };

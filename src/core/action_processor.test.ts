@@ -3,7 +3,7 @@
 import { GameStateManager } from './game_state_manager';
 import { Player } from './player';
 import { logger } from '../utils/logger';
-import { MineralRichness, ELEMENTS } from '../constants'; // Import ELEMENTS
+import { MineralRichness, ELEMENTS, STATUS_MESSAGES } from '../constants'; // Import ELEMENTS
 import { CONFIG } from '../config';
 import { PRNG } from '../utils/prng'; // Import PRNG
 import { Planet } from '../entities/planet'; // Import Planet
@@ -86,7 +86,7 @@ export class ActionProcessor {
     switch (action) {
       case 'ENTER_SYSTEM': {
         const entered = this.stateManager.enterSystem();
-        message = entered ? `Entering system: ${this.stateManager.currentSystem?.name}` : 'No star system detected at this location.';
+        message = entered ? STATUS_MESSAGES.HYPERSPACE_ENTERING(this.stateManager.currentSystem?.name) : STATUS_MESSAGES.HYPERSPACE_NO_STAR;
       }
         break;
     }
@@ -100,14 +100,14 @@ export class ActionProcessor {
       case 'LEAVE_SYSTEM':
         {
           const left = this.stateManager.leaveSystem();
-          message = left ? 'Entered hyperspace.' : 'Must travel further from the star to leave the system.';
+          message = left ? STATUS_MESSAGES.SYSTEM_LEAVING : STATUS_MESSAGES.SYSTEM_LEAVE_TOO_CLOSE;
         }
         break;
       case 'LAND':
         {
           logger.info(">>> ActionProcessor calling landOnNearbyObject for LAND action...");
           const landedObject = this.stateManager.landOnNearbyObject();
-          message = landedObject ? `Approaching ${landedObject.name}...` : 'Nothing nearby to land on.';
+          message = landedObject ? STATUS_MESSAGES.SYSTEM_LAND_APPROACHING(landedObject.name) : STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET;
         }
         break;
     }
@@ -124,7 +124,7 @@ export class ActionProcessor {
       case 'LIFTOFF':
         {
           const lifted = this.stateManager.liftOff();
-          message = lifted ? `Liftoff from ${planet.name} successful.` : 'Liftoff failed.';
+          message = lifted ? STATUS_MESSAGES.LIFTOFF_SUCCESS(planet.name) : STATUS_MESSAGES.LIFTOFF_FAIL;
         }
         break;
       case 'SCAN':
@@ -132,7 +132,7 @@ export class ActionProcessor {
           message = `${planet.name} has already been scanned. (${planet.mineralRichness})`;
         } else {
           planet.scan();
-          message = `${planet.name} scan complete. Primary: ${planet.primaryResource || 'N/A'}. Richness: ${planet.mineralRichness}.`;
+          message = STATUS_MESSAGES.PLANET_SCAN_COMPLETE(planet.name, planet.primaryResource, planet.mineralRichness);
         }
         break;
       case 'MINE':
@@ -170,7 +170,7 @@ export class ActionProcessor {
 
                     if (baseAbundance <= 0 && (!elementInfo || elementInfo.baseFrequency < 0.001)) { // Check if it's even possible it exists
                         // Element exists on map cell, but planet has 0 overall abundance? Data inconsistency or just trace amounts.
-                        message = `Trace amounts of ${elementInfo?.name || elementKey} found, but not enough to mine.`;
+                        message = STATUS_MESSAGES.PLANET_MINE_TRACE(elementInfo?.name || elementKey);
                         logger.warn(`[ActionProcessor] Mining ${elementKey} at [${currentX},${currentY}], but planet overall abundance is 0 or element is extremely rare.`);
                     } else {
                         // 3. Calculate yield (adjust this formula as needed)
@@ -190,12 +190,15 @@ export class ActionProcessor {
                                 message += ` Cargo hold full!`;
                             }
                         } else { // addCargo returned 0
-                            message = `Mining failed: Cargo hold full. (${this.player.getCurrentCargoTotal()}/${this.player.cargoCapacity})`;
+                            message = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
+                              this.player.getCurrentCargoTotal(),
+                              this.player.cargoCapacity
+                          );
                         }
                     }
                 } else {
                      // No element defined at this specific map cell ('')
-                    message = 'Found no mineable elements at this location.';
+                    message = STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS;
                 }
                 // --- END UPDATED MINING LOGIC ---
              } catch(mineError) {
@@ -216,7 +219,7 @@ export class ActionProcessor {
       case 'LIFTOFF':
         {
           const lifted = this.stateManager.liftOff();
-          message = lifted ? `Departing ${starbase.name}...` : 'Liftoff failed.';
+          message = lifted ? `Departing ${starbase.name}...` : STATUS_MESSAGES.LIFTOFF_FAIL;
         }
         break;
       case 'TRADE':
@@ -225,7 +228,7 @@ export class ActionProcessor {
           const totalUnitsSold = this.player.getCurrentCargoTotal(); // Get total before clearing
 
           if (totalUnitsSold <= 0) {
-             message = 'Cargo hold is empty. Nothing to sell.';
+             message = STATUS_MESSAGES.STARBASE_TRADE_EMPTY;
              logger.info('[ActionProcessor] Trade: No cargo to sell.');
           } else {
               let totalCreditsEarned = 0;
@@ -255,7 +258,7 @@ export class ActionProcessor {
         {
           const fuelNeeded = this.player.maxFuel - this.player.fuel;
           if (fuelNeeded <= 0) {
-            message = 'Fuel tank is already full.';
+            message = STATUS_MESSAGES.STARBASE_REFUEL_FULL;
           } else {
             const creditsPerUnit = 1 / CONFIG.FUEL_PER_CREDIT;
             const maxAffordableFuel = this.player.credits * CONFIG.FUEL_PER_CREDIT;
@@ -263,11 +266,11 @@ export class ActionProcessor {
             const cost = Math.ceil(fuelToBuy * creditsPerUnit); // Calculate cost (round up?)
 
             if (fuelToBuy <= 0 || this.player.credits < cost) { // Check if can afford *calculated* cost
-              message = `Not enough credits for fuel (Need ${creditsPerUnit.toFixed(1)} Cr/unit). Have ${this.player.credits} Cr.`;
+              message = STATUS_MESSAGES.STARBASE_REFUEL_FAIL_CREDITS(+creditsPerUnit.toFixed(1), this.player.credits);
             } else {
               this.player.credits -= cost;
               this.player.addFuel(fuelToBuy); // Player logs details
-              message = `Purchased ${fuelToBuy} fuel for ${cost} Cr.`;
+              message = STATUS_MESSAGES.STARBASE_REFUEL_SUCCESS(fuelToBuy, cost);
               if (this.player.fuel >= this.player.maxFuel) {
                 message += ` Tank full!`;
               }

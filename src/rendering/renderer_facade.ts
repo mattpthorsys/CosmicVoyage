@@ -204,7 +204,7 @@ export class RendererFacade {
     const rows = this.screenBuffer.getRows();
 
     // Calculate Target Dimensions (based on full content)
-    const closeText = "← Close →";
+    const closeText = CONFIG.POPUP_CLOSE_TEXT;
     const contentHeight = lines.length;
     const contentWidth = lines.reduce((max, line) => Math.max(max, line.length), 0);
     const finalPopupWidth = Math.max(contentWidth, closeText.length) + CONFIG.POPUP_PADDING_X * 2;

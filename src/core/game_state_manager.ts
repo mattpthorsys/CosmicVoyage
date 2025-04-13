@@ -6,7 +6,7 @@ import { Starbase } from '../entities/starbase';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { GLYPHS } from '../constants';
+import { GLYPHS, STATUS_MESSAGES } from '../constants';
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
@@ -66,7 +66,7 @@ export class GameStateManager {
 
     if (!isStarCell) {
       logger.debug('[GameStateManager] Enter System failed: No star present.');
-      this.statusMessage = 'No star system detected at this location.'; // Set status for UI
+      this.statusMessage = STATUS_MESSAGES.HYPERSPACE_NO_STAR;
       return false; // Indicate failure
     }
 
@@ -91,7 +91,7 @@ export class GameStateManager {
       this._currentSystem = system;
       this._currentPlanet = null;
       this._currentStarbase = null;
-      this.statusMessage = `Entering system: ${system.name}`; // Set status
+      this.statusMessage = STATUS_MESSAGES.HYPERSPACE_ENTERING(system.name); // Set status
 
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Entered ${system.name})`);
       // Publish notification events
@@ -124,7 +124,7 @@ export class GameStateManager {
 
     // Check if player is near the edge
     const distFromStarSq = this.player.distanceSqToSystemCoords(0, 0);
-    const edgeThresholdSq = (this._currentSystem.edgeRadius * 0.8) ** 2;
+    const edgeThresholdSq = (this._currentSystem.edgeRadius * CONFIG.SYSTEM_EDGE_LEAVE_FACTOR) ** 2;
 
     if (distFromStarSq > edgeThresholdSq) {
       logger.info(`[GameStateManager] Leaving system ${this._currentSystem.name}...`);
@@ -144,7 +144,7 @@ export class GameStateManager {
       return true;
     } else {
       logger.debug('[GameStateManager] Leave System failed: Player not close enough to system edge.');
-      this.statusMessage = 'Must travel further from the star to leave the system.'; // Set status
+      this.statusMessage = STATUS_MESSAGES.SYSTEM_LEAVE_TOO_CLOSE;
       return false;
     }
   }
@@ -169,7 +169,7 @@ export class GameStateManager {
 
     if (!nearbyObject) {
       logger.debug('[GameStateManager] Land failed: No object within landing distance.');
-      this.statusMessage = 'Nothing nearby to land on.'; // Set status
+      this.statusMessage = STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET;
       return null;
     }
 
@@ -207,7 +207,7 @@ export class GameStateManager {
       }
 
       this.player.char = CONFIG.PLAYER_CHAR; // Set char for surface/docked state
-      this.statusMessage = `Approaching ${nearbyObject.name}...`; // Set status
+      this.statusMessage = STATUS_MESSAGES.SYSTEM_LAND_APPROACHING(nearbyObject.name); // Set status
 
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Landed/Docked at ${nearbyObject.name})`);
       // Publish notification events
@@ -254,7 +254,7 @@ export class GameStateManager {
     // Place player back in system view, near the object
     if (sourceObj) {
       this.player.systemX = sourceObj.systemX;
-      this.player.systemY = sourceObj.systemY - CONFIG.LANDING_DISTANCE * 0.1; // Example offset
+      this.player.systemY = sourceObj.systemY - CONFIG.LANDING_DISTANCE * CONFIG.LIFTOFF_DISTANCE_FACTOR;
     } else {
       // Fallback position if source object somehow null (shouldn't happen)
       this.player.systemX = 0;

@@ -4,7 +4,7 @@ import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { MineralRichness, SPECTRAL_TYPES, ELEMENTS } from '../constants';
+import { MineralRichness, SPECTRAL_TYPES, ELEMENTS, STATUS_MESSAGES } from '../constants';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
@@ -292,9 +292,9 @@ export class Game {
                 if (peekedSystem) {
                     // Comment: Target for hyperspace scan is the peeked SolarSystem object itself.
                     targetToScan = peekedSystem;
-                    scanStatusMessage = `Scanning star system ${peekedSystem.name}...`;
+                    scanStatusMessage = STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name);
                 } else {
-                    scanStatusMessage = 'Nothing nearby to scan.';
+                    scanStatusMessage = STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL;
                 }
             } else if (currentState === 'system') {
                 // *** Find target for system scan ***
@@ -305,7 +305,7 @@ export class Game {
                     const nearbyObject = system.getObjectNear(this.player.systemX, this.player.systemY);
                     const distSqToObject = nearbyObject ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY) : Infinity;
                     const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
-                    const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
+                    const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
 
                     if (distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
                         targetToScan = {
@@ -313,13 +313,13 @@ export class Game {
                             name: system.name, // Use the system's name (often the star's name)
                             starType: system.starType // Get the star type from the system
                         };
-                        scanStatusMessage = `Scanning local star (${system.name})...`;
+                        scanStatusMessage =  STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
                     } else if (nearbyObject && distSqToObject < scanThresholdSq) {
                         // Comment: Target for system scan (near object) is the Planet/Starbase object.
                         targetToScan = nearbyObject;
-                        scanStatusMessage = `Scanning ${nearbyObject.name}...`;
+                        scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_OBJECT(nearbyObject.name);
                     } else {
-                        scanStatusMessage = 'Nothing close enough to scan.';
+                        scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_FAIL_NO_TARGET;
                     }
                 }
             } else {
@@ -391,7 +391,7 @@ export class Game {
             // Proceed if lines were generated
             if (lines && lines.length > 0) {
                 if (lines[lines.length - 1] !== "") lines.push("");
-                lines.push("← Close →");
+                lines.push(CONFIG.POPUP_CLOSE_TEXT);
                 this.popupContent = lines;
                 this.popupTotalChars = this.popupContent.reduce((sum, line) => sum + line.length, 0) + this.popupContent.length - 1;
                 this.popupState = 'opening';
@@ -532,7 +532,7 @@ export class Game {
             status += ` | Near ${nearbyObject.name} (${dist.toFixed(0)} u). [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Land/Dock / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
         } else if (this.isPlayerNearExit()) {
             const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
-            const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
+            const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
             if (distSqToStar < scanThresholdSq) {
                 status += ` | [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star / [${CONFIG.KEY_BINDINGS.LEAVE_SYSTEM.toUpperCase()}] Leave System`;
             } else {
@@ -540,7 +540,7 @@ export class Game {
             }
         } else {
             const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
-            const scanThresholdSq = (CONFIG.LANDING_DISTANCE * 2) ** 2;
+            const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
             if (distSqToStar < scanThresholdSq) {
                 status += ` | [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star`;
             }
@@ -693,12 +693,11 @@ export class Game {
             return;
         }
 
-        const starbase = this.stateManager.currentStarbase;
         const currentCargo = { ...this.player.cargo }; // Copy cargo before clearing
         const totalUnitsSold = this.player.getCurrentCargoTotal();
 
         if (totalUnitsSold <= 0) {
-            this.statusMessage = 'Cargo hold is empty. Nothing to sell.';
+            this.statusMessage = STATUS_MESSAGES.STARBASE_TRADE_EMPTY
             logger.info('[Game:_handleTradeRequest] No cargo to sell.');
             // Optionally publish ACTION_FAILED or just update status
             return;
@@ -750,7 +749,7 @@ export class Game {
         const fuelNeeded = this.player.maxFuel - this.player.fuel;
 
         if (fuelNeeded <= 0) {
-            this.statusMessage = 'Fuel tank is already full.';
+            this.statusMessage = STATUS_MESSAGES.STARBASE_REFUEL_FULL;
             return;
         }
 
@@ -838,7 +837,7 @@ export class Game {
 
             // Check if already mined
             if (planet.isMined(currentX, currentY)) {
-                this.statusMessage = 'This location has already been mined.';
+                this.statusMessage = STATUS_MESSAGES.PLANET_MINE_DEPLETED;
                 logger.debug(`[Game:_handleMineRequest] Attempted to mine depleted location [<span class="math-inline">\{currentX\},</span>{currentY}] on ${planet.name}.`);
                 eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Location depleted' });
                 return;

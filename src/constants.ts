@@ -137,3 +137,49 @@ export const ELEMENTS: Record<string, ElementInfo> = {
     'AMMONIA_ICE': { name: 'Ammonia Ice', symbol: 'NH₃', description: 'Frozen ammonia, common in outer systems.', baseValue: 2, baseFrequency: 0.3 },
     'METHANE_ICE': { name: 'Methane Ice', symbol: 'CH₄', description: 'Frozen methane, very volatile.', baseValue: 2, baseFrequency: 0.2 },
 };
+
+// --- User-Facing Messages ---
+export const STATUS_MESSAGES = {
+    // General
+    ERROR_UNKNOWN_STATE: (state: string) => `Error: Unknown game state ${state}`,
+    ERROR_DATA_MISSING: (dataType: string) => `Error: ${dataType} data missing!`,
+    ACTION_CANNOT_PERFORM: (action: string, context: string) => `Cannot perform ${action} while ${context}.`,
+    // Hyperspace
+    HYPERSPACE_NO_STAR: "No star system detected at this location.",
+    HYPERSPACE_ENTERING: (systemName: string | undefined) => `Entering system: ${systemName}...`,
+    HYPERSPACE_SCANNING_SYSTEM: (systemName: string) => `Scanning star system ${systemName}...`,
+    HYPERSPACE_SCAN_FAIL: "Nothing nearby to scan.",
+    // System
+    SYSTEM_LEAVE_TOO_CLOSE: "Must travel further from the star to leave the system.",
+    SYSTEM_LEAVING: "Entered hyperspace.",
+    SYSTEM_LAND_APPROACHING: (targetName: string) => `Approaching ${targetName}...`,
+    SYSTEM_LAND_FAIL_NO_TARGET: "Nothing nearby to land on.",
+    SYSTEM_SCAN_STAR: (systemName: string) => `Scanning local star (${systemName})...`,
+    SYSTEM_SCAN_OBJECT: (objectName: string) => `Scanning ${objectName}...`,
+    SYSTEM_SCAN_FAIL_NO_TARGET: "Nothing close enough to scan.",
+    // Planet/Starbase
+    LIFTOFF_SUCCESS: (targetName: string) => `Liftoff from ${targetName} successful.`,
+    LIFTOFF_FAIL: "Liftoff failed.",
+    PLANET_SCAN_COMPLETE: (planetName: string, resource: string | null, richness: string) => `${planetName} scan complete. Primary: ${resource || 'N/A'}. Richness: ${richness}.`,
+    PLANET_SCAN_ALREADY: (planetName: string, richness: string) => `${planetName} has already been scanned. (${richness})`,
+    PLANET_SCAN_REQUIRED: (richness: string) => `Scan required before mining. Richness potential: ${richness}.`,
+    PLANET_MINE_INVALID_TYPE: (planetType: string) => `Cannot mine surface of ${planetType}.`,
+    PLANET_MINE_SUCCESS: (amount: number, unitName: string, current: number, capacity: number) => `Mined ${amount} units of ${unitName}. (${current}/${capacity})`,
+    PLANET_MINE_CARGO_FULL: (current: number, capacity: number) => `Mining failed: Cargo hold full. (${current}/${capacity})`,
+    PLANET_MINE_NO_ELEMENTS: "Found no mineable elements at this location.",
+    PLANET_MINE_TRACE: (elementName: string) => `Trace amounts of ${elementName} found, but not enough to mine.`,
+    PLANET_MINE_DEPLETED: "This location has already been mined.",
+    STARBASE_TRADE_EMPTY: "Cargo hold is empty. Nothing to sell.",
+    STARBASE_TRADE_SUCCESS: (itemsString: string, units: number, credits: number) => `Sold ${itemsString} (${units} units) for ${credits} Cr.`,
+    STARBASE_REFUEL_FULL: "Fuel tank is already full.",
+    STARBASE_REFUEL_SUCCESS: (amount: number, cost: number) => `Purchased ${amount} fuel for ${cost} Cr.`,
+    STARBASE_REFUEL_FAIL_CREDITS: (costPerUnit: number, currentCredits: number) => `Not enough credits for fuel (Need ${costPerUnit.toFixed(1)} Cr/unit). Have ${currentCredits} Cr.`,
+    // Errors
+    ERROR_ACTION: (errorMessage: string) => `ACTION ERROR: ${errorMessage}`,
+    ERROR_UPDATE: (errorMessage: string) => `UPDATE ERROR: ${errorMessage}`,
+    ERROR_RENDER: (errorMessage: string) => `RENDER ERROR: ${errorMessage}`,
+    ERROR_SURFACE_PREP: (errorMessage: string) => `Surface Error: ${errorMessage}`,
+    ERROR_LANDING: (targetName: string, errorMessage: string) => `Landing Error on ${targetName}: ${errorMessage}`,
+    ERROR_MINING: (errorMessage: string) => `Mining Error: ${errorMessage}`,
+
+} as const;

@@ -3,7 +3,7 @@
 // Removed GameStateManager import
 import { Player } from './player';
 import { logger } from '../utils/logger';
-import { MineralRichness, ELEMENTS } from '../constants';
+import { MineralRichness, ELEMENTS, STATUS_MESSAGES } from '../constants';
 import { CONFIG } from '../config';
 import { PRNG } from '../utils/prng';
 import { Planet } from '../entities/planet';
@@ -79,7 +79,7 @@ export class ActionProcessor {
                      scanRequestResult = { requestScan: 'system_object' };
                 } else {
                      logger.debug(`[ActionProcessor] SCAN_SYSTEM_OBJECT in hyperspace: No system found.`);
-                     statusMessage = 'Nothing nearby to scan.';
+                     statusMessage = STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL;
                 }
           } else {
               // Handle other hyperspace actions (like ENTER_SYSTEM)

@@ -191,8 +191,8 @@ export class SolarSystem {
     updateOrbits(deltaTime: number): void {
 
         // Calculate time factor once
-        const timeScaledSpeedFactor = deltaTime * CONFIG.SYSTEM_ORBIT_SPEED_FACTOR * 10000;
-
+        const timeScaledSpeedFactor = deltaTime * CONFIG.SYSTEM_ORBIT_SPEED_FACTOR * CONFIG.ORBIT_TIME_SCALE_FACTOR;
+        
         // --- Calculate Effective Orbital Constant based on Star Mass ---
         const starInfo = SPECTRAL_TYPES[this.starType];
         // Default to 1.0 solar mass if type or mass is unknown
