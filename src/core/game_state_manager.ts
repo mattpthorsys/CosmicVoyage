@@ -1,4 +1,4 @@
-// src/core/game_state_manager.ts (Using Event Manager)
+// src/core/game_state_manager.ts (Subscribing to Action Request Events)
 
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
@@ -28,35 +28,37 @@ export class GameStateManager {
   private player: Player;
   private gameSeedPRNG: PRNG;
 
-  // Removed onStateChange callback property
-
-  constructor(player: Player, gameSeedPRNG: PRNG /* Removed onStateChange callback */) {
+  constructor(player: Player, gameSeedPRNG: PRNG) {
     this._state = 'hyperspace'; // Initial state
     this.player = player;
     this.gameSeedPRNG = gameSeedPRNG;
-    // Removed callback initialization
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
+
+    // --- Subscribe to Action Request Events ---
+    eventManager.subscribe(GameEvents.ENTER_SYSTEM_REQUESTED, this.enterSystem.bind(this));
+    eventManager.subscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, this.leaveSystem.bind(this));
+    eventManager.subscribe(GameEvents.LAND_REQUESTED, this.landOnNearbyObject.bind(this));
+    eventManager.subscribe(GameEvents.LIFTOFF_REQUESTED, this.liftOff.bind(this));
+    logger.info('[GameStateManager] Subscribed to action request events.');
   }
 
   // --- Getters for current state and context ---
-  get state(): GameState {
-    return this._state;
-  }
-  get currentSystem(): SolarSystem | null {
-    return this._currentSystem;
-  }
-  get currentPlanet(): Planet | null {
-    return this._currentPlanet;
-  }
-  get currentStarbase(): Starbase | null {
-    return this._currentStarbase;
-  }
+  get state(): GameState { return this._state; }
+  get currentSystem(): SolarSystem | null { return this._currentSystem; }
+  get currentPlanet(): Planet | null { return this._currentPlanet; }
+  get currentStarbase(): Starbase | null { return this._currentStarbase; }
 
   // --- State Transition Logic ---
+  // Methods now primarily act as event handlers, but can still be called directly if needed
 
   /** Attempts to enter a system from hyperspace. Returns true on success, false otherwise. */
   enterSystem(): boolean {
-    logger.debug(`[GameStateManager] Attempting Enter System at World: ${this.player.worldX},${this.player.worldY}`);
+    // Prevent entering system if already in one
+    if (this._state !== 'hyperspace') {
+         logger.warn(`[GameStateManager.enterSystem] Attempted to enter system while not in hyperspace (State: ${this._state})`);
+         return false;
+    }
+    logger.debug(`[GameStateManager] Handling ${GameEvents.ENTER_SYSTEM_REQUESTED} event at World: ${this.player.worldX},${this.player.worldY}`);
     const baseSeedInt = this.gameSeedPRNG.seed;
     const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
     const hash = fastHash(this.player.worldX, this.player.worldY, baseSeedInt);
@@ -64,6 +66,7 @@ export class GameStateManager {
 
     if (!isStarCell) {
       logger.debug('[GameStateManager] Enter System failed: No star present.');
+      this.statusMessage = 'No star system detected at this location.'; // Set status for UI
       return false; // Indicate failure
     }
 
@@ -73,13 +76,13 @@ export class GameStateManager {
       logger.info(`[GameStateManager] Generated System: ${system.name} (${system.starType})`);
 
       // Set player position relative to system center
-      const entryAngle = Math.atan2(this.player.worldY, this.player.worldX); // Or maybe based on entry vector?
-      const entryDist = system.edgeRadius * 0.85; // Enter just inside the edge
+      const entryAngle = Math.atan2(this.player.worldY, this.player.worldX);
+      const entryDist = system.edgeRadius * 0.85;
       this.player.systemX = Math.cos(entryAngle) * entryDist;
       this.player.systemY = Math.sin(entryAngle) * entryDist;
 
       // Reset player visual state for system view
-      this.player.shipDirection = GLYPHS.SHIP_NORTH; // Default direction on entry
+      this.player.shipDirection = GLYPHS.SHIP_NORTH;
       this.player.char = this.player.shipDirection;
 
       // Update state
@@ -88,16 +91,18 @@ export class GameStateManager {
       this._currentSystem = system;
       this._currentPlanet = null;
       this._currentStarbase = null;
+      this.statusMessage = `Entering system: ${system.name}`; // Set status
 
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Entered ${system.name})`);
-      // *** Publish event instead of calling callback ***
+      // Publish notification events
       eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state);
-      eventManager.publish(GameEvents.SYSTEM_ENTERED, system); // Publish system data
+      eventManager.publish(GameEvents.SYSTEM_ENTERED, system);
 
       return true; // Indicate success
     } catch (error) {
-      logger.error(`[GameStateManager] Failed to create or enter solar system at ${this.player.worldX},${this.player.worldY}: {error}`);
+      logger.error(`[GameStateManager] Failed to create or enter solar system at ${this.player.worldX},${this.player.worldY}: ${error}`);
       this._currentSystem = null; // Ensure system is null on failure
+      this.statusMessage = `System Entry Failed: ${error instanceof Error ? error.message : 'Unknown error'}`; // Set status
       // Stay in hyperspace state
       return false; // Indicate failure
     }
@@ -105,15 +110,21 @@ export class GameStateManager {
 
   /** Attempts to leave the current system. Returns true on success, false otherwise. */
   leaveSystem(): boolean {
-    logger.debug(`[GameStateManager] Attempting Leave System from: ${this._currentSystem?.name ?? 'Unknown System'}`);
+     // Prevent leaving system if not in one
+    if (this._state !== 'system') {
+         logger.warn(`[GameStateManager.leaveSystem] Attempted to leave system while not in system state (State: ${this._state})`);
+         return false;
+    }
+    logger.debug(`[GameStateManager] Handling ${GameEvents.LEAVE_SYSTEM_REQUESTED} event from: ${this._currentSystem?.name ?? 'Unknown System'}`);
     if (!this._currentSystem) {
-      logger.warn('[GameStateManager] Leave System failed: Not currently in a system.');
+      logger.warn('[GameStateManager] Leave System failed: Not currently in a system (internal state error).');
+      this.statusMessage = 'Cannot leave system: System data missing.';
       return false;
     }
 
-    // Check if player is near the edge (use threshold slightly larger than edge radius)
+    // Check if player is near the edge
     const distFromStarSq = this.player.distanceSqToSystemCoords(0, 0);
-    const edgeThresholdSq = (this._currentSystem.edgeRadius * 0.8) ** 2; // Use same threshold as before for consistency
+    const edgeThresholdSq = (this._currentSystem.edgeRadius * 0.8) ** 2;
 
     if (distFromStarSq > edgeThresholdSq) {
       logger.info(`[GameStateManager] Leaving system ${this._currentSystem.name}...`);
@@ -123,24 +134,32 @@ export class GameStateManager {
       this._currentPlanet = null;
       this._currentStarbase = null;
       this.player.char = CONFIG.PLAYER_CHAR; // Set char for hyperspace
+      this.statusMessage = 'Entered hyperspace.'; // Set status
 
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Left system)`);
-      // *** Publish event instead of calling callback ***
+      // Publish notification events
       eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state);
       eventManager.publish(GameEvents.SYSTEM_LEFT);
 
       return true;
     } else {
       logger.debug('[GameStateManager] Leave System failed: Player not close enough to system edge.');
+      this.statusMessage = 'Must travel further from the star to leave the system.'; // Set status
       return false;
     }
   }
 
   /** Attempts to land on a nearby object. Returns the landed object or null on failure. */
   landOnNearbyObject(): Planet | Starbase | null {
-    logger.info(`>>> GameStateManager.landOnNearbyObject called. Player system coords: [${this.player.systemX.toFixed(0)}, ${this.player.systemY.toFixed(0)}]`);
+     // Prevent landing if not in system state
+     if (this._state !== 'system') {
+          logger.warn(`[GameStateManager.landOnNearbyObject] Attempted to land while not in system state (State: ${this._state})`);
+          return null;
+     }
+    logger.info(`[GameStateManager] Handling ${GameEvents.LAND_REQUESTED} event. Player system coords: [${this.player.systemX.toFixed(0)}, ${this.player.systemY.toFixed(0)}]`);
     if (!this._currentSystem) {
-      logger.warn('[GameStateManager] Land failed: Not in a system.');
+      logger.warn('[GameStateManager] Land failed: Not in a system (internal state error).');
+      this.statusMessage = 'Cannot land: System data missing.';
       return null;
     }
 
@@ -150,6 +169,7 @@ export class GameStateManager {
 
     if (!nearbyObject) {
       logger.debug('[GameStateManager] Land failed: No object within landing distance.');
+      this.statusMessage = 'Nothing nearby to land on.'; // Set status
       return null;
     }
 
@@ -167,7 +187,6 @@ export class GameStateManager {
         this._state = 'planet';
         this._currentPlanet = nearbyObject;
         this._currentStarbase = null;
-        // Set player surface coords (e.g., center of map)
         const mapSize = nearbyObject.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
         this.player.surfaceX = Math.floor(mapSize / 2);
         this.player.surfaceY = Math.floor(mapSize / 2);
@@ -177,21 +196,21 @@ export class GameStateManager {
         this._state = 'starbase';
         this._currentStarbase = nearbyObject;
         this._currentPlanet = null;
-        // Set player coords for starbase interior
         this.player.surfaceX = 0; // Or designated entry point
         this.player.surfaceY = 0;
         eventToPublish = GameEvents.STARBASE_DOCKED;
         eventData = nearbyObject;
       } else {
-        // Should not happen if getObjectNear is correct
         logger.error(`[GameStateManager] Land failed: Nearby object ${nearbyObject} has unknown type.`);
+        this.statusMessage = `Landing Error: Unknown object type.`;
         return null;
       }
 
       this.player.char = CONFIG.PLAYER_CHAR; // Set char for surface/docked state
+      this.statusMessage = `Approaching ${nearbyObject.name}...`; // Set status
 
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Landed/Docked at ${nearbyObject.name})`);
-      // *** Publish event instead of calling callback ***
+      // Publish notification events
       eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state);
       if (eventToPublish && eventData) {
         eventManager.publish(eventToPublish, eventData);
@@ -200,30 +219,29 @@ export class GameStateManager {
       return nearbyObject; // Return the object landed on/docked at
     } catch (error) {
       logger.error(`[GameStateManager] Failed to prepare surface or land on ${nearbyObject.name}: ${error}`);
-      // Revert state changes if surface prep failed? Or handle in Game loop?
-      // For now, don't change state and return null.
       this.statusMessage = `Landing Error on ${nearbyObject.name}: ${error instanceof Error ? error.message : String(error)}`;
       this._currentPlanet = null;
       this._currentStarbase = null;
-      // this.state remains 'system'
+      // State remains 'system'
       return null;
     }
   }
 
   /** Attempts to lift off from a planet or starbase. Returns true on success, false otherwise. */
   liftOff(): boolean {
-    logger.debug('[GameStateManager] Attempting Liftoff...');
-    if (this._state !== 'planet' && this._state !== 'starbase') {
-      logger.warn(`[GameStateManager] Liftoff failed: Cannot liftoff from state '${this._state}'.`);
-      return false;
-    }
+      // Prevent liftoff if not landed/docked
+      if (this._state !== 'planet' && this._state !== 'starbase') {
+          logger.warn(`[GameStateManager.liftOff] Attempted liftoff while not landed/docked (State: ${this._state})`);
+          return false;
+      }
+    logger.debug(`[GameStateManager] Handling ${GameEvents.LIFTOFF_REQUESTED} event...`);
     if (!this._currentSystem) {
       // This indicates a serious state inconsistency
       logger.error(`[GameStateManager] Liftoff failed: State is '${this._state}' but currentSystem is null! Attempting recovery.`);
-      // Recover to hyperspace? Or throw? For now, try hyperspace.
-      this._state = 'hyperspace';
+      this._state = 'hyperspace'; // Recover to hyperspace
       this._currentPlanet = null;
       this._currentStarbase = null;
+      this.statusMessage = 'Liftoff Error: System data lost. Returning to hyperspace.';
       eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state); // Publish recovery state
       return false; // Indicate failure / abnormal recovery
     }
@@ -235,7 +253,6 @@ export class GameStateManager {
 
     // Place player back in system view, near the object
     if (sourceObj) {
-      // Place slightly "above" the object in system view coordinates?
       this.player.systemX = sourceObj.systemX;
       this.player.systemY = sourceObj.systemY - CONFIG.LANDING_DISTANCE * 0.1; // Example offset
     } else {
@@ -254,9 +271,10 @@ export class GameStateManager {
     this._state = 'system';
     this._currentPlanet = null;
     this._currentStarbase = null;
+    this.statusMessage = `Liftoff from ${liftedFromName} successful.`; // Set status
 
     logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Lifted off from ${liftedFromName})`);
-    // *** Publish event instead of calling callback ***
+    // Publish notification events
     eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state);
     eventManager.publish(GameEvents.LIFT_OFF);
 
@@ -275,15 +293,12 @@ export class GameStateManager {
     const isStarCell = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
 
     if (!isStarCell) {
-      // logger.debug(`[GameStateManager] No star found at: ${worldX}, ${worldY}`); // Can be noisy
       return null;
     }
 
     try {
-      // Create a temporary system for peeking - Note: Could cache this slightly
-      // if peeking at the same system repeatedly before moving.
+      // Create a temporary system for peeking
       const tempSystem = new SolarSystem(worldX, worldY, this.gameSeedPRNG);
-      // logger.debug(`[GameStateManager] Peeked at system: ${tempSystem.name} (${tempSystem.starType})`); // Can be noisy
       return tempSystem;
     } catch (error) {
       logger.error(`[GameStateManager] Error peeking at system at ${worldX}, ${worldY}: ${error}`);
@@ -294,7 +309,16 @@ export class GameStateManager {
   /** Clears the peeked system cache/reference (if any). */
   resetPeekedSystem() {
     // If caching was implemented for peekAtSystem, clear it here.
-    // For now, this method might not be strictly needed if peek just creates a new temp system each time.
     // this.peekedSystem = null; // Example if caching existed
   }
-}
+
+   /** Cleans up event listeners */
+   destroy(): void {
+        logger.info('[GameStateManager] Destroying and unsubscribing from events...');
+        eventManager.unsubscribe(GameEvents.ENTER_SYSTEM_REQUESTED, this.enterSystem.bind(this));
+        eventManager.unsubscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, this.leaveSystem.bind(this));
+        eventManager.unsubscribe(GameEvents.LAND_REQUESTED, this.landOnNearbyObject.bind(this));
+        eventManager.unsubscribe(GameEvents.LIFTOFF_REQUESTED, this.liftOff.bind(this));
+   }
+
+} // End GameStateManager class
