@@ -1,4 +1,4 @@
-// src/utils/logger.ts
+// src/utils/logger.ts (Simplified argument handling)
 
 import { CONFIG } from '../config';
 
@@ -40,16 +40,12 @@ function getConfiguredLogLevel(): LogLevel {
 
 // Determine the initial log level based on configuration
 let currentLogLevel = getConfiguredLogLevel();
-// Helper function to format and buffer log messages (Remains internal)
-function _logAndBuffer(level: LogLevel, levelStr: string, args: (object|string)[]): void {
+
+// *** MODIFIED: Internal helper now expects a single pre-formatted message string ***
+function _logAndBuffer(level: LogLevel, levelStr: string, message: string): void {
     const timestamp = new Date().toISOString();
-    const messageParts = args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
-            try { return JSON.stringify(arg); } catch { return String(arg); }
-        }
-        return String(arg);
-    });
-    const formattedMessage = `[${timestamp}] [${levelStr}] ${messageParts.join(' ')}`;
+    // Message is already formatted, just add timestamp and level prefix
+    const formattedMessage = `[${timestamp}] [${levelStr}] ${message}`;
 
     logBuffer.push(formattedMessage);
     if (logBuffer.length > MAX_LOG_BUFFER_SIZE) {
@@ -59,21 +55,29 @@ function _logAndBuffer(level: LogLevel, levelStr: string, args: (object|string)[
     // Output to console based on level
     switch (level) {
         case LogLevel.DEBUG: console.debug(formattedMessage); break;
-        case LogLevel.INFO: console.log(formattedMessage); break;
-        case LogLevel.WARN: console.warn(formattedMessage); break;
+        case LogLevel.INFO:  console.log(formattedMessage);   break;
+        case LogLevel.WARN:  console.warn(formattedMessage);  break;
         case LogLevel.ERROR: console.error(formattedMessage); break;
     }
 }
 
+// Helper function to stringify arguments before joining
+function formatArgs(...args: (string | number | boolean | object | null | undefined)[]): string {
+    return args.map(arg => {
+        if (typeof arg === 'object' && arg !== null) {
+            try { return JSON.stringify(arg); } catch { return String(arg); }
+        }
+        return String(arg);
+    }).join(' '); // Join with spaces
+}
+
+
 // --- Logger Object Definition ---
-// Define the logger object structure explicitly for clarity and type safety
 interface Logger {
-    // *** MODIFIED: Changed object[] to a specific Union Type[] ***
     debug(...args: (string | number | boolean | object | null | undefined)[]): void;
     info(...args: (string | number | boolean | object | null | undefined)[]): void;
     warn(...args: (string | number | boolean | object | null | undefined)[]): void;
     error(...args: (string | number | boolean | object | null | undefined)[]): void;
-    // *** END MODIFICATION ***
 
     setLogLevel(level: LogLevel): void;
     getCurrentLogLevel(): LogLevel;
@@ -86,27 +90,31 @@ interface Logger {
 // Export the logger object containing all methods
 export const logger: Logger = {
     /** Logs messages only if the configured level is DEBUG or higher. */
-    debug(...args: object[]): void {
+    debug(...args: (string | number | boolean | object | null | undefined)[]): void {
         if (currentLogLevel >= LogLevel.DEBUG) {
-            _logAndBuffer(LogLevel.DEBUG, 'DEBUG', args); // Use internal helper
+            // *** MODIFIED: Format message before calling internal helper ***
+            _logAndBuffer(LogLevel.DEBUG, 'DEBUG', formatArgs(...args));
         }
     },
     /** Logs messages only if the configured level is INFO or higher. */
-    info(...args: object[]): void {
+    info(...args: (string | number | boolean | object | null | undefined)[]): void {
         if (currentLogLevel >= LogLevel.INFO) {
-            _logAndBuffer(LogLevel.INFO, 'INFO', args); // Use internal helper
+             // *** MODIFIED: Format message before calling internal helper ***
+            _logAndBuffer(LogLevel.INFO, 'INFO', formatArgs(...args));
         }
     },
     /** Logs messages only if the configured level is WARN or higher. */
-    warn(...args: object[]): void {
+    warn(...args: (string | number | boolean | object | null | undefined)[]): void {
         if (currentLogLevel >= LogLevel.WARN) {
-            _logAndBuffer(LogLevel.WARN, 'WARN', args); // Use internal helper
+             // *** MODIFIED: Format message before calling internal helper ***
+            _logAndBuffer(LogLevel.WARN, 'WARN', formatArgs(...args));
         }
     },
     /** Logs messages only if the configured level is ERROR or higher. */
-    error(...args: object[]): void {
+    error(...args: (string | number | boolean | object | null | undefined)[]): void {
         if (currentLogLevel >= LogLevel.ERROR) {
-            _logAndBuffer(LogLevel.ERROR, 'ERROR', args); // Use internal helper
+             // *** MODIFIED: Format message before calling internal helper ***
+            _logAndBuffer(LogLevel.ERROR, 'ERROR', formatArgs(...args));
         }
     },
     /** Allows changing the log level at runtime (e.g., from console). */
@@ -121,14 +129,12 @@ export const logger: Logger = {
          } else {
               const invalidLevelMsg = `Attempted to set invalid log level: ${level}`;
               console.warn(`[Logger WARN] ${invalidLevelMsg}`);
-              // Log the attempt *only to console* if WARN is enabled
-              // _logAndBuffer(LogLevel.WARN, 'WARN', [invalidLevelMsg]); // Avoid buffering this warning
          }
     },
     /** Gets the current numeric log level. */
     getCurrentLogLevel(): LogLevel {
          return currentLogLevel;
-     },
+    },
 
     /** Clears the internal log buffer. */
     clearLogBuffer(): void {
@@ -163,14 +169,10 @@ export const logger: Logger = {
 
     /** Triggers a browser download for the buffered logs. */
     downloadLogFile(filename?: string): void {
-        logger.info("--- logger.downloadLogFile method entered. ---");
-        const downloadMsgStart = "Preparing log file for download...";
-        // Log the attempt to console *and* buffer
-        _logAndBuffer(LogLevel.INFO, 'INFO', [downloadMsgStart]);
-
-         const defaultFilename = `cosmic_voyage_log_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        // Log the attempt using the logger's own method
+        this.info("--- Preparing log file for download... ---");
+        const defaultFilename = `cosmic_voyage_log_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
          const finalFilename = filename || defaultFilename;
-
          try {
              const logContent = this.getLogBufferAsString(true); // Get content with header
              const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
@@ -186,20 +188,10 @@ export const logger: Logger = {
              document.body.removeChild(link);
              URL.revokeObjectURL(url);
 
-             const downloadMsgEnd = `Log file download triggered as "${finalFilename}".`;
-             // Log completion to console *and* buffer
-             _logAndBuffer(LogLevel.INFO, 'INFO', [downloadMsgEnd]);
+             this.info(`Log file download triggered as "${finalFilename}".`);
          } catch (error) {
               const errorMsg = `Failed to prepare or trigger log file download: ${error instanceof Error ? error.message : String(error)}`;
-              // Log error to console *and* buffer
-              _logAndBuffer(LogLevel.ERROR, 'ERROR', [errorMsg, error]); // Pass original error too
+              this.error(`${errorMsg} ${error}`); // Log the error message and the error object itself
          }
     }
-};
-// End logger object definition
-
-// Log the initial level being used (will also be buffered now)
-// logger.info(`Logger initialized with level ${LogLevel[currentLogLevel]} (${currentLogLevel})`);
-// ---> Defer initial log message until after potential test setup <---
-// Or accept it will be in the buffer for the very first test run.
-// Let's remove it here to simplify testing assumptions. The first setLogLevel in tests will log.
+}; // End logger object definition
