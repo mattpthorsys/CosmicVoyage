@@ -10,12 +10,16 @@ import { GLYPHS, STATUS_MESSAGES } from '../constants';
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
+import { TerminalOverlay } from '@/rendering/terminal_overlay';
 
 // Define GameState type here or import from a shared types file
 export type GameState = 'hyperspace' | 'system' | 'planet' | 'starbase';
 
 /** Manages the game's current state, context (system/planet/starbase), and transitions. */
 export class GameStateManager {
+
+  private readonly terminalOverlay: TerminalOverlay;
+
   private _state: GameState;
   private _currentSystem: SolarSystem | null = null;
   private _currentPlanet: Planet | null = null;
@@ -32,6 +36,7 @@ export class GameStateManager {
     this._state = 'hyperspace'; // Initial state
     this.player = player;
     this.gameSeedPRNG = gameSeedPRNG;
+    this.terminalOverlay = new TerminalOverlay();
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
 
     // --- Subscribe to Action Request Events ---
@@ -140,7 +145,7 @@ export class GameStateManager {
       return true;
     } else {
       logger.debug('[GameStateManager] Leave System failed: Player not close enough to system edge.');
-      this.statusMessage = STATUS_MESSAGES.SYSTEM_LEAVE_TOO_CLOSE;
+      this.terminalOverlay.addMessage(STATUS_MESSAGES.SYSTEM_LEAVE_TOO_CLOSE);
       return false;
     }
   }
@@ -165,7 +170,7 @@ export class GameStateManager {
 
     if (!nearbyObject) {
       logger.debug('[GameStateManager] Land failed: No object within landing distance.');
-      this.statusMessage = STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET;
+      this.terminalOverlay.addMessage(STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET);
       return null;
     }
 
@@ -203,7 +208,7 @@ export class GameStateManager {
       }
 
       this.player.render.char = CONFIG.PLAYER_CHAR; // Set char for surface/docked state
-      this.statusMessage = STATUS_MESSAGES.SYSTEM_LAND_APPROACHING(nearbyObject.name); // Set status
+      this.terminalOverlay.addMessage(STATUS_MESSAGES.SYSTEM_LAND_APPROACHING(nearbyObject.name));
 
       logger.info(`[GameStateManager] State changed: '${oldState}' -> '${this._state}' (Landed/Docked at ${nearbyObject.name})`);
       // Publish notification events

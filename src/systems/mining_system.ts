@@ -6,8 +6,12 @@ import { eventManager, GameEvents } from '../core/event_manager';
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
 import { STATUS_MESSAGES, ELEMENTS } from '../constants';
+import { TerminalOverlay } from '@/rendering/terminal_overlay';
 
 export class MiningSystem {
+
+  private readonly terminalOverlay: TerminalOverlay;
+
   private player: Player;
   private stateManager: GameStateManager;
   private cargoSystem: CargoSystem;
@@ -16,6 +20,7 @@ export class MiningSystem {
     this.player = player;
     this.stateManager = stateManager;
     this.cargoSystem = cargoSystem;
+    this.terminalOverlay = new TerminalOverlay();
 
     // Subscribe to the MINE_REQUESTED event
     eventManager.subscribe(GameEvents.MINE_REQUESTED, this.handleMineRequest.bind(this));
@@ -84,7 +89,7 @@ export class MiningSystem {
             const isAlreadyMined = planet.isMined(currentX, currentY);
             logger.debug(`[MiningSystem] Is location [${currentX}, ${currentY}] already mined? ${isAlreadyMined}`);
             if (isAlreadyMined) {
-              statusMessage = STATUS_MESSAGES.PLANET_MINE_DEPLETED;
+              this.terminalOverlay.addMessage(STATUS_MESSAGES.PLANET_MINE_DEPLETED);
               actionFailedReason = 'Location depleted';
               logger.debug('[MiningSystem] Result: Trace amounts');
             } else {
@@ -151,7 +156,7 @@ export class MiningSystem {
                   }
                 }
               } else {
-                statusMessage = STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS;
+                this.terminalOverlay.addMessage(STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS)
                 actionFailedReason = 'No elements found';
               }
             }
