@@ -245,7 +245,7 @@ export class Planet { //
     getScanInfo(): string[] { //
          logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`); //
         const infoLines: string[] = [ //
-             `[-H-]--- SCAN REPORT: ${this.name} ---[-h-]`, //
+             `<h>--- SCAN REPORT: ${this.name} ---</h>`, //
              `Type: ${this.type} Planet`, //
         ];
         if (this.type === 'GasGiant' || this.type === 'IceGiant') { //
@@ -253,36 +253,36 @@ export class Planet { //
              const compositionString = Object.entries(this.atmosphere.composition) //
                  .filter(([, p]) => p > 0).sort(([, a], [, b]) => b - a) //
                  .map(([gas, percent]) => `${gas}: ${percent}%`).join(', ') || "Trace Gases"; //
-            infoLines.push(`Diameter: [-HL-]${this.diameter.toLocaleString()} km[-hl-] | Density: [-HL-]${this.density.toFixed(2)} g/cm³[-hl-] | Gravity: [-HL-]${this.gravity.toFixed(2)} G[-hl-] (at 1 bar level)`); // Added Density
-            infoLines.push(`Effective Temp: [-HL-]${this.surfaceTemp}[-hl-] K (cloud tops)`); //
-            infoLines.push(`Atmosphere: [-HL-]${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar[-hl-] at cloud tops)`); //
-            infoLines.push(`Composition: [-HL-]${compositionString}[-hl-]`); //
-            infoLines.push(`Hydrosphere: [-HL-]${this.hydrosphere}[-hl-]`); //
-            infoLines.push(`Lithosphere: [-HL-]${this.lithosphere}[-hl-]`); //
+            infoLines.push(`Diameter: <hl>${this.diameter.toLocaleString()} km</hl> | Density: <hl>${this.density.toFixed(2)} g/cm³</hl> | Gravity: <hl>${this.gravity.toFixed(2)} G</hl> (at 1 bar level)`); // Added Density
+            infoLines.push(`Effective Temp: <hl>${this.surfaceTemp}</hl> K (cloud tops)`); //
+            infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar</hl> at cloud tops)`); //
+            infoLines.push(`Composition: <hl>${compositionString}</hl>`); //
+            infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`); //
+            infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`); //
             const topElements = Object.entries(this.elementAbundance)
                 .filter(([, abundance]) => abundance > 0)
                 .sort(([, a], [, b]) => b - a)
                 .slice(0, 3)
-                .map(([key]) => `[-HL-]${ELEMENTS[key]?.name || key}[-hl-]`)
+                .map(([key]) => `<hl>${ELEMENTS[key]?.name || key}</hl>`)
                 .join(', ');
-            infoLines.push(`Notable Resources: [-HL-]${topElements || 'Trace Amounts'}[-hl-]`); //
-            infoLines.push(`Refueling: Possible via [-HL-]atmospheric scoop[-hl-].`); //
+            infoLines.push(`Notable Resources: <hl>${topElements || 'Trace Amounts'}</hl>`); //
+            infoLines.push(`Refueling: Possible via <hl>atmospheric scoop</hl>.`); //
         } else {
              // Solid planet specific info
-            infoLines.push(`Diameter: [-HL-]${this.diameter.toLocaleString()} km[-hl-] | Density: [-HL-]${this.density.toFixed(2)} g/cm³[-hl-] | Gravity: [-HL-]${this.gravity.toFixed(2)} G[-hl-]`); // Added Density
-            infoLines.push(`Surface Temp (Avg): [-HL-]${this.surfaceTemp} K[-hl-]`); //
-            infoLines.push(`Atmosphere: [-HL-]${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar[-hl-])`); //
+            infoLines.push(`Diameter: <hl>${this.diameter.toLocaleString()} km</hl> | Density: <hl>${this.density.toFixed(2)} g/cm³</hl> | Gravity: <hl>${this.gravity.toFixed(2)} G</hl>`); // Added Density
+            infoLines.push(`Surface Temp (Avg): <hl>${this.surfaceTemp} K</hl>`); //
+            infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar</hl>)`); //
 
-            let compStr = "[-HL-]None[-hl-]"; //
+            let compStr = "<hl>None</hl>"; //
             const comp = this.atmosphere.composition; //
             if (comp && Object.keys(comp).length > 0 && comp['None'] !== 100) { //
                  compStr = Object.entries(comp) //
                      .filter(([, percent]) => percent > 0).sort(([, a], [, b]) => b - a) //
-                     .map(([gas, percent]) => `[-HL-]${gas}: ${percent}%[-hl-]`).join(', '); //
+                     .map(([gas, percent]) => `<hl>${gas}: ${percent}%</hl>`).join(', '); //
             }
-            infoLines.push(`Composition: [-HL-]${compStr}[-hl-]`); //
-            infoLines.push(`Hydrosphere: [-HL-]${this.hydrosphere}[-hl-]`); //
-            infoLines.push(`Lithosphere: [-HL-]${this.lithosphere}[-hl-]`); //
+            infoLines.push(`Composition: <hl>${compStr}</hl>`); //
+            infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`); //
+            infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`); //
 
             if (this.scanned) { //
                  const topElements = Object.entries(this.elementAbundance)
@@ -291,10 +291,10 @@ export class Planet { //
                     .slice(0, 5) // Show top 5 perhaps
                     .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance})`) // Show name and abundance value
                     .join(', ');
-                 infoLines.push(`Mineral Scan: [-HL-]${this.mineralRichness}[-hl-]. Primary: [-HL-]${this.primaryResource || 'N/A'}[-hl-].`); //
-                 infoLines.push(`*** Top Deposits: [-HL-]${topElements || 'None Significant'}[-hl-]`); // Display the top elements string
+                 infoLines.push(`Mineral Scan: <hl>${this.mineralRichness}</hl>. Primary: <hl>${this.primaryResource || 'N/A'}</hl>.`); //
+                 infoLines.push(`*** Top Deposits: <hl>${topElements || 'None Significant'}</hl>`); // Display the top elements string
             } else { //
-                 infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: [-HL-]${this.mineralRichness}[-hl-].`); //
+                 infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`); //
             }
         }
         return infoLines; //

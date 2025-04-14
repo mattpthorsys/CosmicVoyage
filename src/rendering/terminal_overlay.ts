@@ -5,10 +5,10 @@ import { logger } from '../utils/logger';
 
 // -- Marker Definitions --
 const MARKERS = {
-  HEADING_START: '[-H-]', HEADING_END: '[-h-]',
-  HIGHLIGHT_START: '[-HL-]', HIGHLIGHT_END: '[-hl-]',
-  WARNING_START: '[-W-]', WARNING_END: '[-w-]',
-  EMERGENCY_START: '[-E-]', EMERGENCY_END: '[-e-]',
+  HEADING_START: '<h>', HEADING_END: '</h>',
+  HIGHLIGHT_START: '<hl>', HIGHLIGHT_END: '</hl>',
+  WARNING_START: '[-W-]', WARNING_END: '</w>',
+  EMERGENCY_START: '<e>', EMERGENCY_END: '</e>',
   // Add a default marker if explicitly switching back is needed, otherwise closing tags revert
   // DEFAULT_START: '[-D-]', DEFAULT_END: '[-d-]',
 } as const;
