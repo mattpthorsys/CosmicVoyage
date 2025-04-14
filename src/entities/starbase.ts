@@ -46,10 +46,11 @@ export class Starbase {
         logger.debug(`[Starbase:${this.name}] getScanInfo called.`); // Add basic log
         return [
             `--- SCAN REPORT: ${this.name} ---`, //
-            `Type: Orbital Starbase`,
-            `Services: Trading Post, Refueling Depot`,
-            `Status: Operational`,
-            `Mineral Scan: N/A`, // Starbases don't have minerals
+            `Type: [-HL-]Orbital Starbase[-hl-]`,
+            `Services: [-HL-]Trading Post, Refueling Depot[-hl-]`,
+            `Status: [-HL-]Operational[-hl-]`,
+            `Mineral Scan: [-HL-]N/A[-hl-]`, // Starbases don't have minerals
+            '[-H-]--- SCAN COMPLETE ---[-h-]'
         ]; //
     }
 

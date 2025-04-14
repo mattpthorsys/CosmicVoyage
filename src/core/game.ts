@@ -18,6 +18,7 @@ import { MovementSystem } from '@/systems/movement_system';
 import { CargoSystem } from '@/systems/cargo_systems';
 import { MiningSystem } from '@/systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
+import { L } from 'vitest/dist/chunks/reporters.d.CfRkRKN2.js';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
@@ -278,10 +279,10 @@ export class Game {
         if (peekedSystem) {
           // System found, trigger the scan popup directly with the peeked system
           this.statusMessage = STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name);
-          this._triggerScanPopup(peekedSystem); // Pass the SolarSystem object
+          this._dumpScanToTerminal(peekedSystem); // Pass the SolarSystem object
         } else {
           // No system found at player's location
-          this.statusMessage = STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL;
+          this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
         }
       }
       // Reflect any status message set by the state manager during an action event
@@ -378,41 +379,53 @@ export class Game {
     if (scanType === 'system_object') {
       if (currentState === 'hyperspace') {
         // *** Find target for hyperspace scan ***
-        const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
+        const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY); // Use position component
         if (peekedSystem) {
-          // Comment: Target for hyperspace scan is the peeked SolarSystem object itself.
+          // Target for hyperspace scan is the peeked SolarSystem object itself.
           targetToScan = peekedSystem;
           scanStatusMessage = STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name);
+          // ADD TO TERMINAL: Initial scanning message
+          this.terminalOverlay.addMessage(scanStatusMessage); // Use terminal overlay [cite: 34]
         } else {
           scanStatusMessage = STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL;
+          // ADD TO TERMINAL: Failure message
+          this.terminalOverlay.addMessage(scanStatusMessage); // Use terminal overlay [cite: 36]
         }
       } else if (currentState === 'system') {
         // *** Find target for system scan ***
         const system = this.stateManager.currentSystem;
         if (!system) {
           scanStatusMessage = 'Scan Error: System data missing.';
+          // ADD TO TERMINAL: Failure message
+          this.terminalOverlay.addMessage(`[-E-]${scanStatusMessage}[-e-]`); // Format as error
         } else {
-          const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
-          //let status = `System: ${system.name} (${system.starType}) | Pos: ${this.player.position.systemX.toFixed(0)},${this.player.position.systemY.toFixed(0)}`;
+          const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY); // Use position component
           const distSqToObject = nearbyObject
-            ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY)
+            ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY) // Use position component
             : Infinity;
-          const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
+          const distSqToStar = this.player.distanceSqToSystemCoords(0, 0); // Use position component
           const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
 
           if (distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
+             // Target for system scan (near star) is a synthetic Star object.
             targetToScan = {
               type: 'Star',
-              name: system.name, // Use the system's name (often the star's name)
+              name: system.name, // Use the system's name
               starType: system.starType, // Get the star type from the system
             };
             scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
+            // ADD TO TERMINAL: Initial scanning message
+            this.terminalOverlay.addMessage(scanStatusMessage); // Use terminal overlay [cite: 38]
           } else if (nearbyObject && distSqToObject < scanThresholdSq) {
-            // Comment: Target for system scan (near object) is the Planet/Starbase object.
+            // Target for system scan (near object) is the Planet/Starbase object.
             targetToScan = nearbyObject;
             scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_OBJECT(nearbyObject.name);
+            // ADD TO TERMINAL: Initial scanning message
+            this.terminalOverlay.addMessage(scanStatusMessage); // Use terminal overlay [cite: 40]
           } else {
             scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_FAIL_NO_TARGET;
+            // ADD TO TERMINAL: Failure message
+            this.terminalOverlay.addMessage(scanStatusMessage); // Use terminal overlay [cite: 42]
           }
         }
       } else {
@@ -420,102 +433,102 @@ export class Game {
           `[Game:_handleScanRequest] Received 'system_object' scan request in unexpected state: ${currentState}`
         );
         scanStatusMessage = 'Cannot perform system scan now.';
+        // ADD TO TERMINAL: Failure message
+        this.terminalOverlay.addMessage(`[-E-]${scanStatusMessage}[-e-]`); // Format as error [cite: 44]
       }
     } else if (scanType === 'planet_surface') {
       if (currentState === 'planet') {
         const planet = this.stateManager.currentPlanet;
         if (planet) {
-          // Comment: Target for planet surface scan is the current Planet object.
+          // Target for planet surface scan is the current Planet object.
           targetToScan = planet;
-          scanStatusMessage = `Scanning surface of ${planet.name}...`;
+          // Format scan message as heading for terminal
+          scanStatusMessage = `[-H-]Scanning surface of ${planet.name}...[-h-]`;
+          // ADD TO TERMINAL: Initial scanning message
+          this.terminalOverlay.addMessage(scanStatusMessage); // Use terminal overlay [cite: 46]
         } else {
           logger.error('[Game:_handleScanRequest] Cannot scan planet surface: currentPlanet is null.');
           scanStatusMessage = 'Planet scan error: Data missing.';
+           // ADD TO TERMINAL: Failure message
+          this.terminalOverlay.addMessage(`[-E-]${scanStatusMessage}[-e-]`); // Format as error [cite: 48]
         }
       } else {
         logger.warn(
           `[Game:_handleScanRequest] Received 'planet_surface' scan request in unexpected state: ${currentState}`
         );
         scanStatusMessage = 'Cannot perform surface scan now.';
+         // ADD TO TERMINAL: Failure message
+        this.terminalOverlay.addMessage(`[-E-]${scanStatusMessage}[-e-]`); // Format as error [cite: 50]
       }
     }
 
-    // --- Trigger Popup or show message ---
+    // --- Trigger Scan Dump or show final message ---
     if (targetToScan) {
-      this.statusMessage = scanStatusMessage; // Show "Scanning..." message first
-      this._triggerScanPopup(targetToScan); // Then trigger popup
+      // Status bar message is less important now, terminal overlay shows progress
+      // this.statusMessage = scanStatusMessage; // Show "Scanning..." message first (optional)
+      // Call the new function to dump results to terminal
+      this._dumpScanToTerminal(targetToScan); // Call the renamed function [cite: 53, 54]
     } else {
-      this.statusMessage = scanStatusMessage; // Show error/failure message
+      // Failure message was already sent to terminal overlay above
+       this.statusMessage = scanStatusMessage; // Update status bar as well [cite: 55]
     }
   }
 
   // --- Helper to trigger and format popups ---
   // Accepts SolarSystem for hyperspace star scans
-  private _triggerScanPopup(target: ScanTarget | string): void {
+  private _dumpScanToTerminal(target: ScanTarget | string): void { // Renamed function [cite: 57]
     let lines: string[] | null = null;
     try {
       let targetName = 'Unknown Target';
-      // Check for SolarSystem instance (hyperspace scan result)
-      if (target instanceof SolarSystem) {
-        lines = this._formatStarScanPopup(target); // Pass system object
+      let isPlanetScan = false;
+
+      // Generate scan lines based on target type
+      if (target instanceof SolarSystem) { // Hyperspace scan result
+        lines = this._formatStarScanPopup(target);
         targetName = `Star (${target.name})`;
-      } else if (typeof target === 'object' && target !== null && 'type' in target && target.type === 'Star') {
-        // --- Explicit Type Assertion ---
-        // Assign target to a new const with the explicitly asserted type within this block
+      } else if (typeof target === 'object' && target !== null && 'type' in target && target.type === 'Star') { // System star scan
         const starTarget = target as { type: 'Star'; name: string; starType: string };
-        // --- End Assertion ---
-
-        // We need the *current* system context to format the popup fully
         const system = this.stateManager.currentSystem;
-
-        // Now use starTarget for property access
         if (system && system.name === starTarget.name && system.starType === starTarget.starType) {
-          lines = this._formatStarScanPopup(system); // Format using the current system
+          lines = this._formatStarScanPopup(system);
           targetName = `Star (${system.name})`;
         } else {
-          // Fallback if current system doesn't match the object data
-          logger.error('[Game:_triggerScanPopup] Mismatch between star object data and current system state.');
-          // Use starTarget for property access
-          lines = [
-            `--- STELLAR SCAN: ${starTarget.name} ---`,
-            `Spectral Type: ${starTarget.starType}`,
-            '(System context mismatch)',
-          ];
+          lines = [`[-E-]Error: System context mismatch for star scan.[-e-]`]; // Error line for terminal
           targetName = `Star (${starTarget.name})`;
         }
-      } else if (target instanceof Planet || target instanceof Starbase) {
-        // Handle Planet/Starbase
+      } else if (target instanceof Planet || target instanceof Starbase) { // Planet or Starbase scan
         targetName = target.name;
-        lines = target.getScanInfo();
-        if (target instanceof Planet && !target.scanned) {
-          target.scan();
-          lines = target.getScanInfo();
+        // Perform the scan if it's a planet and hasn't been scanned yet
+        if (target instanceof Planet) {
+           isPlanetScan = true; // Flag this for potential special formatting
+           if (!target.scanned) {
+               target.scan(); // Perform the scan
+           }
         }
+        lines = target.getScanInfo(); // Get the formatted lines
       } else {
-        logger.error('[Game:_triggerScanPopup] Unknown or invalid scan target type:', target);
-        this.statusMessage = 'Error: Unknown object type for scan.';
+        logger.error('[Game:_dumpScanToTerminal] Unknown or invalid scan target type:', target);
+        this.terminalOverlay.addMessage(`[-E-]Scan Error: Unknown object type.[-e-]`); // Error to terminal
         return;
       }
 
-      // Proceed if lines were generated
+      // Send lines to terminal overlay if generated
       if (lines && lines.length > 0) {
-        if (lines[lines.length - 1] !== '') lines.push('');
-        lines.push(CONFIG.POPUP_CLOSE_TEXT);
-        this.popupContent = lines;
-        this.popupTotalChars =
-          this.popupContent.reduce((sum, line) => sum + line.length, 0) + this.popupContent.length - 1;
-        this.popupState = 'opening';
-        this.popupOpenCloseProgress = 0;
-        this.popupTextProgress = 0;
-        this.forceFullRender = true;
-        logger.info(`[Game] Opening scan popup for ${targetName}`);
+        logger.info(`[Game] Dumping scan results for ${targetName} to terminal overlay.`);
+        lines.forEach(line => {
+            // Prepend planet scan lines with a marker if needed, or rely on STATUS_MESSAGE formatting
+            const formattedLine = isPlanetScan ? `${line}` : line; // Example prefix
+            this.terminalOverlay.addMessage(formattedLine); // Send each line [cite: 94]
+        });
       } else {
-        this.statusMessage = 'Error: Failed to generate scan information.';
-        logger.error('[Game:_triggerScanPopup] Generated scan lines array was null or empty for target:', targetName);
+         // Error message if lines are null or empty
+        this.terminalOverlay.addMessage(`[-E-]Error: Failed to generate scan information for ${targetName}.[-e-]`); // Use terminal overlay [cite: 60]
+        logger.error('[Game:_dumpScanToTerminal] Generated scan lines array was null or empty for target:', targetName);
       }
     } catch (error) {
-      logger.error(`[Game:_triggerScanPopup] Error generating scan popup content: ${error}`);
-      this.statusMessage = `Scan Error: ${error instanceof Error ? error.message : 'Failed to get info'}`;
+      logger.error(`[Game:_dumpScanToTerminal] Error generating or sending scan content: ${error}`);
+      const errorMsg = `[-E-]Scan Error: ${error instanceof Error ? error.message : 'Failed to get info'}[-e-]`;
+      this.terminalOverlay.addMessage(errorMsg); // Send error to terminal overlay [cite: 63]
     }
   }
 
@@ -524,20 +537,23 @@ export class Game {
     // ... (implementation unchanged) ...
     const lines: string[] = [];
     const starInfo = SPECTRAL_TYPES[system.starType];
-    lines.push(`--- STELLAR SCAN: ${system.name} ---`);
+    lines.push(``); // empty
+    lines.push(`[-H-]--- STELLAR SCAN: ${system.name} ---[-h-]`);
     lines.push(`Spectral Type: ${system.starType}`);
     if (starInfo) {
-      lines.push(`Temperature: ~${starInfo.temp.toLocaleString()} K`);
-      lines.push(`Luminosity: ~${starInfo.brightness.toFixed(1)} (Rel. Sol)`);
-      lines.push(`Mass: ~${starInfo.mass.toFixed(1)} Solar Masses`);
-      lines.push(`Colour Index: ${starInfo.colour}`);
+      lines.push(`Temperature: [-HL-]~${starInfo.temp.toLocaleString()} K[-hl-]`);
+      lines.push(`Luminosity: [-HL-]~${starInfo.brightness.toFixed(1)}[-hl-] (Rel. Sol)`);
+      lines.push(`Mass: [-HL-]~${starInfo.mass.toFixed(1)} Solar Masses[-hl-]`);
+      lines.push(`Colour Index: [-HL-]${starInfo.colour}[-hl-]`);
     } else {
-      lines.push(`Temperature: Unknown`);
-      lines.push(`Luminosity: Unknown`);
-      lines.push(`Mass: Unknown`);
+      lines.push(`Temperature: [-W-]Unknown[-w-]`);
+      lines.push(`Luminosity: [-W-]Unknown[-w-]`);
+      lines.push(`Mass: [-W-]Unknown[-w-]`);
     }
-    lines.push(`Planetary Bodies: ${system.planets.filter((p) => p !== null).length}`);
-    lines.push(`Facilities: ${system.starbase ? 'Starbase Detected' : 'None Detected'}`);
+    lines.push(`Planetary Bodies: [-HL-]${system.planets.filter((p) => p !== null).length}[-hl-]`);
+    lines.push(`Facilities: [-HL-]${system.starbase ? 'Starbase Detected' : 'None Detected'}[-hl-]`);
+    lines.push('[-H-]--- STELLAR SCAN COMPLETE---[-h-]');
+    lines.push(``); // empty
     return lines;
   }
 

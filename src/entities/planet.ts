@@ -245,7 +245,7 @@ export class Planet { //
     getScanInfo(): string[] { //
          logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`); //
         const infoLines: string[] = [ //
-             `--- SCAN REPORT: ${this.name} ---`, //
+             `[-H-]--- SCAN REPORT: ${this.name} ---[-h-]`, //
              `Type: ${this.type} Planet`, //
         ];
         if (this.type === 'GasGiant' || this.type === 'IceGiant') { //
@@ -253,36 +253,36 @@ export class Planet { //
              const compositionString = Object.entries(this.atmosphere.composition) //
                  .filter(([, p]) => p > 0).sort(([, a], [, b]) => b - a) //
                  .map(([gas, percent]) => `${gas}: ${percent}%`).join(', ') || "Trace Gases"; //
-            infoLines.push(`Diameter: ${this.diameter.toLocaleString()} km | Density: ${this.density.toFixed(2)} g/cm³ | Gravity: ${this.gravity.toFixed(2)} G (at 1 bar level)`); // Added Density
-            infoLines.push(`Effective Temp: ${this.surfaceTemp} K (cloud tops)`); //
-            infoLines.push(`Atmosphere: ${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar at cloud tops)`); //
-            infoLines.push(`Composition: ${compositionString}`); //
-            infoLines.push(`Hydrosphere: ${this.hydrosphere}`); //
-            infoLines.push(`Lithosphere: ${this.lithosphere}`); //
+            infoLines.push(`Diameter: [-HL-]${this.diameter.toLocaleString()} km[-hl-] | Density: [-HL-]${this.density.toFixed(2)} g/cm³[-hl-] | Gravity: [-HL-]${this.gravity.toFixed(2)} G[-hl-] (at 1 bar level)`); // Added Density
+            infoLines.push(`Effective Temp: [-HL-]${this.surfaceTemp}[-hl-] K (cloud tops)`); //
+            infoLines.push(`Atmosphere: [-HL-]${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar[-hl-] at cloud tops)`); //
+            infoLines.push(`Composition: [-HL-]${compositionString}[-hl-]`); //
+            infoLines.push(`Hydrosphere: [-HL-]${this.hydrosphere}[-hl-]`); //
+            infoLines.push(`Lithosphere: [-HL-]${this.lithosphere}[-hl-]`); //
             const topElements = Object.entries(this.elementAbundance)
                 .filter(([, abundance]) => abundance > 0)
                 .sort(([, a], [, b]) => b - a)
                 .slice(0, 3)
-                .map(([key]) => ELEMENTS[key]?.name || key)
+                .map(([key]) => `[-HL-]${ELEMENTS[key]?.name || key}[-hl-]`)
                 .join(', ');
-            infoLines.push(`Notable Resources: ${topElements || 'Trace Amounts'}`); //
-            infoLines.push(`Refueling: Possible via atmospheric scoop.`); //
+            infoLines.push(`Notable Resources: [-HL-]${topElements || 'Trace Amounts'}[-hl-]`); //
+            infoLines.push(`Refueling: Possible via [-HL-]atmospheric scoop[-hl-].`); //
         } else {
              // Solid planet specific info
-            infoLines.push(`Diameter: ${this.diameter.toLocaleString()} km | Density: ${this.density.toFixed(2)} g/cm³ | Gravity: ${this.gravity.toFixed(2)} G`); // Added Density
-            infoLines.push(`Surface Temp (Avg): ${this.surfaceTemp} K`); //
-            infoLines.push(`Atmosphere: ${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar)`); //
+            infoLines.push(`Diameter: [-HL-]${this.diameter.toLocaleString()} km[-hl-] | Density: [-HL-]${this.density.toFixed(2)} g/cm³[-hl-] | Gravity: [-HL-]${this.gravity.toFixed(2)} G[-hl-]`); // Added Density
+            infoLines.push(`Surface Temp (Avg): [-HL-]${this.surfaceTemp} K[-hl-]`); //
+            infoLines.push(`Atmosphere: [-HL-]${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar[-hl-])`); //
 
-            let compStr = "None"; //
+            let compStr = "[-HL-]None[-hl-]"; //
             const comp = this.atmosphere.composition; //
             if (comp && Object.keys(comp).length > 0 && comp['None'] !== 100) { //
                  compStr = Object.entries(comp) //
                      .filter(([, percent]) => percent > 0).sort(([, a], [, b]) => b - a) //
-                     .map(([gas, percent]) => `${gas}: ${percent}%`).join(', '); //
+                     .map(([gas, percent]) => `[-HL-]${gas}: ${percent}%[-hl-]`).join(', '); //
             }
-            infoLines.push(`Composition: ${compStr}`); //
-            infoLines.push(`Hydrosphere: ${this.hydrosphere}`); //
-            infoLines.push(`Lithosphere: ${this.lithosphere}`); //
+            infoLines.push(`Composition: [-HL-]${compStr}[-hl-]`); //
+            infoLines.push(`Hydrosphere: [-HL-]${this.hydrosphere}[-hl-]`); //
+            infoLines.push(`Lithosphere: [-HL-]${this.lithosphere}[-hl-]`); //
 
             if (this.scanned) { //
                  const topElements = Object.entries(this.elementAbundance)
@@ -291,10 +291,10 @@ export class Planet { //
                     .slice(0, 5) // Show top 5 perhaps
                     .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance})`) // Show name and abundance value
                     .join(', ');
-                 infoLines.push(`Mineral Scan: ${this.mineralRichness}. Primary: ${this.primaryResource || 'N/A'}.`); //
-                 infoLines.push(` -> Top Deposits: ${topElements || 'None Significant'}`); // Display the top elements string
+                 infoLines.push(`Mineral Scan: [-HL-]${this.mineralRichness}[-hl-]. Primary: [-HL-]${this.primaryResource || 'N/A'}[-hl-].`); //
+                 infoLines.push(`*** Top Deposits: [-HL-]${topElements || 'None Significant'}[-hl-]`); // Display the top elements string
             } else { //
-                 infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: ${this.mineralRichness}.`); //
+                 infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: [-HL-]${this.mineralRichness}[-hl-].`); //
             }
         }
         return infoLines; //
