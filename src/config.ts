@@ -14,6 +14,7 @@ export const CONFIG = {
   CHAR_SCALE: 2, // Scales the base font size
   FONT_SIZE_PX: 8, // Base size in pixels
   FONT_FAMILY: '"PxPlus_IBM_CGA", "Courier New", Courier, monospace',
+  THIN_FONT_FAMILY: '"PxPlus_IBM_CGAthin", "Courier New", Courier, monospace',
 
   // --- Player / Start ---
   PLAYER_START_X: 0, // Initial world X
@@ -125,7 +126,7 @@ export const CONFIG = {
   POPUP_PADDING_Y: 1, // Vertical padding in characters
 
   // --- Terminal Overlay ---
-  TRM_FG_COLOUR: '#00DD00', // Green text
+  TRM_FG_COLOUR: '#00AA66', // Green text
   TRM_TYPE_SPEED_SEC: 60,
   TRM_MSG_DURATION: 7500, // How long a completed message stays fully visible
   TRM_FADE_DURATION: 1500,

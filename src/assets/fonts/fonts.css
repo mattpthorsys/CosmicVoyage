@@ -8,3 +8,13 @@
     font-weight: normal;
     font-style: normal;
 }
+
+@font-face {
+    /* Give your new font a name */
+    font-family: 'PxPlus_IBM_CGAthin'; /* <<< CHANGE FONT NAME HERE */
+    /* Update paths to your new font files */
+    src:
+        url('./Web437_IBM_CGAthin.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+  }

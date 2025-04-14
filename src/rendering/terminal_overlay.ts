@@ -32,14 +32,14 @@ export class TerminalOverlay {
   private currentTypingProgress: number = 0; // Progress for the *currently* typing message
 
   constructor() {
-    this.font = `${CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE * 0.9}px ${CONFIG.FONT_FAMILY}`;
+    this.font = `${CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE * 0.9}px ${CONFIG.THIN_FONT_FAMILY}`;
     logger.debug('[TerminalOverlay] Initialized (Sequential Queue Mode).');
   }
 
   /** Sets character dimensions (call on resize) */
   updateCharDimensions(charHeight: number): void {
     this.charHeight = charHeight > 0 ? charHeight : 16;
-    this.font = `${this.charHeight * 0.9}px ${CONFIG.FONT_FAMILY}`;
+    this.font = `${this.charHeight * 0.9}px ${CONFIG.THIN_FONT_FAMILY}`;
   }
 
   /**
@@ -149,8 +149,8 @@ export class TerminalOverlay {
 
     const now = performance.now();
     const lineHeight = this.charHeight * 1.1;
-    const startY = bufferHeightPx - lineHeight * 0.5;
-    const startX = this.charHeight * 0.5;
+    const startY = bufferHeightPx - lineHeight;
+    const startX = this.charHeight;
 
     // --- Render messages ---
     let typingMessageFound: TerminalMessage | null = null;
