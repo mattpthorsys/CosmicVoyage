@@ -160,7 +160,7 @@ describe('Planet', () => {
             planet.ensureSurfaceReady();
 
             expect(planet.rgbPaletteCache).toBeInstanceOf(Array);
-            expect(planet.rgbPaletteCache?.length).toBe(PLANET_TYPES['GasGiant'].colours.length);
+            expect(planet.rgbPaletteCache?.length).toBe(PLANET_TYPES['GasGiant'].terrainColours.length);
             expect(planet.heightmap).toBeNull();
             expect(planet.heightLevelColors).toBeNull();
             expect(HeightmapGenerator).not.toHaveBeenCalled(); // Constructor NOT called

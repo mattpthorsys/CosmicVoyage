@@ -60,18 +60,18 @@ export const SPECTRAL_DISTRIBUTION: string[] = [
 
 // --- Planet Data ---
 interface PlanetTypeInfo {
-    colours: string[]; // Array of hex colour strings
+    terrainColours: string[]; // Array of hex colour strings
     baseTemp: number;
 }
 
 export const PLANET_TYPES: Record<string, PlanetTypeInfo> = {
-    'Molten':   { colours: ['#200000', '#401000', '#662000', '#993000', '#CC5000', '#FF8010', '#FFB030', '#FFE060', '#FFFF99'], baseTemp: 1500 },
-    'Rock':     { colours: ['#2b2b2b', '#404040', '#555555', '#6f6f6f', '#8a8a8a', '#a5a5a5', '#c0c0c0', '#dbdbdb', '#f6f6f6'], baseTemp: 300 },
-    'Oceanic':  { colours: ['#000020', '#001040', '#002060', '#003399', '#0050B2', '#3380CC', '#66B0FF', '#99D0FF', '#CCF0FF'], baseTemp: 280 },
-    'Lunar':    { colours: ['#303030', '#404040', '#505050', '#656565', '#7f7f7f', '#9a9a9a', '#b5b5b5', '#d0d0d0', '#ebebeb'], baseTemp: 250 },
-    'GasGiant': { colours: ['#6f3f1f', '#8B4513', '#A0522D', '#B86B42', '#CD853F', '#D2B48C', '#E8D8B8', '#F5EDE0', '#FFFFF0'], baseTemp: 150 },
-    'IceGiant': { colours: ['#003060', '#004080', '#0050A0', '#0060C0', '#3377D0', '#6699E0', '#99BBF0', '#CCE6FF', '#E6F2FF'], baseTemp: 100 },
-    'Frozen':   { colours: ['#A0C0C0', '#C0D0D0', '#E0E8E8', '#F0F4F4', '#FFFFFF', '#F8F8F8', '#E8E8E8', '#D8D8D8', '#C8C8C8'], baseTemp: 50 }
+    'Molten':   { terrainColours: ['#200000', '#401000', '#662000', '#993000', '#CC5000', '#FF8010', '#FFB030', '#FFE060', '#FFFF99'], baseTemp: 1500 },
+    'Rock':     { terrainColours: ['#2b2b2b', '#404040', '#555555', '#6f6f6f', '#8a8a8a', '#a5a5a5', '#c0c0c0', '#dbdbdb', '#f6f6f6'], baseTemp: 300 },
+    'Oceanic':  { terrainColours: ['#000020', '#001040', '#002060', '#003399', '#0050B2', '#3380CC', '#66B0FF', '#99D0FF', '#CCF0FF'], baseTemp: 280 },
+    'Lunar':    { terrainColours: ['#303030', '#404040', '#505050', '#656565', '#7f7f7f', '#9a9a9a', '#b5b5b5', '#d0d0d0', '#ebebeb'], baseTemp: 250 },
+    'GasGiant': { terrainColours: ['#6f3f1f', '#8B4513', '#A0522D', '#B86B42', '#CD853F', '#D2B48C', '#E8D8B8', '#F5EDE0', '#FFFFF0'], baseTemp: 150 },
+    'IceGiant': { terrainColours: ['#003060', '#004080', '#0050A0', '#0060C0', '#3377D0', '#6699E0', '#99BBF0', '#CCE6FF', '#E6F2FF'], baseTemp: 100 },
+    'Frozen':   { terrainColours: ['#A0C0C0', '#C0D0D0', '#E0E8E8', '#F0F4F4', '#FFFFFF', '#F8F8F8', '#E8E8E8', '#D8D8D8', '#C8C8C8'], baseTemp: 50 }
 };
 // Could use an enum, but string array is simple enough for now.
 export const ATMOSPHERE_DENSITIES: string[] = ['None', 'Thin', 'Earth-like', 'Thick'];

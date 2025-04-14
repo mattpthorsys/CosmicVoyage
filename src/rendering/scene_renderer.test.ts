@@ -165,7 +165,7 @@ export class SceneRenderer {
       }
       const planetViewX = Math.floor((planet.systemX - viewWorldStartX) / viewScale);
       const planetViewY = Math.floor((planet.systemY - viewWorldStartY) / viewScale);
-      const planetColor = PLANET_TYPES[planet.type]?.colours[4] || '#CCCCCC';
+      const planetColor = PLANET_TYPES[planet.type]?.terrainColours[4] || '#CCCCCC';
       this.drawingContext.drawCircle(
         planetViewX, planetViewY, 0, GLYPHS.PLANET_ICON, planetColor, null
       );
@@ -228,7 +228,7 @@ export class SceneRenderer {
       const planetPos = worldToMinimap(p.systemX, p.systemY);
       if (planetPos) {
         let planetIcon = '.';
-        const planetColor = PLANET_TYPES[p.type]?.colours[4] || '#CCCCCC';
+        const planetColor = PLANET_TYPES[p.type]?.terrainColours[4] || '#CCCCCC';
         this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOUR);
       }
     });

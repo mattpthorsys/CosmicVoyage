@@ -11,7 +11,7 @@ import { logger } from '../../utils/logger';
  */
 export function generateRgbPaletteCache(planetType: string): RgbColour[] | null {
     logger.debug(`[SurfColourGen:${planetType}] Generating/retrieving RGB palette cache...`);
-    const planetPaletteHex = PLANET_TYPES[planetType]?.colours;
+    const planetPaletteHex = PLANET_TYPES[planetType]?.terrainColours;
     if (!planetPaletteHex || planetPaletteHex.length === 0) {
         logger.error(`[SurfColourGen:${planetType}] Planet visual data (colour palette) missing or empty.`);
         return null;
