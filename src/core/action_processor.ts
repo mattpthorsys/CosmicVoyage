@@ -191,8 +191,9 @@ export class ActionProcessor {
       // break; // Not reachable due to return
       case 'MINE':
         // Publish event, Game or another system will handle context checks
-        eventManager.publish('MINE_REQUESTED'); // Define this event if needed
-        message = 'Attempting to mine...';
+        eventManager.publish(GameEvents.MINE_REQUESTED); // Define this event if needed
+        //message = 'Attempting to mine...';
+        message = null;
         break;
     }
     return message; // Return string message or null if not scanning/mining

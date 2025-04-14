@@ -16,6 +16,7 @@ import { SolarSystem } from '@/entities/solar_system';
 import { eventManager, GameEvents } from './event_manager';
 import { MovementSystem } from '@/systems/movement_system';
 import { CargoSystem } from '@/systems/cargo_systems';
+import { MiningSystem } from '@/systems/mining_system';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
@@ -31,6 +32,7 @@ export class Game {
   private readonly actionProcessor: ActionProcessor;
   private readonly movementSystem: MovementSystem;
   private readonly cargoSystem: CargoSystem;
+  private readonly miningSystem: MiningSystem;
 
   // Game Loop State, Status, Flags, Popup State... (remain the same)
   private lastUpdateTime: number = 0;
@@ -60,12 +62,13 @@ export class Game {
     // instantiate various systems
     this.movementSystem = new MovementSystem(this.player);
     this.cargoSystem = new CargoSystem();
+    this.miningSystem = new MiningSystem(this.player, this.stateManager, this.cargoSystem);
 
     // Subscribe to Game State Changes
     eventManager.subscribe(GameEvents.GAME_STATE_CHANGED, this._handleGameStateChange.bind(this));
     eventManager.subscribe(GameEvents.TRADE_REQUESTED, this._handleTradeRequest.bind(this));
     eventManager.subscribe(GameEvents.REFUEL_REQUESTED, this._handleRefuelRequest.bind(this));
-    eventManager.subscribe(GameEvents.MINE_REQUESTED, this._handleMineRequest.bind(this));
+    eventManager.subscribe(GameEvents.PLAYER_CARGO_ADDED, this._handleCargoUpdate.bind(this));
 
     // Add resize listener
     window.addEventListener('resize', this._handleResize.bind(this));
@@ -91,6 +94,11 @@ export class Game {
     // Reflect status messages potentially set by GameStateManager during transition
     this.statusMessage = this.stateManager.statusMessage || ''; // Use status from stateManager
     this.stateManager.statusMessage = ''; // Clear it after reading
+  }
+
+  private _handleCargoUpdate(data: { elementKey: string; amountAdded: number }): void {
+    logger.debug(`[Game] Cargo update event received for ${data.elementKey}. Triggering render.`);
+    this.forceFullRender = true; // Trigger re-render to show updated overlay potentially
   }
 
   private _handleResize(): void {
@@ -122,8 +130,11 @@ export class Game {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    if (this.miningSystem) {
+      this.miningSystem.destroy();
+    }
     if (this.movementSystem) {
-      this.movementSystem.destroy(); // Unsubscribe event listener
+      this.movementSystem.destroy();
     }
     eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
       message: 'Game stopped. Refresh to restart.',
@@ -928,132 +939,6 @@ export class Game {
         newCredits: this.player.resources.credits,
         amountChanged: -cost,
       });
-    }
-  }
-
-  /** Handles MINE_REQUESTED event */
-  private _handleMineRequest(): void {
-    if (this.stateManager.state !== 'planet') {
-      this.statusMessage = 'Mining requires landing on a planet surface.';
-      logger.warn('[Game:_handleMineRequest] Mine attempted outside of planet state.');
-      eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Not landed' });
-      return;
-    }
-
-    const planet = this.stateManager.currentPlanet;
-    if (!planet) {
-      this.statusMessage = 'Mining Error: Planet data missing!';
-      logger.error("[Game:_handleMineRequest] In 'planet' state but currentPlanet is null!");
-      eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Planet data missing' });
-      return;
-    }
-
-    // Check planet type and scan status (as done previously in ActionProcessor)
-    if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
-      this.statusMessage = `Cannot mine surface of ${planet.type}.`;
-      eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Invalid planet type' });
-      return;
-    }
-    if (!planet.scanned) {
-      this.statusMessage = `Scan required before mining. Richness potential: ${planet.mineralRichness}.`;
-      eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Scan required' });
-      return;
-    }
-
-    // --- Perform Mining Logic ---
-    try {
-      // Ensure surface data (including element map) is ready
-      planet.ensureSurfaceReady(); // Throws on failure
-      const elementMap = planet.surfaceElementMap; // Use the getter
-
-      if (!elementMap) {
-        throw new Error('Surface element map data is missing after ensureSurfaceReady.');
-      }
-
-      const currentX = this.player.position.surfaceX;
-      const currentY = this.player.position.surfaceY;
-
-      // Check bounds for safety
-      if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length) {
-        logger.error(
-          `[Game:_handleMineRequest] Player surface coordinates [${currentX}, <span class="math-inline">\{currentY\}\] are out of bounds for element map \[</span>{elementMap[0].length}x${elementMap.length}].`
-        );
-        throw new Error(
-          `Player position [<span class="math-inline">\{currentX\},</span>{currentY}] out of map bounds.`
-        );
-      }
-
-      // Check if already mined
-      if (planet.isMined(currentX, currentY)) {
-        this.statusMessage = STATUS_MESSAGES.PLANET_MINE_DEPLETED;
-        logger.debug(
-          `[Game:_handleMineRequest] Attempted to mine depleted location [<span class="math-inline">\{currentX\},</span>{currentY}] on ${planet.name}.`
-        );
-        eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Location depleted' });
-        return;
-      }
-
-      const elementKey = elementMap[currentY][currentX]; // Get element key from map
-
-      if (elementKey && elementKey !== '') {
-        // Check for non-empty string
-        const elementInfo = ELEMENTS[elementKey];
-        const baseAbundance = planet.elementAbundance[elementKey] || 0;
-
-        if (baseAbundance <= 0 && (!elementInfo || elementInfo.baseFrequency < 0.001)) {
-          this.statusMessage = `Trace amounts of ${elementInfo?.name || elementKey} found, but not enough to mine.`;
-          logger.warn(
-            `[Game:_handleMineRequest] Mining <span class="math-inline">\{elementKey\} at \[</span>{currentX}, ${currentY}], but planet overall abundance is 0 or element is extremely rare.`
-          );
-          eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Trace amounts' });
-        } else {
-          // Calculate yield
-          const abundanceFactor = Math.max(0.1, Math.sqrt(baseAbundance / 100));
-          const locationSeed = `mine_${currentX}_${currentY}`;
-          const minePRNG = planet.systemPRNG.seedNew(locationSeed);
-          let yieldAmount = CONFIG.MINING_RATE_FACTOR * abundanceFactor * minePRNG.random(0.6, 1.4);
-          yieldAmount = Math.max(1, Math.round(yieldAmount));
-
-          // Add to cargo
-          const actuallyAdded = this.cargoSystem.addItem(this.player.cargoHold, elementKey, yieldAmount);
-
-          if (actuallyAdded > 0) {
-            planet.markMined(currentX, currentY); // Mark as mined *after* successful yield
-            const currentTotalCargo = this.cargoSystem.getTotalUnits(this.player.cargoHold);
-            this.statusMessage = STATUS_MESSAGES.PLANET_MINE_SUCCESS(
-              actuallyAdded,
-              elementInfo?.name || elementKey,
-              currentTotalCargo,
-              this.player.cargoHold.capacity
-            );
-            if (currentTotalCargo >= this.player.cargoHold.capacity) {
-              this.statusMessage += ` Cargo hold full!`;
-            }
-            // Publish PLAYER_CARGO_ADDED event
-            eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, {
-              elementKey: elementKey,
-              amountAdded: actuallyAdded,
-              newAmount: this.player.cargoHold.items[elementKey] || 0,
-              newTotalCargo: currentTotalCargo,
-            });
-            // Trigger render update as surface overlay might change
-            this.forceFullRender = true;
-          } else {
-            // addCargo returned 0
-            this.statusMessage = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
-              this.cargoSystem.getTotalUnits(this.player.cargoHold),
-              this.player.cargoHold.capacity
-            );
-          }
-        }
-      } else {
-        this.statusMessage = 'Found no mineable elements at this location.';
-        eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'No elements found' });
-      }
-    } catch (mineError) {
-      logger.error(`[Game:_handleMineRequest] Error during MINE action on ${planet.name}:`, mineError);
-      this.statusMessage = `Mining Error: ${mineError instanceof Error ? mineError.message : String(mineError)}`;
-      eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: 'Error occurred' });
     }
   }
 } // End of Game class
