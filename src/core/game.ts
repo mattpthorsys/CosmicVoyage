@@ -17,6 +17,7 @@ import { eventManager, GameEvents } from './event_manager';
 import { MovementSystem } from '@/systems/movement_system';
 import { CargoSystem } from '@/systems/cargo_systems';
 import { MiningSystem } from '@/systems/mining_system';
+import { TerminalOverlay } from '../rendering/terminal_overlay';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
@@ -33,6 +34,7 @@ export class Game {
   private readonly movementSystem: MovementSystem;
   private readonly cargoSystem: CargoSystem;
   private readonly miningSystem: MiningSystem;
+  private readonly terminalOverlay: TerminalOverlay; // Add terminal overlay instance
 
   // Game Loop State, Status, Flags, Popup State... (remain the same)
   private lastUpdateTime: number = 0;
@@ -58,6 +60,7 @@ export class Game {
     // Pass player AND stateManager, as ActionProcessor still needs peekAtSystem
     this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG);
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager); // Pass dependencies
+    this.terminalOverlay = new TerminalOverlay(); // Instantiate the overlay
 
     // instantiate various systems
     this.movementSystem = new MovementSystem(this.player);
@@ -104,6 +107,7 @@ export class Game {
   private _handleResize(): void {
     logger.debug('[Game] Handling window resize...');
     this.renderer.fitToScreen();
+    this.terminalOverlay.updateCharDimensions(this.renderer.getCharHeightPx());
     this.forceFullRender = true;
     this.lastUpdateTime = performance.now();
   }
@@ -191,6 +195,19 @@ export class Game {
 
   // --- Input Processing (Handles Scan Logic) ---
   private _processInput(): void {
+    // --- TEMPORARY: Add a message on 'i' key press ---
+    if (this.inputManager.wasActionJustPressed('SCAN')) {
+      // Temporarily hijacking SCAN key 'v'
+      this.terminalOverlay.addMessage(`Test message added at ${new Date().toLocaleTimeString()}`);
+      return; // Consume the input for this frame
+    }
+    // --- Add 'i' Key Binding for Testing ---
+    if (this.inputManager.wasActionJustPressed('INFO_TEST')) {
+      // Use a descriptive temporary action name
+      this.terminalOverlay.addMessage(`Test message added at ${new Date().toLocaleTimeString()}`);
+      // Potentially prevent other actions if 'i' is pressed, or let them proceed
+      return; // Consume the input
+    }
     // --- Check for Popup Closing First --- (remains the same)
     if (this.popupState === 'active') {
       if (
@@ -563,6 +580,8 @@ export class Game {
         break;
     }
 
+    this.terminalOverlay.update(deltaTime);
+
     if (!blockGameUpdates) {
       try {
         const currentState = this.stateManager.state;
@@ -785,8 +804,15 @@ export class Game {
         );
       }
       this.renderer.renderBufferFull(false);
+
+      this.terminalOverlay.render(
+        (this.renderer as any).ctx, // Access the context (might need a getter)
+        (this.renderer as any).canvas.width, // Pass canvas dimensions
+        (this.renderer as any).canvas.height
+      );
     } catch (error) {
       logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!! ${error}`);
+
       this.stopGame();
       try {
         this._renderError(`FATAL RENDER ERROR: ${error instanceof Error ? error.message : String(error)}. Refresh.`);

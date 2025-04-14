@@ -75,6 +75,24 @@ export class RendererFacade {
     logger.info('[RendererFacade] Construction complete.');
   }
 
+  public getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  public getContext(): CanvasRenderingContext2D {
+    return this.ctx;
+  }
+
+  public getCharWidthPx(): number {
+      // Assuming both buffers have the same dimensions
+    return this.screenBuffer.getCharWidthPx();
+  }
+
+   public getCharHeightPx(): number {
+       // Assuming both buffers have the same dimensions
+    return this.screenBuffer.getCharHeightPx();
+   }
+
   /** Handler for the statusUpdateNeeded event. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _handleStatusUpdate(data: any): void {
