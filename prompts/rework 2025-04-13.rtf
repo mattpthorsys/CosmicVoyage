@@ -10,11 +10,11 @@ Methodology: We are following an incremental, multi-step refactoring plan, aimin
 
 Refactoring Plan (5 Steps):
 
-    Introduce Event Bus/Mediator: Decouple core components using a custom pub/sub event manager (src/core/event_manager.ts). (Status: Mostly Complete)
-    Refine State Management & Entity Logic: Separate data (Components) from logic (Systems), moving towards an ECS-lite pattern for entities like Player, Planet, etc. (Status: Not Started)
-    Modularize Generation Logic: Break down large generator files (planet_characteristics_generator.ts, surface_generator.ts) into smaller, focused modules. (Status: Not Started)
-    Separate Input Mapping from Action Execution: Ensure InputManager purely maps raw input to abstract actions, while Game (or dedicated systems) handles action consequences based on game state. (Status: Not Started)
-    Organize Configuration and Constants: Improve clarity and structure within config.ts and constants.ts. (Status: Not Started)
+    1. Introduce Event Bus/Mediator: Decouple core components using a custom pub/sub event manager (src/core/event_manager.ts). (Status: Complete)
+    2. Refine State Management & Entity Logic: Separate data (Components) from logic (Systems), moving towards an ECS-lite pattern for entities like Player, Planet, etc. (Status: Not Started)
+    3. Modularize Generation Logic: Break down large generator files (planet_characteristics_generator.ts, surface_generator.ts) into smaller, focused modules. (Status: Not Started)
+    4. Separate Input Mapping from Action Execution: Ensure InputManager purely maps raw input to abstract actions, while Game (or dedicated systems) handles action consequences based on game state. (Status: Not Started)
+    5. Organize Configuration and Constants: Improve clarity and structure within config.ts and constants.ts. (Status: Not Started)
 
 Current Progress (Step 1 Completion Details):
 

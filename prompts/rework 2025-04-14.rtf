@@ -1,0 +1,61 @@
+Okay, I understand. It's frustrating when things aren't working as expected, and sometimes a fresh start or perspective is helpful.
+
+Here is a detailed prompt summarizing the project context, refactoring plan, progress so far, and the current sticking point. You can use this to brief a new chat session.
+
+Context Prompt for Cosmic Voyage Refactoring (Continuation)
+
+Project: Cosmic Voyage (TypeScript/Vite ASCII space roguelike game)
+
+Overall Goal: Refactor the existing codebase to make it more modular, understandable, maintainable, and extensible.
+
+Methodology: We are following an incremental, multi-step refactoring plan, aiming to avoid breaking functionality at each stage and making small, verifiable changes.
+
+Refactoring Plan (5 Steps):
+
+    Introduce Event Bus/Mediator: Decouple core components using a custom pub/sub event manager (src/core/event_manager.ts). (Status: Complete)
+    Refine State Management & Entity Logic: Separate data (Components) from logic (Systems), moving towards an ECS-lite pattern, starting with the Player entity. (Status: Mostly Complete)
+    Modularize Generation Logic: Break down large generator files (planet_characteristics_generator.ts, surface_generator.ts) into smaller, focused modules. (Status: In Progress)
+    Separate Input Mapping from Action Execution: Ensure InputManager purely maps raw input to abstract actions, while Game (or dedicated systems) handles action consequences based on game state. (Status: Not Started)
+    Organize Configuration and Constants: Improve clarity and structure within config.ts and constants.ts. (Status: Not Started)
+
+Current Progress Details:
+
+    Step 1 (Event Bus):
+        EventManager created and implemented.
+        Decoupling achieved via events for:
+            GameStateManager state changes -> Game.
+            Game status updates -> RendererFacade (STATUS_UPDATE_NEEDED).
+            ActionProcessor state transition requests -> GameStateManager (ENTER_SYSTEM_REQUESTED, etc.).
+            ActionProcessor action requests (Trade, Refuel, Mine) -> Game (TRADE_REQUESTED, etc.).
+            Game player movement -> MovementSystem via MOVE_REQUESTED event.
+            Scan logic decoupled: ActionProcessor signals intent (requestScan, requestSystemPeek), Game handles context and triggers popup.
+        ActionProcessor dependency on GameStateManager for peekAtSystem removed (handled by Game via requestSystemPeek).
+        Redundant "initiated" messages removed from ActionProcessor.
+
+    Step 2 (State/Entity Logic - Player Focus):
+        Component interfaces defined (src/core/components.ts): PositionComponent, RenderComponent, ResourceComponent, CargoComponent.
+        Player class (src/core/player.ts) refactored: Properties replaced with instances of the above components.
+        Core classes (Game, GameStateManager, SceneRenderer) updated to access Player data via components (e.g., player.position.worldX, player.resources.fuel).
+        MovementSystem created (src/systems/movement_system.ts) and integrated: Handles MOVE_REQUESTED event and updates player.position. Original movement methods removed from Player.
+        CargoSystem created (src/systems/cargo_system.ts) and integrated: Provides cargo utility methods. Game handlers (_handleMineRequest, _handleTradeRequest) updated to use CargoSystem methods. Original cargo methods removed from Player.
+        ElementInfo interface in src/constants.ts updated to include required fields (typeHints, isGas, etc.), and ELEMENTS constant data populated.
+
+    Step 3 (Modularize Generation Logic):
+        planet_characteristics_generator.ts successfully modularized: Logic extracted into physical_generator.ts, atmosphere_generator.ts, temperature_calculator.ts, surface_descriptor.ts, and resource_generator.ts. The main file now imports and orchestrates calls to these modules.
+        Current Task Attempted: Started modularizing src/entities/planet/surface_generator.ts. The plan was to extract the heightmap generation logic into a new file (src/entities/planet/heightmap_generator.ts) and update surface_generator.ts to call it.
+        Stalling Point: Attempting to implement the extraction of heightmap generation caused bugs or issues that prevented proceeding. The last proposed action (which led to this pause) was to create heightmap_generator.ts and modify surface_generator.ts.
+
+Codebase State:
+
+    The latest verified code state corresponds to commit 4c39e4ed... (or the code provided just before the attempt to create heightmap_generator.ts). All changes related to Steps 1 and 2, and the successful modularization of planet_characteristics_generator.ts are included. Movement functionality is confirmed working with the MovementSystem.
+
+Instruction for New LLM Instance:
+
+Please review the current state and the plan for Step 3 (modularizing surface_generator.ts). The immediate next task was to extract the heightmap generation logic from surface_generator.ts into a new heightmap_generator.ts module. Verify the proposed code changes for this step and assist in debugging or correctly implementing this extraction to proceed with Step 3.
+
+Some things to remember:
+
+If a lot of detailed changes have happened within a single file, rewrite the whole file - and make it clear that the file is a whole rewrite.
+If it's a moderate cut and paste but not worth doing a full rewrite, indicate this clearly and also indicate clearly where to put the code.
+If it's just one or two lines, indicate this clearly and also indicate clearly where to put the code.
+Remember to take care and carefully consider each change.
