@@ -350,7 +350,7 @@ export class Game {
               }
             } else {
               logger.error('[Game:_processInput] Player in planet state but currentPlanet is null during move.');
-              this.statusMessage = STATUS_MESSAGES.ERROR_DATA_MISSING('Planet');
+              this.terminalOverlay.addMessage(STATUS_MESSAGES.ERROR_DATA_MISSING('Planet'));
               return; // Exit movement processing
             }
           }

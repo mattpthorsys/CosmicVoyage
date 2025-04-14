@@ -127,6 +127,10 @@ export const CONFIG = {
 
   // --- Terminal Overlay ---
   TRM_FG_COLOUR: '#00AA66', // Green text
+  TRM_COLOR_HEADING: '#00CCAA',
+  TRM_COLOR_HIGHLIGHT: '#00FF66',
+  TRM_COLOR_WARNING: '#A5A533',
+  TRM_COLOR_EMERGENCY: '#FF0033',
   TRM_TYPE_SPEED_SEC: 60,
   TRM_MSG_DURATION: 7500, // How long a completed message stays fully visible
   TRM_FADE_DURATION: 1500,
