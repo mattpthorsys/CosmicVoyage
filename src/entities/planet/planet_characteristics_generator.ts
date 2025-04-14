@@ -1,13 +1,10 @@
 // src/generation/planet_characteristics_generator.ts (Gravity calculated from Density & Diameter)
 
 import { PRNG } from '../../utils/prng';
-import { PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, MineralRichness, ELEMENTS, ElementInfo } from '../../constants';
+import { PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, MineralRichness, ELEMENTS } from '../../constants';
+import { generatePhysicalBase, calculateGravity } from './physical_generator';
 import { logger } from '../../utils/logger';
 import { Atmosphere, AtmosphereComposition } from '../../entities/planet';
-
-// Constants for Gravity Calculation
-const EARTH_DENSITY_GRAMS_PER_CM3 = 5.51;
-const EARTH_DIAMETER_KM = 12742;
 
 // Interface for the generated characteristics package - ADD elementAbundance & density
 export interface PlanetCharacteristics {
@@ -22,46 +19,6 @@ export interface PlanetCharacteristics {
     baseMinerals: number;
     elementAbundance: Record<string, number>;
 }
-
-/**
- * Generates physical properties: diameter and density.
- * Gravity will be calculated later based on these.
-*/
-function generatePhysicalBase(prng: PRNG, planetType: string): { diameter: number, density: number } {
-    const diameter = Math.max(1000, prng.randomInt(2000, 20000)); // km
-
-    // Generate density based on type (example ranges in g/cm³)
-    let density: number;
-    switch (planetType) {
-        case 'Molten': density = prng.random(4.0, 7.0); break; // Dense, metallic?
-        case 'Rock': density = prng.random(3.0, 6.0); break;   // Standard rock
-        case 'Oceanic': density = prng.random(2.8, 4.5); break; // Rock core, water/ice mantle
-        case 'Lunar': density = prng.random(2.5, 4.0); break;   // Lighter rock/regolith
-        case 'GasGiant': density = prng.random(0.5, 2.0); break; // Low average density
-        case 'IceGiant': density = prng.random(1.0, 2.5); break; // Ices are denser than H/He
-        case 'Frozen': density = prng.random(1.5, 3.5); break;   // Ices and some rock
-        default: density = prng.random(3.0, 5.5); // Default fallback
-    }
-    density = Math.max(0.1, density); // Ensure minimum density
-
-    logger.debug(`[CharGen] Physical Base: Diameter=${diameter}km, Density=${density.toFixed(2)} g/cm³`);
-    return { diameter, density };
-}
-
-/** Calculates surface gravity relative to Earth (1 G) */
-function calculateGravity(diameter: number, density: number): number {
-    // g_planet / g_earth = (density_planet * diameter_planet) / (density_earth * diameter_earth)
-    const relativeDensity = density / EARTH_DENSITY_GRAMS_PER_CM3;
-    const relativeDiameter = diameter / EARTH_DIAMETER_KM;
-    const gravity = relativeDensity * relativeDiameter; // Relative to Earth G
-
-    // Clamp gravity to a reasonable range (e.g., 0.01g to 10g?) to avoid extreme values
-    const clampedGravity = Math.max(0.01, Math.min(10.0, gravity));
-
-    logger.debug(`[CharGen] Gravity Calculation: RelDensity=${relativeDensity.toFixed(3)}, RelDiameter=${relativeDiameter.toFixed(3)} -> RawGravity=${gravity.toFixed(3)}g -> ClampedGravity=${clampedGravity.toFixed(3)}g`);
-    return clampedGravity;
-}
-
 
 /** Generates the atmosphere properties. */
 function generateAtmosphere(
@@ -412,11 +369,8 @@ export function generatePlanetCharacteristics(
 ): PlanetCharacteristics {
     logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toFixed(0)}, Star: ${parentStarType}...`);
 
-    // Generate diameter and density first
-    const { diameter, density } = generatePhysicalBase(planetPRNG, planetType);
-
-    // Calculate gravity based on diameter and density
-    const gravity = calculateGravity(diameter, density);
+    const { diameter, density } = generatePhysicalBase(planetPRNG, planetType); // Use imported function
+    const gravity = calculateGravity(diameter, density); // Use imported function
 
     // Proceed with other characteristics, passing the calculated gravity
     const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, parentStarType, orbitDistance);
