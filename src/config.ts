@@ -126,17 +126,25 @@ export const CONFIG = {
   POPUP_PADDING_Y: 1, // Vertical padding in characters
 
   // --- Terminal Overlay ---
-  TRM_FG_COLOUR: '#00AA66', // Green text
-  TRM_COLOR_HEADING: '#00CCAA',
-  TRM_COLOR_HIGHLIGHT: '#00FF66',
-  TRM_COLOR_WARNING: '#A5A533',
-  TRM_COLOR_EMERGENCY: '#FF0033',
+  // -- Dark Theme (Default) --
+  TRM_FG_COLOUR_DARK: '#00AA66',          // Green text
+  TRM_COLOR_HEADING_DARK: '#00CCAA',      // Lighter Green/Teal
+  TRM_COLOR_HIGHLIGHT_DARK: '#00FF66',   // Bright Green
+  TRM_COLOR_WARNING_DARK: '#A5A533',      // Yellow/Brown
+  TRM_COLOR_EMERGENCY_DARK: '#FF0033',    // Red
+  // -- Light Theme -- NEW! --
+  TRM_FG_COLOUR_LIGHT: '#005522',         // Dark Green text
+  TRM_COLOR_HEADING_LIGHT: '#007755',     // Medium Dark Green/Teal
+  TRM_COLOR_HIGHLIGHT_LIGHT: '#00AA00',   // Darker Bright Green
+  TRM_COLOR_WARNING_LIGHT: '#886600',     // Dark Yellow/Brown
+  TRM_COLOR_EMERGENCY_LIGHT: '#CC0000',   // Dark Red
+  // -- Common Settings --
   TRM_TYPE_SPEED_SEC: 60,
-  TRM_MSG_DURATION: 7500, // How long a completed message stays fully visible
+  TRM_MSG_DURATION: 7500,                 // How long a completed message stays fully visible
   TRM_FADE_DURATION: 1500,
   TRM_MAX_MESSAGES: 15,
-  TRM_CURSOR_CHAR: '█', // Blinking cursor character
-  TRM_CURSOR_RATE_MS: 200, // Cursor blink interval
+  TRM_CURSOR_CHAR: '█',                   // Blinking cursor character
+  TRM_CURSOR_RATE_MS: 200,                // Cursor blink interval
 
   SYSTEM_EDGE_LEAVE_FACTOR: 0.8, // Player must be beyond this fraction of edgeRadius to leave
   STAR_SCAN_DISTANCE_MULTIPLIER: 2.0, // Scan star if distance < LANDING_DISTANCE * this value

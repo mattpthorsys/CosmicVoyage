@@ -255,7 +255,7 @@ export class Planet { //
                  .map(([gas, percent]) => `${gas}: ${percent}%`).join(', ') || "Trace Gases"; //
             infoLines.push(`Diameter: <hl>${this.diameter.toLocaleString()} km</hl> | Density: <hl>${this.density.toFixed(2)} g/cm³</hl> | Gravity: <hl>${this.gravity.toFixed(2)} G</hl> (at 1 bar level)`); // Added Density
             infoLines.push(`Effective Temp: <hl>${this.surfaceTemp}</hl> K (cloud tops)`); //
-            infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar</hl> at cloud tops)`); //
+            infoLines.push(`Atmosphere: <hl>${this.atmosphere.density}</hl> (<hl>${this.atmosphere.pressure.toFixed(2)}</hl> bar at cloud tops)`); //
             infoLines.push(`Composition: <hl>${compositionString}</hl>`); //
             infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`); //
             infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`); //
@@ -297,6 +297,7 @@ export class Planet { //
                  infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`); //
             }
         }
+        infoLines.push('--- SCAN COMPLETE ---');
         return infoLines; //
     }
 

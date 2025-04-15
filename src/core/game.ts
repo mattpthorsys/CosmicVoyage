@@ -478,6 +478,9 @@ export class Game {
   // Accepts SolarSystem for hyperspace star scans
   private _dumpScanToTerminal(target: ScanTarget | string): void { // Renamed function [cite: 57]
     let lines: string[] | null = null;
+
+    this.terminalOverlay.clear(); // Clear the terminal overlay before displaying new content
+
     try {
       let targetName = 'Unknown Target';
       let isPlanetScan = false;
@@ -515,6 +518,7 @@ export class Game {
       // Send lines to terminal overlay if generated
       if (lines && lines.length > 0) {
         logger.info(`[Game] Dumping scan results for ${targetName} to terminal overlay.`);
+        this.terminalOverlay.clear();
         lines.forEach(line => {
             // Prepend planet scan lines with a marker if needed, or rely on STATUS_MESSAGE formatting
             const formattedLine = isPlanetScan ? `${line}` : line; // Example prefix
