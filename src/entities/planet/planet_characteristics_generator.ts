@@ -23,6 +23,7 @@ export interface PlanetCharacteristics {
     mineralRichness: MineralRichness;
     baseMinerals: number;
     elementAbundance: Record<string, number>;
+    magneticFieldStrength: number
 }
 
 /** Main function to generate all characteristics. */
@@ -46,11 +47,46 @@ export function generatePlanetCharacteristics(
     const baseMinerals = getBaseMinerals(planetPRNG, mineralRichness); // Use helper if needed
     const elementAbundance = calculateElementAbundance(planetPRNG, planetType, surfaceTemp, lithosphere, gravity);
 
+    let magneticFieldStrength: number = 0;
+    const fieldRoll = planetPRNG.random(); // Roll for presence/strength modifier
+
+    switch (planetType) {
+        case 'Molten':
+        case 'Rock':
+        case 'Oceanic':
+            // Higher chance and potentially stronger field for terrestrial planets
+            if (fieldRoll < 0.7) { // 70% chance of having a field
+                // Scale strength roughly with density/size (very basic proxy for core state)
+                const sizeFactor = Math.max(0.5, diameter / 12000); // Relative to Earth-ish size
+                const densityFactor = Math.max(0.5, density / 4.0); // Relative to moderate density
+                magneticFieldStrength = planetPRNG.random(10, 80) * sizeFactor * densityFactor; // µT
+            }
+            break;
+        case 'GasGiant':
+        case 'IceGiant':
+            // Gas/Ice giants often have strong, complex fields
+             if (fieldRoll < 0.9) { // 90% chance
+                magneticFieldStrength = planetPRNG.random(100, 2000); // µT - potentially much stronger
+             }
+            break;
+        case 'Frozen':
+        case 'Lunar':
+            // Lower chance, weaker field for frozen/inactive bodies
+             if (fieldRoll < 0.15) { // 15% chance
+                magneticFieldStrength = planetPRNG.random(0.1, 5); // µT - weak field
+             }
+            break;
+    }
+    // Ensure positive value
+    magneticFieldStrength = Math.max(0, magneticFieldStrength);
+    logger.debug(`[CharGen:${planetType}] Magnetic Field Generated: ${magneticFieldStrength.toFixed(1)} µT (Roll: ${fieldRoll.toFixed(2)})`);
+
+
     logger.info(`[CharGen] Characteristics generated for ${planetType}. Gravity: ${gravity.toFixed(2)}g, Richness Category: ${mineralRichness}.`);
 
     return {
         diameter,
-        density, // Include density
+        density, // Include densitygeneratePlanetCharacteristics generatePlanetCharacteristics 
         gravity, // Use calculated gravity
         atmosphere,
         surfaceTemp,
@@ -58,6 +94,7 @@ export function generatePlanetCharacteristics(
         lithosphere,
         mineralRichness,
         baseMinerals,
-        elementAbundance
+        elementAbundance,
+        magneticFieldStrength 
     };
 }
