@@ -1,7 +1,6 @@
-// src/generation/planet_characteristics_generator.ts (Gravity calculated from Density & Diameter)
-
+// src/entities/planet/planet_characteristics_generator.ts
 import { PRNG } from '../../utils/prng';
-import { MineralRichness, ELEMENTS } from '../../constants';
+import { MineralRichness, ELEMENTS, GRAVITATIONAL_CONSTANT_G, BOLTZMANN_CONSTANT_K } from '../../constants'; // <<< Import G and K
 import { generatePhysicalBase, calculateGravity } from './physical_generator';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet';
@@ -10,20 +9,21 @@ import { calculateSurfaceTemp } from './temperature_calculator';
 import { generateHydrosphere, generateLithosphere } from './surface_descriptor';
 import { calculateElementAbundance, determineMineralRichness, getBaseMinerals } from './resource_generator';
 
-
-// Interface for the generated characteristics package - ADD elementAbundance & density
+// --- Interface (ensure magneticFieldStrength is added from previous step) ---
 export interface PlanetCharacteristics {
     diameter: number;
-    density: number; // NEW: Density in g/cm³
-    gravity: number; // Now calculated
+    density: number;
+    gravity: number;
+    mass: number;
+    escapeVelocity: number;
     atmosphere: Atmosphere;
-    surfaceTemp: number; // Calculated *after* atmosphere
+    surfaceTemp: number;
     hydrosphere: string;
     lithosphere: string;
     mineralRichness: MineralRichness;
     baseMinerals: number;
     elementAbundance: Record<string, number>;
-    magneticFieldStrength: number
+    magneticFieldStrength: number;
 }
 
 /** Main function to generate all characteristics. */
@@ -33,61 +33,69 @@ export function generatePlanetCharacteristics(
     planetPRNG: PRNG,
     parentStarType: string
 ): PlanetCharacteristics {
-    logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toFixed(0)}, Star: ${parentStarType}...`);
+    logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toExponential(2)}m, Star: ${parentStarType}...`);
 
-    const { diameter, density } = generatePhysicalBase(planetPRNG, planetType); // Use imported function
-    const gravity = calculateGravity(diameter, density); // Use imported function
+    // 1. Generate Base Physical Properties
+    const { diameter, density } = generatePhysicalBase(planetPRNG, planetType);
+    const radius_m = diameter * 1000 / 2; // Radius in meters
+    const density_kg_m3 = density * 1000; // Density in kg/m^3
 
-    // Proceed with other characteristics, passing the calculated gravity
-    const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, parentStarType, orbitDistance);
+    // 2. Calculate Mass (kg)
+    const volume_m3 = (4 / 3) * Math.PI * Math.pow(radius_m, 3);
+    const mass_kg = volume_m3 * density_kg_m3;
+
+    // 3. Calculate Gravity (relative to Earth G) & Escape Velocity (m/s)
+    const gravity = calculateGravity(diameter, density); // Already calculates relative G
+    const escapeVelocity = Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass_kg) / radius_m);
+
+    logger.debug(`[CharGen:${planetType}] Calculated Mass: ${mass_kg.toExponential(3)} kg, Escape Velocity: ${escapeVelocity.toFixed(0)} m/s`);
+
+    // 4. Generate Atmosphere (NOW pass escape velocity)
+    const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance);
+
+    // 5. Calculate Final Surface Temperature (uses atmosphere)
     const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere);
+
+    // 6. Generate Surface Descriptors (use final temp)
     const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere);
     const lithosphere = generateLithosphere(planetPRNG, planetType);
+
+    // 7. Generate Resources (use final temp, lithosphere, gravity)
     const mineralRichness = determineMineralRichness(planetPRNG, planetType);
-    const baseMinerals = getBaseMinerals(planetPRNG, mineralRichness); // Use helper if needed
+    const baseMinerals = getBaseMinerals(planetPRNG, mineralRichness);
     const elementAbundance = calculateElementAbundance(planetPRNG, planetType, surfaceTemp, lithosphere, gravity);
 
+    // 8. Generate Magnetic Field (from previous step)
     let magneticFieldStrength: number = 0;
-    const fieldRoll = planetPRNG.random(); // Roll for presence/strength modifier
-
-    switch (planetType) {
-        case 'Molten':
-        case 'Rock':
-        case 'Oceanic':
-            // Higher chance and potentially stronger field for terrestrial planets
-            if (fieldRoll < 0.7) { // 70% chance of having a field
-                // Scale strength roughly with density/size (very basic proxy for core state)
-                const sizeFactor = Math.max(0.5, diameter / 12000); // Relative to Earth-ish size
-                const densityFactor = Math.max(0.5, density / 4.0); // Relative to moderate density
-                magneticFieldStrength = planetPRNG.random(10, 80) * sizeFactor * densityFactor; // µT
-            }
-            break;
-        case 'GasGiant':
-        case 'IceGiant':
-            // Gas/Ice giants often have strong, complex fields
-             if (fieldRoll < 0.9) { // 90% chance
-                magneticFieldStrength = planetPRNG.random(100, 2000); // µT - potentially much stronger
-             }
-            break;
-        case 'Frozen':
-        case 'Lunar':
-            // Lower chance, weaker field for frozen/inactive bodies
-             if (fieldRoll < 0.15) { // 15% chance
-                magneticFieldStrength = planetPRNG.random(0.1, 5); // µT - weak field
-             }
-            break;
+    // ... (insert magnetic field generation logic here as before, using diameter/density) ...
+    const fieldRoll = planetPRNG.random();
+    switch (planetType) { /* ... (same logic as previous step) ... */
+         case 'Molten': case 'Rock': case 'Oceanic':
+            if (fieldRoll < 0.7) {
+                const sizeFactor = Math.max(0.5, diameter / 12000);
+                const densityFactor = Math.max(0.5, density / 4.0);
+                magneticFieldStrength = planetPRNG.random(10, 80) * sizeFactor * densityFactor;
+            } break;
+        case 'GasGiant': case 'IceGiant':
+             if (fieldRoll < 0.9) magneticFieldStrength = planetPRNG.random(100, 2000);
+             break;
+        case 'Frozen': case 'Lunar':
+             if (fieldRoll < 0.15) magneticFieldStrength = planetPRNG.random(0.1, 5);
+             break;
     }
-    // Ensure positive value
     magneticFieldStrength = Math.max(0, magneticFieldStrength);
-    logger.debug(`[CharGen:${planetType}] Magnetic Field Generated: ${magneticFieldStrength.toFixed(1)} µT (Roll: ${fieldRoll.toFixed(2)})`);
+    logger.debug(`[CharGen:${planetType}] Magnetic Field Generated: ${magneticFieldStrength.toFixed(1)} µT`);
 
 
-    logger.info(`[CharGen] Characteristics generated for ${planetType}. Gravity: ${gravity.toFixed(2)}g, Richness Category: ${mineralRichness}.`);
+    logger.info(`[CharGen] Characteristics generated for ${planetType}. Gravity: ${gravity.toFixed(2)}g, EscapeVel: ${escapeVelocity.toFixed(0)} m/s, Richness: ${mineralRichness}.`);
 
+    // Return the complete characteristics object
     return {
         diameter,
-        density, // Include densitygeneratePlanetCharacteristics generatePlanetCharacteristics 
-        gravity, // Use calculated gravity
+        density,
+        gravity,
+        mass: mass_kg, // <<< Include mass
+        escapeVelocity, // <<< Include escape velocity
         atmosphere,
         surfaceTemp,
         hydrosphere,
@@ -95,6 +103,6 @@ export function generatePlanetCharacteristics(
         mineralRichness,
         baseMinerals,
         elementAbundance,
-        magneticFieldStrength 
+        magneticFieldStrength
     };
 }

@@ -22,10 +22,11 @@ export const GLYPHS = {
 
 // --- Physical Constants (MKS Units) ---
 export const GRAVITATIONAL_CONSTANT_G = 6.67430e-11; // m^3 kg^-1 s^-2
-export const SOLAR_MASS_KG = 1.98847e30; // kg
-export const AU_IN_METERS = 1.495978707e11; // meters
-export const EARTH_RADIUS_KM = 6371; // km (Reference) - Can be converted to meters if needed elsewhere
-export const SOLAR_RADIUS_M = 6.957e8; // metres
+export const SOLAR_MASS_KG = 1.98847e30;            // kg
+export const AU_IN_METERS = 1.495978707e11;         // meters
+export const EARTH_RADIUS_KM = 6371;                // km (Reference) - Can be converted to meters if needed elsewhere
+export const SOLAR_RADIUS_M = 6.957e8;              // metres
+export const BOLTZMANN_CONSTANT_K = 1.380649e-23;   // J/K (Joules per Kelvin)
 
 // --- Mineral Richness ---
 // Using a string enum for type safety and readability
