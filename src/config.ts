@@ -6,7 +6,7 @@
 export const CONFIG = {
   // --- Core Settings ---
   SEED: 'haunting beauty',
-  LOG_LEVEL: 'DEBUG', // Set to DEBUG to capture more detail during testing, INFO for release
+  LOG_LEVEL: 'INFO', // Set to DEBUG to capture more detail during testing, INFO for release
   TARGET_RESOLUTION_WIDTH: 1920, // Target reference width (scaling not fully implemented based on this yet)
 
   // --- Font & Display ---
@@ -27,9 +27,9 @@ export const CONFIG = {
   INITIAL_CREDITS: 1000,
 
   // --- Movement / Physics ---
-  SYSTEM_MOVE_INCREMENT: 5000, // World units per input step in system view (adjust for speed)
+  SYSTEM_MOVE_INCREMENT: 3e10, // World units per input step in system view (adjust for speed)
   SYSTEM_ORBIT_SPEED_FACTOR: 0.01, // How fast planets orbit (higher is faster)
-  LANDING_DISTANCE: 30000, // Max distance from planet/starbase center to allow landing action prompt //
+  LANDING_DISTANCE: 8.3e10, // Max distance from planet/starbase center to allow landing action prompt //
   FINE_CONTROL_FACTOR: 0.1, // Speed reduction factor for fine movement (e.g., holding Shift)
   BOOST_FACTOR: 5.0, // Multiplier for speed when boosting
 
@@ -81,13 +81,13 @@ export const CONFIG = {
   CELL_BLOCK_SIZE: 1,
 
   // --- System View ---
-  SYSTEM_VIEW_SCALE: 1000, // World units per character cell in system view //
+  SYSTEM_VIEW_SCALE: 4.987e9, // Approx. (1 AU in meters / 30 cells)
   SYSTEM_EDGE_RADIUS_FACTOR: 1.5,
   MAX_PLANETS_PER_SYSTEM: 9,
   PLANET_MAIN_VIEW_RADIUS: 3,
   MINIMAP_SIZE_FACTOR: 0.15,
   STARBASE_PROBABILITY: 0.2,
-  STARBASE_ORBIT_DISTANCE: 75000,
+  STARBASE_ORBIT_DISTANCE: 1.496e11,
 
   // --- System View Star Background ---
   STAR_BACKGROUND_COLORS: [
@@ -97,8 +97,8 @@ export const CONFIG = {
   ],
   STAR_BACKGROUND_CHARS: ['.', ',', '`'],
   STAR_BACKGROUND_LAYERS: [
-    { factor: 0.1, density: 0.006, scale: 1000 },
-    { factor: 0.05, density: 0.004, scale: 800 },
+    { factor: 1e-8, density: 0.006, scale: 1000 },
+    { factor: 5e-8, density: 0.004, scale: 800 },
   ],
 
   // --- Colours ---

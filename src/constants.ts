@@ -20,6 +20,13 @@ export const GLYPHS = {
     STARBASE_ICON: '#'
 } as const; // Make properties readonly and literal types
 
+// --- Physical Constants (MKS Units) ---
+export const GRAVITATIONAL_CONSTANT_G = 6.67430e-11; // m^3 kg^-1 s^-2
+export const SOLAR_MASS_KG = 1.98847e30; // kg
+export const AU_IN_METERS = 1.495978707e11; // meters
+export const EARTH_RADIUS_KM = 6371; // km (Reference) - Can be converted to meters if needed elsewhere
+export const SOLAR_RADIUS_M = 6.957e8; // metres
+
 // --- Mineral Richness ---
 // Using a string enum for type safety and readability
 export enum MineralRichness {
@@ -35,24 +42,61 @@ export enum MineralRichness {
 // Define an interface for the structure of star type data
 // *** ADDED mass property ***
 interface SpectralTypeInfo {
-    temp: number;
-    colour: string;
-    char: string; // Explicitly allow any of the star glyphs
-    brightness: number;
-    mass: number; // Mass in solar masses (relative to Sol=1.0)
+    temp: number;       // Kelvin
+    colour: string;     // Hex colour
+    char: string;       // Glyph
+    brightness: number; // Relative luminosity factor (consider replacing/recalculating based on Temp/Radius later)
+    mass: number;       // kg
+    radius: number;     // Radius in METERS (m)
 }
 
-// Use Record<string, T> for dictionary-like objects with string keys
-// *** ADDED mass values (examples) ***
+// Properties based on typical main-sequence values (V luminosity class)
+// Mass and Radius derived from search results (Wikipedia tables mostly)
 export const SPECTRAL_TYPES: Record<string, SpectralTypeInfo> = {
-    'O': { temp: 40000, colour: '#6A8DFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.5, mass: 60.0 }, // Example mass
-    'B': { temp: 20000, colour: '#8FABFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.3, mass: 10.0 }, // Example mass
-    'A': { temp: 8500,  colour: '#DDE5FF', char: GLYPHS.STAR_MEDIUM, brightness: 1.1, mass: 2.0 },  // Example mass
-    'F': { temp: 6500,  colour: '#FFFFFF', char: GLYPHS.STAR_MEDIUM, brightness: 1.0, mass: 1.3 },  // Example mass
-    'G': { temp: 5500,  colour: '#FFFACD', char: GLYPHS.STAR_MEDIUM, brightness: 0.9, mass: 1.0 },  // Example mass (like Sol)
-    'K': { temp: 4500,  colour: '#FFC864', char: GLYPHS.STAR_DIM,   brightness: 0.7, mass: 0.7 },  // Example mass
-    'M': { temp: 3000,  colour: '#FF9A5A', char: GLYPHS.STAR_DIM,   brightness: 0.5, mass: 0.3 },  // Example mass
-};
+    'O': { // Representative: O8V
+      temp: 35100, // Existing temp seems fine for O8V range
+      colour: '#6A8DFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.5, // Existing values
+      mass: 23.00 * SOLAR_MASS_KG, // Mass for O8V
+      radius: 8.50 * SOLAR_RADIUS_M   // Radius for O8V
+    },
+    'B': { // Representative: B3V
+      temp: 17000, // Existing temp seems fine for B3V range
+      colour: '#8FABFF', char: GLYPHS.STAR_BRIGHT, brightness: 1.3, // Existing values
+      mass: 5.40 * SOLAR_MASS_KG,  // Mass for B3V
+      radius: 3.61 * SOLAR_RADIUS_M   // Radius for B3V
+    },
+    'A': { // Representative: A5V
+      temp: 8100,  // Existing temp seems fine for A5V range
+      colour: '#DDE5FF', char: GLYPHS.STAR_MEDIUM, brightness: 1.1, // Existing values
+      mass: 1.86 * SOLAR_MASS_KG,  // Mass for A5V
+      radius: 1.785 * SOLAR_RADIUS_M  // Radius for A5V
+    },
+    'F': { // Representative: F5V
+      temp: 6550,  // Existing temp seems fine for F5V range
+      colour: '#FFFFFF', char: GLYPHS.STAR_MEDIUM, brightness: 1.0, // Existing values
+      mass: 1.33 * SOLAR_MASS_KG,  // Mass for F5V
+      radius: 1.473 * SOLAR_RADIUS_M  // Radius for F5V
+    },
+    'G': { // Representative: G2V (The Sun)
+      temp: 5770, // Adjusted slightly towards standard G2V temp
+      colour: '#FFFACD', char: GLYPHS.STAR_MEDIUM, brightness: 0.9, // Existing values (brightness might be slightly off now)
+      mass: 1.00 * SOLAR_MASS_KG,  // Mass for G2V (Sun)
+      radius: 1.00 * SOLAR_RADIUS_M  // Radius for G2V (Sun) - Using 1.0 R_sol for simplicity
+    },
+    'K': { // Representative: K5V
+      temp: 4440,  // Existing temp seems fine for K5V range
+      colour: '#FFC864', char: GLYPHS.STAR_DIM, brightness: 0.7, // Existing values
+      mass: 0.70 * SOLAR_MASS_KG,  // Mass for K5V
+      radius: 0.701 * SOLAR_RADIUS_M  // Radius for K5V
+    },
+    'M': { // Representative: M2V
+      temp: 3560,  // Existing temp fine for M2V range
+      colour: '#FF9A5A', char: GLYPHS.STAR_DIM, brightness: 0.5, // Existing values
+      mass: 0.44 * SOLAR_MASS_KG,  // Mass for M2V
+      radius: 0.446 * SOLAR_RADIUS_M  // Radius for M2V
+    },
+  };
+
 // Define the keys explicitly for type safety if needed, though string[] works fine.
 export const SPECTRAL_DISTRIBUTION: string[] = [
     'M', 'M', 'M', 'M', 'M', 'M', 'M', 'M', 'K', 'K', 'K', 'G', 'G', 'F', 'A', 'B', 'O'

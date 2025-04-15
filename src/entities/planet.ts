@@ -289,7 +289,7 @@ export class Planet { //
                     .filter(([, abundance]) => abundance > 0)
                     .sort(([, a], [, b]) => b - a)
                     .slice(0, 5) // Show top 5 perhaps
-                    .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance})`) // Show name and abundance value
+                    .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance.toFixed(2)})`) // Show name and abundance value
                     .join(', ');
                  infoLines.push(`Mineral Scan: <hl>${this.mineralRichness}</hl>. Primary: <hl>${this.primaryResource || 'N/A'}</hl>.`); //
                  infoLines.push(`*** Top Deposits: <hl>${topElements || 'None Significant'}</hl>`); // Display the top elements string
@@ -297,7 +297,7 @@ export class Planet { //
                  infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`); //
             }
         }
-        infoLines.push('--- SCAN COMPLETE ---');
+        infoLines.push('<h>--- SCAN COMPLETE ---</h>'); //
         return infoLines; //
     }
 
