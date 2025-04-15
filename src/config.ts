@@ -1,12 +1,12 @@
 /* FILE: src/config.ts */
-// src/config.ts (Adjusted Star Background Colors)
+// src/config.ts (Restored STATUS_BAR_BG_COLOUR)
 
 // Basic types for configuration values - can be expanded later if needed
 // We are letting TypeScript infer most types here for simplicity during the initial port.
 export const CONFIG = {
   // --- Core Settings ---
   SEED: 'haunting beauty',
-  LOG_LEVEL: 'INFO', // Set to DEBUG to capture more detail during testing, INFO for release
+  LOG_LEVEL: 'DEBUG', // Set to DEBUG to capture more detail during testing, INFO for release
   TARGET_RESOLUTION_WIDTH: 1920, // Target reference width (scaling not fully implemented based on this yet)
 
   // --- Font & Display ---
@@ -62,7 +62,6 @@ export const CONFIG = {
 
   // --- Planet Surface ---
   PLANET_MAP_BASE_SIZE: 256, // Target size for heightmap generation (actual will be power of 2 + 1)
-  // PLANET_MAP_DETAIL_SCALE: 1.0, // Controls zoom level on surface (not currently used) //
   PLANET_SURFACE_ROUGHNESS: 0.7, // Diamond-Square roughness factor
   PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colours
   MINING_RATE_FACTOR: 5, // Base number of minerals mined per action (scales with richness)
@@ -74,82 +73,92 @@ export const CONFIG = {
   NEBULA_INTENSITY: 1, // How much nebula colour affects background (0-1)
   NEBULA_SPARSITY: 0.4, // Probability of a nebula pixel being black (0-1)
   NEBULA_COLOURS: [
-    // Base colours for nebula interpolation //
     { r: 90, g: 0, b: 70 },
     { r: 0, g: 10, b: 90 },
     { r: 0, g: 80, b: 10 },
   ],
   NEBULA_CACHE_PRECISION: 2, // Decimal places for Perlin noise cache keys
-  CELL_BLOCK_SIZE: 1, // Optimization: Draw background in blocks (reduces Perlin calls)
+  CELL_BLOCK_SIZE: 1,
 
   // --- System View ---
   SYSTEM_VIEW_SCALE: 1000, // World units per character cell in system view //
-  SYSTEM_EDGE_RADIUS_FACTOR: 1.5, // How much bigger the system edge is than the outermost object
+  SYSTEM_EDGE_RADIUS_FACTOR: 1.5,
   MAX_PLANETS_PER_SYSTEM: 9,
-  PLANET_MAIN_VIEW_RADIUS: 3, // Character radius for planets/starbases in main view
-  MINIMAP_SIZE_FACTOR: 0.15, // Fraction of screen width for minimap
-  STARBASE_PROBABILITY: 0.2, // Chance a system has a starbase
-  STARBASE_ORBIT_DISTANCE: 75000, // Base orbit distance for starbases
+  PLANET_MAIN_VIEW_RADIUS: 3,
+  MINIMAP_SIZE_FACTOR: 0.15,
+  STARBASE_PROBABILITY: 0.2,
+  STARBASE_ORBIT_DISTANCE: 75000,
 
-  // --- System View Star Background --- MODIFIED ---
+  // --- System View Star Background ---
   STAR_BACKGROUND_COLORS: [
-    // RGBA hex (#RRGGBBAA) - Reduced alpha to '40' (~25%)
-    '#6A8DFF40', // Darker transparent blue
-    '#FF9A5A40', // Darker transparent red/orange
-    '#80808040', // Darker transparent grey
+    '#6A8DFF40',
+    '#FF9A5A40',
+    '#80808040',
   ],
-  STAR_BACKGROUND_CHARS: ['.', ',', '`'], // Dim star characters
+  STAR_BACKGROUND_CHARS: ['.', ',', '`'],
   STAR_BACKGROUND_LAYERS: [
-    // Define layers with parallax factor and density
-    { factor: 0.1, density: 0.006, scale: 1000 }, // Slowest, sparsest layer
-    { factor: 0.05, density: 0.004, scale: 800 }, // Faster, slightly denser
+    { factor: 0.1, density: 0.006, scale: 1000 },
+    { factor: 0.05, density: 0.004, scale: 800 },
   ],
-  // --- END MODIFIED ---
 
-  // --- Colours --- (Using Australian spelling based on user preference)
+  // --- Colours ---
   DEFAULT_BG_COLOUR: '#000000',
   DEFAULT_FG_COLOUR: '#FFFFFF',
-  STATUS_BAR_FG_COLOUR: '#FFA500', //
-  STATUS_BAR_BG_COLOUR: '#000000', //
+  STATUS_BAR_BG_COLOUR: '#000000', // **** RESTORED ****
   ORBIT_COLOUR_MAIN: '#777777',
   ORBIT_COLOUR_MINIMAP: '#444444',
-  STARBASE_COLOUR: '#00FFFF', // Colour for starbase icon, orbit, interior highlight
-  TRANSPARENT_COLOUR: 'transparent', // Use CSS transparent keyword
+  STARBASE_COLOUR: '#00FFFF',
+  TRANSPARENT_COLOUR: 'transparent',
 
-  // --- Popup --- *** NEW SECTION ***
-  POPUP_BG_COLOUR: '#ADD8E6', // Light Blue
-  POPUP_FG_COLOUR: '#000000', // Black
-  POPUP_BORDER_COLOUR: '#000000', // Black
-  POPUP_MAX_WIDTH_FRACTION: 0.6, // Max 60% of screen width
-  POPUP_MAX_HEIGHT_FRACTION: 0.7, // Max 70% of screen height
-  POPUP_PADDING_X: 2, // Horizontal padding in characters
-  POPUP_PADDING_Y: 1, // Vertical padding in characters
+  // --- Status Bar Themes ---
+  // -- Default Theme (Amber based) --
+  SB_FG_COLOUR_DEFAULT: '#FFA500',     // Amber
+  SB_COLOR_HEADING_DEFAULT: '#FFC864', // Lighter Amber/Yellow
+  SB_COLOR_HIGHLIGHT_DEFAULT:'#FFD700',// Gold/Bright Yellow
+  SB_COLOR_WARNING_DEFAULT: '#DAA520', // Goldenrod/Dark Yellow
+  SB_COLOR_EMERGENCY_DEFAULT:'#DC143C',// Crimson Red
+  // -- Tan/Orangish Theme --
+  SB_FG_COLOUR_TAN: '#D2B48C',         // Tan
+  SB_COLOR_HEADING_TAN: '#FFDEAD',     // Navajo White
+  SB_COLOR_HIGHLIGHT_TAN:'#FFA07A',    // Light Salmon
+  SB_COLOR_WARNING_TAN: '#CD853F',     // Peru (Brownish-Orange)
+  SB_COLOR_EMERGENCY_TAN: '#B22222',    // Firebrick Red
 
-  // --- Terminal Overlay ---
+  // --- Popup ---
+  POPUP_BG_COLOUR: '#ADD8E6',
+  POPUP_FG_COLOUR: '#000000',
+  POPUP_BORDER_COLOUR: '#000000',
+  POPUP_MAX_WIDTH_FRACTION: 0.6,
+  POPUP_MAX_HEIGHT_FRACTION: 0.7,
+  POPUP_PADDING_X: 2,
+  POPUP_PADDING_Y: 1,
+
+  // --- Terminal Overlay Themes ---
   // -- Dark Theme (Default) --
-  TRM_FG_COLOUR_DARK: '#00AA66',          // Green text
-  TRM_COLOR_HEADING_DARK: '#00CCAA',      // Lighter Green/Teal
-  TRM_COLOR_HIGHLIGHT_DARK: '#00FF66',   // Bright Green
-  TRM_COLOR_WARNING_DARK: '#A5A533',      // Yellow/Brown
-  TRM_COLOR_EMERGENCY_DARK: '#FF0033',    // Red
-  // -- Light Theme -- NEW! --
-  TRM_FG_COLOUR_LIGHT: '#005522',         // Dark Green text
-  TRM_COLOR_HEADING_LIGHT: '#007755',     // Medium Dark Green/Teal
-  TRM_COLOR_HIGHLIGHT_LIGHT: '#00AA00',   // Darker Bright Green
-  TRM_COLOR_WARNING_LIGHT: '#886600',     // Dark Yellow/Brown
-  TRM_COLOR_EMERGENCY_LIGHT: '#CC0000',   // Dark Red
-  // -- Common Settings --
+  TRM_FG_COLOUR_DARK: '#00AA66',
+  TRM_COLOR_HEADING_DARK: '#00CCAA',
+  TRM_COLOR_HIGHLIGHT_DARK: '#00FF66',
+  TRM_COLOR_WARNING_DARK: '#A5A533',
+  TRM_COLOR_EMERGENCY_DARK: '#FF0033',
+  // -- Light Theme --
+  TRM_FG_COLOUR_LIGHT: '#005522',
+  TRM_COLOR_HEADING_LIGHT: '#007755',
+  TRM_COLOR_HIGHLIGHT_LIGHT: '#00AA00',
+  TRM_COLOR_WARNING_LIGHT: '#886600',
+  TRM_COLOR_EMERGENCY_LIGHT: '#CC0000',
+  // -- Common Terminal Settings --
   TRM_TYPE_SPEED_SEC: 60,
-  TRM_MSG_DURATION: 7500,                 // How long a completed message stays fully visible
+  TRM_MSG_DURATION: 7500,
   TRM_FADE_DURATION: 1500,
   TRM_MAX_MESSAGES: 15,
-  TRM_CURSOR_CHAR: '█',                   // Blinking cursor character
-  TRM_CURSOR_RATE_MS: 200,                // Cursor blink interval
+  TRM_CURSOR_CHAR: '█',
+  TRM_CURSOR_RATE_MS: 200,
 
-  SYSTEM_EDGE_LEAVE_FACTOR: 0.8, // Player must be beyond this fraction of edgeRadius to leave
-  STAR_SCAN_DISTANCE_MULTIPLIER: 2.0, // Scan star if distance < LANDING_DISTANCE * this value
-  LIFTOFF_DISTANCE_FACTOR: 0.1, // How far from the object center player appears after liftoff (fraction of LANDING_DISTANCE)
-  ORBIT_TIME_SCALE_FACTOR: 10000, // Multiplier for deltaTime in orbit calculations
+  // --- Other Gameplay/UI ---
+  SYSTEM_EDGE_LEAVE_FACTOR: 0.8,
+  STAR_SCAN_DISTANCE_MULTIPLIER: 2.0,
+  LIFTOFF_DISTANCE_FACTOR: 0.1,
+  ORBIT_TIME_SCALE_FACTOR: 10000,
 
   // --- UI Text ---
   POPUP_CLOSE_TEXT: '← Close →',

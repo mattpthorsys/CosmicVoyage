@@ -61,11 +61,7 @@ export class RendererFacade {
     this.drawingContext = new DrawingContext(this.screenBuffer);
     this.nebulaRenderer = new NebulaRenderer();
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
-    this.sceneRenderer = new SceneRenderer(
-      this.screenBuffer,
-      this.drawingContext,
-      this.nebulaRenderer
-    );
+    this.sceneRenderer = new SceneRenderer(this.screenBuffer, this.drawingContext, this.nebulaRenderer);
 
     // *** Subscribe to Status Updates ***
     eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
@@ -84,24 +80,25 @@ export class RendererFacade {
   }
 
   public getCharWidthPx(): number {
-      // Assuming both buffers have the same dimensions
+    // Assuming both buffers have the same dimensions
     return this.screenBuffer.getCharWidthPx();
   }
 
-   public getCharHeightPx(): number {
-       // Assuming both buffers have the same dimensions
+  public getCharHeightPx(): number {
+    // Assuming both buffers have the same dimensions
     return this.screenBuffer.getCharHeightPx();
-   }
+  }
 
   /** Handler for the statusUpdateNeeded event. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _handleStatusUpdate(data: any): void {
-      if (data && typeof data.message === 'string' && typeof data.hasStarbase === 'boolean') {
-          // Directly call the StatusBarUpdater's method
-          this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
-      } else {
-          logger.warn('[RendererFacade] Received invalid data for statusUpdateNeeded event:', data);
-      }
+    logger.debug(`[RendererFacade:_handleStatusUpdate] Received STATUS_UPDATE_NEEDED with message: "${data?.message}"`);
+    if (data && typeof data.message === 'string' && typeof data.hasStarbase === 'boolean') {
+      // Directly call the StatusBarUpdater's method
+      this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
+    } else {
+      logger.warn('[RendererFacade] Received invalid data for statusUpdateNeeded event:', data);
+    }
   }
 
   /** Adjusts canvas size and rendering parameters to fit the window or container. */
@@ -111,7 +108,8 @@ export class RendererFacade {
     const baseCharWidth = baseCharHeight * CONFIG.CHAR_ASPECT_RATIO;
 
     // Estimate status bar height based on character size BEFORE setting final canvas size
-    const roughStatusBarHeightPx = this.statusBarUpdater.getStatusBarElement().offsetHeight || (baseCharHeight * 0.85 * 1.4 * 3 + 10); // Fallback estimate
+    const roughStatusBarHeightPx =
+      this.statusBarUpdater.getStatusBarElement().offsetHeight || baseCharHeight * 0.85 * 1.4 * 3 + 10; // Fallback estimate
 
     const availableHeight = Math.max(100, window.innerHeight - roughStatusBarHeightPx); // Subtract status bar height
     const availableWidth = Math.max(100, window.innerWidth);
@@ -144,7 +142,6 @@ export class RendererFacade {
       (window.innerHeight - finalStatusBarHeightPx - this.canvas.height) / 2
     )}px`;
 
-
     this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
     this.backgroundScreenBuffer.clear(false); // Clear internal buffers without touching canvas display yet
     this.screenBuffer.clear(false);
@@ -164,13 +161,13 @@ export class RendererFacade {
   }
 
   /** Renders the entire content of the specified buffer. */
-    renderBufferFull(isBackground: boolean = false): void {
-        if (isBackground) {
-            this.backgroundScreenBuffer.renderFull();
-        } else {
-            this.screenBuffer.renderFull();
-        }
+  renderBufferFull(isBackground: boolean = false): void {
+    if (isBackground) {
+      this.backgroundScreenBuffer.renderFull();
+    } else {
+      this.screenBuffer.renderFull();
     }
+  }
 
   /** Updates the text content of the status bar element. (This method is now primarily called internally via event) */
   // updateStatus(message: string, hasStarbase: boolean): void {
@@ -179,13 +176,7 @@ export class RendererFacade {
   // Keep the method if direct calls might still be needed, but Game should use events now.
 
   /** Draws a string horizontally starting at (x, y) using ScreenBuffer's drawString. */
-  drawString(
-    text: string,
-    x: number,
-    y: number,
-    fgColor?: string | null,
-    bgColor?: string | null
-  ): void {
+  drawString(text: string, x: number, y: number, fgColor?: string | null, bgColor?: string | null): void {
     // Delegate directly to screenBuffer for basic string drawing
     this.screenBuffer.drawString(text, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
   }
@@ -208,14 +199,14 @@ export class RendererFacade {
   // --- Popup Drawing Method ---
   /** Draws a popup window with animations and typing text effect. */
   drawPopup(
-      lines: string[] | null,
-      state: 'inactive' | 'opening' | 'active' | 'closing',
-      openCloseProgress: number,
-      textProgress: number
+    lines: string[] | null,
+    state: 'inactive' | 'opening' | 'active' | 'closing',
+    openCloseProgress: number,
+    textProgress: number
   ): void {
     // (Popup drawing logic remains the same as previous version)
     if (state === 'inactive' || !lines || lines.length === 0) {
-        return;
+      return;
     }
 
     const cols = this.screenBuffer.getCols();
@@ -235,13 +226,14 @@ export class RendererFacade {
     let currentHeight: number;
 
     if (state === 'opening' || state === 'closing') {
-        // Use a smooth easing function (e.g., ease-out cubic) for progress
-        const easedProgress = 1 - Math.pow(1 - openCloseProgress, 3);
-        currentWidth = Math.max(1, Math.floor(clampedWidth * easedProgress));
-        currentHeight = Math.max(1, Math.floor(clampedHeight * easedProgress));
-    } else { // 'active' state
-        currentWidth = clampedWidth;
-        currentHeight = clampedHeight;
+      // Use a smooth easing function (e.g., ease-out cubic) for progress
+      const easedProgress = 1 - Math.pow(1 - openCloseProgress, 3);
+      currentWidth = Math.max(1, Math.floor(clampedWidth * easedProgress));
+      currentHeight = Math.max(1, Math.floor(clampedHeight * easedProgress));
+    } else {
+      // 'active' state
+      currentWidth = clampedWidth;
+      currentHeight = clampedHeight;
     }
 
     // Ensure odd dimensions for centering (optional)
@@ -256,68 +248,69 @@ export class RendererFacade {
 
     // Draw the Box
     if (currentWidth > 0 && currentHeight > 0) {
-        this.drawingContext.drawBox(
-            startX,
-            startY,
-            currentWidth,
-            currentHeight,
-            CONFIG.POPUP_BORDER_COLOUR, // Border Colour (fg)
-            CONFIG.POPUP_BG_COLOUR,     // Background for the border chars themselves
-            ' ',                        // Fill character
-            CONFIG.POPUP_FG_COLOUR,     // FG for fill char (doesn't matter)
-            CONFIG.POPUP_BG_COLOUR      // Background colour for the inside area
-        );
+      this.drawingContext.drawBox(
+        startX,
+        startY,
+        currentWidth,
+        currentHeight,
+        CONFIG.POPUP_BORDER_COLOUR, // Border Colour (fg)
+        CONFIG.POPUP_BG_COLOUR, // Background for the border chars themselves
+        ' ', // Fill character
+        CONFIG.POPUP_FG_COLOUR, // FG for fill char (doesn't matter)
+        CONFIG.POPUP_BG_COLOUR // Background colour for the inside area
+      );
     }
 
     // Draw Text (Only when 'active' and fully open)
     if (state === 'active' && currentWidth === clampedWidth && currentHeight === clampedHeight) {
-        const textStartXBase = startX + CONFIG.POPUP_PADDING_X;
-        const textStartY = startY + CONFIG.POPUP_PADDING_Y;
-        let charactersDrawn = 0;
+      const textStartXBase = startX + CONFIG.POPUP_PADDING_X;
+      const textStartY = startY + CONFIG.POPUP_PADDING_Y;
+      let charactersDrawn = 0;
 
-        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-            const line = lines[lineIndex];
-            const isCloseLine = line === "← Close →"; // Check if it's the special close line
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const isCloseLine = line === '← Close →'; // Check if it's the special close line
 
-            // Calculate starting X for centering the close line
-            let textStartX = isCloseLine
-                ? startX + Math.floor((currentWidth - line.length) / 2)
-                : textStartXBase;
+        // Calculate starting X for centering the close line
+        let textStartX = isCloseLine ? startX + Math.floor((currentWidth - line.length) / 2) : textStartXBase;
 
-            for (let charIndex = 0; charIndex < line.length; charIndex++) {
-                if (charactersDrawn >= textProgress) break; // Stop drawing characters for this frame
+        for (let charIndex = 0; charIndex < line.length; charIndex++) {
+          if (charactersDrawn >= textProgress) break; // Stop drawing characters for this frame
 
-                const char = line[charIndex];
-                const drawX = textStartX + charIndex;
-                const drawY = textStartY + lineIndex;
+          const char = line[charIndex];
+          const drawX = textStartX + charIndex;
+          const drawY = textStartY + lineIndex;
 
-                // Check if within the *current* box bounds before drawing character
-                if (drawX >= startX + 1 && drawX < startX + currentWidth - 1 &&
-                    drawY >= startY + 1 && drawY < startY + currentHeight - 1) {
-                    this.screenBuffer.drawChar(
-                         char,
-                        drawX,
-                        drawY,
-                        CONFIG.POPUP_FG_COLOUR, // Text colour
-                        CONFIG.POPUP_BG_COLOUR  // Background *behind* the text
-                    );
-                }
-                charactersDrawn++;
-            }
-            if (charactersDrawn >= textProgress) break; // Stop drawing lines for this frame
-             // Add a newline character count between lines for textProgress calculation
-             if (lineIndex < lines.length -1) {
-                charactersDrawn++;
-             }
+          // Check if within the *current* box bounds before drawing character
+          if (
+            drawX >= startX + 1 &&
+            drawX < startX + currentWidth - 1 &&
+            drawY >= startY + 1 &&
+            drawY < startY + currentHeight - 1
+          ) {
+            this.screenBuffer.drawChar(
+              char,
+              drawX,
+              drawY,
+              CONFIG.POPUP_FG_COLOUR, // Text colour
+              CONFIG.POPUP_BG_COLOUR // Background *behind* the text
+            );
+          }
+          charactersDrawn++;
         }
+        if (charactersDrawn >= textProgress) break; // Stop drawing lines for this frame
+        // Add a newline character count between lines for textProgress calculation
+        if (lineIndex < lines.length - 1) {
+          charactersDrawn++;
+        }
+      }
     }
   }
 
   // Optional: Method to clean up listeners if the facade is ever destroyed
   destroy(): void {
-      logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
-      eventManager.unsubscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
-      // Unsubscribe from any other events if necessary
+    logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
+    eventManager.unsubscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
+    // Unsubscribe from any other events if necessary
   }
-
 } // End RendererFacade class

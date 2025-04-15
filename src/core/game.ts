@@ -876,6 +876,7 @@ export class Game {
     const finalStatus = this.statusMessage + commonStatus;
     const hasStarbase = this.stateManager.state === 'starbase';
 
+    logger.debug(`[Game:_publishStatusUpdate] Publishing STATUS_UPDATE_NEEDED with message: "${finalStatus}"`);
     eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
   }
 
