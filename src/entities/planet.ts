@@ -315,89 +315,90 @@ export class Planet {
     ); //
   }
 
-  /** Returns multi-line scan information for the planet. */
+  /** Returns multi-line scan information for the planet, including moon summary. */
   getScanInfo(): string[] {
-    //
-    logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`); //
-    const infoLines: string[] = [
-      //
-      `<h>--- SCAN REPORT: ${this.name} ---</h>`, //
-      `Type: ${this.type} Planet`, //
-    ];
+    logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`);
+    const infoLines: string[] = [`<h>--- SCAN REPORT: ${this.name} ---</h>`, `Type: ${this.type} Planet`];
+
+    // --- Common Physical Properties ---
+    // Use toLocaleString for diameter, toFixed for others
+    infoLines.push(
+      `Diameter: <hl>${this.diameter.toLocaleString()} km</hl> | Density: <hl>${this.density.toFixed(
+        2
+      )} g/cm³</hl> | Gravity: <hl>${this.gravity.toFixed(2)} G</hl>`
+    );
+    // Add Mass and Escape Velocity if desired
+    // infoLines.push(`Mass: <hl>${this.mass.toExponential(2)} kg</hl> | Escape Vel: <hl>${this.escapeVelocity.toFixed(0)} m/s</hl>`);
+    infoLines.push(`Avg Surface Temp: <hl>${this.surfaceTemp} K</hl>`); // This is the average temp
+
+    // --- Atmosphere Details ---
+    let pressureText = this.atmosphere.pressure < 0.001 ? '~0' : this.atmosphere.pressure.toFixed(3);
+    infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${pressureText} bar</hl>)`);
+    let compStr = '<hl>None</hl>';
+    const comp = this.atmosphere.composition;
+    if (comp && Object.keys(comp).length > 0 && comp['None'] !== 100) {
+      const sortedComp = Object.entries(comp)
+        .filter(([, percent]) => percent > 0.1) // Show components > 0.1%
+        .sort(([, a], [, b]) => b - a);
+      compStr = sortedComp.map(([gas, percent]) => `<hl>${gas}: ${percent.toFixed(1)}%</hl>`).join(', ');
+      if (sortedComp.length === 0) compStr = '<hl>Trace Gases</hl>'; // Handle case where all are < 0.1%
+    }
+    infoLines.push(`Composition: ${compStr}`);
+
+    // --- Surface Descriptors ---
+    infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`);
+    infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`);
+
+    // --- Moon Information --- <<< NEW SECTION >>>
+    if (this.moons && this.moons.length > 0) {
+      const moonCounts: Record<string, number> = {};
+      this.moons.forEach((moon) => {
+        moonCounts[moon.type] = (moonCounts[moon.type] || 0) + 1;
+      });
+      const moonSummary = Object.entries(moonCounts)
+        .map(([type, count]) => `${count} ${type}`)
+        .join(', ');
+      infoLines.push(`Moons Detected: <hl>${this.moons.length}</hl> (${moonSummary})`);
+    } else {
+      // Only show "None" for types that *could* have moons
+      if (['Rock', 'Oceanic', 'Frozen', 'GasGiant', 'IceGiant'].includes(this.type)) {
+        infoLines.push(`Moons Detected: <hl>None</hl>`);
+      }
+    }
+    // --- End Moon Information ---
+
+    // --- Resource Information ---
+    // Differentiate scan results for Gas/Ice Giants vs. Solid bodies
     if (this.type === 'GasGiant' || this.type === 'IceGiant') {
-      //
-      // Gas/Ice Giant specific info
-      const compositionString =
-        Object.entries(this.atmosphere.composition) //
-          .filter(([, p]) => p > 0)
-          .sort(([, a], [, b]) => b - a) //
-          .map(([gas, percent]) => `${gas}: ${percent}%`)
-          .join(', ') || 'Trace Gases'; //
-      infoLines.push(
-        `Diameter: <hl>${this.diameter.toLocaleString()} km</hl> | Density: <hl>${this.density.toFixed(
-          2
-        )} g/cm³</hl> | Gravity: <hl>${this.gravity.toFixed(2)} G</hl> (at 1 bar level)`
-      ); // Added Density
-      infoLines.push(`Effective Temp: <hl>${this.surfaceTemp}</hl> K (cloud tops)`); //
-      infoLines.push(
-        `Atmosphere: <hl>${this.atmosphere.density}</hl> (<hl>${this.atmosphere.pressure.toFixed(
-          2
-        )}</hl> bar at cloud tops)`
-      ); //
-      infoLines.push(`Composition: <hl>${compositionString}</hl>`); //
-      infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`); //
-      infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`); //
       const topElements = Object.entries(this.elementAbundance)
-        .filter(([, abundance]) => abundance > 0)
+        .filter(([, abundance]) => abundance > 0.1) // Show elements > 0.1% abundance
         .sort(([, a], [, b]) => b - a)
-        .slice(0, 3)
+        .slice(0, 3) // Show top 3
         .map(([key]) => `<hl>${ELEMENTS[key]?.name || key}</hl>`)
         .join(', ');
-      infoLines.push(`Notable Resources: <hl>${topElements || 'Trace Amounts'}</hl>`); //
-      infoLines.push(`Refueling: Possible via <hl>atmospheric scoop</hl>.`); //
+      infoLines.push(`Atmospheric Resources: <hl>${topElements || 'Trace Amounts'}</hl>`);
+      infoLines.push(`Refueling: Possible via <hl>atmospheric scoop</hl>.`);
+      infoLines.push(`Mining: [-W-]N/A (Gas Giant)</w>`);
     } else {
-      // Solid planet specific info
-      infoLines.push(
-        `Diameter: <hl>${this.diameter.toLocaleString()} km</hl> | Density: <hl>${this.density.toFixed(
-          2
-        )} g/cm³</hl> | Gravity: <hl>${this.gravity.toFixed(2)} G</hl>`
-      ); // Added Density
-      infoLines.push(`Surface Temp (Avg): <hl>${this.surfaceTemp} K</hl>`); //
-      infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${this.atmosphere.pressure.toFixed(2)} bar</hl>)`); //
-
-      let compStr = '<hl>None</hl>'; //
-      const comp = this.atmosphere.composition; //
-      if (comp && Object.keys(comp).length > 0 && comp['None'] !== 100) {
-        //
-        compStr = Object.entries(comp) //
-          .filter(([, percent]) => percent > 0)
-          .sort(([, a], [, b]) => b - a) //
-          .map(([gas, percent]) => `<hl>${gas}: ${percent}%</hl>`)
-          .join(', '); //
-      }
-      infoLines.push(`Composition: <hl>${compStr}</hl>`); //
-      infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`); //
-      infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`); //
-
+      // Solid planet resource info
       if (this.scanned) {
-        //
         const topElements = Object.entries(this.elementAbundance)
-          .filter(([, abundance]) => abundance > 0)
+          .filter(([, abundance]) => abundance > 0.1) // Show elements > 0.1%
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5) // Show top 5 perhaps
-          .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance.toFixed(2)})`) // Show name and abundance value
+          .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance.toFixed(1)}%)`) // Show name and abundance %
           .join(', ');
         infoLines.push(
           `Mineral Scan: <hl>${this.mineralRichness}</hl>. Primary: <hl>${this.primaryResource || 'N/A'}</hl>.`
-        ); //
-        infoLines.push(`*** Top Deposits: <hl>${topElements || 'None Significant'}</hl>`); // Display the top elements string
+        );
+        infoLines.push(`Est. Deposits: <hl>${topElements || 'None Significant'}</hl>`); // Display the top elements string
       } else {
-        //
-        infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`); //
+        infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`);
       }
     }
-    infoLines.push('<h>--- SCAN COMPLETE ---</h>'); //
-    return infoLines; //
+
+    infoLines.push('<h>--- SCAN COMPLETE ---</h>');
+    return infoLines;
   }
 
   /** Checks if a specific surface coordinate has been mined. */
