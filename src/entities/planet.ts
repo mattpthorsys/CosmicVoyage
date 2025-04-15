@@ -68,7 +68,8 @@ export class Planet {
     orbitDistance: number,
     angle: number,
     systemPRNG: PRNG, // PRNG seeded for the parent system
-    parentStarType: string
+    parentStarType: string,
+    characteristics?: import('./planet/planet_characteristics_generator').PlanetCharacteristics
   ) {
     this.name = name; //
     this.type = type; //
@@ -79,32 +80,33 @@ export class Planet {
     this.systemPRNG = systemPRNG.seedNew('planet_' + name); //
     logger.debug(`[Planet:${this.name}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`); //
 
-    // --- Generate Core Characteristics ---
-    const characteristics: PlanetCharacteristics = generatePlanetCharacteristics(
-      //
-      this.type,
-      this.orbitDistance,
-      this.systemPRNG, // Pass the planet-specific PRNG
-      parentStarType
+    // Use provided characteristics or generate new ones
+    const finalCharacteristics = characteristics ?? generatePlanetCharacteristics(
+        this.type,
+        this.orbitDistance,
+        this.systemPRNG,
+        parentStarType
     );
-    this.diameter = characteristics.diameter; //
-    this.density = characteristics.density; // *** Store density ***
-    this.gravity = characteristics.gravity; // Store calculated gravity
-    this.atmosphere = characteristics.atmosphere; //
-    this.surfaceTemp = characteristics.surfaceTemp; //
-    this.hydrosphere = characteristics.hydrosphere; //
-    this.lithosphere = characteristics.lithosphere; //
-    this.mineralRichness = characteristics.mineralRichness; //
-    this.baseMinerals = characteristics.baseMinerals; //
-    this.elementAbundance = characteristics.elementAbundance; // Assign the overall abundance map
-    this.magneticFieldStrength = characteristics.magneticFieldStrength;
-    this.mass = characteristics.mass;
-    this.escapeVelocity = characteristics.escapeVelocity;
-    this.axialTilt = characteristics.axialTilt;
 
-    // Initial position based on orbit
-    this.systemX = Math.cos(this.orbitAngle) * this.orbitDistance; //
-    this.systemY = Math.sin(this.orbitAngle) * this.orbitDistance; //
+    // Assign properties from finalCharacteristics
+    this.diameter = finalCharacteristics.diameter;
+    this.density = finalCharacteristics.density;
+    this.gravity = finalCharacteristics.gravity;
+    this.mass = finalCharacteristics.mass;
+    this.escapeVelocity = finalCharacteristics.escapeVelocity;
+    this.atmosphere = finalCharacteristics.atmosphere;
+    this.surfaceTemp = finalCharacteristics.surfaceTemp;
+    this.hydrosphere = finalCharacteristics.hydrosphere;
+    this.lithosphere = finalCharacteristics.lithosphere;
+    this.magneticFieldStrength = finalCharacteristics.magneticFieldStrength;
+    this.axialTilt = finalCharacteristics.axialTilt;
+    this.mineralRichness = finalCharacteristics.mineralRichness;
+    this.baseMinerals = finalCharacteristics.baseMinerals;
+    this.elementAbundance = finalCharacteristics.elementAbundance;
+
+    // Initial position
+    this.systemX = Math.cos(this.orbitAngle) * this.orbitDistance;
+    this.systemY = Math.sin(this.orbitAngle) * this.orbitDistance;
 
     // Map seed for surface generation
     this.mapSeed = this.systemPRNG.getInitialSeed() + '_map'; //

@@ -185,8 +185,9 @@ export class RendererFacade {
   drawHyperspace(player: Player, gameSeedPRNG: PRNG): void {
     this.sceneRenderer.drawHyperspace(player, gameSeedPRNG);
   }
-  drawSolarSystem(player: Player, system: SolarSystem): void {
-    this.sceneRenderer.drawSolarSystem(player, system);
+  drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
+    //const currentViewScale = CONFIG.DEFAULT_VIEW_SCALE; // Use the newly added property
+    this.sceneRenderer.drawSolarSystem(player, system, currentViewScale);
   }
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
     this.sceneRenderer.drawPlanetSurface(player, landedObject);
@@ -305,6 +306,12 @@ export class RendererFacade {
         }
       }
     }
+  }
+
+  /** Renders only the changed cells of the main screen buffer to the canvas. */
+  renderDiff(): void {
+    // Delegate the call to the main screen buffer's renderDiff method
+    this.screenBuffer.renderDiff();
   }
 
   // Optional: Method to clean up listeners if the facade is ever destroyed

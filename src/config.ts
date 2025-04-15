@@ -25,6 +25,7 @@ export const CONFIG = {
   MAX_FUEL: 500,
   INITIAL_CARGO_CAPACITY: 100,
   INITIAL_CREDITS: 1000,
+  DEFAULT_VIEW_SCALE: 1.0,
 
   // --- Movement / Physics ---
   SYSTEM_MOVE_INCREMENT: 3e10, // World units per input step in system view (adjust for speed)
@@ -58,6 +59,10 @@ export const CONFIG = {
     DOWNLOAD_LOG: 'p',
     INFO_TEST: 'i',
     QUIT: 'Escape',
+    ZOOM_IN: '=',       // Using '=' for the key next to backspace (often shares with '+')
+    ZOOM_OUT: '-',      // Using '-' for the key next to '0'
+    ZOOM_IN_NUMPAD: 'NumpadAdd',      // '+' on Numpad
+    ZOOM_OUT_NUMPAD: 'NumpadSubtract', // '-' on Numpad
   },
 
   // --- Planet Surface ---
