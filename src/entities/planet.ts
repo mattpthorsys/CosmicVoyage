@@ -36,6 +36,8 @@ export class Planet { //
     public readonly hydrosphere: string; //
     public readonly lithosphere: string; //
     public readonly magneticFieldStrength: number;
+    public readonly mass: number; // Mass (kg)
+    public readonly escapeVelocity: number; 
 
     // Resources & Gameplay (Generated + State)
     public readonly mineralRichness: MineralRichness; // Kept for summary/potential use
@@ -91,6 +93,8 @@ export class Planet { //
         this.baseMinerals = characteristics.baseMinerals; //
         this.elementAbundance = characteristics.elementAbundance; // Assign the overall abundance map
         this.magneticFieldStrength = characteristics.magneticFieldStrength;
+        this.mass = characteristics.mass;
+        this.escapeVelocity = characteristics.escapeVelocity;
 
         // Initial position based on orbit
         this.systemX = Math.cos(this.orbitAngle) * this.orbitDistance; //

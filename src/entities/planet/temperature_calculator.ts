@@ -37,96 +37,125 @@ export function calculateSurfaceTemp(
     parentStarType: string,
     atmosphere: Atmosphere // Pass generated atmosphere
 ): number {
-    logger.debug(`[TempCalc] Calculating surface temp (Type: ${planetType}, Orbit: ${orbitDistance_m.toExponential(2)}m)...`);
+    // Use a slightly different logger prefix for clarity
+    const logPrefix = `[TempCalc:${planetType}]`;
+    logger.debug(`${logPrefix} Calculating surface temp (Orbit: ${orbitDistance_m.toExponential(2)}m)...`);
 
     const starInfo = SPECTRAL_TYPES[parentStarType];
-    if (!starInfo || !starInfo.temp || !starInfo.radius || starInfo.radius <= 0) {
-        logger.error(`[TempCalc] Missing or invalid star data (Temp/Radius) for type ${parentStarType}. Using fallback temp.`);
+    // Ensure starInfo and necessary properties (temp, radius) exist and are valid numbers
+    if (!starInfo || typeof starInfo.temp !== 'number' || typeof starInfo.radius !== 'number' || starInfo.radius <= 0 || !Number.isFinite(starInfo.temp) || !Number.isFinite(starInfo.radius)) {
+        logger.error(`${logPrefix} Missing or invalid star data (Temp/Radius) for type ${parentStarType}. Using fallback temp.`);
         return PLANET_TYPES[planetType]?.baseTemp ?? 280; // Fallback to old base temp
     }
 
     const starTemp_K = starInfo.temp;
     const starRadius_m = starInfo.radius;
 
-    // 1. Calculate Star's Total Luminosity (Watts) using Stefan-Boltzmann Law
-    // L = 4 * pi * R^2 * sigma * T^4
+    // --- 1. Calculate Star's Total Luminosity (Watts) ---
     const starSurfaceArea_m2 = 4 * Math.PI * Math.pow(starRadius_m, 2);
     const starLuminosity_W = starSurfaceArea_m2 * STEFAN_BOLTZMANN_SIGMA * Math.pow(starTemp_K, 4);
 
     if (!Number.isFinite(starLuminosity_W) || starLuminosity_W <= 0) {
-         logger.error(`[TempCalc] Calculated invalid star luminosity (${starLuminosity_W} W). Using fallback temp.`);
+         logger.error(`${logPrefix} Calculated invalid star luminosity (${starLuminosity_W} W). Using fallback temp.`);
          return PLANET_TYPES[planetType]?.baseTemp ?? 280;
     }
-    logger.debug(`[TempCalc] Star Luminosity: ${starLuminosity_W.toExponential(3)} W`);
+    logger.debug(`${logPrefix} Star Luminosity: ${starLuminosity_W.toExponential(3)} W`);
 
-    // 2. Calculate Energy Flux at Planet's Orbit (W/m^2)
-    // Flux = L / (4 * pi * D^2)
+    // --- 2. Calculate Energy Flux at Planet's Orbit (W/m^2) ---
+    if (!Number.isFinite(orbitDistance_m) || orbitDistance_m <= 0) {
+        logger.error(`${logPrefix} Invalid orbit distance (${orbitDistance_m}m). Using fallback temp.`);
+        return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+    }
     const orbitalSphereArea_m2 = 4 * Math.PI * Math.pow(orbitDistance_m, 2);
+
+    // Check for potential division by zero or invalid area
     if (!Number.isFinite(orbitalSphereArea_m2) || orbitalSphereArea_m2 <= 0) {
-         logger.error(`[TempCalc] Calculated invalid orbital sphere area for distance ${orbitDistance_m.toExponential(2)}m. Using fallback temp.`);
+         logger.error(`${logPrefix} Calculated invalid orbital sphere area for distance ${orbitDistance_m.toExponential(2)}m. Using fallback temp.`);
          return PLANET_TYPES[planetType]?.baseTemp ?? 280;
     }
     const flux_W_m2 = starLuminosity_W / orbitalSphereArea_m2;
-    logger.debug(`[TempCalc] Flux at orbit: ${flux_W_m2.toExponential(3)} W/m^2`);
+    logger.debug(`${logPrefix} Flux at orbit: ${flux_W_m2.toExponential(3)} W/m^2`);
 
-    // 3. Estimate Planetary Albedo
+    // --- 3. Estimate Planetary Albedo ---
     const albedo = PLANET_ALBEDOS[planetType] ?? PLANET_ALBEDOS['Default'];
-    logger.debug(`[TempCalc] Estimated Albedo: ${albedo}`);
+    logger.debug(`${logPrefix} Estimated Albedo: ${albedo}`);
 
-    // 4. Calculate Equilibrium Temperature (K) - Temperature without greenhouse effect
-    // AbsorbedFlux = sigma * T_eq^4 --> T_eq = (AbsorbedFlux / sigma)^(1/4)
-    // AbsorbedFlux = IncidentFlux * (1 - albedo)
-    const absorbedFlux = flux_W_m2 * (1 - albedo);
-    if (!Number.isFinite(absorbedFlux) || absorbedFlux < 0) {
-         logger.error(`[TempCalc] Calculated invalid absorbed flux (${absorbedFlux}). Using fallback temp.`);
+    // --- 4. Calculate Equilibrium Temperature (K) ---
+    // T_eq = (Flux * (1 - albedo) / (4 * sigma)) ^ 0.25
+    const absorbedFluxFactor = flux_W_m2 * (1 - albedo);
+    if (!Number.isFinite(absorbedFluxFactor) || absorbedFluxFactor < 0) {
+         logger.error(`${logPrefix} Calculated invalid absorbed flux factor (${absorbedFluxFactor}). Using fallback temp.`);
          return PLANET_TYPES[planetType]?.baseTemp ?? 280;
     }
-    const equilibriumTemp_K = Math.pow(absorbedFlux / STEFAN_BOLTZMANN_SIGMA, 0.25);
+    // Ensure denominator is positive before division and taking the root
+    const denominator = 4 * STEFAN_BOLTZMANN_SIGMA;
+    if (denominator <= 0) {
+         logger.error(`${logPrefix} Invalid Stefan-Boltzmann constant calculation. Using fallback temp.`);
+         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+    }
+    const equilibriumBase = absorbedFluxFactor / denominator;
+    if (equilibriumBase < 0) {
+         logger.error(`${logPrefix} Calculated negative base for equilibrium temperature (${equilibriumBase}). Using fallback temp.`);
+         return PLANET_TYPES[planetType]?.baseTemp ?? 280; // Cannot take root of negative number
+    }
+
+    const equilibriumTemp_K = Math.pow(equilibriumBase, 0.25);
 
     if (!Number.isFinite(equilibriumTemp_K)) {
-         logger.error(`[TempCalc] Calculated non-finite equilibrium temperature (${equilibriumTemp_K}). Using fallback temp.`);
+         logger.error(`${logPrefix} Calculated non-finite equilibrium temperature (${equilibriumTemp_K}). Flux: ${flux_W_m2.toExponential(3)}, Albedo: ${albedo}. Using fallback temp.`);
          return PLANET_TYPES[planetType]?.baseTemp ?? 280;
     }
-    logger.debug(`[TempCalc] Equilibrium Temp (no greenhouse): ${equilibriumTemp_K.toFixed(1)}K`);
+    logger.debug(`${logPrefix} Equilibrium Temp (no greenhouse): ${equilibriumTemp_K.toFixed(1)}K`);
 
-    // 5. Apply Greenhouse Effect based on atmosphere
-    // (Using the same logic as before, but applying to equilibriumTemp_K)
+    // --- 5. Apply Greenhouse Effect ---
     let greenhouseFactor = 1.0;
     let greenhouseDesc = "None";
-    if (atmosphere.density === 'Thin') {
-        greenhouseFactor = 1.05 + (atmosphere.pressure / 0.5) * 0.05; // Small effect, scales slightly with pressure
-        greenhouseDesc = "Slight";
-    } else if (atmosphere.density === 'Earth-like') {
-        greenhouseFactor = 1.10 + (atmosphere.pressure / 1.0) * 0.15; // Moderate effect
-        greenhouseDesc = "Moderate";
-    } else if (atmosphere.density === 'Thick') {
-        greenhouseFactor = 1.25 + (atmosphere.pressure / 2.0) * 0.35; // Significant effect, scales more with pressure
-        greenhouseDesc = "Significant";
+    if (atmosphere && atmosphere.density && atmosphere.density !== 'None') {
+        let pressureFactor = Math.max(0, atmosphere.pressure); // Use pressure >= 0
+        if (atmosphere.density === 'Thin') {
+            greenhouseFactor = 1.0 + (pressureFactor / 0.5) * 0.05; // Reduced base effect
+            greenhouseDesc = "Slight";
+        } else if (atmosphere.density === 'Earth-like') {
+            greenhouseFactor = 1.05 + (pressureFactor / 1.0) * 0.15; // Reduced base effect
+            greenhouseDesc = "Moderate";
+        } else if (atmosphere.density === 'Thick') {
+            greenhouseFactor = 1.1 + (pressureFactor / 2.0) * 0.30; // Reduced base effect, adjusted scaling
+            greenhouseDesc = "Significant";
+        }
+
+        // Bonus for specific gases
+        if (atmosphere.composition) {
+            const co2 = atmosphere.composition['Carbon Dioxide'] || 0;
+            const methane = atmosphere.composition['Methane'] || 0;
+            const waterVapor = atmosphere.composition['Water Vapor'] || 0;
+            let gasBonus = 1.0;
+            // Apply bonus multiplicatively based on percentages
+            gasBonus *= (1 + (co2 / 100) * 0.5); // CO2 effect (max +50%)
+            gasBonus *= (1 + (methane / 100) * 1.0); // Methane effect (max +100%)
+            gasBonus *= (1 + (waterVapor / 100) * 0.8); // Water vapor effect (max +80%)
+
+            greenhouseFactor *= gasBonus;
+            logger.debug(`${logPrefix} Greenhouse Gas Bonus: ${gasBonus.toFixed(2)} (CO2=${co2}%, CH4=${methane}%, H2O=${waterVapor}%)`);
+        } else {
+             logger.warn(`${logPrefix} Atmosphere composition data missing for greenhouse gas bonus calculation.`);
+        }
+        // Clamp the final factor
+        greenhouseFactor = Math.max(1.0, Math.min(greenhouseFactor, 3.5)); // Allow slightly higher max factor
+    } else {
+         logger.debug(`${logPrefix} No significant atmosphere density for greenhouse effect.`);
     }
-
-    // Bonus for specific gases
-    const co2 = atmosphere.composition['Carbon Dioxide'] || 0;
-    const methane = atmosphere.composition['Methane'] || 0;
-    const waterVapor = atmosphere.composition['Water Vapor'] || 0;
-    let gasBonus = 1.0;
-    if (co2 > 20 || methane > 5 || waterVapor > 1) gasBonus *= 1.15; // More sensitive bonus
-    if (co2 > 80 || methane > 20 || waterVapor > 5) gasBonus *= 1.25; // Runaway potential
-
-    greenhouseFactor *= gasBonus;
-    greenhouseFactor = Math.max(1.0, Math.min(greenhouseFactor, 3.0)); // Clamp factor to avoid extremes
-
-    logger.debug(`[TempCalc] Greenhouse: Density=${atmosphere.density}, Pressure=${atmosphere.pressure.toFixed(3)}, CO2=${co2}%, CH4=${methane}%, H2O=${waterVapor}% -> Factor=${greenhouseFactor.toFixed(2)} (${greenhouseDesc}, GasBonus=${gasBonus.toFixed(2)})`);
+    logger.debug(`${logPrefix} Greenhouse Details: Density=${atmosphere?.density ?? 'N/A'}, Pressure=${atmosphere?.pressure?.toFixed(3) ?? 'N/A'} -> Factor=${greenhouseFactor.toFixed(2)} (${greenhouseDesc})`);
 
     const surfaceTemp_K = equilibriumTemp_K * greenhouseFactor;
 
-    // Final clamping and rounding
-    const finalTemp = Math.max(2, Math.round(surfaceTemp_K)); // Ensure minimum temp above absolute zero
+    // --- Final clamping and rounding ---
+    const finalTemp = Math.max(2, Math.round(surfaceTemp_K)); // Ensure minimum temp above absolute zero (2K is background temp)
 
     if (!Number.isFinite(finalTemp)) {
-         logger.error(`[TempCalc] Calculated final temperature is non-finite (${finalTemp}). Equilibrium: ${equilibriumTemp_K}, Factor: ${greenhouseFactor}. Using fallback.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+         logger.error(`${logPrefix} Calculated final temperature is non-finite (${finalTemp}). Equilibrium: ${equilibriumTemp_K.toFixed(1)}K, Factor: ${greenhouseFactor.toFixed(2)}. Using fallback.`);
+         return PLANET_TYPES[planetType]?.baseTemp ?? 280; // Fallback
     }
 
-    logger.debug(`[TempCalc] Final Surface Temp: ${finalTemp}K`);
+    logger.debug(`${logPrefix} Final Surface Temp: ${finalTemp}K`);
     return finalTemp;
 }
