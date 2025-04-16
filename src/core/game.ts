@@ -240,9 +240,8 @@ export class Game {
     this.animationFrameId = requestAnimationFrame(this._loop.bind(this));
   }
 
-  // --- Input Processing (Integrates Zoom) ---
-  private _processInput(): void {
-    // --- Check for Popup Closing First ---
+  /** Checks popup state and handles closing input. Returns true if input is blocked. */
+  private _handlePopupInput(): boolean {
     if (this.popupState === 'active') {
       if (
         this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
@@ -251,62 +250,67 @@ export class Game {
         this.inputManager.wasActionJustPressed('QUIT') ||
         this.inputManager.wasActionJustPressed('ENTER_SYSTEM')
       ) {
-        logger.info('[Game:_processInput] Closing popup via key press.');
+        logger.info('[Game:_handlePopupInput] Closing popup via key press.');
         this.popupState = 'closing';
         this.forceFullRender = true;
         this.statusMessage = ''; // Clear scan status
-        return; // Consume input
+        return true; // Consume input
       }
-      return; // Block other input while popup active
+      return true; // Block other input while active
     }
     if (this.popupState === 'opening' || this.popupState === 'closing') {
-      return; // Block input during animation
+      return true; // Block input during animation
+    }
+    return false; // Input not blocked by popup
+  }
+
+  /** Handles zoom key presses. Returns true if zoom changed (input consumed). */
+  private _handleZoomInput(): boolean {
+    const currentState = this.stateManager.state;
+    if (currentState !== 'system') {
+      return false; // Zoom only allowed in system view
     }
 
-    // --- Process Zoom Input ---
     let zoomChanged = false;
-    const currentState = this.stateManager.state; // Get current state once
-    if (currentState === 'system') {
-      // Only allow zoom in system view
-      const zoomInPressed =
-        this.inputManager.wasActionJustPressed('ZOOM_IN') || this.inputManager.wasActionJustPressed('ZOOM_IN_NUMPAD');
-      const zoomOutPressed =
-        this.inputManager.wasActionJustPressed('ZOOM_OUT') || this.inputManager.wasActionJustPressed('ZOOM_OUT_NUMPAD');
+    const zoomInPressed =
+      this.inputManager.wasActionJustPressed('ZOOM_IN') || this.inputManager.wasActionJustPressed('ZOOM_IN_NUMPAD');
+    const zoomOutPressed =
+      this.inputManager.wasActionJustPressed('ZOOM_OUT') || this.inputManager.wasActionJustPressed('ZOOM_OUT_NUMPAD');
 
-      if (zoomInPressed) {
-        if (this.currentZoomLevelIndex < this.zoomLevels.length - 1) {
-          this.currentZoomLevelIndex++;
-          zoomChanged = true;
-          logger.info(
-            `[Game] Zoom In -> Level ${this.currentZoomLevelIndex} (Scale: ${this.getCurrentViewScale().toExponential(
-              1
-            )} m/cell)`
-          );
-        }
-      } else if (zoomOutPressed) {
-        if (this.currentZoomLevelIndex > 0) {
-          this.currentZoomLevelIndex--;
-          zoomChanged = true;
-          logger.info(
-            `[Game] Zoom Out -> Level ${this.currentZoomLevelIndex} (Scale: ${this.getCurrentViewScale().toExponential(
-              1
-            )} m/cell)`
-          );
-        }
+    if (zoomInPressed) {
+      if (this.currentZoomLevelIndex < this.zoomLevels.length - 1) {
+        this.currentZoomLevelIndex++;
+        zoomChanged = true;
+        logger.info(
+          `[Game] Zoom In -> Level ${this.currentZoomLevelIndex} (Scale: ${this.getCurrentViewScale().toExponential(
+            1
+          )} m/cell)`
+        );
+      }
+    } else if (zoomOutPressed) {
+      if (this.currentZoomLevelIndex > 0) {
+        this.currentZoomLevelIndex--;
+        zoomChanged = true;
+        logger.info(
+          `[Game] Zoom Out -> Level ${this.currentZoomLevelIndex} (Scale: ${this.getCurrentViewScale().toExponential(
+            1
+          )} m/cell)`
+        );
       }
     }
+
     if (zoomChanged) {
       this.forceFullRender = true;
       this.statusMessage = ''; // Clear old messages on zoom
-      this._publishStatusUpdate(); // Update status bar immediately
-      return; // Consume input for this frame if zoom changed
+      // Note: _publishStatusUpdate is called after this returns true in _processInput
+      return true; // Consume input for this frame
     }
+    return false; // No zoom change
+  }
 
-    // --- Process Normal Actions ---
-    let actionTaken = false;
-    let actionResult: ActionProcessResult = null;
-
-    // Define which actions are discrete (trigger once per press)
+  /** Processes discrete actions (scan, land, mine, etc.). Returns true if an action was processed. */
+  private _handleDiscreteActions(): boolean {
+    const currentState = this.stateManager.state;
     const discreteActions: string[] = [
       'ENTER_SYSTEM',
       'LEAVE_SYSTEM',
@@ -318,148 +322,154 @@ export class Game {
       'REFUEL',
       'DOWNLOAD_LOG',
       'QUIT',
-      'INFO_TEST', // Include INFO_TEST if still used
+      'INFO_TEST',
     ];
+
     for (const action of discreteActions) {
       if (this.inputManager.wasActionJustPressed(action)) {
-        logger.debug(`[Game:_processInput] Processing discrete action: ${action}`);
+        logger.debug(`[Game:_handleDiscreteActions] Processing discrete action: ${action}`);
 
-        // --- Temporary INFO_TEST handler ---
         if (action === 'INFO_TEST') {
+          // Handle special cases first
           this.terminalOverlay.addMessage(`Test message added at ${new Date().toLocaleTimeString()}`);
-          actionTaken = true; // Mark as handled
-          break; // Stop processing other actions
+          return true; // Consume input
         }
-        // --- End Temporary Handler ---
-
-        // Process standard actions
-        actionResult = this.actionProcessor.processAction(action, currentState);
-        actionTaken = true;
-
         if (action === 'QUIT') {
-          eventManager.publish(GameEvents.GAME_QUIT); // Publish quit event
+          eventManager.publish(GameEvents.GAME_QUIT);
           this.stopGame();
-          return; // Exit processing immediately
+          return true; // Consume input & stop game
         }
-        break; // Only process one discrete action per frame
-      }
-    }
 
-    // --- Handle Action Results ---
-    if (actionTaken) {
-      if (typeof actionResult === 'string') {
-        // Action processor returned a status message for the status bar
-        this.statusMessage = actionResult;
-      } else if (actionResult && typeof actionResult === 'object') {
-        // Check for specific request types
-        if ('requestScan' in actionResult) {
-          // Action processor requested a scan
-          this._handleScanRequest(actionResult.requestScan);
-          // Scan request itself might set a status message via _handleScanRequest
-        } else if ('requestSystemPeek' in actionResult) {
-          // Action processor requested a system peek (hyperspace scan action)
-          logger.debug('[Game:_processInput] Handling requestSystemPeek...');
-          const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
-          if (peekedSystem) {
-            // System found, dump info to terminal
-            const scanMsg = STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name);
-            this.terminalOverlay.addMessage(scanMsg); // Show "Scanning..." in terminal
-            this._dumpScanToTerminal(peekedSystem); // Dump results
-          } else {
-            // No system found
-            this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
+        // Process standard actions via ActionProcessor
+        const actionResult: ActionProcessResult = this.actionProcessor.processAction(action, currentState);
+
+        // Handle the result
+        if (typeof actionResult === 'string') {
+          this.statusMessage = actionResult; // Set status bar message
+        } else if (actionResult && typeof actionResult === 'object') {
+          if ('requestScan' in actionResult) {
+            this._handleScanRequest(actionResult.requestScan);
+            this.statusMessage = ''; // Scan usually clears status or uses terminal
+          } else if ('requestSystemPeek' in actionResult) {
+            const peekedSystem = this.stateManager.peekAtSystem(
+              this.player.position.worldX,
+              this.player.position.worldY
+            );
+            if (peekedSystem) {
+              this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name));
+              this._dumpScanToTerminal(peekedSystem);
+            } else {
+              this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
+            }
+            this.statusMessage = ''; // System peek uses terminal
           }
         }
+        // Reflect status message set by stateManager during event handling
+        if (this.stateManager.statusMessage) {
+          this.statusMessage = this.stateManager.statusMessage;
+          this.stateManager.statusMessage = ''; // Clear after reading
+        }
+
+        return true; // Indicate an action was processed, consume input
       }
-      // Reflect any status message set by the state manager during an action event
-      // (e.g., if land/liftoff set a message via event handlers)
-      if (this.stateManager.statusMessage) {
-        this.statusMessage = this.stateManager.statusMessage;
-        this.stateManager.statusMessage = ''; // Clear after reading
-      }
-      // Update status bar after handling action result
-      this._publishStatusUpdate();
     }
+    return false; // No discrete action processed
+  }
 
-    // --- Process Movement (Integrates Zoom Speed Multiplier) ---
-    // Only process movement if no discrete action was taken and popup is inactive
-    if (!actionTaken && this.popupState === 'inactive') {
-      let dx = 0,
-        dy = 0;
-      if (this.inputManager.isActionActive('MOVE_UP')) dy -= 1;
-      if (this.inputManager.isActionActive('MOVE_DOWN')) dy += 1;
-      if (this.inputManager.isActionActive('MOVE_LEFT')) dx -= 1;
-      if (this.inputManager.isActionActive('MOVE_RIGHT')) dx += 1;
+  /** Handles movement input and publishes MOVE_REQUESTED event. */
+  private _handleMovementInput(): void {
+    let dx = 0,
+      dy = 0;
+    if (this.inputManager.isActionActive('MOVE_UP')) dy -= 1;
+    if (this.inputManager.isActionActive('MOVE_DOWN')) dy += 1;
+    if (this.inputManager.isActionActive('MOVE_LEFT')) dx -= 1;
+    if (this.inputManager.isActionActive('MOVE_RIGHT')) dx += 1;
 
-      if (dx !== 0 || dy !== 0) {
-        // Clear non-critical status messages when moving
-        if (
-          this.statusMessage === '' ||
-          !(
-            this.statusMessage.toLowerCase().includes('error') ||
-            this.statusMessage.toLowerCase().includes('fail') ||
-            this.statusMessage.toLowerCase().includes('cannot')
-          )
-        ) {
-          this.statusMessage = '';
-        }
+    if (dx !== 0 || dy !== 0) {
+      // Clear non-critical status messages when moving
+      if (this.statusMessage && !/(error|fail|cannot|mined|sold|scan|purchased)/i.test(this.statusMessage)) {
+        this.statusMessage = '';
+      }
 
-        const isFine = this.inputManager.isActionActive('FINE_CONTROL');
-        const isBoost = this.inputManager.isActionActive('BOOST'); // Use BOOST if defined
-        let useFine = isFine && !isBoost; // Fine control only if not boosting
+      const isFine = this.inputManager.isActionActive('FINE_CONTROL');
+      const isBoost = this.inputManager.isActionActive('BOOST');
+      const useFine = isFine && !isBoost;
+      const currentState = this.stateManager.state;
 
-        // Calculate Speed Multiplier based on Zoom
-        let speedMultiplier = 1.0; // Default for non-system states
-        if (currentState === 'system') {
-          const defaultZoomIndex = 2; // Index of 1x zoom
-          const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
-          // Speed halves/doubles per zoom level (base 0.5)
-          speedMultiplier = Math.pow(0.5, zoomDifference);
-          // Clamp multiplier (e.g., 1% to 1000%)
-          speedMultiplier = Math.max(0.01, Math.min(speedMultiplier, 10.0));
-        }
+      // Calculate Speed Multiplier based on Zoom
+      let speedMultiplier = 1.0;
+      if (currentState === 'system') {
+        const defaultZoomIndex = 3; // Index of 1x zoom (adjust if default changes)
+        const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
+        speedMultiplier = Math.pow(0.5, zoomDifference);
+        speedMultiplier = Math.max(0.01, Math.min(speedMultiplier, 10.0)); // Clamp
+      }
 
-        try {
-          const moveData: any = {
-            // Use 'any' or define MoveRequestData interface properly
-            dx,
-            dy,
-            isFineControl: useFine,
-            isBoost,
-            context: currentState,
-            speedMultiplier: speedMultiplier, // Add multiplier
-          };
+      try {
+        const moveData: MoveRequestData = {
+          dx,
+          dy,
+          isFineControl: useFine,
+          isBoost,
+          context: currentState,
+          speedMultiplier,
+        };
 
-          // Add surface context if needed
-          if (currentState === 'planet') {
-            const planet = this.stateManager.currentPlanet;
-            if (planet) {
-              try {
-                planet.ensureSurfaceReady(); // Ensure map exists
-                moveData.surfaceContext = { mapSize: planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE };
-              } catch (surfaceError) {
-                logger.error(`[Game:_processInput] Error ensuring surface ready for move: ${surfaceError}`);
-                this.statusMessage = STATUS_MESSAGES.ERROR_SURFACE_PREP('Cannot move');
-                return; // Stop movement processing
-              }
-            } else {
-              logger.error('[Game:_processInput] Player in planet state but currentPlanet is null during move.');
-              this.terminalOverlay.addMessage(STATUS_MESSAGES.ERROR_DATA_MISSING('Planet'));
+        if (currentState === 'planet') {
+          const planet = this.stateManager.currentPlanet;
+          if (planet) {
+            try {
+              planet.ensureSurfaceReady(); // Ensure map exists for size
+              moveData.surfaceContext = { mapSize: planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE };
+            } catch (surfaceError) {
+              logger.error(`[Game:_handleMovementInput] Error ensuring surface ready for move: ${surfaceError}`);
+              this.statusMessage = STATUS_MESSAGES.ERROR_SURFACE_PREP('Cannot move');
+              // Publish update here if error prevents move event
+              this._publishStatusUpdate();
               return; // Stop movement processing
             }
+          } else {
+            logger.error('[Game:_handleMovementInput] Player in planet state but currentPlanet is null during move.');
+            this.terminalOverlay.addMessage(STATUS_MESSAGES.ERROR_DATA_MISSING('Planet'));
+            return; // Stop movement processing
           }
-
-          // Publish move request event
-          eventManager.publish(GameEvents.MOVE_REQUESTED, moveData);
-        } catch (error) {
-          logger.error(`[Game:_processInput] Error preparing or publishing move request: ${error}`);
-          this.statusMessage = `Move Error: ${error instanceof Error ? error.message : String(error)}`;
-          this._publishStatusUpdate(); // Show error
         }
-      } // End if (dx !== 0 || dy !== 0)
-    } // End if (!actionTaken && popup inactive)
-  } // End _processInput
 
+        eventManager.publish(GameEvents.MOVE_REQUESTED, moveData);
+      } catch (error) {
+        logger.error(`[Game:_handleMovementInput] Error preparing or publishing move request: ${error}`);
+        this.statusMessage = `Move Error: ${error instanceof Error ? error.message : String(error)}`;
+        // Publish update here if error occurs during move prep
+        this._publishStatusUpdate();
+      }
+    }
+  }
+
+  /** Processes all input for the current frame by calling helper methods. */
+  private _processInput(): void {
+    // 1. Check Popups (blocks other input if active or animating)
+    if (this._handlePopupInput()) {
+      return; // Input consumed by popup
+    }
+    // 2. Check Zoom (consumes input if zoom changed)
+    if (this._handleZoomInput()) {
+      // Publish status immediately after zoom changes to reflect new scale/clear messages
+      this._publishStatusUpdate();
+      return; // Input consumed by zoom change
+    }
+    // 3. Check Discrete Actions (consumes input if an action is taken)
+    if (this._handleDiscreteActions()) {
+      // Discrete action handled, publish status update reflecting its outcome
+      this._publishStatusUpdate();
+      return; // Input consumed by a discrete action
+    }
+    // 4. Check Movement (does not consume input, allows holding)
+    this._handleMovementInput();
+
+    // 5. Publish Status Update (Reflects movement status or lack of action)
+    // Note: Status might have been cleared by movement, or remain from previous frame if no action/move
+    this._publishStatusUpdate();
+  }
   /** Gets the current view scale in meters/cell based on the zoom level. */
   private getCurrentViewScale(): number {
     // Clamp index to prevent errors if it somehow goes out of bounds
@@ -774,9 +784,10 @@ export class Game {
     let timeScaleMultiplier = Math.pow(0.5, zoomDifference);
     // Clamp multiplier to prevent time stopping or going excessively fast
     timeScaleMultiplier = Math.max(0.01, Math.min(timeScaleMultiplier, 10.0));
-    logger.debug(`[Game] Zoom Index: ${this.currentZoomLevelIndex}, Time Scale Multiplier: ${timeScaleMultiplier.toFixed(3)}`);
+    logger.debug(
+      `[Game] Zoom Index: ${this.currentZoomLevelIndex}, Time Scale Multiplier: ${timeScaleMultiplier.toFixed(3)}`
+    );
     const scaledDeltaTime = deltaTime * timeScaleMultiplier;
-
 
     // Update orbits of planets, moons, starbase
     system.updateOrbits(scaledDeltaTime);
