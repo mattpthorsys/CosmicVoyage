@@ -45,7 +45,7 @@ export class Starbase {
     getScanInfo(): string[] {
         logger.debug(`[Starbase:${this.name}] getScanInfo called.`); // Add basic log
         return [
-            `--- SCAN REPORT: ${this.name} ---`, //
+            `<h>--- SCAN REPORT: ${this.name} ---</h>`, //
             `Type: <hl>Orbital Starbase</hl>`,
             `Services: <hl>Trading Post, Refueling Depot</hl>`,
             `Status: <hl>Operational</hl>`,

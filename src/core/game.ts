@@ -16,7 +16,7 @@ import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { SolarSystem } from '../entities/solar_system';
 import { eventManager, GameEvents } from './event_manager';
-import { MovementSystem } from '../systems/movement_system';
+import { MovementSystem, MoveRequestData } from '../systems/movement_system';
 import { CargoSystem } from '../systems/cargo_systems';
 import { MiningSystem } from '../systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
@@ -330,7 +330,7 @@ export class Game {
         logger.debug(`[Game:_handleDiscreteActions] Processing discrete action: ${action}`);
 
         if (action === 'INFO_TEST') {
-          // Handle special cases first
+          this.terminalOverlay.clear(); // Clear before adding test message
           this.terminalOverlay.addMessage(`Test message added at ${new Date().toLocaleTimeString()}`);
           return true; // Consume input
         }
@@ -348,16 +348,19 @@ export class Game {
           this.statusMessage = actionResult; // Set status bar message
         } else if (actionResult && typeof actionResult === 'object') {
           if ('requestScan' in actionResult) {
+            this.terminalOverlay.clear(); // <<< CLEAR before handling scan request
             this._handleScanRequest(actionResult.requestScan);
-            this.statusMessage = ''; // Scan usually clears status or uses terminal
+            this.statusMessage = ''; // Scan uses terminal, clear status bar
           } else if ('requestSystemPeek' in actionResult) {
+            this.terminalOverlay.clear(); // <<< CLEAR before handling peek request
             const peekedSystem = this.stateManager.peekAtSystem(
               this.player.position.worldX,
               this.player.position.worldY
             );
             if (peekedSystem) {
-              this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name));
-              this._dumpScanToTerminal(peekedSystem);
+              // Add initial scanning message *before* dumping results
+              //this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name));
+              this._dumpScanToTerminal(peekedSystem); // Dump results using new method
             } else {
               this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
             }
@@ -477,20 +480,20 @@ export class Game {
     return this.zoomLevels[safeIndex];
   }
 
-  // --- Scan Handling ---
   /** Handles scan requests triggered by ActionProcessor */
   private _handleScanRequest(scanType: 'system_object' | 'planet_surface'): void {
     const currentState = this.stateManager.state;
-    logger.debug(`[Game:_handleScanRequest] Handling scan request type '${scanType}' in state '${currentState}'`);
+    logger.debug(
+      `[Game:_handleScanRequest] Handling scan request type '<span class="math-inline">\{scanType\}' in state '</span>{currentState}'`
+    );
+
+    // ** CLEAR Terminal Overlay ** Moved to _handleDiscreteActions where the request originates
 
     let targetToScan: ScanTarget | null = null;
-    let scanStatusMessage = ''; // Message for terminal overlay
+    let scanStatusMessage = ''; // Initial message for terminal
 
     if (scanType === 'system_object') {
-      // Scan logic remains same, uses terminal overlay now
-      if (currentState === 'hyperspace') {
-        /* ... handled by peek request ... */
-      } else if (currentState === 'system') {
+      if (currentState === 'system') {
         const system = this.stateManager.currentSystem;
         if (!system) {
           scanStatusMessage = '<e>Scan Error: System data missing.</e>';
@@ -501,13 +504,12 @@ export class Game {
             : Infinity;
           const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
           const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
-
           if (distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
             targetToScan = { type: 'Star', name: system.name, starType: system.starType };
-            scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
+            //scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
           } else if (nearbyObject && distSqToObject < scanThresholdSq) {
             targetToScan = nearbyObject;
-            scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_OBJECT(nearbyObject.name);
+            // scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_OBJECT(nearbyObject.name);
           } else {
             scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_FAIL_NO_TARGET;
           }
@@ -516,12 +518,11 @@ export class Game {
         scanStatusMessage = `<e>Cannot perform system scan in ${currentState} state.</e>`;
       }
     } else if (scanType === 'planet_surface') {
-      // Scan logic remains same, uses terminal overlay now
       if (currentState === 'planet') {
         const planet = this.stateManager.currentPlanet;
         if (planet) {
           targetToScan = planet;
-          scanStatusMessage = `<h>Scanning surface of ${planet.name}...</h>`; // Heading format
+          scanStatusMessage = `<h>Scanning surface of ${planet.name}...</h>`;
         } else {
           scanStatusMessage = '<e>Planet scan error: Data missing.</e>';
         }
@@ -530,26 +531,30 @@ export class Game {
       }
     }
 
-    // Send initial message to terminal and dump results if target found
-    this.terminalOverlay.addMessage(scanStatusMessage);
+    // Send initial "Scanning..." message to terminal *before* results
+    if (scanStatusMessage) {
+      this.terminalOverlay.addMessage(scanStatusMessage);
+    }
+
+    // Dump results if target found (results added line-by-line via _dumpScanToTerminal)
     if (targetToScan) {
       this._dumpScanToTerminal(targetToScan);
     }
     // Status bar update happens in the main loop via _publishStatusUpdate
   }
 
-  /** Dumps formatted scan results to the terminal overlay */
+  /** Dumps formatted scan results to the terminal overlay using addMessageLines */
   private _dumpScanToTerminal(target: ScanTarget | string): void {
     let lines: string[] | null = null;
     let targetName = 'Unknown Target';
 
     try {
       if (target instanceof SolarSystem) {
-        lines = this._formatStarScanPopup(target); // Use existing formatter
+        lines = this._formatStarScanPopup(target);
         targetName = `Star (${target.name})`;
       } else if (typeof target === 'object' && target !== null && 'type' in target && target.type === 'Star') {
         const starTarget = target as { type: 'Star'; name: string; starType: string };
-        const system = this.stateManager.currentSystem; // Check current system context
+        const system = this.stateManager.currentSystem;
         if (system && system.name === starTarget.name && system.starType === starTarget.starType) {
           lines = this._formatStarScanPopup(system);
           targetName = `Star (${system.name})`;
@@ -560,9 +565,9 @@ export class Game {
       } else if (target instanceof Planet || target instanceof Starbase) {
         targetName = target.name;
         if (target instanceof Planet && !target.scanned) {
-          target.scan();
-        } // Perform scan if needed
-        lines = target.getScanInfo(); // Get formatted lines (includes moon info now)
+          target.scan(); // Perform scan if needed
+        }
+        lines = target.getScanInfo(); // Get formatted lines
       } else {
         logger.error('[Game:_dumpScanToTerminal] Unknown or invalid scan target type:', target);
         lines = [`<e>Scan Error: Unknown object type.</e>`];
@@ -570,8 +575,8 @@ export class Game {
 
       if (lines && lines.length > 0) {
         logger.info(`[Game] Dumping scan results for ${targetName} to terminal overlay.`);
-        // Add results line by line to the overlay
-        lines.forEach((line) => this.terminalOverlay.addMessage(line));
+        // ** Use the new method to add all lines at once **
+        this.terminalOverlay.addMessageLines(lines);
       } else {
         logger.error('[Game:_dumpScanToTerminal] Generated scan lines array was null or empty for target:', targetName);
         this.terminalOverlay.addMessage(`<e>Error: Failed to generate scan information for ${targetName}.</e>`);

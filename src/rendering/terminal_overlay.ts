@@ -6,10 +6,14 @@ import { logger } from '../utils/logger';
 
 // -- Marker Definitions -- (remain the same)
 const MARKERS = {
-  HEADING_START: '<h>', HEADING_END: '</h>',
-  HIGHLIGHT_START: '<hl>', HIGHLIGHT_END: '</hl>',
-  WARNING_START: '[-W-]', WARNING_END: '</w>',
-  EMERGENCY_START: '<e>', EMERGENCY_END: '</e>',
+  HEADING_START: '<h>',
+  HEADING_END: '</h>',
+  HIGHLIGHT_START: '<hl>',
+  HIGHLIGHT_END: '</hl>',
+  WARNING_START: '[-W-]',
+  WARNING_END: '</w>',
+  EMERGENCY_START: '<e>',
+  EMERGENCY_END: '</e>',
 } as const;
 type MarkerKey = keyof typeof MARKERS;
 
@@ -66,26 +70,27 @@ export class TerminalOverlay {
    * @param theme The theme to activate ('dark' or 'light').
    */
   setTheme(theme: 'dark' | 'light'): void {
-      logger.info(`[TerminalOverlay] Setting theme to: ${theme}`);
-      if (theme === 'light') {
-          this.fgColorDefault = CONFIG.TRM_FG_COLOUR_LIGHT;
-          this.colorMap = {
-              [MARKERS.HEADING_START]: CONFIG.TRM_COLOR_HEADING_LIGHT,
-              [MARKERS.HIGHLIGHT_START]: CONFIG.TRM_COLOR_HIGHLIGHT_LIGHT,
-              [MARKERS.WARNING_START]: CONFIG.TRM_COLOR_WARNING_LIGHT,
-              [MARKERS.EMERGENCY_START]: CONFIG.TRM_COLOR_EMERGENCY_LIGHT,
-          };
-      } else { // Default to dark
-          this.fgColorDefault = CONFIG.TRM_FG_COLOUR_DARK;
-          this.colorMap = {
-              [MARKERS.HEADING_START]: CONFIG.TRM_COLOR_HEADING_DARK,
-              [MARKERS.HIGHLIGHT_START]: CONFIG.TRM_COLOR_HIGHLIGHT_DARK,
-              [MARKERS.WARNING_START]: CONFIG.TRM_COLOR_WARNING_DARK,
-              [MARKERS.EMERGENCY_START]: CONFIG.TRM_COLOR_EMERGENCY_DARK,
-          };
-      }
-      // Optional: Force a re-render if messages are currently displayed
-      // This might require coordination with the main game loop or renderer facade.
+    logger.info(`[TerminalOverlay] Setting theme to: ${theme}`);
+    if (theme === 'light') {
+      this.fgColorDefault = CONFIG.TRM_FG_COLOUR_LIGHT;
+      this.colorMap = {
+        [MARKERS.HEADING_START]: CONFIG.TRM_COLOR_HEADING_LIGHT,
+        [MARKERS.HIGHLIGHT_START]: CONFIG.TRM_COLOR_HIGHLIGHT_LIGHT,
+        [MARKERS.WARNING_START]: CONFIG.TRM_COLOR_WARNING_LIGHT,
+        [MARKERS.EMERGENCY_START]: CONFIG.TRM_COLOR_EMERGENCY_LIGHT,
+      };
+    } else {
+      // Default to dark
+      this.fgColorDefault = CONFIG.TRM_FG_COLOUR_DARK;
+      this.colorMap = {
+        [MARKERS.HEADING_START]: CONFIG.TRM_COLOR_HEADING_DARK,
+        [MARKERS.HIGHLIGHT_START]: CONFIG.TRM_COLOR_HIGHLIGHT_DARK,
+        [MARKERS.WARNING_START]: CONFIG.TRM_COLOR_WARNING_DARK,
+        [MARKERS.EMERGENCY_START]: CONFIG.TRM_COLOR_EMERGENCY_DARK,
+      };
+    }
+    // Optional: Force a re-render if messages are currently displayed
+    // This might require coordination with the main game loop or renderer facade.
   }
   // --- END NEW Method ---
 
@@ -102,16 +107,31 @@ export class TerminalOverlay {
     // logger.debug(`[TerminalOverlay] Queued message: "${rawText}" (Queue size: ${this.messageQueue.length})`); // Can be noisy
   }
 
-  /** Clears all current and queued messages from the overlay. */ // (remains the same)
-  clear(): void {
-      logger.info('[TerminalOverlay] Clearing all messages.');
-      this.displayMessages = [];
-      this.messageQueue = [];
-      this.isCurrentlyTyping = false;
-      this.currentTypingProgressChars = 0;
+  /**
+   * Adds multiple lines of raw message text (with markers) to the waiting queue.
+   * @param lines An array of strings, where each string is a message line.
+   */
+  addMessageLines(lines: string[]): void {
+    if (!lines || lines.length === 0) return;
+    lines.forEach((line) => {
+      if (line) {
+        // Ensure line is not empty/null before adding
+        this.addMessage(line);
+      }
+    });
+    logger.debug(`[TerminalOverlay] Queued ${lines.length} message lines.`);
   }
 
-  /** Starts displaying the next message from the queue */ // (remains the same)
+  /** Clears all current and queued messages from the overlay. */
+  clear(): void {
+    logger.info('[TerminalOverlay] Clearing all messages.');
+    this.displayMessages = [];
+    this.messageQueue = [];
+    this.isCurrentlyTyping = false;
+    this.currentTypingProgressChars = 0;
+  }
+
+  /** Starts displaying the next message from the queue */
   private _startNextMessage(): void {
     if (this.isCurrentlyTyping || this.messageQueue.length === 0) return;
     const nextMessageText = this.messageQueue.shift();
@@ -135,7 +155,7 @@ export class TerminalOverlay {
     this.currentTypingProgressChars = 0;
   }
 
-  /** Updates message states (typing, fading, queue processing) */ // (remains the same)
+  /** Updates message states (typing, fading, queue processing) */
   update(deltaTime: number): void {
     const now = performance.now();
     // --- 1. Process Queue ---
@@ -150,17 +170,17 @@ export class TerminalOverlay {
         this.currentTypingProgressChars += this.typingSpeedCharsPerSec * deltaTime;
         const targetChars = Math.floor(this.currentTypingProgressChars);
         typingMsg.segments = this._parseTextToSegments(typingMsg.fullText, targetChars);
-         const totalDisplayableChars = this._getDisplayableLength(typingMsg.fullText);
+        const totalDisplayableChars = this._getDisplayableLength(typingMsg.fullText);
         if (targetChars >= totalDisplayableChars) {
-             typingMsg.segments = this._parseTextToSegments(typingMsg.fullText);
-             // logger.debug(`[TerminalOverlay] Message completed typing: "${typingMsg.fullText}"`); // Can be noisy
-             typingMsg.isTyping = false;
-             typingMsg.typingCompleteTimestamp = now;
-             this.isCurrentlyTyping = false;
-             this.currentTypingProgressChars = 0;
+          typingMsg.segments = this._parseTextToSegments(typingMsg.fullText);
+          // logger.debug(`[TerminalOverlay] Message completed typing: "${typingMsg.fullText}"`); // Can be noisy
+          typingMsg.isTyping = false;
+          typingMsg.typingCompleteTimestamp = now;
+          this.isCurrentlyTyping = false;
+          this.currentTypingProgressChars = 0;
         }
       } else {
-        logger.warn("[TerminalOverlay] State mismatch: isCurrentlyTyping true, but no message is typing.");
+        logger.warn('[TerminalOverlay] State mismatch: isCurrentlyTyping true, but no message is typing.');
         this.isCurrentlyTyping = false;
         this.currentTypingProgressChars = 0;
       }
@@ -179,7 +199,7 @@ export class TerminalOverlay {
     });
   }
 
-  /** Parses text with markers into colored segments */ // (Uses themed colors)
+  /** Parses text with markers into colored segments */ 
   private _parseTextToSegments(rawText: string, maxChars?: number): TextSegment[] {
     const segments: TextSegment[] = [];
     let currentText = '';
@@ -189,70 +209,70 @@ export class TerminalOverlay {
     const max = maxChars === undefined ? rawText.length : Infinity;
 
     while (i < rawText.length) {
-        if (maxChars !== undefined && displayedChars >= maxChars) {
-            break;
+      if (maxChars !== undefined && displayedChars >= maxChars) {
+        break;
+      }
+
+      let markerFound = false;
+      for (const [markerKey, markerValue] of Object.entries(MARKERS)) {
+        if (rawText.startsWith(markerValue, i)) {
+          if (currentText.length > 0) {
+            segments.push({ text: currentText, color: currentColor });
+          }
+          currentText = '';
+
+          if (markerKey.endsWith('_END')) {
+            currentColor = this.fgColorDefault; // Revert to themed default
+          } else {
+            // Use the currently set themed color map
+            currentColor = this.colorMap[markerValue] || this.fgColorDefault;
+          }
+
+          i += markerValue.length;
+          markerFound = true;
+          break;
         }
+      }
 
-        let markerFound = false;
-        for (const [markerKey, markerValue] of Object.entries(MARKERS)) {
-            if (rawText.startsWith(markerValue, i)) {
-                if (currentText.length > 0) {
-                    segments.push({ text: currentText, color: currentColor });
-                }
-                currentText = '';
-
-                if (markerKey.endsWith('_END')) {
-                    currentColor = this.fgColorDefault; // Revert to themed default
-                } else {
-                    // Use the currently set themed color map
-                    currentColor = this.colorMap[markerValue] || this.fgColorDefault;
-                }
-
-                i += markerValue.length;
-                markerFound = true;
-                break;
-            }
-        }
-
-        if (!markerFound) {
-            currentText += rawText[i];
-            displayedChars++;
-            i++;
-        }
+      if (!markerFound) {
+        currentText += rawText[i];
+        displayedChars++;
+        i++;
+      }
     }
 
     if (currentText.length > 0) {
-         if (maxChars !== undefined && displayedChars > maxChars) {
-             currentText = currentText.substring(0, currentText.length - (displayedChars - maxChars));
-        }
-        segments.push({ text: currentText, color: currentColor });
+      if (maxChars !== undefined && displayedChars > maxChars) {
+        currentText = currentText.substring(0, currentText.length - (displayedChars - maxChars));
+      }
+      segments.push({ text: currentText, color: currentColor });
     }
 
     return segments;
   }
 
-  /** Calculates the number of displayable characters (excluding markers) */ // (remains the same)
-   private _getDisplayableLength(rawText: string): number {
-       let length = 0;
-       let i = 0;
-       while (i < rawText.length) {
-           let markerFound = false;
-           for (const marker of Object.values(MARKERS)) {
-               if (rawText.startsWith(marker, i)) {
-                   i += marker.length;
-                   markerFound = true;
-                   break;
-               }
-           }
-           if (!markerFound) {
-               length++;
-               i++;
-           }
-       }
-       return length;
-   }
+  /** Calculates the number of displayable characters (excluding markers) */
+  private _getDisplayableLength(rawText: string): number {
+    let length = 0;
+    let i = 0;
+    while (i < rawText.length) {
+      let markerFound = false;
+      for (const marker of Object.values(MARKERS)) {
+        if (rawText.startsWith(marker, i)) {
+          i += marker.length;
+          markerFound = true;
+          break;
+        }
+      }
+      if (!markerFound) {
+        length++;
+        i++;
+      }
+    }
+    return length;
+  }
 
-  /** Renders the terminal messages onto the provided context */ // (Uses themed colors)
+  /** Renders the terminal messages onto the provided context */
   render(ctx: CanvasRenderingContext2D, bufferWidthPx: number, bufferHeightPx: number): void {
     ctx.save();
     ctx.font = this.font;
@@ -273,32 +293,32 @@ export class TerminalOverlay {
       ctx.globalAlpha = msg.alpha;
       let currentX = startX;
       for (const segment of msg.segments) {
-          if (segment.text.length === 0) continue;
-          ctx.fillStyle = segment.color; // Use segment's calculated color
-          ctx.fillText(segment.text, currentX, yPos);
-          currentX += ctx.measureText(segment.text).width;
+        if (segment.text.length === 0) continue;
+        ctx.fillStyle = segment.color; // Use segment's calculated color
+        ctx.fillText(segment.text, currentX, yPos);
+        currentX += ctx.measureText(segment.text).width;
       }
 
       if (msg.isTyping) {
-          typingMessage = msg;
+        typingMessage = msg;
       }
     }
 
     // --- Draw Cursor ---
     if (typingMessage) {
-        const typingMsgYPos = startY;
-        if (typingMsgYPos >= 0) {
-             if (Math.floor(now / this.cursorBlinkRateMs) % 2 === 0) {
-                 let cursorX = startX;
-                 for (const segment of typingMessage.segments) {
-                     cursorX += ctx.measureText(segment.text).width;
-                 }
-                 cursorX += 2;
-                 ctx.globalAlpha = typingMessage.alpha;
-                 ctx.fillStyle = this.fgColorDefault; // Use themed default for cursor
-                 ctx.fillText(this.cursorChar, cursorX, typingMsgYPos);
-             }
+      const typingMsgYPos = startY;
+      if (typingMsgYPos >= 0) {
+        if (Math.floor(now / this.cursorBlinkRateMs) % 2 === 0) {
+          let cursorX = startX;
+          for (const segment of typingMessage.segments) {
+            cursorX += ctx.measureText(segment.text).width;
+          }
+          cursorX += 2;
+          ctx.globalAlpha = typingMessage.alpha;
+          ctx.fillStyle = this.fgColorDefault; // Use themed default for cursor
+          ctx.fillText(this.cursorChar, cursorX, typingMsgYPos);
         }
+      }
     }
 
     ctx.globalAlpha = 1.0;

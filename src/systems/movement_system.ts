@@ -10,7 +10,7 @@ import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from '../core/event_manager';
 
 // Define or import the event data structure expected by handleMoveRequest
-interface MoveRequestData {
+export interface MoveRequestData {
     dx: number;
     dy: number;
     isFineControl: boolean;
