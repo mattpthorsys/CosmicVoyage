@@ -1,5 +1,5 @@
-// src/rendering/scene_renderer.ts
-// Complete file including moon rendering logic and accepting view scale parameter.
+// FILE: src/rendering/scene_renderer.ts
+// REFACTORED: Extracted surface element overlay logic into _drawSurfaceOverlay method.
 
 import { ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
@@ -10,7 +10,7 @@ import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS } from '../constants'; // Added AU_IN_METERS
+import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS } from '../constants';
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex, RgbColour } from './colour';
@@ -62,7 +62,8 @@ export class SceneRenderer {
         if (isStarCell) {
           const starSeed = `star_${worldX},${worldY}`;
           const starPRNG = gameSeedPRNG.seedNew(starSeed);
-          const starType = starPRNG.choice(Object.keys(SPECTRAL_TYPES))!;
+          // Use SPECTRAL_DISTRIBUTION which is now an array of strings
+          const starType = starPRNG.choice(Object.keys(SPECTRAL_TYPES))!; // Ensure choice works with string[]
           const starInfo = SPECTRAL_TYPES[starType];
           if (starInfo) {
             const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1);
@@ -107,7 +108,6 @@ export class SceneRenderer {
       const { factor: parallaxFactor, density, scale } = layer;
 
       // Scale player position (meters) appropriately before applying parallax factor
-      // Avoid huge intermediate numbers; scale might need tuning based on factor size
       const scaledPlayerX = player.position.systemX * parallaxFactor;
       const scaledPlayerY = player.position.systemY * parallaxFactor;
 
@@ -121,11 +121,13 @@ export class SceneRenderer {
           const starFieldY = y + viewOffsetY;
           const cellSeedString = `${baseBgSeed}_${layerIndex}_${starFieldX}_${starFieldY}`;
           const cellPrng = baseBgPrng.seedNew(cellSeedString);
+
           if (cellPrng.random() < density) {
             const starChar = cellPrng.choice(CONFIG.STAR_BACKGROUND_CHARS)!;
             const starColor = cellPrng.choice(CONFIG.STAR_BACKGROUND_COLORS)!;
             backgroundBuffer.drawChar(starChar, x, y, starColor, null); // Transparent BG
           }
+          // No need for an else{} here as clear() already set the background
         }
       }
     });
@@ -133,14 +135,12 @@ export class SceneRenderer {
 
 
   /** Draws the solar system view, including moons, using the specified view scale. */
-  // <<< Accepts currentViewScale parameter >>>
   drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
     logger.debug(`[SceneRenderer.drawSolarSystem] Drawing system: ${system.name} (Scale: ${currentViewScale.toExponential(1)} m/cell)`);
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols <= 0 || rows <= 0) return; // Skip if dimensions are invalid
 
-    // Use the passed-in scale factor (meters per cell)
     const viewScale = currentViewScale;
     if (!Number.isFinite(viewScale) || viewScale <= 0) {
         logger.error(`[SceneRenderer.drawSolarSystem] Invalid viewScale received: ${viewScale}. Aborting draw.`);
@@ -150,8 +150,6 @@ export class SceneRenderer {
 
     const viewCenterX = Math.floor(cols / 2);
     const viewCenterY = Math.floor(rows / 2);
-
-    // Calculate view boundaries in meters based on player position (meters) and scale (meters/cell)
     const viewWorldStartX = player.position.systemX - viewCenterX * viewScale;
     const viewWorldStartY = player.position.systemY - viewCenterY * viewScale;
 
@@ -161,12 +159,13 @@ export class SceneRenderer {
     // --- Draw Star ---
     const starInfo = SPECTRAL_TYPES[system.starType];
     const starColor = starInfo?.colour || '#FFFFFF';
-    // Calculate star's position on screen (center of system is 0,0 meters)
     const starViewX = Math.floor((0 - viewWorldStartX) / viewScale);
     const starViewY = Math.floor((0 - viewWorldStartY) / viewScale);
-    let starRadius = 1;
-    switch (system.starType) { /* ... determine starRadius ... */ }
-    // Draw star only if within view bounds
+    let starRadius = 1; // Default visual radius
+    if (starInfo?.radius) { // Calculate visual radius based on physical size and view scale
+        starRadius = Math.max(0, Math.round(starInfo.radius / viewScale)); // Can be 0 at high zoom out
+    }
+    // Draw star only if potentially visible
     if (starViewX + starRadius >= 0 && starViewX - starRadius < cols && starViewY + starRadius >= 0 && starViewY - starRadius < rows) {
         this.drawingContext.drawCircle(starViewX, starViewY, starRadius, GLYPHS.SHADE_DARK, starColor, starColor);
         this.drawingContext.drawOrbit(starViewX, starViewY, starRadius, GLYPHS.SHADE_MEDIUM, starColor, 0, 0, cols - 1, rows - 1);
@@ -176,29 +175,26 @@ export class SceneRenderer {
     system.planets.forEach((planet) => {
       if (!planet) return;
 
-      // Convert planet orbit distance (meters) to screen radius for orbit drawing
       const orbitViewRadius = Math.round(planet.orbitDistance / viewScale);
-      // Draw orbit only if it's reasonably large on screen and potentially visible
       if (orbitViewRadius > 1 && orbitViewRadius < Math.max(cols, rows)) {
         this.drawingContext.drawOrbit(starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.ORBIT_COLOUR_MAIN, 0, 0, cols - 1, rows - 1);
       }
 
-      // Convert planet absolute position (meters) to screen coordinates
       const planetViewX = Math.floor((planet.systemX - viewWorldStartX) / viewScale);
       const planetViewY = Math.floor((planet.systemY - viewWorldStartY) / viewScale);
 
-      // Only draw planet and its moons if planet itself is within screen bounds
       if (planetViewX >= 0 && planetViewX < cols && planetViewY >= 0 && planetViewY < rows) {
           const planetColor = PLANET_TYPES[planet.type]?.terrainColours[4] || '#CCCCCC';
-          const planetDrawRadius = (planet.moons && planet.moons.length > 0) ? 1 : 0; // Slightly larger if has moons
-          this.drawingContext.drawCircle(planetViewX, planetViewY, planetDrawRadius, GLYPHS.PLANET_ICON, planetColor, null); // Null BG
+          // Simple representation: 'O' if it has moons, 'o' otherwise, or based on size/scale
+          const planetGlyph = (planet.moons && planet.moons.length > 0 && viewScale < CONFIG.SYSTEM_VIEW_SCALE / 10) ? GLYPHS.PLANET_ICON : 'o';
+          this.screenBuffer.drawChar(planetGlyph, planetViewX, planetViewY, planetColor, null); // Null BG
 
           // --- Draw Moons (Nested Loop) ---
           if (planet.moons) {
             planet.moons.forEach(moon => {
               const moonViewX = Math.floor((moon.systemX - viewWorldStartX) / viewScale);
               const moonViewY = Math.floor((moon.systemY - viewWorldStartY) / viewScale);
-              // Check if moon is within view bounds AND not in the exact same cell as the planet
+              // Only draw if visible and not overlapping planet exactly
               if (moonViewX >= 0 && moonViewX < cols && moonViewY >= 0 && moonViewY < rows && (moonViewX !== planetViewX || moonViewY !== planetViewY)) {
                 const moonColor = PLANET_TYPES[moon.type]?.terrainColours[6] || '#999999';
                 this.screenBuffer.drawChar('.', moonViewX, moonViewY, moonColor, null); // Use '.' for moon
@@ -212,11 +208,13 @@ export class SceneRenderer {
     if (system.starbase) {
       const sb = system.starbase;
       const orbitViewRadius = Math.round(sb.orbitDistance / viewScale);
-      if (orbitViewRadius > 1 && orbitViewRadius < Math.max(cols, rows)) { /* ... draw starbase orbit ... */ }
+      if (orbitViewRadius > 1 && orbitViewRadius < Math.max(cols, rows)) {
+          this.drawingContext.drawOrbit(starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOUR, 0, 0, cols - 1, rows - 1);
+      }
       const sbViewX = Math.floor((sb.systemX - viewWorldStartX) / viewScale);
       const sbViewY = Math.floor((sb.systemY - viewWorldStartY) / viewScale);
       if (sbViewX >= 0 && sbViewX < cols && sbViewY >= 0 && sbViewY < rows) {
-           this.drawingContext.drawCircle(sbViewX, sbViewY, 0, GLYPHS.STARBASE_ICON, CONFIG.STARBASE_COLOUR, null);
+           this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbViewX, sbViewY, CONFIG.STARBASE_COLOUR, null);
       }
     }
 
@@ -227,18 +225,17 @@ export class SceneRenderer {
     this.drawSystemMinimap(system, player);
   }
 
+
   /** Draws the minimap for the solar system view. */
   private drawSystemMinimap(system: SolarSystem, player: Player): void {
     const cols = this.screenBuffer.getCols();
     const mapWidth = Math.floor(cols * CONFIG.MINIMAP_SIZE_FACTOR);
     const mapHeight = mapWidth;
     if (mapWidth <= 0 || mapHeight <= 0) return;
-
     const mapStartX = cols - mapWidth - 1;
     const mapStartY = 1;
     const worldRadius_m = system.edgeRadius; // meters
     const mapScale_m_per_cell = (2 * worldRadius_m) / Math.min(mapWidth, mapHeight);
-
     if (mapScale_m_per_cell <= 0 || !Number.isFinite(mapScale_m_per_cell)) { return; }
 
     this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', CONFIG.DEFAULT_BG_COLOUR);
@@ -264,18 +261,21 @@ export class SceneRenderer {
         const planetColor = PLANET_TYPES[p.type]?.terrainColours[4] || '#CCCCCC';
         this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOUR);
         // Optional: Draw moons on minimap if desired and space permits
-        /*
-        if (p.moons) {
-            p.moons.forEach(moon => { // ... draw moon symbol ... });
-        }
-        */
       }
     });
-
     // Draw Star, Starbase, Player
     const starPos = worldToMinimap(0, 0);
-    if (starPos) { /* ... draw star ... */ }
-    if (system.starbase) { const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY); if (sbPos) { /* ... draw starbase ... */ } }
+    if (starPos) {
+        const starInfo = SPECTRAL_TYPES[system.starType];
+        const starColor = starInfo?.colour || '#FFFFFF';
+        this.screenBuffer.drawChar('*', starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
+    }
+    if (system.starbase) {
+        const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
+        if (sbPos) {
+            this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
+        }
+    }
     const playerPos = worldToMinimap(player.position.systemX, player.position.systemY);
     if (playerPos) { this.screenBuffer.drawChar(player.render.char, playerPos.x, playerPos.y, player.render.fgColor, CONFIG.DEFAULT_BG_COLOUR); }
   }
@@ -305,11 +305,19 @@ export class SceneRenderer {
     logger.debug(`[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`);
     const map = planet.heightmap;
     const heightColors = planet.heightLevelColors;
-    const elementMap = planet.surfaceElementMap;
+    const elementMap = planet.surfaceElementMap; // Use getter
 
-    if (!map || !heightColors || !elementMap) { /* ... error handling ... */ return; }
+    if (!map || !heightColors || !elementMap) {
+      logger.error(`[SceneRenderer.drawSolidPlanetSurface] Surface data missing for ${planet.name}.`);
+      this._drawError(`Surface Error: Missing Data for ${planet.name}`);
+      return;
+    }
     const mapSize = map.length;
-    if (mapSize <= 0) { /* ... error handling ... */ return; }
+    if (mapSize <= 0) {
+        logger.error(`[SceneRenderer.drawSolidPlanetSurface] Invalid map size ${mapSize} for ${planet.name}.`);
+        this._drawError(`Surface Error: Invalid Map Size for ${planet.name}`);
+        return;
+    }
 
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
@@ -325,16 +333,15 @@ export class SceneRenderer {
         const wrappedMapX = ((mapX % mapSize) + mapSize) % mapSize;
         const wrappedMapY = ((mapY % mapSize) + mapSize) % mapSize;
 
+        // --- Draw Terrain Block (Main Buffer) ---
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
         const terrainColor = heightColors[height] || '#FF00FF';
-        this.screenBuffer.drawChar(GLYPHS.BLOCK, x, y, terrainColor, terrainColor); // Draw terrain
+        this.screenBuffer.drawChar(GLYPHS.BLOCK, x, y, terrainColor, terrainColor); // Draw terrain first
 
-        const elementKey = elementMap[wrappedMapY]?.[wrappedMapX];
-        if (elementKey && elementKey !== '' && !planet.isMined(wrappedMapX, wrappedMapY)) {
-          // Draw overlay with transparent background
-          this.screenBuffer.drawChar('%', x, y, '#444444', null);
-        }
+        // --- Call Helper to Draw Element Overlay ---
+        const elementKey = elementMap[wrappedMapY]?.[wrappedMapX]; // Get element key here
+        this._drawSurfaceOverlay(x, y, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
       }
     }
 
@@ -344,18 +351,48 @@ export class SceneRenderer {
     this.drawHeightmapLegend(planet);
   }
 
+  /**
+   * *** NEW HELPER METHOD ***
+   * Draws the resource overlay character (%) if applicable for the given cell.
+   */
+  private _drawSurfaceOverlay(
+      screenX: number,
+      screenY: number,
+      mapX: number,
+      mapY: number,
+      elementKey: string | null | undefined,
+      terrainColor: string, // Pass terrain color for background
+      planet: Planet
+  ): void {
+      if (elementKey && elementKey !== '' && !planet.isMined(mapX, mapY)) {
+          // Draw overlay with transparent background, letting terrain show through
+          // Using black fg and terrain bg makes it look like a 'hole'
+          this.screenBuffer.drawChar(
+              '%',            // Character for overlay
+              screenX,        // Screen X
+              screenY,        // Screen Y
+              '#000000',      // Foreground: Black (adjust as needed for visibility)
+              terrainColor    // Background: Use underlying terrain color
+          );
+      }
+  }
+
   /** Draws the "surface" view for a gas giant. */
   private drawGasGiantSurface(player: Player, planet: Planet): void {
     logger.debug(`[SceneRenderer.drawGasGiantSurface] Drawing atmospheric view: ${planet.name}`);
-    const palette = planet.rgbPaletteCache;
-    if (!palette || palette.length < 1) { /* ... error handling ... */ return; }
+    const palette = planet.rgbPaletteCache; // Use getter
+    if (!palette || palette.length < 1) {
+        logger.error(`[SceneRenderer.drawGasGiantSurface] RGB Palette cache missing or empty for ${planet.name}.`);
+        this._drawError(`Atmosphere Error: Missing Data for ${planet.name}`);
+        return;
+    }
 
     const rows = this.screenBuffer.getRows(); // Corrected
     const cols = this.screenBuffer.getCols(); // Corrected
     const visualPrng = planet.systemPRNG.seedNew("gas_surface_visuals");
 
     for (let y = 0; y < rows; y++) {
-      const numColors = palette.length; // Define inside loop if palette can change (it shouldn't here)
+      const numColors = palette.length;
       const baseColorIndex = Math.floor((y / rows) * (numColors -1));
       const colour1 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex))];
       const colour2 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex + 1))];
@@ -389,7 +426,7 @@ export class SceneRenderer {
 
   /** Draws a legend for the heightmap colours on the planet surface view. */
   private drawHeightmapLegend(planet: Planet): void {
-    const heightColors = planet.heightLevelColors;
+    const heightColors = planet.heightLevelColors; // Use getter
     if (!heightColors || heightColors.length === 0) return;
     const rows = this.screenBuffer.getRows();
     const cols = this.screenBuffer.getCols();
@@ -398,6 +435,7 @@ export class SceneRenderer {
     const startX = cols - legendWidth - 2;
     const startY = Math.floor((rows - legendHeight) / 2);
     const numColors = heightColors.length;
+
     for (let i = 0; i < legendHeight; i++) {
       const colourIndex = Math.floor(((i / (legendHeight - 1)) * (numColors - 1)));
       const colour = heightColors[Math.max(0, Math.min(numColors - 1, colourIndex))] || '#FF00FF';
