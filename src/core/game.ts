@@ -55,17 +55,19 @@ export class Game {
   private readonly popupTypingSpeed: number = 80; // Characters per second
 
   // --- Zoom State ---
-  // Define available zoom scales (meters per cell).
   private readonly zoomLevels: number[] = [
-    CONFIG.SYSTEM_VIEW_SCALE * 8, // Zoom Out 2x (~0.125x)
-    CONFIG.SYSTEM_VIEW_SCALE * 4, // Zoom Out 1x (~0.25x)
-    CONFIG.SYSTEM_VIEW_SCALE, // Default (1x) - Base scale from config
-    CONFIG.SYSTEM_VIEW_SCALE / 4, // Zoom In 1x (4x)
-    CONFIG.SYSTEM_VIEW_SCALE / 16, // Zoom In 2x (16x)
-    CONFIG.SYSTEM_VIEW_SCALE / 64, // Zoom In 3x (64x)
-    // Add more levels if desired
+    CONFIG.SYSTEM_VIEW_SCALE * 32, // Zoom Out 3x (~0.03x) - ~240 chars = 1 AU
+    CONFIG.SYSTEM_VIEW_SCALE * 8, // Zoom Out 2x (~0.125x) - 120 chars = 1 AU
+    CONFIG.SYSTEM_VIEW_SCALE * 4, // Zoom Out 1x (~0.25x) - 60 chars = 1 AU
+    CONFIG.SYSTEM_VIEW_SCALE, // Default (1x) - 30 chars = 1 AU
+    CONFIG.SYSTEM_VIEW_SCALE / 4, // Zoom In 1x (4x) - 7.5 chars = 1 AU
+    CONFIG.SYSTEM_VIEW_SCALE / 16, // Zoom In 2x (16x) - ~2 chars = 1 AU
+    CONFIG.SYSTEM_VIEW_SCALE / 64, // Zoom In 3x (64x) - Moons might be visible
+    CONFIG.SYSTEM_VIEW_SCALE / 256, // Zoom In 4x (256x) - Deeper moon view
+    CONFIG.SYSTEM_VIEW_SCALE / 1024, // Zoom In 5x (1024x) - Very close view
   ];
-  private currentZoomLevelIndex: number = 2; // Start at the default index (1x zoom)
+  // Adjust default index if needed (Default 1x is now index 3)
+  private currentZoomLevelIndex: number = 3; // Start at the default index (1x zoom)
 
   constructor(canvasId: string, statusBarId: string, seed?: string | number) {
     logger.info('[Game] Constructing instance...');
@@ -764,8 +766,20 @@ export class Game {
       return 'System Error: Data missing. Returning to hyperspace.';
     }
 
+    // Time scale adjustments
+    const defaultZoomIndex = 3; // Index of your default scale (1x zoom)
+    const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
+    // Adjust time speed by factor of 2 per zoom level (0.5 = slower when zoomed in)
+    // Adjust the base (0.5) for different scaling sensitivity
+    let timeScaleMultiplier = Math.pow(0.5, zoomDifference);
+    // Clamp multiplier to prevent time stopping or going excessively fast
+    timeScaleMultiplier = Math.max(0.01, Math.min(timeScaleMultiplier, 10.0));
+    logger.debug(`[Game] Zoom Index: ${this.currentZoomLevelIndex}, Time Scale Multiplier: ${timeScaleMultiplier.toFixed(3)}`);
+    const scaledDeltaTime = deltaTime * timeScaleMultiplier;
+
+
     // Update orbits of planets, moons, starbase
-    system.updateOrbits(deltaTime);
+    system.updateOrbits(scaledDeltaTime);
 
     // Determine status message based on proximity
     const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);

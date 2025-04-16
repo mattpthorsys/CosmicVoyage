@@ -173,6 +173,7 @@ export class SceneRenderer {
     if (system.starbase) {
       const sb = system.starbase;
       const orbitViewRadius = Math.round(sb.orbitDistance / viewScale);
+      
       if (orbitViewRadius > 1) {
         this.drawingContext.drawOrbit(
           starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOUR, 0, 0, cols - 1, rows - 1
