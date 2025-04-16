@@ -37,8 +37,32 @@ export class SolarSystem {
     this.systemPRNG = gameSeedPRNG.seedNew(starSeed);
     logger.debug(`[System:${starX},${starY}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`);
 
-    this.starType = this.systemPRNG.choice(SPECTRAL_DISTRIBUTION)!;
+    //this.starType = this.systemPRNG.choice(SPECTRAL_DISTRIBUTION)!;
+
     this.name = this.generateSystemName();
+
+    // --- Determine Star Type (Broad then Specific Subtype) ---
+    const broadStarType = this.systemPRNG.choice(SPECTRAL_DISTRIBUTION)!; // e.g., 'G'
+    // Filter SPECTRAL_TYPES to find all keys matching the broad type (e.g., "G0V", "G1V", ...)
+    const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
+        (key) => key.startsWith(broadStarType) && key.endsWith('V') // Ensure it starts with the broad type and ends with 'V'
+    );
+    // If subtypes are found for the broad type, pick one randomly. Otherwise, fallback to the broad type.
+    if (availableSubtypes.length > 0) {
+        this.starType = this.systemPRNG.choice(availableSubtypes)!; // e.g., "G5V"
+        logger.debug(`[System:${this.name}] Selected broad type '${broadStarType}', assigned specific subtype '${this.starType}'.`);
+    } else {
+        // Fallback if no subtypes were found for this broad type (shouldn't happen with current setup)
+        this.starType = broadStarType;
+        logger.warn(`[System:${this.name}] No specific subtypes found for broad type '${broadStarType}'. Using broad type directly.`);
+    }
+    // --- End Star Type Determination ---
+
+    this.name = this.generateSystemName(); // Keep name generation after starType assignment
+    logger.info(
+      `[System:${this.name}] Created system at world [${this.starX},${this.starY}]. Star Type: ${this.starType}.` // Log will now show subtype
+    );
+    // ... rest of the constructor continues here (planet generation etc.)
     logger.info(
       `[System:${this.name}] Created system at world [${this.starX},${this.starY}]. Star Type: ${this.starType}.`
     );

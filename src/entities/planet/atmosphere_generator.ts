@@ -1,6 +1,7 @@
 // FILE: src/entities/planet/atmosphere_generator.ts
 // Contains logic for generating planetary atmosphere details.
 // REFACTORED: Extracted logic from generateAtmosphereComposition into helper functions.
+// UPDATED: April 2025 - Expanded GAS_MOLECULAR_MASS_KG with additional gases.
 
 import { PRNG } from '../../utils/prng';
 import { PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, BOLTZMANN_CONSTANT_K } from '../../constants';
@@ -10,24 +11,53 @@ import { Atmosphere, AtmosphereComposition } from '../../entities/planet'; // Im
 // --- Constants ---
 const ESCAPE_THRESHOLD_FACTOR = 6.0; // Gas likely escapes if V_th > V_esc / 6
 
-// --- Molecular Masses --- (Copy from original file or import if moved to constants)
+// --- Molecular Masses ---
+
+/**
+ * Approximate molecular masses for atmospheric gases in kilograms (kg).
+ * Used for calculating thermal escape velocity.
+ * Keys MUST match the names used in the ATMOSPHERE_GASES array in constants.ts.
+ */
 const GAS_MOLECULAR_MASS_KG: Record<string, number> = {
-    'Hydrogen': 3.347e-27,   // H2
-    'Helium': 6.646e-27,     // He
-    'Methane': 2.663e-26,    // CH4
-    'Ammonia': 2.828e-26,    // NH3
-    'Water Vapor': 2.991e-26,// H2O
-    'Neon': 3.351e-26,      // Ne
+    // Original Gases
+    'Hydrogen': 3.347e-27,        // H₂
+    'Helium': 6.646e-27,          // He
+    'Methane': 2.663e-26,         // CH₄
+    'Ammonia': 2.828e-26,         // NH₃
+    'Water Vapor': 2.991e-26,     // H₂O
+    'Neon': 3.351e-26,           // Ne
     'Carbon Monoxide': 4.651e-26, // CO
-    'Nitrogen': 4.652e-26,   // N2
-    'Oxygen': 5.313e-26,    // O2
-    'Argon': 6.634e-26,     // Ar
-    'Carbon Dioxide': 7.308e-26,// CO2
-    'Fluorine': 6.310e-26,   // F2
-    'Sulfur Dioxide': 1.064e-25,// SO2
-    'Chlorine': 1.177e-25,   // Cl2
-    'Ethane': 4.993e-26,    // C2H6
-    'Xenon': 2.180e-25,     // Xe
+    'Nitrogen': 4.652e-26,        // N₂
+    'Oxygen': 5.313e-26,         // O₂
+    'Argon': 6.634e-26,          // Ar
+    'Carbon Dioxide': 7.308e-26,  // CO₂
+    'Fluorine': 6.310e-26,        // F₂
+    'Sulfur Dioxide': 1.064e-25,  // SO₂
+    'Chlorine': 1.177e-25,        // Cl₂
+    'Ethane': 4.993e-26,         // C₂H₆
+    'Xenon': 2.180e-25,          // Xe
+
+    // New Gases (Added April 2025) - Masses calculated from amu * 1.66054e-27 kg/amu
+    'Atomic Hydrogen': 1.674e-27,     // H
+    'Hydrogen Cyanide': 4.488e-26,   // HCN (27.03 amu)
+    'Formaldehyde': 4.987e-26,      // H₂CO (30.03 amu)
+    'Hydrogen Sulfide': 5.659e-26,   // H₂S (34.08 amu)
+    'Silicon Monoxide': 7.321e-26,   // SiO (44.09 amu)
+    'Carbonyl Sulfide': 9.976e-26,   // OCS (60.08 amu)
+    'Acetylene': 4.324e-26,         // C₂H₂ (26.04 amu)
+    'Methanol': 5.320e-26,          // CH₃OH (32.04 amu)
+    'Formic Acid': 7.643e-26,       // HCOOH (46.03 amu)
+    'Silane': 5.334e-26,            // SiH₄ (32.12 amu)
+    'Phosphine': 5.646e-26,         // PH₃ (34.00 amu)
+    'Hydrogen Chloride': 6.054e-26, // HCl (36.46 amu)
+    'Nitric Oxide': 4.983e-26,      // NO (30.01 amu)
+    'Nitrous Oxide': 7.308e-26,     // N₂O (44.01 amu) - Same mass as CO2
+    'Ozone': 7.971e-26,             // O₃ (48.00 amu)
+    'Sulfur Monoxide': 7.980e-26,   // SO (48.06 amu)
+    'Silicon Dioxide': 9.976e-26,   // SiO₂ (60.08 amu) - Same mass as OCS
+    'Magnesium Oxide': 6.692e-26,   // MgO (40.30 amu)
+    'Iron Oxide': 1.193e-25,        // FeO (71.84 amu)
+    'Diatomic Carbon': 3.989e-26    // C₂ (24.02 amu)
 };
 
 // --- Helper Functions ---
@@ -116,7 +146,10 @@ function _distributeSecondaryGases(
     let availableGases = ATMOSPHERE_GASES.filter(g => {
         if (usedGases.has(g)) return false;
         const gasMass = GAS_MOLECULAR_MASS_KG[g];
-        if (!gasMass) return false;
+        if (!gasMass) {
+            logger.warn(`[AtmoGen] Molecular mass missing for potential secondary gas: ${g}. Excluding.`);
+            return false; // Exclude if mass data is missing
+        }
         const v_th = calculateThermalVelocity(approxTemp_K, gasMass);
         return (v_th * ESCAPE_THRESHOLD_FACTOR < escapeVelocity);
     });
@@ -210,10 +243,10 @@ function generateAtmosphereComposition(
 
     // Approx temp calculation (remains the same for internal generation logic)
     const starTempApprox = SPECTRAL_TYPES[parentStarType]?.temp ?? SPECTRAL_TYPES['G'].temp;
+    // Use a simplified temperature estimation based on planet type's base temp and star type
+    // This avoids circular dependency on the final calculated surface temp
     const approxTemp_K = (PLANET_TYPES[planetType]?.baseTemp ?? 300) *
-                       (starTempApprox / SPECTRAL_TYPES['G'].temp) ** 0.25 *
-                       (50000 / Math.max(1000, orbitDistance)) ** 0.5 +
-                       prng.random(-50, 50);
+                       Math.pow(starTempApprox / SPECTRAL_TYPES['G'].temp, 0.5); // Simple scaling based on star temp
     logger.debug(`[AtmoGen] Approx temp for gas comp: ${approxTemp_K.toFixed(0)}K`);
 
     // 1. Calculate Primary Gas Weights (considering escape velocity)
