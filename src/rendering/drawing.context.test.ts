@@ -15,7 +15,7 @@ describe('DrawingContext', () => {
   let drawCharSpy: vi.Mock;
   const mockCols = 20;
   const mockRows = 10;
-  const defaultFg = CONFIG.DEFAULT_FG_COLOR; // Assuming default color for checks
+  const defaultFg = CONFIG.DEFAULT_FG_COLOUR; // Assuming default colour for checks
 
   beforeEach(() => {
     // Create a mock instance of ScreenBuffer for each test
@@ -27,7 +27,7 @@ describe('DrawingContext', () => {
       getCols: vi.fn().mockReturnValue(mockCols),
       getRows: vi.fn().mockReturnValue(mockRows),
       getDefaultFgColor: vi.fn().mockReturnValue(defaultFg),
-      getDefaultBgColor: vi.fn().mockReturnValue(CONFIG.DEFAULT_BG_COLOR), // Mock if needed
+      getDefaultBgColor: vi.fn().mockReturnValue(CONFIG.DEFAULT_BG_COLOUR), // Mock if needed
       // Add mocks for other ScreenBuffer methods if DrawingContext starts using them
     } as unknown as ScreenBuffer; // Use type assertion for the mock object
 
@@ -108,7 +108,7 @@ describe('DrawingContext', () => {
         expect(drawCharSpy).toHaveBeenCalledWith('@', 2, 3, '#F00', '#0F0');
      });
 
-     it('should default background color to foreground color', () => {
+     it('should default background colour to foreground colour', () => {
         drawingContext.drawCircle(1, 1, 0, '#', '#ABC'); // bg omitted
         expect(drawCharSpy).toHaveBeenCalledWith('#', 1, 1, '#ABC', '#ABC'); // bg should be same as fg
      });

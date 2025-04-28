@@ -137,7 +137,7 @@ describe('Planet', () => {
     });
 
     describe('ensureSurfaceReady', () => {
-        it('should generate heightmap and colors for a solid planet if null', () => {
+        it('should generate heightmap and colours for a solid planet if null', () => {
             const planet = new Planet(planetName, 'Rock', 50000, 0, mockSystemPrng, 'G');
             expect(planet.heightmap).toBeNull();
 
@@ -160,7 +160,7 @@ describe('Planet', () => {
             planet.ensureSurfaceReady();
 
             expect(planet.rgbPaletteCache).toBeInstanceOf(Array);
-            expect(planet.rgbPaletteCache?.length).toBe(PLANET_TYPES['GasGiant'].colors.length);
+            expect(planet.rgbPaletteCache?.length).toBe(PLANET_TYPES['GasGiant'].terrainColours.length);
             expect(planet.heightmap).toBeNull();
             expect(planet.heightLevelColors).toBeNull();
             expect(HeightmapGenerator).not.toHaveBeenCalled(); // Constructor NOT called

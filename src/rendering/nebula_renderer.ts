@@ -5,39 +5,39 @@ import { CONFIG } from '../config';
 import { RgbColour, hexToRgb, rgbToHex, interpolateColour } from './colour';
 import { logger } from '../utils/logger';
 
-/** Handles the generation and caching of nebula background colors. */
+/** Handles the generation and caching of nebula background colours. */
 export class NebulaRenderer {
   private nebulaNoiseGenerator: PerlinNoise;
-  private nebulaColorCache: Record<string, string> = {}; // Maps "x,y" string to hex color string
+  private nebulaColorCache: Record<string, string> = {}; // Maps "x,y" string to hex colour string
   private nebulaCacheSize: number = 0;
   private readonly maxNebulaCacheSize: number = 10000;
-  private readonly defaultBgColor: string = CONFIG.DEFAULT_BG_COLOR;
+  private readonly defaultBgColor: string = CONFIG.DEFAULT_BG_COLOUR;
   private readonly baseNebulaColorsRgb: RgbColour[];
   private readonly nebulaCachePrecision: number;
 
   constructor() {
     const nebulaSeed = CONFIG.SEED + '_nebula';
     this.nebulaNoiseGenerator = new PerlinNoise(nebulaSeed);
-    this.baseNebulaColorsRgb = CONFIG.NEBULA_COLORS.map(color =>
-      typeof color === 'string' ? hexToRgb(color) : color
+    this.baseNebulaColorsRgb = CONFIG.NEBULA_COLOURS.map(colour =>
+      typeof colour === 'string' ? hexToRgb(colour) : colour
     ); // Pre-convert hex to RGB if necessary
     this.nebulaCachePrecision = Math.max(
       0,
       Math.min(10, CONFIG.NEBULA_CACHE_PRECISION)
     );
     logger.info(
-      `[NebulaRenderer] Initialized with seed "${nebulaSeed}" and ${this.baseNebulaColorsRgb.length} base colors.`
+      `[NebulaRenderer] Initialized with seed "${nebulaSeed}" and ${this.baseNebulaColorsRgb.length} base colours.`
     );
   }
 
-  /** Clears the nebula color cache. */
+  /** Clears the nebula colour cache. */
   clearCache(): void {
-    logger.debug('[NebulaRenderer.clearCache] Clearing nebula color cache.');
+    logger.debug('[NebulaRenderer.clearCache] Clearing nebula colour cache.');
     this.nebulaColorCache = {};
     this.nebulaCacheSize = 0;
   }
 
-  /** Gets the background color for a given world coordinate, considering nebula effects. */
+  /** Gets the background colour for a given world coordinate, considering nebula effects. */
   getBackgroundColor(worldX: number, worldY: number): string {
     try {
       const cacheKey = `${worldX.toFixed(
@@ -60,12 +60,12 @@ export class NebulaRenderer {
         worldY * CONFIG.NEBULA_SCALE * 0.75
       );
 
-      // Interpolate between base nebula colors
+      // Interpolate between base nebula colours
       if (this.baseNebulaColorsRgb.length < 2) {
         logger.warn(
-          '[NebulaRenderer] Not enough base nebula colors configured (< 2).'
+          '[NebulaRenderer] Not enough base nebula colours configured (< 2).'
         );
-        return this.defaultBgColor; // Fallback if not enough colors
+        return this.defaultBgColor; // Fallback if not enough colours
       }
 
       const factor = (noiseVal + 1) / 2; // Normalize noise to 0-1 range
@@ -84,7 +84,7 @@ export class NebulaRenderer {
       );
 
       // Gradient masking based on a second noise value
-      let finalRgb = { ...interpNebulaColor }; // Start with the interpolated color
+      let finalRgb = { ...interpNebulaColor }; // Start with the interpolated colour
       const gradient = (maskNoise: number, sparsity: number): number => {
         // Adjust the influence of sparsity
         const adjustedSparsity = Math.pow(sparsity, 0.7);
@@ -100,7 +100,7 @@ export class NebulaRenderer {
       alpha = Math.min(1, alpha * CONFIG.NEBULA_INTENSITY);
 
       if (alpha < 1) {
-        // Interpolate between nebula color and black based on alpha
+        // Interpolate between nebula colour and black based on alpha
         const black: RgbColour = { r: 0, g: 0, b: 0 };
         finalRgb = interpolateColour(black, finalRgb, alpha);
       }
@@ -116,7 +116,7 @@ export class NebulaRenderer {
       return finalHex;
     } catch (error) {
       logger.warn(
-        `[NebulaRenderer.getBackgroundColor] Error getting Perlin noise or calculating color at ${worldX},${worldY}: ${error}`
+        `[NebulaRenderer.getBackgroundColor] Error getting Perlin noise or calculating colour at ${worldX},${worldY}: ${error}`
       );
       return this.defaultBgColor; // Fallback on error
     }

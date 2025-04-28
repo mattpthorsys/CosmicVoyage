@@ -1,4 +1,5 @@
-// src/rendering/screen_buffer.ts
+/* FILE: src/rendering/screen_buffer.ts */
+// src/rendering/screen_buffer.ts (Added copyBufferFrom method)
 
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
@@ -6,14 +7,14 @@ import { logger } from '../utils/logger';
 /** Represents the state of a single character cell on the screen buffer. */
 export interface CellState {
   char: string | null; // Character to display (' ' or null for empty)
-  fg: string | null; // Hex color string or null for default
-  bg: string | null; // Hex color string or null for transparent/default
+  fg: string | null; // Hex colour string or null for default
+  bg: string | null; // Hex colour string or null for transparent/default
   isTransparentBg: boolean; // Flag if background should be transparent
 }
 
 /** Manages the character grid buffers and physical drawing to the canvas. */
 export class ScreenBuffer {
-  
+
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
 
@@ -31,45 +32,34 @@ export class ScreenBuffer {
   private readonly defaultBgColor: string;
   private readonly defaultFgColor: string;
 
-  constructor(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D) {
+  private isTransparent: boolean = false; // Flag for the buffer itself
+
+  constructor(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, isTransparent: boolean = false) {
     this.canvas = canvas;
     this.ctx = context;
+    this.isTransparent = isTransparent; // Store if this buffer expects transparency
 
-    this.defaultBgColor = null; // Transparent by default
-    this.defaultFgColor = CONFIG.DEFAULT_FG_COLOR;
     this.defaultCellState = Object.freeze({
       char: null,
       fg: null,
-      bg: null, // Transparent by default
-      isTransparentBg: true, // Transparent by default
+      // Default background depends on whether the buffer is transparent
+      bg: isTransparent ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR,
+      isTransparentBg: isTransparent, // Default transparency matches buffer type
     });
+    this.defaultFgColor = CONFIG.DEFAULT_FG_COLOUR;
+    // defaultBgColor also depends on the buffer's transparency setting
+    this.defaultBgColor = isTransparent ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR;
 
-    logger.debug('[ScreenBuffer] Instance created.');
+    logger.debug(`[ScreenBuffer] Instance created. isTransparent: ${this.isTransparent}, Default BG: ${this.defaultBgColor}`);
   }
 
-  getCols(): number {
-    return this.cols;
-  }
 
-  getRows(): number {
-    return this.rows;
-  }
-
-  getCharWidthPx(): number {
-    return this.charWidthPx;
-  }
-
-  getCharHeightPx(): number {
-    return this.charHeightPx;
-  }
-
-  getDefaultFgColor() {
-    return this.defaultFgColor;
-  }
-
-  getDefaultBgColor(): string {
-    return this.defaultBgColor;
-  }
+  getCols(): number { return this.cols; }
+  getRows(): number { return this.rows; }
+  getCharWidthPx(): number { return this.charWidthPx; }
+  getCharHeightPx(): number { return this.charHeightPx; }
+  getDefaultFgColor(): string { return this.defaultFgColor; }
+  getDefaultBgColor(): string { return this.defaultBgColor; }
 
   /** Initializes or re-initializes the screen buffers based on current dimensions. */
   initBuffers(cols: number, rows: number): void {
@@ -88,9 +78,7 @@ export class ScreenBuffer {
     logger.info(
       `[ScreenBuffer.initBuffers] Initializing buffers for ${this.cols}x${this.rows} grid (${size} cells)`
     );
-
-    if (size > 2000000) {
-      // Safety limit
+    if (size > 2000000) { // Safety limit
       logger.error(
         `[ScreenBuffer.initBuffers] Excessive buffer size calculated: ${size}. Aborting buffer initialization.`
       );
@@ -101,6 +89,7 @@ export class ScreenBuffer {
       return;
     }
 
+    // Fill buffers with the appropriate default state (transparent or solid)
     this.screenBuffer = new Array(size).fill(this.defaultCellState);
     this.newBuffer = new Array(size).fill(this.defaultCellState);
     logger.debug('[ScreenBuffer.initBuffers] Buffers initialized.');
@@ -141,31 +130,49 @@ export class ScreenBuffer {
     }
   }
 
-  /** Resets the drawing buffers and optionally clears the physical canvas. */
+  /**
+   * Resets the drawing buffers and optionally clears the physical canvas.
+   * MODIFIED: Respects physicalClear flag better.
+   */
   clear(physicalClear: boolean = true): void {
     logger.debug(
       `[ScreenBuffer.clear] Clearing buffers (Physical Clear: ${physicalClear})...`
     );
-    // Reset both buffers to the default state
-    for (let i = 0; i < this.newBuffer.length; i++) {
-      if (i < this.screenBuffer.length) {
-        this.screenBuffer[i] = this.defaultCellState;
-      }
-      this.newBuffer[i] = this.defaultCellState;
+    if (physicalClear && this.canvas.width > 0 && this.canvas.height > 0) {
+      // Clear the entire physical canvas area this buffer controls
+      logger.debug(`[ScreenBuffer.clear] Physically clearing canvas area ${this.canvas.width}x${this.canvas.height}`);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
-    logger.info('[ScreenBuffer.clear] Drawing buffers reset to default state.');
+
+    // Always reset both internal buffers to the default state
+    const size = this.cols * this.rows;
+    for (let i = 0; i < size; i++) {
+       // Ensure index is within bounds, though size should match buffer lengths if initBuffers worked
+       if (i < this.screenBuffer.length) {
+           this.screenBuffer[i] = this.defaultCellState;
+       }
+       if (i < this.newBuffer.length) {
+           this.newBuffer[i] = this.defaultCellState;
+       }
+    }
+    if (this.newBuffer.length !== size || this.screenBuffer.length !== size) {
+        logger.warn(`[ScreenBuffer.clear] Buffer length mismatch after clear. Grid: ${size}, Screen: ${this.screenBuffer.length}, New: ${this.newBuffer.length}`);
+    }
+
+    logger.debug('[ScreenBuffer.clear] Internal buffers reset to default state.');
   }
+
 
   /**
    * Sets a character in the new drawing buffer ('newBuffer') at grid position (x, y).
-   * This stages the change; 'renderDiff' actually draws it to the canvas.
+   * This stages the change; 'renderDiff' or 'renderFull' actually draws it to the canvas.
    */
   drawChar(
     char: string | null,
     x: number,
     y: number,
     fgColor: string | null = this.defaultFgColor,
-    bgColor: string | null = this.defaultBgColor // null BG means transparent
+    bgColor: string | null = this.defaultBgColor // Use buffer's default BG
   ): void {
     x = Math.floor(x);
     y = Math.floor(y);
@@ -184,14 +191,16 @@ export class ScreenBuffer {
       return;
     }
 
-    const isTransparent = bgColor === null;
-    const finalBgColor = isTransparent ? null : bgColor || this.defaultBgColor;
+    // Determine if the provided background implies transparency
+    const isTransparentUpdate = (bgColor === null || bgColor === CONFIG.TRANSPARENT_COLOUR);
+    // Use the provided background color, or fall back to the buffer's default background
+    const finalBgColor = isTransparentUpdate ? CONFIG.TRANSPARENT_COLOUR : (bgColor || this.defaultBgColor);
 
     this.newBuffer[index] = {
       char: char || ' ', // Use space if char is null
       fg: fgColor || this.defaultFgColor, // Use default if fg is null
       bg: finalBgColor,
-      isTransparentBg: isTransparent,
+      isTransparentBg: isTransparentUpdate,
     };
   }
 
@@ -201,7 +210,7 @@ export class ScreenBuffer {
     x: number,
     y: number,
     fgColor: string | null = this.defaultFgColor,
-    bgColor: string | null = null // Default to transparent background for strings
+    bgColor: string | null = this.defaultBgColor // Default to buffer's background
   ): void {
     // logger.debug(`[ScreenBuffer.drawString] Drawing "${text}" at [${x},${y}]`); // Can be noisy
     for (let i = 0; i < text.length; i++) {
@@ -209,12 +218,88 @@ export class ScreenBuffer {
     }
   }
 
+  /**
+   * *** NEW METHOD ***
+   * Copies the content of another ScreenBuffer's *rendered* state (screenBuffer)
+   * into this buffer's *drawing* state (newBuffer).
+   * Assumes dimensions match. Used for compositing layers.
+   */
+  copyBufferFrom(sourceBuffer: ScreenBuffer): void {
+      if (this.cols !== sourceBuffer.getCols() || this.rows !== sourceBuffer.getRows()) {
+          logger.error(`[ScreenBuffer.copyBufferFrom] Buffer dimension mismatch! Cannot copy. Target: ${this.cols}x${this.rows}, Source: ${sourceBuffer.getCols()}x${sourceBuffer.getRows()}`);
+          return;
+      }
+
+      const size = this.cols * this.rows;
+      const sourceScreen = sourceBuffer.screenBuffer; // Access internal array directly
+
+      if (sourceScreen.length !== size || this.newBuffer.length !== size) {
+           logger.error(`[ScreenBuffer.copyBufferFrom] Internal buffer length mismatch! Target: ${this.newBuffer.length}, Source: ${sourceScreen.length}, Expected: ${size}`);
+           return;
+      }
+
+      logger.debug(`[ScreenBuffer.copyBufferFrom] Copying ${size} cells from source buffer.`);
+      for (let i = 0; i < size; i++) {
+          // Copy the state directly into the newBuffer for drawing
+          // We copy the source's *screenBuffer* (last rendered state)
+          this.newBuffer[i] = sourceScreen[i] || this.defaultCellState;
+      }
+  }
+
+
+  /** Renders the entire content of the newBuffer to the canvas. */
+  renderFull(): void {
+      const startTime = performance.now();
+      const size = this.cols * this.rows;
+      if (size !== this.newBuffer.length || size === 0) {
+          logger.error(
+              `[ScreenBuffer.renderFull] Buffer size mismatch or zero size! Grid: ${size}, NewBuffer: ${this.newBuffer.length}. Cannot render full.`
+          );
+          return;
+      }
+
+      let cellsDrawn = 0;
+      for (let i = 0; i < size; i++) {
+          const newState = this.newBuffer[i];
+          // No need to compare with old state, just draw what's in newBuffer
+          const y = Math.floor(i / this.cols);
+          const x = i % this.cols;
+
+          // Draw the cell state
+          this._physicalDrawChar(
+              newState.char,
+              x,
+              y,
+              newState.fg,
+              newState.bg,
+              newState.isTransparentBg,
+              // When doing full render, the 'old' background concept is less relevant,
+              // but provide the default buffer background for consistency if needed by transparency logic.
+              this.defaultBgColor
+          );
+          cellsDrawn++;
+
+          // Update screenBuffer to match what was just drawn
+          this.screenBuffer[i] = newState;
+          // Reset newBuffer cell ready for the next frame's drawing operations
+          this.newBuffer[i] = this.defaultCellState;
+      }
+
+      const endTime = performance.now();
+      // Reduce logging frequency if needed
+      // if (cellsDrawn > 0) {
+      //   logger.debug(
+      //       `[ScreenBuffer.renderFull] Completed: ${cellsDrawn} cells drawn (full render) in ${(endTime - startTime).toFixed(2)} ms`
+      //   );
+      // }
+  }
+
+
   /** Compares the new buffer to the screen buffer and draws only the changed cells to the canvas. */
   renderDiff(): void {
-    // logger.debug('[ScreenBuffer.renderDiff] Comparing buffers and drawing changes...'); // Noisy unless debugging render
+    // logger.debug('[ScreenBuffer.renderDiff] Comparing buffers and drawing changes...'); // Noisy
     let cellsDrawn = 0;
     const size = this.cols * this.rows;
-
     if (
       size !== this.newBuffer.length ||
       size !== this.screenBuffer.length ||
@@ -223,8 +308,6 @@ export class ScreenBuffer {
       logger.error(
         `[ScreenBuffer.renderDiff] Buffer size mismatch or zero size! Grid: ${this.cols}x${this.rows} (${size}), ScreenBuffer: ${this.screenBuffer.length}, NewBuffer: ${this.newBuffer.length}. Cannot render diff.`
       );
-      // Attempting recovery by reinitializing might cause issues if called rapidly.
-      // It's better to prevent rendering this frame and let fitToScreen handle recovery.
       return;
     }
 
@@ -238,8 +321,13 @@ export class ScreenBuffer {
       if (
         oldState === this.defaultCellState &&
         newState === this.defaultCellState
-      )
-        continue;
+      ) {
+           // Ensure newBuffer is still reset even if we skip drawing
+           if (this.newBuffer[i] !== this.defaultCellState) {
+               this.newBuffer[i] = this.defaultCellState;
+           }
+           continue;
+      }
 
       // Check if cell state has actually changed
       if (
@@ -248,7 +336,7 @@ export class ScreenBuffer {
         oldState.bg === newState.bg &&
         oldState.isTransparentBg === newState.isTransparentBg
       ) {
-        // State unchanged, reset newBuffer cell for next frame's draw ops
+        // State unchanged, just reset newBuffer cell for next frame's draw ops
         this.newBuffer[i] = this.defaultCellState;
         continue;
       }
@@ -263,7 +351,7 @@ export class ScreenBuffer {
         newState.fg,
         newState.bg,
         newState.isTransparentBg,
-        oldState.bg // Pass old background for transparency handling
+        oldState.bg // Pass old background for transparency handling in _physicalDrawChar
       );
       cellsDrawn++;
 
@@ -275,11 +363,11 @@ export class ScreenBuffer {
 
     const endTime = performance.now();
     if (cellsDrawn > 0) {
-      logger.debug(
-        `[ScreenBuffer.renderDiff] Completed: ${cellsDrawn} cells drawn in ${(
-          endTime - startTime
-        ).toFixed(2)} ms`
-      );
+      // logger.debug( // Can be noisy
+      //   `[ScreenBuffer.renderDiff] Completed: ${cellsDrawn} cells drawn in ${(
+      //     endTime - startTime
+      //   ).toFixed(2)} ms`
+      // );
     }
   }
 
@@ -291,28 +379,32 @@ export class ScreenBuffer {
     fgColor: string | null,
     bgColor: string | null,
     isTransparentBg: boolean,
-    oldBgColor: string | null // Background color currently on canvas at this cell
+    _oldBgColor: string | null // Keep param for signature compatibility
   ): void {
     const px = x * this.charWidthPx;
     const py = y * this.charHeightPx;
 
-    // Determine the background color to draw
-    // If new background is transparent, use the OLD background color (or default)
-    // If new background is solid, use the new background color (or default)
-    const drawBgColor = isTransparentBg
-      ? oldBgColor || this.defaultBgColor
-      : bgColor || this.defaultBgColor;
+    // Determine the background colour to draw for this cell
+    const drawBgColor = isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : (bgColor || this.defaultBgColor);
 
-    // Fill background rectangle first
-    this.ctx.fillStyle = drawBgColor;
-    this.ctx.fillRect(px, py, this.charWidthPx, this.charHeightPx);
+    // Optimization: Only clearRect or fillRect if the background is NOT transparent *or* if there's a non-space foreground char.
+    const charToDraw = char || ' '; // Treat null as space
 
-    // If there's a character to draw (and it's not just a space for clearing)
-    if (char && char !== ' ') {
-      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground color
+    if (drawBgColor !== CONFIG.TRANSPARENT_COLOUR) {
+        // Fill background rectangle first if it's not transparent
+        this.ctx.fillStyle = drawBgColor;
+        this.ctx.fillRect(px, py, this.charWidthPx, this.charHeightPx);
+    } else if (charToDraw !== ' ') {
+        // If background IS transparent, but we have a char, clear the area first
+        this.ctx.clearRect(px, py, this.charWidthPx, this.charHeightPx);
+    }
+    // Else (transparent bg AND no char), do nothing for background.
+
+    // If there's a non-space character to draw
+    if (charToDraw !== ' ') {
+      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground colour
       // Draw the character
-      // Adjustments might be needed based on font metrics if alignment looks off
-      this.ctx.fillText(char, px, py);
+      this.ctx.fillText(charToDraw, px, py);
       // logger.debug(`Drew char '${char}' at px [${px}, ${py}]`); // Extremely noisy
     }
   }

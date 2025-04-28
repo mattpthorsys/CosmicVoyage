@@ -79,12 +79,12 @@ describe('Starbase', () => {
     randomSpy.mockRestore();
   });
 
-  it('ensureSurfaceReady should create placeholder map and colors', () => {
+  it('ensureSurfaceReady should create placeholder map and colours', () => {
     // No specific PRNG mocking needed for this test
     const starbase = new Starbase(baseSeed, mockSystemPrng, systemName);
     // Constructor calls ensureSurfaceReady, so check initial state
     expect(starbase.heightmap).toEqual([[0]]);
-    expect(starbase.heightLevelColors).toEqual([CONFIG.STARBASE_COLOR]);
+    expect(starbase.heightLevelColors).toEqual([CONFIG.STARBASE_COLOUR]);
 
     // Call again to ensure it's idempotent
     starbase.heightmap = null; // Reset manually

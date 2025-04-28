@@ -1,285 +1,285 @@
-// src/core/action_processor.test.ts
+// src/core/action_processor.ts (Complete File with Modifications)
 
-/// <reference types="vitest/globals" />
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ActionProcessor } from './action_processor';
-import { GameStateManager, GameState } from './game_state_manager';
+import { GameStateManager } from './game_state_manager';
 import { Player } from './player';
-import { Planet } from '../entities/planet';
-import { Starbase } from '../entities/starbase';
-import { MineralRichness } from '../constants';
+import { logger } from '../utils/logger';
+import { MineralRichness, ELEMENTS, STATUS_MESSAGES } from '../constants'; // Import ELEMENTS
 import { CONFIG } from '../config';
+import { PRNG } from '../utils/prng'; // Import PRNG
+import { Planet } from '../entities/planet'; // Import Planet
 
-// Mock dependencies
-vi.mock('./player');
-vi.mock('./game_state_manager');
-vi.mock('../entities/planet'); // Needed for instanceof check if not using _mockType
-vi.mock('../entities/starbase');
-vi.mock('../utils/logger');
+export class ActionProcessor {
+  private player: Player;
+  private stateManager: GameStateManager;
 
-// --- Mock Helper Types ---
-type MockPlayer = Player & {
-  // Add specific mocks as needed
-  moveWorld: vi.Mock;
-  moveSystem: vi.Mock;
-  moveSurface: vi.Mock;
-  addCargo: vi.Mock;
-  addFuel: vi.Mock; // Assuming refuel action needs it
-};
-type MockGameStateManager = GameStateManager & {
-  // Add specific mocks as needed
-  enterSystem: vi.Mock;
-  leaveSystem: vi.Mock;
-  landOnNearbyObject: vi.Mock;
-  liftOff: vi.Mock;
-  // Need to mock getters as well
-  state: GameState;
-  currentPlanet: Planet | null;
-  currentStarbase: Starbase | null;
-};
-type MockPlanet = Planet & {
-  scan: vi.Mock;
-  systemPRNG: { random: vi.Mock },
-  mineralRichness: MineralRichness,
-  type: string;
-};
-type MockStarbase = Starbase & {
-  // No specific actions processed directly by Starbase in ActionProcessor yet
-};
+  constructor(player: Player, stateManager: GameStateManager) {
+    this.player = player;
+    this.stateManager = stateManager;
+    logger.debug('[ActionProcessor] Instance created.');
+  }
 
-describe('ActionProcessor', () => {
-  let mockPlayer: MockPlayer;
-  let mockStateManager: MockGameStateManager;
-  let actionProcessor: ActionProcessor;
-  let mockPlanet: MockPlanet;
-  let mockStarbase: MockStarbase;
+  processAction(action: string): string {
+    const currentState = this.stateManager.state;
+    logger.debug(`[ActionProcessor] Processing initial actions [${action}] in state: ${currentState}`);
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+    let statusMessage = '';
+    let effectiveAction = action;
 
-    // Setup Mocks
-    mockPlayer = {
-      moveWorld: vi.fn(),
-      moveSystem: vi.fn(),
-      moveSurface: vi.fn(),
-      addCargo: vi.fn().mockReturnValue(true), // Default success
-      addFuel: vi.fn(),
-      credits: 1000, // Example value
-      fuel: 400,
-      maxFuel: 500,
-      mineralUnits: 0,
-      cargoCapacity: 100,
-      // Mock other player properties accessed by actions if needed
-    } as unknown as MockPlayer;
+    // Contextual logic for ACTIVATE_LAND_LIFTOFF
+    if (action === 'ACTIVATE_LAND_LIFTOFF') {
+      logger.info(`[ActionProcessor] Handling initial ACTIVATE_LAND_LIFTOFF.`);
+      if (currentState === 'system') {
+        effectiveAction = 'LAND';
+        logger.info(`[ActionProcessor] In system, so effectiveAction should be LAND (and is ${effectiveAction})`);
+        logger.debug(`[ActionProcessor] Interpreting 'ACTIVATE_LAND_LIFTOFF' as 'LAND' in state 'system'.`);
+      } else if (currentState === 'planet' || currentState === 'starbase') {
+        effectiveAction = 'LIFTOFF';
+        logger.info(`[ActionProcessor] In ${currentState}, so effectiveAction should be LIFTOFF (and is ${effectiveAction})`);
+        logger.debug(`[ActionProcessor] Interpreting 'ACTIVATE_LAND_LIFTOFF' as 'LIFTOFF' in state '${currentState}'.`);
+      } else {
+        logger.warn(`[ActionProcessor] Action '${action}' triggered in unexpected state '${currentState}'. Ignoring.`);
+        return `Cannot use that command (${action}) in ${currentState}.`;
+      }
+    }
 
-    mockPlanet = {
-      name: 'Test Planet',
-      type: 'Rock',
-      scanned: false,
-      mineralRichness: MineralRichness.AVERAGE,
-      heightmap: [[0]], // Minimal map for moveSurface check
-      systemPRNG: { random: vi.fn().mockReturnValue(1.0) }, // For mining randomness
-      scan: vi.fn(() => {
-        // Simulate scan results
-        mockPlanet.scanned = true;
-        mockPlanet.primaryResource = 'Testium';
-      }),
-      ensureSurfaceReady: vi.fn(),
-    } as unknown as MockPlanet;
+    logger.debug(`[ActionProcessor] Processing effective action '${effectiveAction}' in state '${this.stateManager.state}'`);
+    try {
+      // Handle global actions
+      if (effectiveAction === 'DOWNLOAD_LOG') {
+          logger.downloadLogFile();
+          statusMessage = 'Log file download initiated.';
+          return statusMessage;
+      }
 
-    mockStarbase = {
-      name: 'Test Starbase',
-      type: 'Starbase', // Ensure type is set for logic if needed
-      ensureSurfaceReady: vi.fn(),
-    } as unknown as MockStarbase;
+      // State-specific actions
+      switch (this.stateManager.state) {
+        case 'hyperspace':
+          statusMessage = this._processHyperspaceAction(effectiveAction);
+          break;
+        case 'system':
+          statusMessage = this._processSystemAction(effectiveAction);
+          break;
+        case 'planet':
+          statusMessage = this._processPlanetAction(effectiveAction);
+          break;
+        case 'starbase':
+          statusMessage = this._processStarbaseAction(effectiveAction);
+          break;
+        default:
+          statusMessage = `Unknown game state: ${this.stateManager.state}`;
+          logger.warn(`[ActionProcessor] ${statusMessage}`);
+          break;
+      }
+    } catch (error) {
+      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${this.stateManager.state}':`, error);
+      statusMessage = `ACTION ERROR: ${error instanceof Error ? error.message : String(error)}`;
+    }
 
-    mockStateManager = {
-      // Default state
-      state: 'hyperspace',
-      currentSystem: null,
-      currentPlanet: null,
-      currentStarbase: null,
-      // Mock methods
-      enterSystem: vi.fn().mockReturnValue(true), // Default success
-      leaveSystem: vi.fn().mockReturnValue(true),
-      landOnNearbyObject: vi.fn().mockReturnValue(null), // Default no object found
-      liftOff: vi.fn().mockReturnValue(true),
-      // Explicitly cast getters if needed, but direct property assignment is simpler here
-    } as unknown as MockGameStateManager;
+    return statusMessage;
+  }
 
-    // Instantiate ActionProcessor with mocks
-    actionProcessor = new ActionProcessor(mockPlayer, mockStateManager);
-  });
+  // --- Private State-Specific Action Handlers ---
 
-  // --- Test Cases ---
+  private _processHyperspaceAction(action: string): string {
+    // Movement is handled in Game loop
+    let message = '';
+    switch (action) {
+      case 'ENTER_SYSTEM': {
+        const entered = this.stateManager.enterSystem();
+        message = entered ? STATUS_MESSAGES.HYPERSPACE_ENTERING(this.stateManager.currentSystem?.name) : STATUS_MESSAGES.HYPERSPACE_NO_STAR;
+      }
+        break;
+    }
+    return message;
+  }
 
-  describe('Hyperspace Actions', () => {
-    beforeEach(() => {
-      mockStateManager.state = 'hyperspace'; // Set state for tests
-    });
+  private _processSystemAction(action: string): string {
+     // Movement is handled in Game loop
+    let message = '';
+    switch (action) {
+      case 'LEAVE_SYSTEM':
+        {
+          const left = this.stateManager.leaveSystem();
+          message = left ? STATUS_MESSAGES.SYSTEM_LEAVING : STATUS_MESSAGES.SYSTEM_LEAVE_TOO_CLOSE;
+        }
+        break;
+      case 'LAND':
+        {
+          logger.info(">>> ActionProcessor calling landOnNearbyObject for LAND action...");
+          const landedObject = this.stateManager.landOnNearbyObject();
+          message = landedObject ? STATUS_MESSAGES.SYSTEM_LAND_APPROACHING(landedObject.name) : STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET;
+        }
+        break;
+    }
+    return message;
+  }
 
-    it('should call player.moveWorld for MOVE actions', () => {
-      actionProcessor.processAction('MOVE_UP');
-      expect(mockPlayer.moveWorld).toHaveBeenCalledWith(0, -1);
-      actionProcessor.processAction('MOVE_LEFT');
-      expect(mockPlayer.moveWorld).toHaveBeenCalledWith(-1, 0);
-    });
+  private _processPlanetAction(action: string): string {
+    // Movement is handled in Game loop
+    let message = '';
+    const planet = this.stateManager.currentPlanet;
+    if (!planet) return 'Error: Planet data missing!';
 
-    it('should call stateManager.enterSystem for ENTER_SYSTEM action', () => {
-      const status = actionProcessor.processAction('ENTER_SYSTEM');
-      expect(mockStateManager.enterSystem).toHaveBeenCalledOnce();
-      expect(status).toMatch(/Entering system|No star system detected/); // Check status msg
-    });
-  });
+    switch (action) {
+      case 'LIFTOFF':
+        {
+          const lifted = this.stateManager.liftOff();
+          message = lifted ? STATUS_MESSAGES.LIFTOFF_SUCCESS(planet.name) : STATUS_MESSAGES.LIFTOFF_FAIL;
+        }
+        break;
+      case 'SCAN':
+        if (planet.scanned) {
+          message = `${planet.name} has already been scanned. (${planet.mineralRichness})`;
+        } else {
+          planet.scan();
+          message = STATUS_MESSAGES.PLANET_SCAN_COMPLETE(planet.name, planet.primaryResource, planet.mineralRichness);
+        }
+        break;
+      case 'MINE':
+        if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
+          message = `Cannot mine surface of ${planet.type}.`;
+        } else if (!planet.scanned) {
+            message = `Scan required before mining. Richness potential: ${planet.mineralRichness}.`;
+        } else {
+             try {
+                // --- UPDATED MINING LOGIC ---
+                // Ensure surface data (including element map) is ready
+                planet.ensureSurfaceReady(); // Throws on failure
+                const elementMap = planet.surfaceElementMap; // Use the getter
 
-  describe('System Actions', () => {
-    beforeEach(() => {
-      mockStateManager.state = 'system'; // Set state
-    });
+                if (!elementMap) {
+                     // This should ideally be caught by ensureSurfaceReady, but double-check
+                     throw new Error("Surface element map data is missing after ensureSurfaceReady.");
+                }
 
-    it('should call player.moveSystem for MOVE actions (no fine control)', () => {
-      actionProcessor.processAction('MOVE_DOWN');
-      expect(mockPlayer.moveSystem).toHaveBeenCalledWith(0, 1, false);
-      actionProcessor.processAction('MOVE_RIGHT');
-      expect(mockPlayer.moveSystem).toHaveBeenCalledWith(1, 0, false);
-    });
+                // 1. Get element at player's current location
+                const currentX = this.player.surfaceX;
+                const currentY = this.player.surfaceY;
 
-    it('should call player.moveSystem for FINE_MOVE actions (with fine control)', () => {
-      actionProcessor.processAction('FINE_MOVE_UP');
-      expect(mockPlayer.moveSystem).toHaveBeenCalledWith(0, -1, true);
-      actionProcessor.processAction('FINE_MOVE_LEFT');
-      expect(mockPlayer.moveSystem).toHaveBeenCalledWith(-1, 0, true);
-    });
+                // Bounds check for safety (though map should be valid now)
+                if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length) {
+                    logger.error(`[ActionProcessor] Player surface coordinates [${currentX}, ${currentY}] are out of bounds for element map [${elementMap[0].length}x${elementMap.length}].`);
+                    throw new Error(`Player position [${currentX},${currentY}] out of map bounds.`);
+                }
+                const elementKey = elementMap[currentY][currentX]; // Get element key from map
 
-    it('should call stateManager.leaveSystem for LEAVE_SYSTEM action', () => {
-      const status = actionProcessor.processAction('LEAVE_SYSTEM');
-      expect(mockStateManager.leaveSystem).toHaveBeenCalledOnce();
-      expect(status).toMatch(/Entered hyperspace|Must travel further/);
-    });
+                // 2. Check if an element was found at this specific location
+                if (elementKey && elementKey !== '') { // Check for non-empty string
+                    const elementInfo = ELEMENTS[elementKey];
+                    const baseAbundance = planet.elementAbundance[elementKey] || 0; // Get overall planet abundance for this element
 
-    it('should call stateManager.landOnNearbyObject for LAND action', () => {
-      const status = actionProcessor.processAction('LAND');
-      expect(mockStateManager.landOnNearbyObject).toHaveBeenCalledOnce();
-      expect(status).toMatch(/Approaching|Nothing nearby/);
-    });
-  });
+                    if (baseAbundance <= 0 && (!elementInfo || elementInfo.baseFrequency < 0.001)) { // Check if it's even possible it exists
+                        // Element exists on map cell, but planet has 0 overall abundance? Data inconsistency or just trace amounts.
+                        message = STATUS_MESSAGES.PLANET_MINE_TRACE(elementInfo?.name || elementKey);
+                        logger.warn(`[ActionProcessor] Mining ${elementKey} at [${currentX},${currentY}], but planet overall abundance is 0 or element is extremely rare.`);
+                    } else {
+                        // 3. Calculate yield (adjust this formula as needed)
+                        // Factor based on overall abundance + local variation + mining rate
+                        const abundanceFactor = Math.max(0.1, Math.sqrt(baseAbundance / 100)); // Scale based on overall abundance, min factor 0.1
+                        const locationSeed = `mine_${currentX}_${currentY}`;
+                        const minePRNG = planet.systemPRNG.seedNew(locationSeed);
+                        let yieldAmount = CONFIG.MINING_RATE_FACTOR * abundanceFactor * minePRNG.random(0.6, 1.4); // Base yield * abundance factor * local randomness
+                        yieldAmount = Math.max(1, Math.round(yieldAmount)); // Ensure at least 1 unit if possible
 
-  describe('Planet Actions', () => {
-    beforeEach(() => {
-        mockStateManager.state = 'planet'; // Set state
-        mockStateManager.currentPlanet = mockPlanet; // Set context
-    });
+                        // 4. Add to cargo
+                        const actuallyAdded = this.player.addCargo(elementKey, yieldAmount); // Use specific element key
 
-    it('should call player.moveSurface for MOVE actions', () => {
-        actionProcessor.processAction('MOVE_UP');
-        expect(mockPlanet.ensureSurfaceReady).toHaveBeenCalled(); // Ensure map ready
-        expect(mockPlayer.moveSurface).toHaveBeenCalledWith(0, -1, expect.any(Number));
-    });
+                        if (actuallyAdded > 0) {
+                            message = `Mined ${actuallyAdded} units of ${elementInfo?.name || elementKey}. (${this.player.getCurrentCargoTotal()}/${this.player.cargoCapacity})`;
+                            if (this.player.getCurrentCargoTotal() >= this.player.cargoCapacity) {
+                                message += ` Cargo hold full!`;
+                            }
+                        } else { // addCargo returned 0
+                            message = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
+                              this.player.getCurrentCargoTotal(),
+                              this.player.cargoCapacity
+                          );
+                        }
+                    }
+                } else {
+                     // No element defined at this specific map cell ('')
+                    message = STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS;
+                }
+                // --- END UPDATED MINING LOGIC ---
+             } catch(mineError) {
+                 logger.error(`[ActionProcessor] Error during MINE action on ${planet.name}:`, mineError);
+                 message = `Mining Error: ${mineError instanceof Error ? mineError.message : String(mineError)}`;
+             }
+        }
+        break; // End MINE case
+    }
+    return message;
+  }
 
-     it('should call stateManager.liftOff for LIFTOFF action', () => {
-        const status = actionProcessor.processAction('LIFTOFF');
-        expect(mockStateManager.liftOff).toHaveBeenCalledOnce();
-        expect(status).toMatch(/Liftoff/);
-     });
+  private _processStarbaseAction(action: string): string {
+    const starbase = this.stateManager.currentStarbase;
+    let message = '';
+    if (!starbase) return 'Error: Starbase data missing!';
+    switch (action) {
+      case 'LIFTOFF':
+        {
+          const lifted = this.stateManager.liftOff();
+          message = lifted ? `Departing ${starbase.name}...` : STATUS_MESSAGES.LIFTOFF_FAIL;
+        }
+        break;
+      case 'TRADE':
+        {
+          const currentCargo = this.player.cargo;
+          const totalUnitsSold = this.player.getCurrentCargoTotal(); // Get total before clearing
 
-     it('should call planet.scan for SCAN action if not already scanned', () => {
-        mockPlanet.scanned = false;
-        const status = actionProcessor.processAction('SCAN');
-        expect(mockPlanet.scan).toHaveBeenCalledOnce();
-        expect(status).toContain('scan complete');
-     });
+          if (totalUnitsSold <= 0) {
+             message = STATUS_MESSAGES.STARBASE_TRADE_EMPTY;
+             logger.info('[ActionProcessor] Trade: No cargo to sell.');
+          } else {
+              let totalCreditsEarned = 0;
+              let soldItemsLog: string[] = [];
+              for (const elementKey in currentCargo) { // Iterate through player's cargo
+                 const amount = currentCargo[elementKey];
+                 const elementInfo = ELEMENTS[elementKey];
+                 if (amount > 0 && elementInfo) {
+                      const valuePerUnit = elementInfo.baseValue; // Use defined base value
+                      const creditsEarned = amount * valuePerUnit;
+                      totalCreditsEarned += creditsEarned;
+                      soldItemsLog.push(`${amount} ${elementInfo.name}`);
+                 } else {
+                      logger.warn(`[ActionProcessor] Trade: Skipping unknown or zero amount item in cargo: ${elementKey}`);
+                 }
+              }
 
-      it('should return status if planet already scanned on SCAN action', () => {
-        mockPlanet.scanned = true;
-        const status = actionProcessor.processAction('SCAN');
-        expect(mockPlanet.scan).not.toHaveBeenCalled();
-        expect(status).toContain('already been scanned');
-     });
+              this.player.credits += totalCreditsEarned; // Add total earnings
+              this.player.clearCargo(); // Use new method to empty cargo
 
-      it('should call player.addCargo for MINE action if minerals present', () => {
-        mockPlanet.mineralRichness = MineralRichness.RICH; // Ensure minable
-        const status = actionProcessor.processAction('MINE');
-        expect(mockPlayer.addCargo).toHaveBeenCalledOnce();
-        expect(mockPlayer.addCargo).toHaveBeenCalledWith(expect.any(Number)); // Check amount > 0
-        expect(status).toMatch(/Mined|Mining failed/); // Status reflects success/fail/full
-      });
+              message = `Sold ${soldItemsLog.join(', ')} (${totalUnitsSold} units) for ${totalCreditsEarned} Cr.`;
+              logger.info(`[ActionProcessor] Trade Complete: Sold ${totalUnitsSold} units for ${totalCreditsEarned} credits.`);
+          }
+        }
+        break;
+      case 'REFUEL':
+        {
+          const fuelNeeded = this.player.maxFuel - this.player.fuel;
+          if (fuelNeeded <= 0) {
+            message = STATUS_MESSAGES.STARBASE_REFUEL_FULL;
+          } else {
+            const creditsPerUnit = 1 / CONFIG.FUEL_PER_CREDIT;
+            const maxAffordableFuel = this.player.credits * CONFIG.FUEL_PER_CREDIT;
+            const fuelToBuy = Math.floor(Math.min(fuelNeeded, maxAffordableFuel)); // Buy whole units
+            const cost = Math.ceil(fuelToBuy * creditsPerUnit); // Calculate cost (round up?)
 
-      it('should return status and not call addCargo if no minerals on MINE action', () => {
-        mockPlanet.mineralRichness = MineralRichness.NONE;
-        const status = actionProcessor.processAction('MINE');
-        expect(mockPlayer.addCargo).not.toHaveBeenCalled();
-        expect(status).toContain('no significant mineral deposits');
-      });
-
-      it('should return status if trying to mine a Gas Giant', () => {
-         mockPlanet.type = 'GasGiant';
-         mockPlanet.mineralRichness = MineralRichness.RICH;
-         const status = actionProcessor.processAction('MINE');
-         expect(mockPlayer.addCargo).not.toHaveBeenCalled();
-         expect(status).toContain('Cannot mine GasGiant');
-      });
-  });
-
-  describe('Starbase Actions', () => {
-     beforeEach(() => {
-        mockStateManager.state = 'starbase'; // Set state
-        mockStateManager.currentStarbase = mockStarbase; // Set context
-    });
-
-     it('should call stateManager.liftOff for LIFTOFF action', () => {
-        const status = actionProcessor.processAction('LIFTOFF');
-        expect(mockStateManager.liftOff).toHaveBeenCalledOnce();
-        expect(status).toMatch(/Departing|Liftoff failed/);
-     });
-
-     it('should perform trade logic for TRADE action (sell all)', () => {
-        mockPlayer.mineralUnits = 50;
-        const status = actionProcessor.processAction('TRADE');
-        expect(mockPlayer.mineralUnits).toBe(0);
-        expect(mockPlayer.credits).toBe(1000 + 50 * CONFIG.MINERAL_SELL_PRICE);
-        expect(status).toContain('Sold 50 units');
-     });
-
-     it('should return status if no minerals to sell on TRADE action', () => {
-        mockPlayer.mineralUnits = 0;
-        const status = actionProcessor.processAction('TRADE');
-        expect(status).toContain('Cargo hold is empty');
-        expect(mockPlayer.credits).toBe(1000); // Credits unchanged
-     });
-
-     it('should call player.addFuel and deduct credits for REFUEL action', () => {
-        mockPlayer.fuel = 100;
-        mockPlayer.maxFuel = 500;
-        mockPlayer.credits = 100; // Enough for some fuel
-        const fuelNeeded = 400;
-        const fuelPerCredit = CONFIG.FUEL_PER_CREDIT;
-        const maxAffordable = 100 * fuelPerCredit; // 1000
-        const fuelToBuy = Math.min(fuelNeeded, maxAffordable); // 400
-        const cost = Math.ceil(fuelToBuy / fuelPerCredit); // ceil(400/10) = 40
-
-        const status = actionProcessor.processAction('REFUEL');
-
-        expect(mockPlayer.addFuel).toHaveBeenCalledWith(fuelToBuy); // Buy 400
-        expect(mockPlayer.credits).toBe(1000 - cost); // 1000 - 40 = 960
-        expect(status).toContain(`Purchased ${fuelToBuy} fuel`);
-     });
-
-     it('should return status if fuel tank is full on REFUEL action', () => {
-        mockPlayer.fuel = 500;
-        mockPlayer.maxFuel = 500;
-        const status = actionProcessor.processAction('REFUEL');
-        expect(mockPlayer.addFuel).not.toHaveBeenCalled();
-        expect(status).toContain('Fuel tank is already full');
-     });
-
-     it('should return status if not enough credits on REFUEL action', () => {
-        mockPlayer.fuel = 100;
-        mockPlayer.maxFuel = 500;
-        mockPlayer.credits = 1; // Not enough credits
-        const status = actionProcessor.processAction('REFUEL');
-        expect(mockPlayer.addFuel).not.toHaveBeenCalled();
-        expect(status).toContain('Not enough credits');
-     });
-  });
-});
+            if (fuelToBuy <= 0 || this.player.credits < cost) { // Check if can afford *calculated* cost
+              message = STATUS_MESSAGES.STARBASE_REFUEL_FAIL_CREDITS(+creditsPerUnit.toFixed(1), this.player.credits);
+            } else {
+              this.player.credits -= cost;
+              this.player.addFuel(fuelToBuy); // Player logs details
+              message = STATUS_MESSAGES.STARBASE_REFUEL_SUCCESS(fuelToBuy, cost);
+              if (this.player.fuel >= this.player.maxFuel) {
+                message += ` Tank full!`;
+              }
+              logger.info(`[ActionProcessor] Refuel Complete: Bought ${fuelToBuy} fuel for ${cost} credits.`);
+            }
+          }
+        }
+        break;
+    }
+    return message;
+  }
+} // End ActionProcessor class

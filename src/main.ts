@@ -33,7 +33,7 @@ window.onload = () => {
             statusBar.style.backgroundColor = 'black'; // Ensure visibility
         }
         // Optionally display error more prominently in the body
-        document.body.innerHTML = `<div style="color: red; background: black; padding: 20px; font-family: monospace; border: 2px solid red;"><h1>Fatal Initialization Error</h1><p>${error instanceof Error ? error.message : String(error)}</p><pre>${error instanceof Error ? error.stack : ''}</pre></div>`;
+        document.body.innerHTML = `<div style="colour: red; background: black; padding: 20px; font-family: monospace; border: 2px solid red;"><h1>Fatal Initialization Error</h1><p>${error instanceof Error ? error.message : String(error)}</p><pre>${error instanceof Error ? error.stack : ''}</pre></div>`;
     }
 };
 
