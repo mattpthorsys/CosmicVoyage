@@ -87,12 +87,11 @@ export class SceneRenderer {
           // --- END REVISED STAR TYPE SELECTION ---
 
           if (starInfo) {
-            // Brightness calculation remains the same (can use the hash for visual variety)
-            const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1);
-            const starBaseRgb = hexToRgb(starInfo.colour); // Use the subtype's colour
-            const finalStarRgb = adjustBrightness(starBaseRgb, brightnessFactor);
-            const finalStarHex = rgbToHex(finalStarRgb.r, finalStarRgb.g, finalStarRgb.b);
-            // Render using the subtype's character and final calculated colour
+            // const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1); // Commented out or removed
+            // const starBaseRgb = hexToRgb(starInfo.colour); // No longer strictly needed here if not adjusting
+            // const finalStarRgb = adjustBrightness(starBaseRgb, brightnessFactor); // Commented out or removed
+            const finalStarHex = starInfo.colour; // Use colour directly from SPECTRAL_TYPES
+            
             this.screenBuffer.drawChar(starInfo.char, viewX, viewY, finalStarHex, null); // null BG
           } else {
             // Error case
