@@ -315,8 +315,9 @@ export class SceneRenderer {
     const starPos = worldToMinimap(0, 0);
     if (starPos) {
         const starInfo = SPECTRAL_TYPES[system.starType];
-        const starColor = starInfo?.colour || '#FFFFFF';
-        this.screenBuffer.drawChar('*', starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
+        const starColor = starInfo?.colour || '#FFFFFF'; // Existing color logic
+        const starGlyph = starInfo?.char || '*'; // Get char from starInfo, fallback to '*'
+        this.screenBuffer.drawChar(starGlyph, starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
     }
     if (system.starbase) {
         const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
