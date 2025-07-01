@@ -20,6 +20,7 @@ import { MovementSystem, MoveRequestData } from '../systems/movement_system';
 import { CargoSystem } from '../systems/cargo_systems';
 import { MiningSystem } from '../systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
+import { SystemDataGenerator } from '../generation/system_data_generator';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
@@ -73,10 +74,11 @@ export class Game {
     logger.info('[Game] Constructing instance...');
     const initialSeed = seed !== undefined ? String(seed) : String(Date.now());
     this.gameSeedPRNG = new PRNG(initialSeed);
-    this.renderer = new RendererFacade(canvasId, statusBarId);
+    const systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG); // Instantiate here
+    this.renderer = new RendererFacade(canvasId, statusBarId, systemDataGenerator);
     this.player = new Player(); // Assumes Player constructor uses CONFIG defaults
     this.inputManager = new InputManager();
-    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG);
+    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, systemDataGenerator);
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
     this.terminalOverlay = new TerminalOverlay(); // Initialize terminal overlay
 

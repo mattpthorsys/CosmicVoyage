@@ -15,21 +15,25 @@ import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS, SPECTRAL_
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex, RgbColour } from './colour';
+import { SystemDataGenerator } from '../generation/system_data_generator';
 
 /** Contains methods for rendering specific game scenes/states. */
 export class SceneRenderer {
   private screenBuffer: ScreenBuffer; // Main buffer for primary content
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
+  private systemDataGenerator: SystemDataGenerator;
 
   constructor(
     screenBuffer: ScreenBuffer,
     drawingContext: DrawingContext,
-    nebulaRenderer: NebulaRenderer
+    nebulaRenderer: NebulaRenderer,
+    systemDataGenerator: SystemDataGenerator
   ) {
     this.screenBuffer = screenBuffer;
     this.drawingContext = drawingContext;
     this.nebulaRenderer = nebulaRenderer;
+    this.systemDataGenerator = systemDataGenerator;
     logger.debug('[SceneRenderer] Instance created.');
   }
 

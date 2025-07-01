@@ -13,6 +13,7 @@ import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
 import { eventManager, GameEvents } from '../core/event_manager'; // Import Event Manager
+import { SystemDataGenerator } from '../generation/system_data_generator';
 
 /**
  * Facade class for the rendering system.
@@ -29,7 +30,7 @@ export class RendererFacade {
   private sceneRenderer: SceneRenderer;
   private statusBarUpdater: ImportedStatusBarUpdater; // Use imported alias
 
-  constructor(canvasId: string, statusBarId: string) {
+  constructor(canvasId: string, statusBarId: string, systemDataGenerator: SystemDataGenerator) {
     logger.info('[RendererFacade] Constructing instance...');
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
@@ -61,7 +62,7 @@ export class RendererFacade {
     this.drawingContext = new DrawingContext(this.screenBuffer);
     this.nebulaRenderer = new NebulaRenderer();
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
-    this.sceneRenderer = new SceneRenderer(this.screenBuffer, this.drawingContext, this.nebulaRenderer);
+    this.sceneRenderer = new SceneRenderer(this.screenBuffer, this.drawingContext, this.nebulaRenderer, systemDataGenerator);
 
     // *** Subscribe to Status Updates ***
     eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));

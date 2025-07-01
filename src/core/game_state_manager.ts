@@ -11,6 +11,7 @@ import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
 import { TerminalOverlay } from '@/rendering/terminal_overlay';
+import { SystemDataGenerator } from '../generation/system_data_generator';
 
 // Define GameState type here or import from a shared types file
 export type GameState = 'hyperspace' | 'system' | 'planet' | 'starbase';
@@ -30,11 +31,13 @@ export class GameStateManager {
   // Dependencies needed for state transitions
   private player: Player;
   private gameSeedPRNG: PRNG;
+  private systemDataGenerator: SystemDataGenerator;
 
-  constructor(player: Player, gameSeedPRNG: PRNG) {
+  constructor(player: Player, gameSeedPRNG: PRNG, systemDataGenerator: SystemDataGenerator) {
     this._state = 'hyperspace'; // Initial state
     this.player = player;
     this.gameSeedPRNG = gameSeedPRNG;
+    this.systemDataGenerator = systemDataGenerator;
     this.terminalOverlay = new TerminalOverlay();
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
 
