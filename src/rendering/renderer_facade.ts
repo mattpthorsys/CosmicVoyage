@@ -182,8 +182,8 @@ export class RendererFacade {
   }
 
   // --- Scene Drawing Method Delegation (Remains the same) ---
-  drawHyperspace(player: Player, gameSeedPRNG: PRNG): void {
-    this.sceneRenderer.drawHyperspace(player, gameSeedPRNG);
+  drawHyperspace(player: Player): void {
+    this.sceneRenderer.drawHyperspace(player);
   }
   drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
     //const currentViewScale = CONFIG.DEFAULT_VIEW_SCALE; // Use the newly added property

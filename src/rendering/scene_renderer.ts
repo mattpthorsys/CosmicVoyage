@@ -35,7 +35,7 @@ export class SceneRenderer {
 
   // --- drawHyperspace --- (no changes from previous step)
   /** Draws the hyperspace view (stars, nebulae). */
-  drawHyperspace(player: Player, gameSeedPRNG: PRNG): void {
+  drawHyperspace(player: Player): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols <= 0 || rows <= 0) return;
@@ -44,64 +44,31 @@ export class SceneRenderer {
     const viewCenterY = Math.floor(rows / 2);
     const startWorldX = player.position.worldX - viewCenterX;
     const startWorldY = player.position.worldY - viewCenterY;
-    const baseSeedInt = gameSeedPRNG.seed;
-    const starPresenceThreshold = Math.floor(
-      CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE
-    );
+
     this.screenBuffer.clear(false);
     for (let viewY = 0; viewY < rows; viewY++) {
       for (let viewX = 0; viewX < cols; viewX++) {
         const worldX = startWorldX + viewX;
         const worldY = startWorldY + viewY;
         const finalBg = this.nebulaRenderer.getBackgroundColor(worldX, worldY);
-        const hash = fastHash(worldX, worldY, baseSeedInt);
-        const isStarCell = (hash % CONFIG.STAR_CHECK_HASH_SCALE) < starPresenceThreshold;
+        const systemProps = this.systemDataGenerator.getSystemProperties(worldX, worldY);
 
-        if (isStarCell) {
-          // --- REVISED STAR TYPE SELECTION (Using Dedicated Seed for Subtype) ---
-
-          // 1. Create a PRNG specifically for determining the star type at this location
-          const starTypeSeed = `star_type_${worldX},${worldY}`; // Dedicated seed
-          const starTypePRNG = gameSeedPRNG.seedNew(starTypeSeed);
-
-          // 2. Determine the broad type using the dedicated PRNG
-          const broadStarType = starTypePRNG.choice(SPECTRAL_DISTRIBUTION)!; // e.g., 'G'
-
-          // 3. Find available specific subtypes for that broad type
-          const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
-              (key) => key.startsWith(broadStarType) && key.endsWith('V')
-          );
-
-          // 4. Choose the specific subtype using the dedicated PRNG
-          let finalStarType: string;
-          if (availableSubtypes.length > 0) {
-              finalStarType = starTypePRNG.choice(availableSubtypes)!; // e.g., "G5V"
-          } else {
-              finalStarType = broadStarType; // Fallback
-              // Log warning if this happens
-              logger.warn(`[SceneRenderer.drawHyperspace] No specific subtypes found for broad type '${broadStarType}' at [${worldX}, ${worldY}]. Using broad type.`);
-          }
-
-          // 5. Get the info (including the correct interpolated colour) for the final chosen subtype
-          const starInfo = SPECTRAL_TYPES[finalStarType];
-          // --- END REVISED STAR TYPE SELECTION ---
+        if (systemProps.exists) {
+          const starInfo = SPECTRAL_TYPES[systemProps.starType!];
 
           if (starInfo) {
-            // Brightness calculation remains the same (can use the hash for visual variety)
+            const hash = fastHash(worldX, worldY, 0); // Use a constant seed for brightness
             const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1);
-            const starBaseRgb = hexToRgb(starInfo.colour); // Use the subtype's colour
+            const starBaseRgb = hexToRgb(starInfo.colour);
             const finalStarRgb = adjustBrightness(starBaseRgb, brightnessFactor);
             const finalStarHex = rgbToHex(finalStarRgb.r, finalStarRgb.g, finalStarRgb.b);
-            // Render using the subtype's character and final calculated colour
-            this.screenBuffer.drawChar(starInfo.char, viewX, viewY, finalStarHex, null); // null BG
+            this.screenBuffer.drawChar(starInfo.char, viewX, viewY, finalStarHex, null);
           } else {
-            // Error case
-            logger.error(`[SceneRenderer.drawHyperspace] Could not find star info for final determined type "${finalStarType}" at [${worldX}, ${worldY}].`);
-            this.screenBuffer.drawChar('?', viewX, viewY, '#FF00FF', null); // Fallback, Null BG
+            logger.error(`[SceneRenderer.drawHyperspace] Could not find star info for final determined type "${systemProps.starType}" at [${worldX}, ${worldY}].`);
+            this.screenBuffer.drawChar('?', viewX, viewY, '#FF00FF', null);
           }
         } else {
-          // Cell is not a star, draw background
-          this.screenBuffer.drawChar(null, viewX, viewY, null, finalBg); // Solid BG
+          this.screenBuffer.drawChar(null, viewX, viewY, null, finalBg);
         }
       }
     }

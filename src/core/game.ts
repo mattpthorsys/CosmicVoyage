@@ -905,7 +905,7 @@ export class Game {
       // Draw main content layer based on state
       switch (currentState) {
         case 'hyperspace':
-          this.renderer.drawHyperspace(this.player, this.gameSeedPRNG);
+          this.renderer.drawHyperspace(this.player);
           break;
         case 'system':
           const system = this.stateManager.currentSystem;

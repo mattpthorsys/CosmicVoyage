@@ -241,7 +241,8 @@ export class GameStateManager {
     logger.info(
       `[GameStateManager] Creating system at <span class="math-inline">\{this\.player\.position\.worldX\},</span>{this.player.position.worldY}...`
     );
-    const system = new SolarSystem(this.player.position.worldX, this.player.position.worldY, this.gameSeedPRNG);
+    const basicProps = this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
+    const system = new SolarSystem(basicProps, this.player.position.worldX, this.player.position.worldY, this.gameSeedPRNG);
     logger.info(
       `[GameStateManager] Generated System: <span class="math-inline">\{system\.name\} \(</span>{system.starType})`
     );
@@ -372,18 +373,15 @@ export class GameStateManager {
    */
   peekAtSystem(worldX: number, worldY: number): SolarSystem | null {
     logger.debug(`[GameStateManager] Peeking at system at: ${worldX}, ${worldY}`);
-    const baseSeedInt = this.gameSeedPRNG.seed;
-    const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-    const hash = fastHash(worldX, worldY, baseSeedInt);
-    const isStarCell = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
+    const basicProps = this.systemDataGenerator.getSystemProperties(worldX, worldY);
 
-    if (!isStarCell) {
+    if (!basicProps.exists) {
       return null;
     }
 
     try {
       // Create a temporary system for peeking
-      const tempSystem = new SolarSystem(worldX, worldY, this.gameSeedPRNG);
+      const tempSystem = new SolarSystem(basicProps, worldX, worldY, this.gameSeedPRNG);
       return tempSystem;
     } catch (error) {
       logger.error(`[GameStateManager] Error peeking at system at ${worldX}, ${worldY}: ${error}`);
