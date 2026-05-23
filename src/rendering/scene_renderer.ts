@@ -719,14 +719,15 @@ export class SceneRenderer {
 
   private drawOrbitLandingMap(model: OrbitScreenModel, x: number, y: number, width: number, height: number): void {
     const planet = model.selectedBody;
-    const map = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
+    const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
+    const map = isGiant ? null : planet.heightmap;
     const colours = planet.heightLevelColors;
     const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#4A7777', '#6A9999', '#9FCCCC'];
     for (let row = 0; row < height; row++) {
       for (let col = 0; col < width; col++) {
         const mapX = Math.floor((col / Math.max(1, width - 1)) * (model.mapSize - 1));
         const mapY = Math.floor((row / Math.max(1, height - 1)) * (model.mapSize - 1));
-        let colour = palette[(row + col) % palette.length] ?? '#669999';
+        let colour = this.sampleGiantMapBand(planet, palette, col, row, width, height, model.rotationPhase);
         if (map && colours) {
           const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(map[mapY]?.[mapX] ?? 0)));
           colour = colours[heightValue] ?? colour;
@@ -741,6 +742,39 @@ export class SceneRenderer {
       }
     }
     this.screenBuffer.drawString(`X ${model.landingCursorX.toString().padStart(3)} Y ${model.landingCursorY.toString().padStart(3)}`.slice(0, width), x, y + height + 1, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+  }
+
+  private sampleGiantMapBand(
+    planet: Planet,
+    palette: string[],
+    col: number,
+    row: number,
+    width: number,
+    height: number,
+    rotationPhase: number
+  ): string {
+    if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
+      return palette[row % palette.length] ?? '#669999';
+    }
+    const turbulence = this.getGasGiantTurbulenceFactor(planet);
+    const latitude = row / Math.max(1, height - 1);
+    const longitude = col / Math.max(1, width - 1);
+    const bandCount = planet.type === 'IceGiant' ? 7 : 12;
+    const shear =
+      Math.sin(longitude * Math.PI * 4 + rotationPhase * Math.PI * 2) * turbulence * 0.025 +
+      Math.sin(longitude * Math.PI * 11 + latitude * 8) * turbulence * 0.012;
+    const bandPosition = Math.max(
+      0,
+      Math.min(0.999, latitude + shear + Math.sin(latitude * Math.PI * bandCount) * 0.018)
+    );
+    const colourIndexFloat = bandPosition * (palette.length - 1);
+    const index1 = Math.max(0, Math.min(palette.length - 1, Math.floor(colourIndexFloat)));
+    const index2 = Math.max(0, Math.min(palette.length - 1, index1 + 1));
+    const factor = Math.max(0, Math.min(1, colourIndexFloat - index1));
+    const base = interpolateColour(this.hexToRgbFallback(palette[index1]), this.hexToRgbFallback(palette[index2]), factor);
+    const brightness = 0.92 + Math.sin(longitude * Math.PI * 18 + latitude * 2) * turbulence * 0.08;
+    const final = adjustBrightness(base, Math.max(0.7, Math.min(1.2, brightness)));
+    return rgbToHex(final.r, final.g, final.b);
   }
 
   private wrapText(text: string, width: number): string[] {
