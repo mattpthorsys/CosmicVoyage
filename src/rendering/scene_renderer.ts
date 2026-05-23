@@ -8,7 +8,7 @@ import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
 import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS } from '../constants';
 import { logger } from '../utils/logger';
-import { adjustBrightness, interpolateColour, rgbToHex } from './colour';
+import { adjustBrightness, interpolateColour, rgbToHex, RgbColour } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
@@ -20,6 +20,14 @@ interface VisiblePlanetMarker {
   viewY: number;
   marker: string;
 }
+
+type GiantAtmosphereSample = {
+  colour: string;
+  brightness: number;
+  storm: number;
+  texture: number;
+  edge: number;
+};
 
 /** Contains methods for rendering specific game scenes/states. */
 export class SceneRenderer {
@@ -454,50 +462,15 @@ export class SceneRenderer {
       CONFIG.DEFAULT_BG_COLOUR,
       null
     );
-    const visualPrng = planet.systemPRNG.seedNew("gas_surface_visuals");
-    const turbulence = this.getGasGiantTurbulenceFactor(planet);
-    const bandCount = planet.type === 'IceGiant' ? 8 : 13;
-    const stormCount = planet.type === 'IceGiant' ? 1 : Math.max(1, Math.round(1 + turbulence * 4));
-    const storms = Array.from({ length: stormCount }, (_, index) => ({
-      x: visualPrng.random(0, viewport.width),
-      y: visualPrng.random(viewport.height * 0.18, viewport.height * 0.82),
-      rx: visualPrng.random(viewport.width * 0.06, viewport.width * (0.12 + turbulence * 0.08)),
-      ry: visualPrng.random(1.2, 2.4 + turbulence * 3.2),
-      phase: visualPrng.random(0, Math.PI * 2) + index,
-    }));
+    const phase = this.wrapUnit((planet.orbitAngle ?? 0) / (Math.PI * 2));
 
     for (let y = 0; y < viewport.height; y++) {
-      const numColors = palette.length;
       const latitude = y / Math.max(1, viewport.height - 1);
-      const latitudeBand =
-        latitude +
-        Math.sin(latitude * Math.PI * bandCount) * 0.022 +
-        Math.sin(latitude * Math.PI * (bandCount * 0.47 + 1.7)) * 0.014;
-      const bandPosition = Math.max(0, Math.min(0.999, latitudeBand));
-      const baseColorIndex = Math.floor(bandPosition * (numColors - 1));
-      const colour1 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex))];
-      const colour2 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex + 1))];
       for (let x = 0; x < viewport.width; x++) {
-        const windShear =
-          Math.sin(x * 0.08 + y * 0.19) * turbulence * 0.18 +
-          Math.sin(x * 0.21 + latitude * 19) * turbulence * 0.08;
-        const interpFactor = Math.max(0, Math.min(1, (bandPosition * (numColors - 1)) % 1 + windShear));
-        const bandColor = interpolateColour(colour1, colour2, Math.max(0, Math.min(1, interpFactor)));
-        let brightness = 0.86 + Math.sin(latitude * Math.PI * bandCount + x * 0.025) * 0.08 + turbulence * Math.sin(x * 0.34 + y * 0.17) * 0.08;
-        for (const storm of storms) {
-          const dx = (x - storm.x) / storm.rx;
-          const dy = (y - storm.y) / storm.ry;
-          const stormFalloff = Math.max(0, 1 - (dx * dx + dy * dy));
-          if (stormFalloff > 0) {
-            brightness += stormFalloff * (0.18 + turbulence * 0.18) * Math.sin(dx * 3 + storm.phase);
-          }
-        }
-        brightness = Math.max(0.55, Math.min(1.35, brightness));
-        const finalColorRgb = adjustBrightness(bandColor, brightness);
-        const finalColorHex = rgbToHex(finalColorRgb.r, finalColorRgb.g, finalColorRgb.b);
-        const texture = Math.abs(Math.sin(x * 0.3 + y * 0.07)) + turbulence * Math.abs(Math.sin(x * 0.52 + y * 0.23));
-        const char = texture > 1.15 ? GLYPHS.SHADE_DARK : texture > 0.76 ? GLYPHS.SHADE_MEDIUM : texture > 0.38 ? GLYPHS.SHADE_LIGHT : ' ';
-        this.screenBuffer.drawChar(char, viewport.x + x, viewport.y + y, finalColorHex, finalColorHex);
+        const longitude = x / Math.max(1, viewport.width - 1);
+        const sample = this.sampleGiantAtmosphere(planet, palette, longitude, latitude, phase);
+        const char = this.getGiantAtmosphereGlyph(sample);
+        this.screenBuffer.drawChar(char, viewport.x + x, viewport.y + y, sample.colour, sample.colour);
       }
     }
     this.screenBuffer.drawChar(
@@ -514,8 +487,123 @@ export class SceneRenderer {
     const tempStress = Math.max(0, Math.min(1, (planet.surfaceTemp - 120) / 520));
     const proximityStress = Math.max(0, Math.min(1, (1.6e11 - planet.orbitDistance) / 1.3e11));
     const massStress = Math.max(0, Math.min(1, (planet.gravity - 1.2) / 2.8));
-    const typeFactor = planet.type === 'GasGiant' ? 0.18 : 0.08;
-    return Math.max(0.05, Math.min(0.85, typeFactor + tempStress * 0.34 + proximityStress * 0.32 + massStress * 0.18));
+    const typeFactor = planet.type === 'GasGiant' ? 0.22 : 0.11;
+    const heatResponse = planet.type === 'GasGiant' ? 0.34 : 0.24;
+    return Math.max(0.05, Math.min(0.9, typeFactor + tempStress * heatResponse + proximityStress * 0.3 + massStress * 0.2));
+  }
+
+  private sampleGiantAtmosphere(
+    planet: Planet,
+    palette: RgbColour[],
+    longitude01: number,
+    latitude01: number,
+    phase01: number
+  ): GiantAtmosphereSample {
+    const safePalette = palette.length > 0 ? palette : [{ r: 96, g: 128, b: 128 }];
+    const turbulence = this.getGasGiantTurbulenceFactor(planet);
+    const isIceGiant = planet.type === 'IceGiant';
+    const bandCount = isIceGiant ? 8 : 16;
+    const lat = Math.max(0, Math.min(1, latitude01));
+    const lon = this.wrapUnit(longitude01);
+    const equatorDistance = Math.abs(lat - 0.5) * 2;
+    const jetStrength = (1 - equatorDistance * 0.35) * turbulence;
+    const phase = phase01 * Math.PI * 2;
+    const differentialDrift = (0.018 + turbulence * 0.028) * Math.sin((lat - 0.5) * Math.PI * 3);
+    const shearedLon = this.wrapUnit(lon + differentialDrift + phase01 * (0.08 + jetStrength * 0.04));
+
+    const wave1 = Math.sin(lat * Math.PI * bandCount + Math.sin(shearedLon * Math.PI * 2 + phase) * jetStrength * 0.55);
+    const wave2 = Math.sin(lat * Math.PI * (bandCount * 0.52 + 2.3) + shearedLon * Math.PI * 3.2 - phase * 0.4);
+    const fineWave =
+      Math.sin(shearedLon * Math.PI * 18 + lat * Math.PI * 19 + phase * 0.7) *
+      Math.sin(lat * Math.PI * (bandCount + 5)) *
+      turbulence;
+    const bandDisplacement = wave1 * 0.018 + wave2 * 0.01 + fineWave * (isIceGiant ? 0.006 : 0.011);
+    const bandPosition = Math.max(0, Math.min(0.999, lat + bandDisplacement));
+    const colourFloat = bandPosition * (safePalette.length - 1);
+    const index1 = Math.max(0, Math.min(safePalette.length - 1, Math.floor(colourFloat)));
+    const index2 = Math.max(0, Math.min(safePalette.length - 1, index1 + 1));
+    const bandEdge = Math.abs(wave1);
+    const colourMix = Math.max(0, Math.min(1, colourFloat - index1 + fineWave * 0.09));
+    let base = interpolateColour(safePalette[index1], safePalette[index2], colourMix);
+
+    const storm = this.sampleGiantStormField(planet, shearedLon, lat, phase01, turbulence);
+    const mottling =
+      Math.sin(shearedLon * Math.PI * 34 + lat * Math.PI * 11 - phase * 0.9) * 0.035 +
+      Math.sin(shearedLon * Math.PI * 71 + lat * Math.PI * 41 + phase * 1.3) * 0.02;
+    const polarDimming = isIceGiant ? equatorDistance * 0.06 : equatorDistance * 0.1;
+    const bandContrast = (isIceGiant ? 0.07 : 0.12) * Math.sin(lat * Math.PI * bandCount);
+    let brightness = 0.93 + bandContrast + mottling * turbulence - polarDimming;
+    brightness += storm * (isIceGiant ? 0.16 : 0.24);
+
+    if (storm > 0.08) {
+      const stormTint = isIceGiant ? { r: 200, g: 245, b: 255 } : { r: 255, g: 238, b: 205 };
+      base = interpolateColour(base, stormTint, Math.min(0.42, storm * 0.5));
+    }
+
+    const final = adjustBrightness(base, Math.max(0.54, Math.min(1.42, brightness)));
+    const texture = Math.abs(fineWave) + bandEdge * 0.45 + Math.max(0, storm) * 0.85 + turbulence * Math.abs(mottling) * 5;
+    return {
+      colour: rgbToHex(final.r, final.g, final.b),
+      brightness,
+      storm,
+      texture,
+      edge: bandEdge,
+    };
+  }
+
+  private sampleGiantStormField(
+    planet: Planet,
+    longitude01: number,
+    latitude01: number,
+    phase01: number,
+    turbulence: number
+  ): number {
+    const isIceGiant = planet.type === 'IceGiant';
+    const stormCount = isIceGiant ? 3 : 7;
+    let field = 0;
+    for (let index = 0; index < stormCount; index++) {
+      const seed = `${planet.name}:${planet.type}:storm:${index}`;
+      const baseLon = this.hashUnit(seed + ':lon');
+      const baseLat = 0.16 + this.hashUnit(seed + ':lat') * 0.68;
+      const direction = index % 2 === 0 ? 1 : -1;
+      const drift = direction * phase01 * (0.015 + this.hashUnit(seed + ':drift') * 0.025);
+      const stormLon = this.wrapUnit(baseLon + drift);
+      const stormLat = baseLat + Math.sin(phase01 * Math.PI * 2 + index) * turbulence * 0.012;
+      const rx = (isIceGiant ? 0.055 : 0.07) + this.hashUnit(seed + ':rx') * (isIceGiant ? 0.045 : 0.08);
+      const ry = (isIceGiant ? 0.012 : 0.018) + this.hashUnit(seed + ':ry') * (isIceGiant ? 0.018 : 0.035);
+      const lonDelta = this.shortestUnitDelta(longitude01, stormLon) / rx;
+      const latDelta = (latitude01 - stormLat) / ry;
+      const oval = Math.max(0, 1 - lonDelta * lonDelta - latDelta * latDelta);
+      if (oval <= 0) continue;
+
+      const spiral = Math.sin(lonDelta * 5.4 + latDelta * 2.2 + this.hashUnit(seed + ':spin') * Math.PI * 2);
+      const eye = Math.max(0, 1 - lonDelta * lonDelta * 8 - latDelta * latDelta * 8);
+      const strength = (0.35 + this.hashUnit(seed + ':strength') * 0.65) * turbulence;
+      field += Math.pow(oval, 1.8) * strength * (0.55 + spiral * 0.18) - eye * strength * 0.18;
+    }
+    return Math.max(-0.15, Math.min(1, field));
+  }
+
+  private getGiantAtmosphereGlyph(sample: GiantAtmosphereSample): string {
+    if (sample.storm > 0.22) return GLYPHS.SHADE_DARK;
+    if (sample.texture > 0.95) return GLYPHS.SHADE_DARK;
+    if (sample.texture > 0.62 || sample.edge > 0.82) return GLYPHS.SHADE_MEDIUM;
+    if (sample.texture > 0.32 || sample.brightness < 0.78) return GLYPHS.SHADE_LIGHT;
+    return ' ';
+  }
+
+  private shortestUnitDelta(value: number, target: number): number {
+    const delta = this.wrapUnit(value - target + 0.5) - 0.5;
+    return delta;
+  }
+
+  private hashUnit(seed: string): number {
+    let hash = 2166136261;
+    for (let index = 0; index < seed.length; index++) {
+      hash ^= seed.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) / 0xffffffff;
   }
 
   /** Draws the view when docked inside a starbase. */
@@ -691,25 +779,12 @@ export class SceneRenderer {
     return heightColours[height] ?? '#88BBBB';
   }
 
-  private sampleGiantPlanetTexture(planet: Planet, u: number, v: number, lon: number, lat: number, phase: number): string {
+  private sampleGiantPlanetTexture(planet: Planet, u: number, _v: number, _lon: number, lat: number, phase: number): string {
     const paletteHex = PLANET_TYPES[planet.type]?.terrainColours ?? ['#557777', '#669999', '#88BBBB', '#AADDDD'];
     const palette = paletteHex.map((colour) => this.hexToRgbFallback(colour));
-    const turbulence = this.getGasGiantTurbulenceFactor(planet);
     const lat01 = Math.max(0, Math.min(1, 0.5 - lat / Math.PI));
-    const bandCount = planet.type === 'IceGiant' ? 7 : 12;
-    const shear =
-      Math.sin(lon * 2.6 + phase * 0.7) * turbulence * 0.025 +
-      Math.sin(lon * 5.1 - phase * 1.2 + lat * 8) * turbulence * 0.015;
-    const bandPosition = Math.max(0, Math.min(0.999, lat01 + shear + Math.sin(lat01 * Math.PI * bandCount) * 0.018));
-    const colourIndexFloat = bandPosition * (palette.length - 1);
-    const index1 = Math.max(0, Math.min(palette.length - 1, Math.floor(colourIndexFloat)));
-    const index2 = Math.max(0, Math.min(palette.length - 1, index1 + 1));
-    const factor = Math.max(0, Math.min(1, colourIndexFloat - index1 + Math.sin(u * Math.PI * 18 + lat * 3) * turbulence * 0.12));
-    const base = interpolateColour(palette[index1], palette[index2], factor);
-    const storm = Math.max(0, Math.sin(lon * 3.2 + phase * 2.1) * Math.cos(lat * 8.0)) * turbulence;
-    const brightness = 0.9 + Math.sin(u * Math.PI * 26 + lat * 4) * turbulence * 0.1 + storm * 0.16;
-    const final = adjustBrightness(base, Math.max(0.62, Math.min(1.28, brightness)));
-    return rgbToHex(final.r, final.g, final.b);
+    const phase01 = this.wrapUnit(phase / (Math.PI * 2));
+    return this.sampleGiantAtmosphere(planet, palette, u, lat01, phase01).colour;
   }
 
   private mercatorTextureY(latitudeRad: number): number {
@@ -777,25 +852,10 @@ export class SceneRenderer {
     if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
       return palette[row % palette.length] ?? '#669999';
     }
-    const turbulence = this.getGasGiantTurbulenceFactor(planet);
     const latitude = row / Math.max(1, height - 1);
     const longitude = col / Math.max(1, width - 1);
-    const bandCount = planet.type === 'IceGiant' ? 7 : 12;
-    const shear =
-      Math.sin(longitude * Math.PI * 4 + rotationPhase * Math.PI * 2) * turbulence * 0.025 +
-      Math.sin(longitude * Math.PI * 11 + latitude * 8) * turbulence * 0.012;
-    const bandPosition = Math.max(
-      0,
-      Math.min(0.999, latitude + shear + Math.sin(latitude * Math.PI * bandCount) * 0.018)
-    );
-    const colourIndexFloat = bandPosition * (palette.length - 1);
-    const index1 = Math.max(0, Math.min(palette.length - 1, Math.floor(colourIndexFloat)));
-    const index2 = Math.max(0, Math.min(palette.length - 1, index1 + 1));
-    const factor = Math.max(0, Math.min(1, colourIndexFloat - index1));
-    const base = interpolateColour(this.hexToRgbFallback(palette[index1]), this.hexToRgbFallback(palette[index2]), factor);
-    const brightness = 0.92 + Math.sin(longitude * Math.PI * 18 + latitude * 2) * turbulence * 0.08;
-    const final = adjustBrightness(base, Math.max(0.7, Math.min(1.2, brightness)));
-    return rgbToHex(final.r, final.g, final.b);
+    const rgbPalette = palette.map((colour) => this.hexToRgbFallback(colour));
+    return this.sampleGiantAtmosphere(planet, rgbPalette, longitude, latitude, rotationPhase).colour;
   }
 
   private wrapText(text: string, width: number): string[] {

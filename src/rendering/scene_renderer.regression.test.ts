@@ -65,6 +65,28 @@ function createSolidPlanet(): Planet {
   return planet;
 }
 
+function createGasGiantPlanet(): Planet {
+  const planet = Object.create(Planet.prototype) as Planet;
+  Object.defineProperties(planet, {
+    name: { value: 'Regression Jovian' },
+    type: { value: 'GasGiant' },
+    rgbPaletteCache: {
+      value: [
+        { r: 64, g: 50, b: 38 },
+        { r: 142, g: 104, b: 67 },
+        { r: 214, g: 176, b: 118 },
+        { r: 248, g: 231, b: 187 },
+      ],
+    },
+    surfaceTemp: { value: 430 },
+    orbitDistance: { value: 7.5e10 },
+    gravity: { value: 2.4 },
+    orbitAngle: { value: 1.2 },
+    systemPRNG: { value: new PRNG('regression-jovian') },
+  });
+  return planet;
+}
+
 function createSystem(): SolarSystem {
   return {
     name: 'Regression',
@@ -161,6 +183,24 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK)).toBe(true);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
+  });
+
+  it('renders gas giant surfaces with turbulent band and storm variation', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(100, 54);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+
+    renderer.drawPlanetSurface(player, createGasGiantPlanet());
+
+    const atmosphericCells = drawCalls.filter((call) => call.bg && call.fg === call.bg);
+    const uniqueColours = new Set(atmosphericCells.map((call) => call.bg));
+    const shadedCells = atmosphericCells.filter((call) =>
+      [GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK].includes(call.char ?? '')
+    );
+
+    expect(uniqueColours.size).toBeGreaterThan(30);
+    expect(shadedCells.length).toBeGreaterThan(200);
+    expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
   });
 
   it('keeps starbase interiors free of background star effects', () => {
