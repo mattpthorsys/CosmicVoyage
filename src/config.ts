@@ -90,11 +90,11 @@ export const CONFIG = {
   STAR_CHECK_HASH_SCALE: 10000, // Divisor for hash check
   NEBULA_SCALE: 0.05, // Perlin noise scale for nebulae
   NEBULA_INTENSITY: 1, // How much nebula colour affects background (0-1)
-  NEBULA_SPARSITY: 0.4, // Probability of a nebula pixel being black (0-1)
+  NEBULA_SPARSITY: 0.52, // Higher values make nebulae rarer and more region-based.
   NEBULA_COLOURS: [
-    { r: 90, g: 0, b: 70 },
-    { r: 0, g: 10, b: 90 },
-    { r: 0, g: 80, b: 10 },
+    { r: 42, g: 7, b: 13 },
+    { r: 16, g: 42, b: 58 },
+    { r: 8, g: 5, b: 4 },
   ],
   NEBULA_CACHE_PRECISION: 2, // Decimal places for Perlin noise cache keys
   CELL_BLOCK_SIZE: 1,
