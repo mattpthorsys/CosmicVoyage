@@ -635,8 +635,9 @@ export class SceneRenderer {
 
   private drawRotatingPlanetSphere(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
     const planet = model.selectedBody;
-    const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#557777', '#669999', '#88BBBB', '#AADDDD'];
     const phase = model.rotationPhase * Math.PI * 2;
+    const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
+    const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightLevelColors;
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const nx = dx / radius;
@@ -645,15 +646,59 @@ export class SceneRenderer {
         if (d > 1) continue;
         const z = Math.sqrt(Math.max(0, 1 - d));
         const lon = Math.atan2(nx, z) + phase;
-        const lat = Math.asin(Math.max(-1, Math.min(1, ny)));
-        const band = Math.abs(Math.sin(lat * 3 + phase * 0.35) + Math.sin(lon * 2.2)) / 2;
-        const light = Math.max(0.08, Math.min(1, 0.25 + 0.75 * (Math.cos(lon - phase * 0.6) * z)));
-        const colour = palette[Math.max(0, Math.min(palette.length - 1, Math.floor(band * palette.length)))] ?? '#88BBBB';
-        const finalColour = adjustBrightness(this.hexToRgbFallback(colour), 0.28 + light * 0.85);
+        const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
+        const textureX = this.wrapUnit(lon / (Math.PI * 2) + 0.5);
+        const textureY = this.mercatorTextureY(lat);
+        const colour = solidMap && solidColours
+          ? this.sampleSolidPlanetTexture(solidMap, solidColours, textureX, textureY)
+          : this.sampleGiantPlanetTexture(planet, textureX, textureY, lon, lat, phase);
+        const light = Math.max(0.08, Math.min(1, 0.22 + 0.78 * (Math.cos(lon - phase * 0.6) * z)));
+        const limbShade = Math.max(0.45, 0.78 + z * 0.22);
+        const finalColour = adjustBrightness(this.hexToRgbFallback(colour), (0.32 + light * 0.82) * limbShade);
         const char = light < 0.22 ? GLYPHS.SHADE_DARK : light < 0.48 ? GLYPHS.SHADE_MEDIUM : light < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
         this.screenBuffer.drawChar(char, cx + dx, cy + dy, rgbToHex(finalColour.r, finalColour.g, finalColour.b), CONFIG.DEFAULT_BG_COLOUR);
       }
     }
+  }
+
+  private sampleSolidPlanetTexture(heightmap: number[][], heightColours: string[], u: number, v: number): string {
+    const mapSize = heightmap.length;
+    if (mapSize <= 0) return '#88BBBB';
+    const mapX = Math.floor(this.wrapUnit(u) * mapSize) % mapSize;
+    const mapY = Math.max(0, Math.min(mapSize - 1, Math.floor(v * mapSize)));
+    const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(heightmap[mapY]?.[mapX] ?? 0)));
+    return heightColours[height] ?? '#88BBBB';
+  }
+
+  private sampleGiantPlanetTexture(planet: Planet, u: number, v: number, lon: number, lat: number, phase: number): string {
+    const paletteHex = PLANET_TYPES[planet.type]?.terrainColours ?? ['#557777', '#669999', '#88BBBB', '#AADDDD'];
+    const palette = paletteHex.map((colour) => this.hexToRgbFallback(colour));
+    const turbulence = this.getGasGiantTurbulenceFactor(planet);
+    const lat01 = Math.max(0, Math.min(1, 0.5 - lat / Math.PI));
+    const bandCount = planet.type === 'IceGiant' ? 7 : 12;
+    const shear =
+      Math.sin(lon * 2.6 + phase * 0.7) * turbulence * 0.025 +
+      Math.sin(lon * 5.1 - phase * 1.2 + lat * 8) * turbulence * 0.015;
+    const bandPosition = Math.max(0, Math.min(0.999, lat01 + shear + Math.sin(lat01 * Math.PI * bandCount) * 0.018));
+    const colourIndexFloat = bandPosition * (palette.length - 1);
+    const index1 = Math.max(0, Math.min(palette.length - 1, Math.floor(colourIndexFloat)));
+    const index2 = Math.max(0, Math.min(palette.length - 1, index1 + 1));
+    const factor = Math.max(0, Math.min(1, colourIndexFloat - index1 + Math.sin(u * Math.PI * 18 + lat * 3) * turbulence * 0.12));
+    const base = interpolateColour(palette[index1], palette[index2], factor);
+    const storm = Math.max(0, Math.sin(lon * 3.2 + phase * 2.1) * Math.cos(lat * 8.0)) * turbulence;
+    const brightness = 0.9 + Math.sin(u * Math.PI * 26 + lat * 4) * turbulence * 0.1 + storm * 0.16;
+    const final = adjustBrightness(base, Math.max(0.62, Math.min(1.28, brightness)));
+    return rgbToHex(final.r, final.g, final.b);
+  }
+
+  private mercatorTextureY(latitudeRad: number): number {
+    const limitedLat = Math.max(-1.45, Math.min(1.45, latitudeRad));
+    const mercatorY = 0.5 - Math.log(Math.tan(Math.PI / 4 + limitedLat / 2)) / (Math.PI * 2);
+    return Math.max(0, Math.min(1, mercatorY));
+  }
+
+  private wrapUnit(value: number): number {
+    return ((value % 1) + 1) % 1;
   }
 
   private drawOrbitViewReadout(model: OrbitScreenModel, x: number, y: number, width: number): void {
