@@ -53,6 +53,10 @@ export const CONFIG = {
     MOVE_LEFT: 'ArrowLeft',
     MOVE_RIGHT: 'ArrowRight',
     ENTER_SYSTEM: 'Enter',
+    PRIMARY_ACTION: ' ',
+    CYCLE_TARGET: 'Tab',
+    HELP: '?',
+    APPROACH_TARGET: 'a',
     LEAVE_SYSTEM: 'Backspace',
     // Assign 'l' to a single, representative action name
     ACTIVATE_LAND_LIFTOFF: 'l',

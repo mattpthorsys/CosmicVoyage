@@ -98,6 +98,7 @@ export const GameEvents = {
 
     // UI Updates (From Game -> Renderer/UI)
     STATUS_UPDATE_NEEDED: 'statusUpdateNeeded', // data: { message: string, hasStarbase: boolean }
+    COMMAND_STRIP_UPDATE_NEEDED: 'commandStripUpdateNeeded', // data: { actions, primaryActionId, targetName }
     POPUP_STATE_CHANGED: 'popupStateChanged', // data: { newState: 'inactive'|'opening'|'active'|'closing', content?: string[] }
 
     // Other Game Events

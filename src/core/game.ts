@@ -6,7 +6,7 @@ import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { MineralRichness, SPECTRAL_TYPES, ELEMENTS, TRADE_COMMODITIES, STATUS_MESSAGES, GLYPHS, AU_IN_METERS } from '../constants';
+import { SPECTRAL_TYPES, ELEMENTS, TRADE_COMMODITIES, STATUS_MESSAGES, GLYPHS, AU_IN_METERS } from '../constants';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
@@ -23,9 +23,11 @@ import { TerminalOverlay } from '../rendering/terminal_overlay';
 import { AstrometricOverlay } from '../rendering/astrometric_overlay';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
+import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
+type NavigationTarget = Planet | Starbase | StellarBody;
 
 interface TradeDepotItem {
   itemKey: string;
@@ -53,6 +55,11 @@ export class Game {
   private readonly astrometricOverlay: AstrometricOverlay;
   private readonly systemDataGenerator: SystemDataGenerator;
   private tradeSelectionIndex: number = 0;
+  private currentTargetIndex: number = 0;
+  private currentTargetSignature: string = '';
+  private approachTargetSignature: string | null = null;
+  private autoScannedSystemName: string | null = null;
+  private tutorialHintsShown: Set<string> = new Set();
 
   // Game Loop State, Status, Flags
   private lastUpdateTime: number = 0;
@@ -132,6 +139,9 @@ export class Game {
       this.currentZoomLevelIndex = 2; // Index of default zoom
       logger.info(`[Game] Resetting zoom to default level (${this.currentZoomLevelIndex}) due to state change.`);
     }
+    this.currentTargetIndex = 0;
+    this.currentTargetSignature = '';
+    this.approachTargetSignature = null;
     // Close popups on state change
     if (this.popupState !== 'inactive') {
       this.popupState = 'inactive';
@@ -141,6 +151,7 @@ export class Game {
     // Reflect status messages potentially set by GameStateManager during transition
     this.statusMessage = this.stateManager.statusMessage || ''; // Use status from stateManager
     this.stateManager.statusMessage = ''; // Clear it after reading
+    this._emitContextualHint(newState);
     this._publishStatusUpdate(); // Update status bar immediately
   }
 
@@ -153,6 +164,29 @@ export class Game {
   }
   private _handleCreditsUpdate(): void {
     this._publishStatusUpdate();
+  }
+
+  private _emitContextualHint(newState: GameState): void {
+    if (newState === 'system' && this.stateManager.currentSystem) {
+      const system = this.stateManager.currentSystem;
+      if (this.autoScannedSystemName !== system.name) {
+        this.autoScannedSystemName = system.name;
+        const planetCount = system.planets.filter((planet) => planet !== null).length;
+        this.terminalOverlay.clear();
+        this.terminalOverlay.addMessageLines([
+          `<h>Entered ${system.name}</h>`,
+          `System: <hl>${system.architecture.kind}</hl> | Stars: <hl>${system.stars.map((star) => `${star.id}:${star.starType}`).join(' ')}</hl>`,
+          `Bodies: <hl>${planetCount}</hl> | Facility: <hl>${system.starbase ? system.starbase.name : 'None detected'}</hl>`,
+          `Tip: <hl>Tab</hl> cycles targets, <hl>Space</hl> performs the best action, <hl>A</hl> approaches target.`,
+        ]);
+      }
+    } else if (newState === 'planet' && this.stateManager.currentPlanet && !this.tutorialHintsShown.has('planet')) {
+      this.tutorialHintsShown.add('planet');
+      this.terminalOverlay.addMessage(`<h>Surface operations:</h> scan before mining, then use Space for the next available action.`);
+    } else if (newState === 'starbase' && this.stateManager.currentStarbase && !this.tutorialHintsShown.has('starbase')) {
+      this.tutorialHintsShown.add('starbase');
+      this.terminalOverlay.addMessage(`<h>Starbase:</h> Enter buys selected goods, Backspace sells selected cargo, R refuels.`);
+    }
   }
 
   private _handleResize(): void {
@@ -380,6 +414,10 @@ export class Game {
       'DOWNLOAD_LOG',
       'QUIT',
       'INFO_TEST',
+      'PRIMARY_ACTION',
+      'CYCLE_TARGET',
+      'HELP',
+      'APPROACH_TARGET',
     ];
 
     for (const action of discreteActions) {
@@ -390,6 +428,22 @@ export class Game {
           this.terminalOverlay.clear(); // Clear before adding test message
           this.terminalOverlay.addMessage(`Test message added at ${new Date().toLocaleTimeString()}`);
           return true; // Consume input
+        }
+        if (action === 'HELP') {
+          this._showHelpOverlay();
+          return true;
+        }
+        if (action === 'CYCLE_TARGET') {
+          this._cycleTarget();
+          return true;
+        }
+        if (action === 'PRIMARY_ACTION') {
+          this._executePrimaryAction();
+          return true;
+        }
+        if (action === 'APPROACH_TARGET') {
+          this._startApproachAssist();
+          return true;
         }
         if (action === 'QUIT') {
           eventManager.publish(GameEvents.GAME_QUIT);
@@ -436,6 +490,136 @@ export class Game {
     return false; // No discrete action processed
   }
 
+  private _executePrimaryAction(): void {
+    const actions = this.getCurrentAvailableActions();
+    const primaryAction = this.choosePrimaryAction(actions);
+    if (!primaryAction) {
+      this.statusMessage = 'No contextual action available.';
+      return;
+    }
+
+    switch (primaryAction.id) {
+      case 'enter-system':
+      case 'scan-system':
+      case 'scan-local':
+      case 'land-dock':
+      case 'scan-object':
+      case 'scan-star':
+      case 'leave-system':
+      case 'scan-surface':
+      case 'mine':
+      case 'liftoff':
+      case 'refuel':
+      case 'depart':
+        this._executeActionByName(primaryAction.action);
+        break;
+      case 'approach-target':
+        this._startApproachAssist();
+        break;
+      case 'buy':
+      case 'sell':
+        this._executeActionByName(primaryAction.action);
+        break;
+      default:
+        this.statusMessage = 'Choose a target or move closer.';
+    }
+  }
+
+  private _executeActionByName(actionName: string): void {
+    if (actionName === 'SCAN_SYSTEM_OBJECT') {
+      const selectedTarget = this.getSelectedTarget();
+      if (selectedTarget && this.isTargetWithinScanRange(selectedTarget)) {
+        this.terminalOverlay.clear();
+        this._dumpScanToTerminal(selectedTarget);
+        this.statusMessage = '';
+        return;
+      }
+    }
+
+    const actionResult = this.actionProcessor.processAction(actionName, this.stateManager.state);
+    if (typeof actionResult === 'string') {
+      this.statusMessage = actionResult;
+    } else if (actionResult && 'requestScan' in actionResult) {
+      this.terminalOverlay.clear();
+      this._handleScanRequest(actionResult.requestScan);
+      this.statusMessage = '';
+    } else if (actionResult && 'requestSystemPeek' in actionResult) {
+      this.terminalOverlay.clear();
+      const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
+      if (peekedSystem) this._dumpScanToTerminal(peekedSystem);
+      else this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
+      this.statusMessage = '';
+    }
+
+    if (this.stateManager.statusMessage) {
+      this.statusMessage = this.stateManager.statusMessage;
+      this.stateManager.statusMessage = '';
+    }
+  }
+
+  private choosePrimaryAction(actions: AvailableAction[]): AvailableAction | null {
+    const excludedPrimaryIds = new Set(['primary', 'move', 'help', 'cycle-target', 'zoom-in', 'zoom-out']);
+    return (
+      actions.find((action) => action.enabled && !excludedPrimaryIds.has(action.id)) ??
+      null
+    );
+  }
+
+  private _cycleTarget(): void {
+    const targets = this.getNavigationTargets();
+    if (targets.length === 0) {
+      this.statusMessage = 'No targets in current view.';
+      return;
+    }
+    this.currentTargetIndex = (this.currentTargetIndex + 1) % targets.length;
+    const target = targets[this.currentTargetIndex];
+    this.currentTargetSignature = this.getTargetSignature(target);
+    this.approachTargetSignature = null;
+    this.statusMessage = `Target selected: ${this.getTargetName(target)}.`;
+  }
+
+  private _startApproachAssist(): void {
+    if (this.stateManager.state !== 'system') {
+      this.statusMessage = 'Approach assist is only available in system view.';
+      return;
+    }
+    const target = this.getSelectedTarget();
+    if (!target) {
+      this.statusMessage = 'No navigation target selected.';
+      return;
+    }
+    this.approachTargetSignature = this.getTargetSignature(target);
+    this.statusMessage = `Approach assist engaged: ${this.getTargetName(target)}.`;
+  }
+
+  private _showHelpOverlay(): void {
+    const actions = this.getCurrentAvailableActions().filter((action) => action.enabled);
+    const lines = [
+      'COSMIC VOYAGE COMMANDS',
+      '',
+      ...actions.slice(0, 9).map((action) => `${this.formatKeyForHelp(action.key).padEnd(10)} ${action.label}`),
+      '',
+      'Space performs the best available action.',
+      'Tab cycles targets in system view.',
+      'A approaches the selected system target.',
+      'Esc, arrows, Enter, or Backspace closes this panel.',
+      CONFIG.POPUP_CLOSE_TEXT,
+    ];
+    this.popupContent = lines;
+    this.popupState = 'opening';
+    this.popupOpenCloseProgress = 0;
+    this.popupTextProgress = 0;
+    this.popupTotalChars = lines.reduce((sum, line) => sum + line.length + 1, 0);
+    this.forceFullRender = true;
+  }
+
+  private formatKeyForHelp(key: string): string {
+    if (key === ' ') return '[SPACE]';
+    if (key === 'Up/Down') return '[UP/DOWN]';
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') return '[ARROWS]';
+    return `[${key.toUpperCase()}]`;
+  }
+
   /** Handles movement input and publishes MOVE_REQUESTED event. */
   private _handleMovementInput(): void {
     let dx = 0,
@@ -446,6 +630,7 @@ export class Game {
     if (this.inputManager.isActionActive('MOVE_RIGHT')) dx += 1;
 
     if (dx !== 0 || dy !== 0) {
+      this.approachTargetSignature = null;
       // Clear non-critical status messages when moving
       if (this.statusMessage && !/(error|fail|cannot|mined|sold|scan|purchased)/i.test(this.statusMessage)) {
         this.statusMessage = '';
@@ -838,19 +1023,42 @@ export class Game {
       const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
       if (peekedSystem) {
         const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
-        // Use SCAN_SYSTEM_OBJECT binding for scan prompt
-        baseStatus += ` | Near ${
-          peekedSystem.name
-        }${starbaseText}. [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`;
+        const actions = createAvailableActions({
+          state: 'hyperspace',
+          player: this.player,
+          system: null,
+          planet: null,
+          starbase: null,
+          isNearHyperspaceSystem: true,
+          nearbySystemName: peekedSystem.name,
+        });
+        baseStatus += ` | Near ${peekedSystem.name}${starbaseText}. Actions: ${formatAvailableActions(actions)}`;
       } else {
         // Hash indicated star, but peek failed? Log warning.
         logger.warn(
           `[Game:_updateHyperspace] Hash indicated star at ${this.player.position.worldX},${this.player.position.worldY} but peek failed.`
         );
-        baseStatus += ` | Near star system. [${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter`;
+        const actions = createAvailableActions({
+          state: 'hyperspace',
+          player: this.player,
+          system: null,
+          planet: null,
+          starbase: null,
+          isNearHyperspaceSystem: true,
+        });
+        baseStatus += ` | Near star system. Actions: ${formatAvailableActions(actions, 2)}`;
       }
     } else {
       this.stateManager.resetPeekedSystem(); // Clear peek cache if not near star
+      const actions = createAvailableActions({
+        state: 'hyperspace',
+        player: this.player,
+        system: null,
+        planet: null,
+        starbase: null,
+        isNearHyperspaceSystem: false,
+      });
+      baseStatus += ` | Actions: ${formatAvailableActions(actions, 2)}`;
     }
     return baseStatus;
   }
@@ -878,18 +1086,22 @@ export class Game {
 
     // Update orbits of planets, moons, starbase
     system.updateOrbits(scaledDeltaTime);
+    this.ensureSelectedTarget();
+    this.updateApproachAssist(deltaTime);
 
     // Determine status message based on proximity
     const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
+    const selectedTarget = this.getSelectedTarget();
     let status = `System: ${system.name} (${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}) | Pos: ${this.player.position.systemX.toExponential(
       1
     )},${this.player.position.systemY.toExponential(1)}m`; // Use meters
+    if (selectedTarget) status += ` | Target: ${this.getTargetName(selectedTarget)}`;
 
     if (nearbyObject) {
       const dist = Math.sqrt(this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY));
       status += ` | Near ${nearbyObject.name} (${(dist / AU_IN_METERS).toFixed(
         2
-      )} AU). [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Land/Dock / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`; // Show dist in AU
+      )} AU).`; // Show dist in AU
     } else {
       // Check proximity to star for scanning
       const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
@@ -900,12 +1112,27 @@ export class Game {
       if (this.isPlayerNearExit()) {
         // Check if near edge
         status += ` | Near system edge.`;
-        if (nearStar) status += ` [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan ${nearestStar.id} /`; // Allow star scan even near edge
-        status += ` [${CONFIG.KEY_BINDINGS.LEAVE_SYSTEM.toUpperCase()}] Leave System`;
+        if (nearStar) status += ` Near ${nearestStar.id}.`; // Allow star scan even near edge
       } else if (nearStar) {
-        status += ` | Near ${nearestStar.name}. [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star`;
+        status += ` | Near ${nearestStar.name}.`;
       }
     }
+    const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
+    const distSqToStar = this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY);
+    const nearStar = distSqToStar < (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
+    const actions = createAvailableActions({
+      state: 'system',
+      player: this.player,
+      system,
+      planet: null,
+      starbase: null,
+      nearbyObject,
+      nearbyStar: nearStar ? nearestStar : null,
+      selectedTargetName: selectedTarget ? this.getTargetName(selectedTarget) : null,
+      hasSelectedTarget: Boolean(selectedTarget),
+      isNearSystemEdge: this.isPlayerNearExit(),
+    });
+    status += ` | Actions: ${formatAvailableActions(actions, 5)}`;
     return status;
   }
 
@@ -917,6 +1144,103 @@ export class Game {
     // Use edgeRadius which is in meters
     const exitThresholdSq = (system.edgeRadius * CONFIG.SYSTEM_EDGE_LEAVE_FACTOR) ** 2;
     return distSq > exitThresholdSq;
+  }
+
+  private getNavigationTargets(): NavigationTarget[] {
+    if (this.stateManager.state !== 'system' || !this.stateManager.currentSystem) return [];
+    const system = this.stateManager.currentSystem;
+    const targets: NavigationTarget[] = [...system.stars];
+    system.planets.forEach((planet) => {
+      if (!planet) return;
+      targets.push(planet);
+      if (planet.moons) targets.push(...planet.moons);
+    });
+    if (system.starbase) targets.push(system.starbase);
+    return targets;
+  }
+
+  private ensureSelectedTarget(): NavigationTarget | null {
+    const targets = this.getNavigationTargets();
+    if (targets.length === 0) {
+      this.currentTargetIndex = 0;
+      this.currentTargetSignature = '';
+      return null;
+    }
+
+    const existingIndex = targets.findIndex((target) => this.getTargetSignature(target) === this.currentTargetSignature);
+    if (existingIndex >= 0) {
+      this.currentTargetIndex = existingIndex;
+      return targets[existingIndex];
+    }
+
+    let closestIndex = 0;
+    let closestDistanceSq = Number.POSITIVE_INFINITY;
+    targets.forEach((target, index) => {
+      const coords = this.getTargetCoords(target);
+      const distanceSq = this.player.distanceSqToSystemCoords(coords.x, coords.y);
+      if (distanceSq < closestDistanceSq) {
+        closestDistanceSq = distanceSq;
+        closestIndex = index;
+      }
+    });
+    this.currentTargetIndex = closestIndex;
+    this.currentTargetSignature = this.getTargetSignature(targets[closestIndex]);
+    return targets[closestIndex];
+  }
+
+  private getSelectedTarget(): NavigationTarget | null {
+    if (this.stateManager.state !== 'system') return null;
+    const targets = this.getNavigationTargets();
+    if (targets.length === 0) return null;
+    const existingIndex = targets.findIndex((target) => this.getTargetSignature(target) === this.currentTargetSignature);
+    if (existingIndex >= 0) return targets[existingIndex];
+    return this.ensureSelectedTarget();
+  }
+
+  private getTargetSignature(target: NavigationTarget): string {
+    if (target instanceof Planet) return `planet:${target.name}`;
+    if (target instanceof Starbase) return `starbase:${target.name}`;
+    return `star:${target.name}`;
+  }
+
+  private getTargetName(target: NavigationTarget): string {
+    return target.name;
+  }
+
+  private getTargetCoords(target: NavigationTarget): { x: number; y: number } {
+    return { x: target.systemX, y: target.systemY };
+  }
+
+  private isTargetWithinScanRange(target: NavigationTarget): boolean {
+    const coords = this.getTargetCoords(target);
+    const multiplier = target instanceof Planet || target instanceof Starbase ? 1 : CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
+    return this.player.distanceSqToSystemCoords(coords.x, coords.y) < (CONFIG.LANDING_DISTANCE * multiplier) ** 2;
+  }
+
+  private updateApproachAssist(deltaTime: number): void {
+    if (this.stateManager.state !== 'system' || !this.approachTargetSignature) return;
+    const target = this.getSelectedTarget();
+    if (!target || this.getTargetSignature(target) !== this.approachTargetSignature) {
+      this.approachTargetSignature = null;
+      return;
+    }
+
+    const coords = this.getTargetCoords(target);
+    const dx = coords.x - this.player.position.systemX;
+    const dy = coords.y - this.player.position.systemY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const desiredDistance = CONFIG.LANDING_DISTANCE * 0.7;
+    if (distance <= desiredDistance) {
+      this.approachTargetSignature = null;
+      this.statusMessage = `Approach complete: ${this.getTargetName(target)}.`;
+      return;
+    }
+
+    const step = Math.min(distance - desiredDistance, Math.max(CONFIG.SYSTEM_MOVE_INCREMENT * 0.2, CONFIG.SYSTEM_MOVE_INCREMENT * deltaTime * 4));
+    this.player.position.systemX += (dx / distance) * step;
+    this.player.position.systemY += (dy / distance) * step;
+    this.player.render.char = this.player.render.directionGlyph;
+    this.forceFullRender = true;
   }
 
   private _updatePlanet(_deltaTime: number): string {
@@ -931,26 +1255,23 @@ export class Game {
     let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.position.surfaceX},${
       this.player.position.surfaceY
     } | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${currentTemp}K`; // Show current temp
-    const actions = [`[${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Liftoff`];
-
     if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
       if (planet.scanned) {
         status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;
-        // Check if location is mineable (not already mined)
-        if (
-          planet.mineralRichness !== MineralRichness.NONE &&
-          !planet.isMined(this.player.position.surfaceX, this.player.position.surfaceY)
-        ) {
-          actions.push(`[${CONFIG.KEY_BINDINGS.MINE.toUpperCase()}] Mine`);
-        }
       } else {
-        actions.push(`[${CONFIG.KEY_BINDINGS.SCAN.toUpperCase()}] Scan`);
         status += ` | Scan: Required (Potential: ${planet.mineralRichness})`;
       }
     } else {
       status += ` | Scan: N/A (${planet.type})`;
     }
-    status += ` | Actions: ${actions.join(', ')}.`;
+    const actions = createAvailableActions({
+      state: 'planet',
+      player: this.player,
+      system: this.stateManager.currentSystem,
+      planet,
+      starbase: null,
+    });
+    status += ` | Actions: ${formatAvailableActions(actions, 4)}.`;
     return status;
   }
 
@@ -966,12 +1287,16 @@ export class Game {
       const selected = index === starbase.selectedTradeIndex ? '>' : ' ';
       return `${selected} ${item.name.padEnd(20).slice(0, 20)} B${String(item.buyPrice).padStart(3)} S${String(item.sellPrice).padStart(3)} H${String(held).padStart(2)} ${item.category}`;
     });
-    const actions = [
-      `[${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade`,
-      `[${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel`,
-      `[${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Depart`,
-    ];
-    return `Docked: ${starbase.name} | Arrows select | [ENTER] Buy | [BACKSPACE] Sell | ${actions.join(', ')}.`;
+    const actions = createAvailableActions({
+      state: 'starbase',
+      player: this.player,
+      system: this.stateManager.currentSystem,
+      planet: null,
+      starbase,
+      currentCargoTotal: this.cargoSystem.getTotalUnits(this.player.cargoHold),
+      marketHasItems: market.length > 0,
+    });
+    return `Docked: ${starbase.name} | Actions: ${formatAvailableActions(actions, 5)}.`;
   }
 
   // --- Rendering ---
@@ -1104,6 +1429,82 @@ export class Game {
 
     // Publish event for the status bar updater
     eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
+
+    const actions = this.getCurrentAvailableActions();
+    const selectedTarget = this.getSelectedTarget();
+    eventManager.publish(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, {
+      actions,
+      primaryActionId: this.choosePrimaryAction(actions)?.id,
+      targetName: selectedTarget ? this.getTargetName(selectedTarget) : undefined,
+    });
+  }
+
+  private getCurrentAvailableActions(): AvailableAction[] {
+    const state = this.stateManager.state;
+    if (state === 'hyperspace') {
+      const baseSeedInt = this.gameSeedPRNG.seed;
+      const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
+      const hash = fastHash(this.player.position.worldX, this.player.position.worldY, baseSeedInt);
+      const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
+      const peekedSystem = isNearStar
+        ? this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY)
+        : null;
+      return createAvailableActions({
+        state,
+        player: this.player,
+        system: null,
+        planet: null,
+        starbase: null,
+        isNearHyperspaceSystem: isNearStar,
+        nearbySystemName: peekedSystem?.name,
+      });
+    }
+
+    if (state === 'system') {
+      const system = this.stateManager.currentSystem;
+      if (!system) {
+        return createAvailableActions({ state, player: this.player, system: null, planet: null, starbase: null });
+      }
+      const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
+      const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
+      const nearStar =
+        this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY) <
+        (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
+      const selectedTarget = this.getSelectedTarget();
+      return createAvailableActions({
+        state,
+        player: this.player,
+        system,
+        planet: null,
+        starbase: null,
+        nearbyObject,
+        nearbyStar: nearStar ? nearestStar : null,
+        selectedTargetName: selectedTarget ? this.getTargetName(selectedTarget) : null,
+        hasSelectedTarget: Boolean(selectedTarget),
+        isNearSystemEdge: this.isPlayerNearExit(),
+      });
+    }
+
+    if (state === 'planet') {
+      return createAvailableActions({
+        state,
+        player: this.player,
+        system: this.stateManager.currentSystem,
+        planet: this.stateManager.currentPlanet,
+        starbase: null,
+      });
+    }
+
+    const market = this.stateManager.currentStarbase ? this.getTradeDepotManifest(this.stateManager.currentStarbase.name) : [];
+    return createAvailableActions({
+      state,
+      player: this.player,
+      system: this.stateManager.currentSystem,
+      planet: null,
+      starbase: this.stateManager.currentStarbase,
+      currentCargoTotal: this.cargoSystem.getTotalUnits(this.player.cargoHold),
+      marketHasItems: market.length > 0,
+    });
   }
 
   // --- Starbase Action Handlers ---

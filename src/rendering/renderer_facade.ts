@@ -5,6 +5,7 @@ import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
 import { SceneRenderer } from './scene_renderer';
 import { StatusBarUpdater as ImportedStatusBarUpdater } from './status_bar_updater'; // Keep alias
+import { CommandStripUpdater } from './command_strip_updater';
 import { Player } from '../core/player';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
@@ -27,11 +28,13 @@ export class RendererFacade {
   private nebulaRenderer: NebulaRenderer;
   private sceneRenderer: SceneRenderer;
   private statusBarUpdater: ImportedStatusBarUpdater; // Use imported alias
+  private commandStripUpdater: CommandStripUpdater | null = null;
 
   constructor(canvasId: string, statusBarId: string, systemDataGenerator: SystemDataGenerator) {
     logger.info('[RendererFacade] Constructing instance...');
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
+    const commandStripElement = document.getElementById('commandStrip') as HTMLElement | null;
 
     // Validate canvas and context (same as before)
     if (!canvas || typeof canvas.getContext !== 'function') {
@@ -59,10 +62,12 @@ export class RendererFacade {
     this.drawingContext = new DrawingContext(this.screenBuffer);
     this.nebulaRenderer = new NebulaRenderer();
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
+    this.commandStripUpdater = commandStripElement ? new CommandStripUpdater(commandStripElement) : null;
     this.sceneRenderer = new SceneRenderer(this.screenBuffer, this.drawingContext, this.nebulaRenderer, systemDataGenerator);
 
     // *** Subscribe to Status Updates ***
     eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
+    eventManager.subscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, this._handleCommandStripUpdate.bind(this));
 
     logger.info('[RendererFacade] All components instantiated.');
     this.fitToScreen(); // Initial size calculation
@@ -97,6 +102,14 @@ export class RendererFacade {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _handleCommandStripUpdate(data: any): void {
+    if (!this.commandStripUpdater) return;
+    if (data && Array.isArray(data.actions)) {
+      this.commandStripUpdater.update(data.actions, data.primaryActionId, data.targetName);
+    }
+  }
+
   /** Adjusts canvas size and rendering parameters to fit the window or container. */
   fitToScreen(): void {
     logger.debug('[RendererFacade.fitToScreen] Adjusting...');
@@ -106,8 +119,9 @@ export class RendererFacade {
     // Estimate status bar height based on character size BEFORE setting final canvas size
     const roughStatusBarHeightPx =
       this.statusBarUpdater.getStatusBarElement().offsetHeight || baseCharHeight * 0.85 * 1.4 * 3 + 10; // Fallback estimate
+    const roughCommandStripHeightPx = this.commandStripUpdater?.getElement().offsetHeight || baseCharHeight * 1.45 + 8;
 
-    const availableHeight = Math.max(100, window.innerHeight - roughStatusBarHeightPx); // Subtract status bar height
+    const availableHeight = Math.max(100, window.innerHeight - roughStatusBarHeightPx - roughCommandStripHeightPx); // Subtract UI chrome
     const availableWidth = Math.max(100, window.innerWidth);
 
     const cols = Math.max(1, Math.floor(availableWidth / baseCharWidth));
@@ -125,16 +139,18 @@ export class RendererFacade {
 
     // Update status bar internal calculations AFTER setting its font size etc.
     this.statusBarUpdater.updateMaxChars(charWidthPx, charHeightPx);
+    this.commandStripUpdater?.updateMaxChars(charWidthPx, charHeightPx);
 
     // Recalculate final status bar height AFTER updateMaxChars applied styles
     const finalStatusBarHeightPx = this.statusBarUpdater.getStatusBarElement().offsetHeight || roughStatusBarHeightPx;
+    const finalCommandStripHeightPx = this.commandStripUpdater?.getElement().offsetHeight || roughCommandStripHeightPx;
 
     // Center the canvas dynamically using margins
     this.canvas.style.marginLeft = `${Math.max(0, (window.innerWidth - this.canvas.width) / 2)}px`;
     this.canvas.style.marginTop = `${Math.max(
       0,
       // Calculate top margin based on available space minus canvas and FINAL status bar height
-      (window.innerHeight - finalStatusBarHeightPx - this.canvas.height) / 2
+      (window.innerHeight - finalStatusBarHeightPx - finalCommandStripHeightPx - this.canvas.height) / 2
     )}px`;
 
     this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
@@ -299,6 +315,7 @@ export class RendererFacade {
   destroy(): void {
     logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
     eventManager.unsubscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
+    eventManager.unsubscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, this._handleCommandStripUpdate.bind(this));
     // Unsubscribe from any other events if necessary
   }
 } // End RendererFacade class

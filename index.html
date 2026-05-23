@@ -36,10 +36,31 @@
             line-height: 1.4; /* Adjust line spacing if needed */
             color: #FFA500; /* Default status bar text color */
         }
+        #commandStrip {
+            position: fixed;
+            bottom: 4.5em;
+            left: 0;
+            width: 100%;
+            min-height: 1.8em;
+            padding: 4px 10px;
+            background-color: #001010;
+            box-sizing: border-box;
+            overflow: hidden;
+            white-space: nowrap;
+            border-top: 1px solid #006A6A;
+            color: #9FFFE0;
+        }
+        .command-key {
+            color: #FFD700;
+        }
+        .command-disabled {
+            color: #506060;
+        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    <div id="commandStrip">Arrows Move</div>
     <div id="statusBar">Initializing systems...</div>
 
     <script type="module" src="/src/main.ts"></script>
