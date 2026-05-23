@@ -17,6 +17,7 @@ import { Starbase } from './starbase';
 import { logger } from '../utils/logger';
 import { generatePlanetCharacteristics } from '../entities/planet/planet_characteristics_generator';
 import { SystemBasicProperties, SystemDataGenerator } from '@/generation/system_data_generator';
+import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -27,6 +28,9 @@ export class SolarSystem {
   readonly systemPRNG: PRNG; // PRNG seeded specifically for this system
   readonly starType: string; // e.g., 'G', 'M', 'A'
   readonly name: string; // Procedurally generated name
+  readonly ageGyr: number;
+  readonly metallicityFeH: number;
+  readonly stellarEnvironment: StellarEnvironment;
   readonly planets: (Planet | null)[]; // Array for planets (includes moons nested)
   readonly starbase: Starbase | null; // Optional starbase
   readonly edgeRadius: number; // System boundary radius in meters
@@ -40,9 +44,17 @@ export class SolarSystem {
 
     this.starType = basicProps.starType!;
     this.name = basicProps.name!;
+    const fallbackEnvironment = getDefaultStellarEnvironment(this.starType);
+    this.ageGyr = basicProps.ageGyr ?? fallbackEnvironment.ageGyr;
+    this.metallicityFeH = basicProps.metallicityFeH ?? fallbackEnvironment.metallicityFeH;
+    this.stellarEnvironment = {
+      starType: this.starType,
+      ageGyr: this.ageGyr,
+      metallicityFeH: this.metallicityFeH,
+    };
 
     logger.info(
-      `[System:${this.name}] Created system at world [${this.starX},${this.starY}]. Star Type: ${this.starType}.`
+      `[System:${this.name}] Created system at world [${this.starX},${this.starY}]. Star Type: ${this.starType}, Age: ${this.ageGyr} Gyr, [Fe/H]: ${this.metallicityFeH}.`
     );
 
     this.planets = new Array(CONFIG.MAX_PLANETS_PER_SYSTEM).fill(null);
@@ -199,7 +211,16 @@ export class SolarSystem {
         const parentStarType = this.starType; // Pass star type to planet constructor
 
         // Create the planet (ensure constructor accepts meters)
-        const planet = new Planet(planetName, planetType, currentOrbitDistance, angle, this.systemPRNG, this.starType);
+        const planet = new Planet(
+          planetName,
+          planetType,
+          currentOrbitDistance,
+          angle,
+          this.systemPRNG,
+          this.starType,
+          undefined,
+          this.stellarEnvironment
+        );
         this.planets[i] = planet;
         planetsGenerated++;
 
@@ -246,7 +267,13 @@ export class SolarSystem {
               try {
                 // NOTE: Calling the full planet generator might still yield large sizes.
                 // A dedicated moon generator function would be better long-term.
-                moonCharacteristics = generatePlanetCharacteristics(moonType, moonOrbit_m, moonPRNG, parentStarType);
+                moonCharacteristics = generatePlanetCharacteristics(
+                  moonType,
+                  moonOrbit_m,
+                  moonPRNG,
+                  parentStarType,
+                  this.stellarEnvironment
+                );
               } catch (charError) {
                 logger.error(
                   `[Planet:${planet.name}] Error generating characteristics for potential moon ${moonName}: ${charError}`
@@ -275,7 +302,8 @@ export class SolarSystem {
                   moonAngle,
                   moonPRNG,
                   parentStarType,
-                  moonCharacteristics
+                  moonCharacteristics,
+                  this.stellarEnvironment
                 );
 
                 planet.moons.push(moon);

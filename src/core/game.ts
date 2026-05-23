@@ -656,6 +656,8 @@ export class Game {
     lines.push(``);
     lines.push(`<h>--- STELLAR SCAN: ${system.name} ---</h>`);
     lines.push(`Spectral Type: <hl>${system.starType}</hl>`); // Use highlight tag
+    lines.push(`Stellar Age: <hl>~${system.ageGyr.toFixed(2)} Gyr</hl>`);
+    lines.push(`Metallicity: <hl>${system.metallicityFeH >= 0 ? '+' : ''}${system.metallicityFeH.toFixed(2)} [Fe/H]</hl>`);
     if (starInfo) {
       lines.push(`Temperature: <hl>~${starInfo.temp.toLocaleString()} K</hl>`);
       // Calculate approx luminosity relative to Sol if possible

@@ -5,6 +5,7 @@ import { fastHash } from '../utils/hash';
 import { CONFIG } from '../config';
 import { SPECTRAL_TYPES, SPECTRAL_DISTRIBUTION } from '../constants';
 import { logger } from '../utils/logger';
+import { generateMilkyWayMetallicityFeH, generateStellarAgeGyr } from '../entities/stellar_environment';
 
 // Interface for the basic system properties generated deterministically
 export interface SystemBasicProperties {
@@ -12,6 +13,8 @@ export interface SystemBasicProperties {
     starType: string | null; // e.g., "G5V" or null if no star
     name: string | null;
     hasStarbase: boolean;
+    ageGyr: number | null;
+    metallicityFeH: number | null;
     // Add other basic, quickly needed properties here if necessary
 }
 
@@ -33,6 +36,8 @@ export class SystemDataGenerator {
             starType: null,
             name: null,
             hasStarbase: false,
+            ageGyr: null,
+            metallicityFeH: null,
         };
 
         // 1. Check Existence (using fastHash for speed)
@@ -60,12 +65,19 @@ export class SystemDataGenerator {
             result.starType = broadStarType; // Fallback
         }
 
-        // 3. Generate Name (using dedicated name seed)
+        // 3. Stellar evolution state. Age is constrained by spectral lifetime;
+        // metallicity follows a Milky Way disk trend with rare old/halo tails.
+        const agePRNG = this.gameSeedPRNG.seedNew(`star_age_${worldX},${worldY}`);
+        result.ageGyr = generateStellarAgeGyr(result.starType, agePRNG);
+        const metallicityPRNG = this.gameSeedPRNG.seedNew(`star_metallicity_${worldX},${worldY}`);
+        result.metallicityFeH = generateMilkyWayMetallicityFeH(result.ageGyr, result.starType, metallicityPRNG);
+
+        // 4. Generate Name (using dedicated name seed)
         const nameSeed = `star_name_${worldX},${worldY}`;
         const namePRNG = this.gameSeedPRNG.seedNew(nameSeed);
         result.name = this.generateSystemNameInternal(namePRNG); // Use internal helper
 
-        // 4. Determine Starbase Presence (using dedicated starbase seed)
+        // 5. Determine Starbase Presence (using dedicated starbase seed)
         const starbaseSeed = `star_starbase_${worldX},${worldY}`;
         const starbasePRNG = this.gameSeedPRNG.seedNew(starbaseSeed);
         result.hasStarbase = starbasePRNG.random() < CONFIG.STARBASE_PROBABILITY;

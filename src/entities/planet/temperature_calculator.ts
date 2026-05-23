@@ -4,6 +4,7 @@
 import { Atmosphere } from '../../entities/planet';
 import { PLANET_TYPES, SPECTRAL_TYPES } from '../../constants';
 import { logger } from '../../utils/logger';
+import { StellarEnvironment, estimateEvolutionaryLuminosityFactor } from '../stellar_environment';
 
 // --- Physical Constants ---
 const STEFAN_BOLTZMANN_SIGMA = 5.670374419e-8; // W m^-2 K^-4
@@ -35,7 +36,8 @@ export function calculateSurfaceTemp(
     planetType: string,
     orbitDistance_m: number,
     parentStarType: string,
-    atmosphere: Atmosphere // Pass generated atmosphere
+    atmosphere: Atmosphere, // Pass generated atmosphere
+    stellarEnvironment?: StellarEnvironment
 ): number {
     // Use a slightly different logger prefix for clarity
     const logPrefix = `[TempCalc:${planetType}]`;
@@ -53,13 +55,14 @@ export function calculateSurfaceTemp(
 
     // --- 1. Calculate Star's Total Luminosity (Watts) ---
     const starSurfaceArea_m2 = 4 * Math.PI * Math.pow(starRadius_m, 2);
-    const starLuminosity_W = starSurfaceArea_m2 * STEFAN_BOLTZMANN_SIGMA * Math.pow(starTemp_K, 4);
+    const evolutionFactor = stellarEnvironment ? estimateEvolutionaryLuminosityFactor(stellarEnvironment) : 1;
+    const starLuminosity_W = starSurfaceArea_m2 * STEFAN_BOLTZMANN_SIGMA * Math.pow(starTemp_K, 4) * evolutionFactor;
 
     if (!Number.isFinite(starLuminosity_W) || starLuminosity_W <= 0) {
          logger.error(`${logPrefix} Calculated invalid star luminosity (${starLuminosity_W} W). Using fallback temp.`);
          return PLANET_TYPES[planetType]?.baseTemp ?? 280;
     }
-    logger.debug(`${logPrefix} Star Luminosity: ${starLuminosity_W.toExponential(3)} W`);
+    logger.debug(`${logPrefix} Star Luminosity: ${starLuminosity_W.toExponential(3)} W (Evolution factor ${evolutionFactor.toFixed(2)})`);
 
     // --- 2. Calculate Energy Flux at Planet's Orbit (W/m^2) ---
     if (!Number.isFinite(orbitDistance_m) || orbitDistance_m <= 0) {

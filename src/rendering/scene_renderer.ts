@@ -137,6 +137,33 @@ export class SceneRenderer {
     return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
   }
 
+  private drawSystemTravelStarfield(player: Player): void {
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    if (cols <= 0 || rows <= 0) return;
+
+    const baseBgSeed = `${CONFIG.SEED}_star_background`;
+    const baseBgPrng = new PRNG(baseBgSeed);
+    CONFIG.STAR_BACKGROUND_LAYERS.forEach((layer, layerIndex) => {
+      const { factor: parallaxFactor, density, scale } = layer;
+      const viewOffsetX = Math.floor((player.position.systemX * parallaxFactor) / scale);
+      const viewOffsetY = Math.floor((player.position.systemY * parallaxFactor) / scale);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const starFieldX = x + viewOffsetX;
+          const starFieldY = y + viewOffsetY;
+          const cellPrng = baseBgPrng.seedNew(`${baseBgSeed}_main_${layerIndex}_${starFieldX}_${starFieldY}`);
+          if (cellPrng.random() < density * 1.35) {
+            const starType = cellPrng.choice(SPECTRAL_DISTRIBUTION)!;
+            const star = this.getRenderedStarCell(starType, starFieldX, starFieldY);
+            const dimStarColor = this.dimHexColour(star.color, layerIndex === 0 ? 0.26 : 0.18);
+            this.screenBuffer.drawChar('.', x, y, dimStarColor, CONFIG.DEFAULT_BG_COLOUR);
+          }
+        }
+      }
+    });
+  }
+
   // --- drawSolarSystem (Refactored) ---
   /** Draws the solar system view, including moons, using the specified view scale. */
   drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
@@ -158,6 +185,7 @@ export class SceneRenderer {
     const viewWorldStartY = player.position.systemY - viewCenterY * viewScale;
 
     this.screenBuffer.clear(false); // Clear main buffer's internal state
+    this.drawSystemTravelStarfield(player);
 
     // --- Calculate Star Position and Radius ---
     const starInfo = SPECTRAL_TYPES[system.starType];
@@ -365,6 +393,7 @@ export class SceneRenderer {
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
     this.screenBuffer.clear(false);
     if (landedObject instanceof Planet) {
+      this.drawPlanetTravelStarfield(player, landedObject);
       if (landedObject.type === 'GasGiant' || landedObject.type === 'IceGiant') {
         this.drawGasGiantSurface(player, landedObject);
       } else {
@@ -422,6 +451,10 @@ export class SceneRenderer {
         const screenX = viewport.x + x;
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
+        const backgroundStarColor = this.getPlanetTravelStarColor(player, planet, screenX, screenY, terrainColor, true);
+        if (backgroundStarColor) {
+          this.screenBuffer.drawChar('.', screenX, screenY, backgroundStarColor, terrainColor);
+        }
         const elementKey = elementMap[wrappedMapY]?.[wrappedMapX];
         this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
       }
@@ -446,6 +479,75 @@ export class SceneRenderer {
       width,
       height,
     };
+  }
+
+  private drawPlanetTravelStarfield(player: Player, planet: Planet): void {
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    if (cols <= 0 || rows <= 0) return;
+
+    const viewport = this.getSurfaceViewport(cols, rows);
+    const protectedX0 = viewport.x - 1;
+    const protectedY0 = viewport.y - 1;
+    const protectedX1 = viewport.x + viewport.width;
+    const protectedY1 = viewport.y + viewport.height;
+    const baseSeed = `${CONFIG.SEED}_surface_stars_${planet.name}`;
+    const layers = [
+      { density: 0.05, parallax: 0.22, colour: '#2F4A4D' },
+      { density: 0.028, parallax: 0.48, colour: '#486A6E' },
+    ];
+
+    for (const [layerIndex, layer] of layers.entries()) {
+      const offsetX = Math.floor(player.position.surfaceX * layer.parallax);
+      const offsetY = Math.floor(player.position.surfaceY * layer.parallax);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          if (x >= protectedX0 && x <= protectedX1 && y >= protectedY0 && y <= protectedY1) continue;
+          const fieldX = x + offsetX;
+          const fieldY = y + offsetY;
+          const cellPrng = new PRNG(`${baseSeed}_${layerIndex}_${fieldX}_${fieldY}`);
+          if (cellPrng.random() < layer.density) {
+            this.screenBuffer.drawChar('.', x, y, layer.colour, CONFIG.DEFAULT_BG_COLOUR);
+          }
+        }
+      }
+    }
+  }
+
+  private getPlanetTravelStarColor(
+    player: Player,
+    planet: Planet,
+    x: number,
+    y: number,
+    terrainColor: string,
+    insideViewport: boolean
+  ): string | null {
+    const baseSeed = `${CONFIG.SEED}_surface_stars_${planet.name}`;
+    const layers = insideViewport
+      ? [
+          { density: 0.022, parallax: 0.18 },
+          { density: 0.012, parallax: 0.42 },
+        ]
+      : [
+          { density: 0.05, parallax: 0.22 },
+          { density: 0.028, parallax: 0.48 },
+        ];
+
+    for (const [layerIndex, layer] of layers.entries()) {
+      const fieldX = x + Math.floor(player.position.surfaceX * layer.parallax);
+      const fieldY = y + Math.floor(player.position.surfaceY * layer.parallax);
+      const cellPrng = new PRNG(`${baseSeed}_${layerIndex}_${fieldX}_${fieldY}`);
+      if (cellPrng.random() < layer.density) {
+        const terrainRgb = hexToRgb(terrainColor);
+        const luminance = terrainRgb.r * 0.2126 + terrainRgb.g * 0.7152 + terrainRgb.b * 0.0722;
+        if (insideViewport) {
+          return luminance > 125 ? '#243E42' : layerIndex === 0 ? '#6E8E91' : '#9FBABD';
+        }
+        return layerIndex === 0 ? '#2F4A4D' : '#486A6E';
+      }
+    }
+
+    return null;
   }
 
   // --- _drawSurfaceOverlay --- (no changes from previous step)

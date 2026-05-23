@@ -103,7 +103,7 @@ function calculateBaseMinerals(prng: PRNG, richness: MineralRichness): number {
 }
 
 /** Determines the overall mineral richness category. */
-export function determineMineralRichness(prng: PRNG, planetType: string): MineralRichness {
+export function determineMineralRichness(prng: PRNG, planetType: string, metallicityFeH: number = 0): MineralRichness {
   let richness: MineralRichness;
   const roll = prng.random();
   // Base chance based on type
@@ -122,6 +122,12 @@ export function determineMineralRichness(prng: PRNG, planetType: string): Minera
     return MineralRichness.NONE; // No surface minerals
   }
 
+  const metalFactor = Math.pow(10, metallicityFeH * 0.35);
+  richChance *= Math.max(0.45, Math.min(1.75, metalFactor));
+  poorChance *= Math.max(0.55, Math.min(1.9, 1 / metalFactor));
+  richChance = Math.min(0.48, richChance);
+  poorChance = Math.min(0.55, poorChance);
+
   if (roll < richChance / 2) richness = MineralRichness.ULTRA_RICH;
   else if (roll < richChance) richness = MineralRichness.RICH;
   else if (roll < richChance + (1.0 - richChance - poorChance))
@@ -139,7 +145,8 @@ export function calculateElementAbundance(
   planetType: string,
   surfaceTemp: number,
   lithosphere: string, // Pass lithosphere for context
-  gravity: number // Pass gravity for context
+  gravity: number, // Pass gravity for context
+  metallicityFeH: number = 0
 ): Record<string, number> {
   const abundance: Record<string, number> = {};
   let totalWeight = 0;
@@ -161,6 +168,9 @@ export function calculateElementAbundance(
     weight *= _getTemperatureSuitabilityFactor(element, planetType, surfaceTemp);
     weight *= _getLithosphereFactor(element, lithosphere);
     weight *= _getGravityFactor(element, gravity);
+    if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide' || element.group === 'Metalloid') {
+      weight *= Math.max(0.25, Math.min(2.25, Math.pow(10, metallicityFeH * 0.32)));
+    }
     // Removed the separate temperature/volatility factor as it's now part of _getTemperatureSuitabilityFactor
 
     weight = Math.max(0.0001, weight); // Ensure minimum chance

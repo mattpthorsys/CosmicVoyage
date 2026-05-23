@@ -8,6 +8,7 @@ import { generateAtmosphere } from './atmosphere_generator';
 import { calculateSurfaceTemp } from './temperature_calculator';
 import { generateHydrosphere, generateLithosphere } from './surface_descriptor';
 import { calculateElementAbundance, determineMineralRichness, getBaseMinerals } from './resource_generator';
+import { StellarEnvironment, getDefaultStellarEnvironment } from '../stellar_environment';
 
 // --- Interface (ensure magneticFieldStrength is added from previous step) ---
 export interface PlanetCharacteristics {
@@ -32,9 +33,11 @@ export function generatePlanetCharacteristics(
     planetType: string,
     orbitDistance: number,
     planetPRNG: PRNG,
-    parentStarType: string
+    parentStarType: string,
+    stellarEnvironment?: StellarEnvironment
 ): PlanetCharacteristics {
-    logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toExponential(2)}m, Star: ${parentStarType}...`);
+    const environment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
+    logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toExponential(2)}m, Star: ${parentStarType}, Age: ${environment.ageGyr} Gyr, [Fe/H]: ${environment.metallicityFeH}...`);
 
     // 1. Generate Base Physical Properties
     const { diameter, density } = generatePhysicalBase(planetPRNG, planetType);
@@ -52,19 +55,26 @@ export function generatePlanetCharacteristics(
     logger.debug(`[CharGen:${planetType}] Calculated Mass: ${mass_kg.toExponential(3)} kg, Escape Velocity: ${escapeVelocity.toFixed(0)} m/s`);
 
     // 4. Generate Atmosphere (NOW pass escape velocity)
-    const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance);
+    const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance, environment);
 
     // 5. Calculate Final Surface Temperature (uses atmosphere)
-    const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere);
+    const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere, environment);
 
     // 6. Generate Surface Descriptors (use final temp)
     const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere);
     const lithosphere = generateLithosphere(planetPRNG, planetType);
 
     // 7. Generate Resources (use final temp, lithosphere, gravity)
-    const mineralRichness = determineMineralRichness(planetPRNG, planetType);
+    const mineralRichness = determineMineralRichness(planetPRNG, planetType, environment.metallicityFeH);
     const baseMinerals = getBaseMinerals(planetPRNG, mineralRichness);
-    const elementAbundance = calculateElementAbundance(planetPRNG, planetType, surfaceTemp, lithosphere, gravity);
+    const elementAbundance = calculateElementAbundance(
+        planetPRNG,
+        planetType,
+        surfaceTemp,
+        lithosphere,
+        gravity,
+        environment.metallicityFeH
+    );
 
     // 8. Generate Magnetic Field (from previous step)
     let magneticFieldStrength: number = 0;

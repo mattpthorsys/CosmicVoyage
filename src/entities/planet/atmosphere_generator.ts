@@ -4,12 +4,20 @@
 // UPDATED: April 2025 - Expanded GAS_MOLECULAR_MASS_KG with additional gases.
 
 import { PRNG } from '../../utils/prng';
-import { PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, BOLTZMANN_CONSTANT_K } from '../../constants';
+import { AU_IN_METERS, PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, BOLTZMANN_CONSTANT_K, SOLAR_RADIUS_M } from '../../constants';
 import { logger } from '../../utils/logger';
 import { Atmosphere, AtmosphereComposition } from '../../entities/planet'; // Import types used/returned
+import {
+    StellarEnvironment,
+    estimateEvolutionaryLuminosityFactor,
+    estimateStellarActivity,
+    getDefaultStellarEnvironment,
+    getSpectralClass,
+} from '../stellar_environment';
 
 // --- Constants ---
 const ESCAPE_THRESHOLD_FACTOR = 6.0; // Gas likely escapes if V_th > V_esc / 6
+const STEFAN_BOLTZMANN_SIGMA = 5.670374419e-8;
 
 // --- Molecular Masses ---
 
@@ -70,15 +78,41 @@ function calculateThermalVelocity(temperature_K: number, gasMass_kg: number): nu
 }
 
 /** Calculates base weights for primary atmosphere gases based on type and temp */
-function _getBasePrimaryWeights(planetType: string, approxTemp_K: number): Record<string, number> {
+function _getBasePrimaryWeights(
+    planetType: string,
+    approxTemp_K: number,
+    environment: StellarEnvironment,
+    orbitAu: number
+): Record<string, number> {
+    const spectralClass = getSpectralClass(environment.starType);
+    const activity = estimateStellarActivity(environment, orbitAu);
+    const metalVolatileFactor = Math.pow(10, environment.metallicityFeH * 0.18);
+
     if (planetType === 'GasGiant' || planetType === 'IceGiant') {
-        return {'Hydrogen': 75, 'Helium': 25};
+        const heavyVolatile = planetType === 'IceGiant' ? 22 : 9;
+        return {
+            'Hydrogen': 70,
+            'Helium': 24,
+            'Methane': heavyVolatile * metalVolatileFactor,
+            'Ammonia': approxTemp_K < 180 ? 8 * metalVolatileFactor : 1,
+            'Water Vapor': approxTemp_K > 220 ? 4 * metalVolatileFactor : 0.8,
+        };
     } else if (approxTemp_K < 150) { // Cold
-        return {'Nitrogen': 50, 'Methane': 20, 'Carbon Dioxide': 15, 'Argon': 15};
+        return {'Nitrogen': 48, 'Methane': 22 * metalVolatileFactor, 'Carbon Dioxide': 14, 'Argon': 14, 'Ammonia': 8 * metalVolatileFactor};
     } else if (approxTemp_K > 500) { // Hot
-        return {'Carbon Dioxide': 50, 'Nitrogen': 20, 'Sulfur Dioxide': 15, 'Water Vapor': 15};
-    } else { // Temperate
-        return {'Nitrogen': 60, 'Carbon Dioxide': 15, 'Argon': 10, 'Water Vapor': 15};
+        return {'Carbon Dioxide': 48, 'Nitrogen': 18, 'Sulfur Dioxide': 16 * metalVolatileFactor, 'Water Vapor': 10, 'Carbon Monoxide': 8};
+    } else {
+        const oxygenChanceWeight = environment.ageGyr > 2.2 && approxTemp_K > 245 && approxTemp_K < 320 && activity < 1.6 ? 8 : 0.5;
+        const waterWeight = activity > 1.8 && orbitAu < 0.7 ? 5 : 16;
+        const methaneWeight = spectralClass === 'M' && activity > 1.3 ? 4 : 9;
+        return {
+            'Nitrogen': 56,
+            'Carbon Dioxide': environment.ageGyr < 1 ? 25 : 14,
+            'Argon': 10 + Math.min(8, environment.ageGyr * 0.45),
+            'Water Vapor': waterWeight * metalVolatileFactor,
+            'Methane': methaneWeight * metalVolatileFactor,
+            'Oxygen': oxygenChanceWeight,
+        };
     }
 }
 
@@ -86,9 +120,11 @@ function _getBasePrimaryWeights(planetType: string, approxTemp_K: number): Recor
 function _calculatePrimaryGasWeights(
     planetType: string,
     approxTemp_K: number,
-    escapeVelocity: number
+    escapeVelocity: number,
+    environment: StellarEnvironment,
+    orbitAu: number
 ): { weights: Record<string, number>, totalWeight: number } {
-    const baseWeights = _getBasePrimaryWeights(planetType, approxTemp_K);
+    const baseWeights = _getBasePrimaryWeights(planetType, approxTemp_K, environment, orbitAu);
     const adjustedWeights: Record<string, number> = {};
     let totalAdjustedWeight = 0;
 
@@ -108,6 +144,34 @@ function _calculatePrimaryGasWeights(
         }
     }
     return { weights: adjustedWeights, totalWeight: totalAdjustedWeight };
+}
+
+function _secondaryGasWeight(gas: string, approxTemp_K: number, environment: StellarEnvironment, orbitAu: number): number {
+    const activity = estimateStellarActivity(environment, orbitAu);
+    const metallicityBoost = Math.pow(10, environment.metallicityFeH * 0.2);
+    let weight = 1;
+
+    if (['Hydrogen', 'Helium', 'Atomic Hydrogen', 'Neon'].includes(gas)) weight *= 0.45;
+    if (['Nitrogen', 'Argon', 'Carbon Dioxide', 'Carbon Monoxide'].includes(gas)) weight *= 3.0;
+    if (['Methane', 'Ammonia', 'Ethane', 'Phosphine', 'Hydrogen Sulfide'].includes(gas)) {
+        weight *= approxTemp_K < 230 ? 3.0 : approxTemp_K < 360 ? 1.3 : 0.25;
+        weight *= metallicityBoost;
+    }
+    if (['Sulfur Dioxide', 'Sulfur Monoxide', 'Silicon Monoxide', 'Silicon Dioxide', 'Magnesium Oxide', 'Iron Oxide'].includes(gas)) {
+        weight *= approxTemp_K > 480 ? 3.2 : 0.5;
+        weight *= metallicityBoost;
+    }
+    if (['Water Vapor', 'Methanol', 'Formaldehyde', 'Formic Acid'].includes(gas)) {
+        weight *= approxTemp_K > 180 && approxTemp_K < 450 ? 2.2 : 0.7;
+        weight *= activity > 1.9 && orbitAu < 0.8 ? 0.45 : 1;
+    }
+    if (['Oxygen', 'Ozone', 'Nitrous Oxide'].includes(gas)) {
+        weight *= environment.ageGyr > 2.2 && approxTemp_K > 240 && approxTemp_K < 330 && activity < 1.7 ? 1.25 : 0.04;
+    }
+    if (['Chlorine', 'Fluorine', 'Hydrogen Chloride'].includes(gas)) weight *= approxTemp_K > 380 ? 0.8 : 0.12;
+    if (['Hydrogen Cyanide', 'Acetylene', 'Diatomic Carbon'].includes(gas)) weight *= environment.ageGyr < 1.5 || activity > 1.4 ? 1.5 : 0.55;
+
+    return Math.max(0.01, weight);
 }
 
 /** Chooses the primary gas based on calculated weights */
@@ -136,7 +200,9 @@ function _distributeSecondaryGases(
     escapeVelocity: number,
     approxTemp_K: number,
     numGasesToGenerate: number, // Total number of gases to aim for
-    prng: PRNG
+    prng: PRNG,
+    environment: StellarEnvironment,
+    orbitAu: number
 ): AtmosphereComposition {
     const composition: AtmosphereComposition = { [primaryGas]: primaryPercent };
     let remainingPercent = 100.0 - primaryPercent;
@@ -157,7 +223,16 @@ function _distributeSecondaryGases(
     logger.debug(`[AtmoGen] Available secondary gases after escape filter: ${availableGases.length > 0 ? availableGases.join(', ') : 'None'}`);
 
     for (let i = 1; i < numGasesToGenerate && remainingPercent > 0.1 && availableGases.length > 0; i++) {
-        const gasIndex = prng.randomInt(0, availableGases.length - 1);
+        const totalGasWeight = availableGases.reduce((total, gas) => total + _secondaryGasWeight(gas, approxTemp_K, environment, orbitAu), 0);
+        let roll = prng.random(0, totalGasWeight);
+        let gasIndex = 0;
+        for (let index = 0; index < availableGases.length; index++) {
+            roll -= _secondaryGasWeight(availableGases[index], approxTemp_K, environment, orbitAu);
+            if (roll <= 0) {
+                gasIndex = index;
+                break;
+            }
+        }
         const gas = availableGases.splice(gasIndex, 1)[0]; // Remove chosen gas
         usedGases.add(gas);
 
@@ -174,6 +249,30 @@ function _distributeSecondaryGases(
     // Any tiny leftover percentage is implicitly lost in normalization/rounding
 
     return composition;
+}
+
+function estimateAtmosphereTemperatureK(planetType: string, orbitDistance_m: number, environment: StellarEnvironment): number {
+    const starInfo = SPECTRAL_TYPES[environment.starType] ?? SPECTRAL_TYPES['G'];
+    const albedoByType: Record<string, number> = {
+        Molten: 0.08,
+        Rock: 0.25,
+        Oceanic: 0.18,
+        Lunar: 0.12,
+        GasGiant: 0.35,
+        IceGiant: 0.3,
+        Frozen: 0.7,
+    };
+    const luminosity =
+        4 *
+        Math.PI *
+        Math.pow(starInfo.radius ?? SOLAR_RADIUS_M, 2) *
+        STEFAN_BOLTZMANN_SIGMA *
+        Math.pow(starInfo.temp, 4) *
+        estimateEvolutionaryLuminosityFactor(environment);
+    const flux = luminosity / (4 * Math.PI * Math.pow(Math.max(orbitDistance_m, 1), 2));
+    const albedo = albedoByType[planetType] ?? 0.3;
+    const temp = Math.pow((flux * (1 - albedo)) / (4 * STEFAN_BOLTZMANN_SIGMA), 0.25);
+    return Number.isFinite(temp) ? Math.max(3, temp) : PLANET_TYPES[planetType]?.baseTemp ?? 280;
 }
 
 /** Normalizes composition percentages to sum roughly to 100 */
@@ -233,7 +332,8 @@ function generateAtmosphereComposition(
     planetType: string,
     escapeVelocity: number, // <<< Added escape velocity
     parentStarType: string,
-    orbitDistance: number
+    orbitDistance: number,
+    stellarEnvironment?: StellarEnvironment
 ): AtmosphereComposition {
     logger.debug(`[AtmoGen] Generating composition for density '${density}' (V_esc: ${escapeVelocity.toFixed(0)} m/s)...`);
     if (density === 'None') {
@@ -241,19 +341,18 @@ function generateAtmosphereComposition(
         return { None: 100 };
     }
 
-    // Approx temp calculation (remains the same for internal generation logic)
-    const starTempApprox = SPECTRAL_TYPES[parentStarType]?.temp ?? SPECTRAL_TYPES['G'].temp;
-    // Use a simplified temperature estimation based on planet type's base temp and star type
-    // This avoids circular dependency on the final calculated surface temp
-    const approxTemp_K = (PLANET_TYPES[planetType]?.baseTemp ?? 300) *
-                       Math.pow(starTempApprox / SPECTRAL_TYPES['G'].temp, 0.5); // Simple scaling based on star temp
+    const environment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
+    const orbitAu = orbitDistance / AU_IN_METERS;
+    const approxTemp_K = estimateAtmosphereTemperatureK(planetType, orbitDistance, environment);
     logger.debug(`[AtmoGen] Approx temp for gas comp: ${approxTemp_K.toFixed(0)}K`);
 
     // 1. Calculate Primary Gas Weights (considering escape velocity)
     const { weights: primaryWeights, totalWeight: totalPrimaryWeight } = _calculatePrimaryGasWeights(
         planetType,
         approxTemp_K,
-        escapeVelocity
+        escapeVelocity,
+        environment,
+        orbitAu
     );
 
     // 2. Choose Primary Gas
@@ -268,7 +367,9 @@ function generateAtmosphereComposition(
         escapeVelocity,
         approxTemp_K,
         numGasesToGenerate,
-        prng
+        prng,
+        environment,
+        orbitAu
     );
 
     // 4. Normalize Composition
@@ -284,12 +385,19 @@ export function generateAtmosphere(
     gravity: number, // Still used for pressure calculation
     escapeVelocity: number, // <<< Accept escape velocity
     parentStarType: string,
-    orbitDistance: number // Still needed for approx temp in composition
+    orbitDistance: number, // Still needed for approx temp in composition
+    stellarEnvironment?: StellarEnvironment
 ): Atmosphere {
     logger.debug(`[AtmoGen] Generating atmosphere (Type: ${planetType}, Gravity: ${gravity.toFixed(2)}g, V_esc: ${escapeVelocity.toFixed(0)} m/s)...`);
 
     // --- Determine Density ---
-    const densityRoll = prng.random();
+    const environment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
+    const orbitAu = orbitDistance / AU_IN_METERS;
+    const approxTemp_K = estimateAtmosphereTemperatureK(planetType, orbitDistance, environment);
+    const activity = estimateStellarActivity(environment, orbitAu);
+    let densityRoll = prng.random();
+    if (environment.metallicityFeH > 0) densityRoll += Math.min(0.12, environment.metallicityFeH * 0.12);
+    if (environment.metallicityFeH < -0.7) densityRoll -= 0.08;
     let densityIndex = 0;
     // Base roll
     if (densityRoll < 0.2) densityIndex = 0;        // None
@@ -315,6 +423,18 @@ export function generateAtmosphere(
              densityIndex = prng.choice([1, 2])!; // Likely Thin or Earth-like
              logger.debug(`[AtmoGen] Reduced density index to ${densityIndex} due to moderate escape velocity.`);
          }
+         if (activity > 1.8 && orbitAu < 0.9 && densityIndex > 0) {
+             densityIndex -= activity > 2.8 || escapeVelocity < 9000 ? 1 : 0;
+             logger.debug(`[AtmoGen] Reduced density index to ${densityIndex} due to stellar activity/irradiation.`);
+         }
+         if (environment.ageGyr > 7 && escapeVelocity < earthLikeEscVel * 0.8 && densityIndex > 0) {
+             densityIndex -= 1;
+             logger.debug(`[AtmoGen] Reduced density index to ${densityIndex} due to long-term atmospheric erosion.`);
+         }
+         if (approxTemp_K > 720 && densityIndex > 1) {
+             densityIndex = 1;
+             logger.debug(`[AtmoGen] Hot close-orbit planet limited to thin atmosphere.`);
+         }
     }
 
     const finalDensity = ATMOSPHERE_DENSITIES[densityIndex];
@@ -328,7 +448,7 @@ export function generateAtmosphere(
     logger.debug(`[AtmoGen] Final Density: ${finalDensity}, Pressure: ${pressure.toFixed(3)} bar`);
 
     // Generate composition (passing escape velocity)
-    const composition = generateAtmosphereComposition(prng, finalDensity, planetType, escapeVelocity, parentStarType, orbitDistance);
+    const composition = generateAtmosphereComposition(prng, finalDensity, planetType, escapeVelocity, parentStarType, orbitDistance, environment);
 
     return { density: finalDensity, pressure, composition };
 }

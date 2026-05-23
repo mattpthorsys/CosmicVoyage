@@ -6,6 +6,7 @@ import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';
 // Import the specific interface from the generator file
 import { generatePlanetCharacteristics, PlanetCharacteristics } from './planet/planet_characteristics_generator';
+import { StellarEnvironment } from './stellar_environment';
 // Import the generator and data interface
 import { SurfaceGenerator, SurfaceData } from './planet/surface_generator';
 // Re-export needed types if they aren't in a shared file
@@ -69,7 +70,8 @@ export class Planet {
     angle: number,
     systemPRNG: PRNG, // PRNG seeded for the parent system
     parentStarType: string,
-    characteristics?: import('./planet/planet_characteristics_generator').PlanetCharacteristics
+    characteristics?: PlanetCharacteristics,
+    stellarEnvironment?: StellarEnvironment
   ) {
     this.name = name; //
     this.type = type; //
@@ -85,7 +87,8 @@ export class Planet {
         this.type,
         this.orbitDistance,
         this.systemPRNG,
-        parentStarType
+        parentStarType,
+        stellarEnvironment
     );
 
     // Assign properties from finalCharacteristics
