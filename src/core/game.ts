@@ -6,7 +6,7 @@ import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { MineralRichness, SPECTRAL_TYPES, ELEMENTS, STATUS_MESSAGES, GLYPHS, AU_IN_METERS } from '../constants';
+import { MineralRichness, SPECTRAL_TYPES, ELEMENTS, TRADE_COMMODITIES, STATUS_MESSAGES, GLYPHS, AU_IN_METERS } from '../constants';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
@@ -20,13 +20,17 @@ import { MovementSystem, MoveRequestData } from '../systems/movement_system';
 import { CargoSystem } from '../systems/cargo_systems';
 import { MiningSystem } from '../systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
+import { AstrometricOverlay } from '../rendering/astrometric_overlay';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
 
 interface TradeDepotItem {
-  elementKey: string;
+  itemKey: string;
+  name: string;
+  description: string;
+  category: string;
   units: number;
   buyPrice: number;
   sellPrice: number;
@@ -45,6 +49,8 @@ export class Game {
   private readonly cargoSystem: CargoSystem;
   private readonly miningSystem: MiningSystem;
   private readonly terminalOverlay: TerminalOverlay;
+  private readonly astrometricOverlay: AstrometricOverlay;
+  private readonly systemDataGenerator: SystemDataGenerator;
   private tradeSelectionIndex: number = 0;
 
   // Game Loop State, Status, Flags
@@ -82,13 +88,14 @@ export class Game {
     logger.info('[Game] Constructing instance...');
     const initialSeed = seed !== undefined ? String(seed) : String(Date.now());
     this.gameSeedPRNG = new PRNG(initialSeed);
-    const systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG); // Instantiate here
-    this.renderer = new RendererFacade(canvasId, statusBarId, systemDataGenerator);
+    this.systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG);
+    this.renderer = new RendererFacade(canvasId, statusBarId, this.systemDataGenerator);
     this.player = new Player(); // Assumes Player constructor uses CONFIG defaults
     this.inputManager = new InputManager();
-    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, systemDataGenerator);
+    this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this.systemDataGenerator);
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
     this.terminalOverlay = new TerminalOverlay(); // Initialize terminal overlay
+    this.astrometricOverlay = new AstrometricOverlay(this.systemDataGenerator);
 
     // Instantiate systems
     this.movementSystem = new MovementSystem(this.player);
@@ -318,6 +325,45 @@ export class Game {
     return false; // No zoom change
   }
 
+  private _handleStarbaseTradeInput(): boolean {
+    if (this.stateManager.state !== 'starbase' || !this.stateManager.currentStarbase) {
+      return false;
+    }
+
+    const market = this.getTradeDepotManifest(this.stateManager.currentStarbase.name);
+    if (market.length === 0) return false;
+
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      this.tradeSelectionIndex = (this.tradeSelectionIndex - 1 + market.length) % market.length;
+      this.statusMessage = this.formatSelectedTradeLine(market);
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      this.tradeSelectionIndex = (this.tradeSelectionIndex + 1) % market.length;
+      this.statusMessage = this.formatSelectedTradeLine(market);
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM')) {
+      this.statusMessage = this.buySelectedDepotItem(market);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+      this.statusMessage = this.sellSelectedDepotItem(market);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return true;
+    }
+
+    return false;
+  }
+
   /** Processes discrete actions (scan, land, mine, etc.). Returns true if an action was processed. */
   private _handleDiscreteActions(): boolean {
     const currentState = this.stateManager.state;
@@ -464,22 +510,27 @@ export class Game {
     if (this._handlePopupInput()) {
       return; // Input consumed by popup
     }
-    // 2. Check Zoom (consumes input if zoom changed)
+    // 2. Check starbase market controls before generic enter/backspace handling.
+    if (this._handleStarbaseTradeInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
+    // 3. Check Zoom (consumes input if zoom changed)
     if (this._handleZoomInput()) {
       // Publish status immediately after zoom changes to reflect new scale/clear messages
       this._publishStatusUpdate();
       return; // Input consumed by zoom change
     }
-    // 3. Check Discrete Actions (consumes input if an action is taken)
+    // 4. Check Discrete Actions (consumes input if an action is taken)
     if (this._handleDiscreteActions()) {
       // Discrete action handled, publish status update reflecting its outcome
       this._publishStatusUpdate();
       return; // Input consumed by a discrete action
     }
-    // 4. Check Movement (does not consume input, allows holding)
+    // 5. Check Movement (does not consume input, allows holding)
     this._handleMovementInput();
 
-    // 5. Publish Status Update (Reflects movement status or lack of action)
+    // 6. Publish Status Update (Reflects movement status or lack of action)
     // Note: Status might have been cleared by movement, or remain from previous frame if no action/move
     this._publishStatusUpdate();
   }
@@ -672,6 +723,19 @@ export class Game {
 
     // --- Update Terminal Overlay ---
     this.terminalOverlay.update(deltaTime); // Update typing/fading
+    this.astrometricOverlay.update(
+      {
+        state: this.stateManager.state,
+        player: this.player,
+        system: this.stateManager.currentSystem,
+        planet: this.stateManager.currentPlanet,
+        starbase: this.stateManager.currentStarbase,
+        viewScale: this.getCurrentViewScale(),
+      },
+      deltaTime,
+      Math.max(1, Math.floor(this.renderer.getCanvas().width / Math.max(1, this.renderer.getCharWidthPx()))),
+      Math.max(1, Math.floor(this.renderer.getCanvas().height / Math.max(1, this.renderer.getCharHeightPx())))
+    );
 
     // --- Update Core Game Logic (if not blocked by popup) ---
     if (!blockGameUpdates) {
@@ -886,25 +950,26 @@ export class Game {
     if (!starbase) {
       /* ... error handling ... */ return 'Starbase Error: Data missing.';
     }
+    const market = this.getTradeDepotManifest(starbase.name);
+    starbase.selectedTradeIndex = this.tradeSelectionIndex % Math.max(1, market.length);
+    starbase.tradeDisplayRows = market.map((item, index) => {
+      const held = this.player.cargoHold.items[item.itemKey] || 0;
+      const selected = index === starbase.selectedTradeIndex ? '>' : ' ';
+      return `${selected} ${item.name.padEnd(20).slice(0, 20)} B${String(item.buyPrice).padStart(3)} S${String(item.sellPrice).padStart(3)} H${String(held).padStart(2)} ${item.category}`;
+    });
     const actions = [
       `[${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade`,
       `[${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel`,
       `[${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Depart`,
     ];
-    return `Docked: ${starbase.name} | Actions: ${actions.join(', ')}.`;
+    return `Docked: ${starbase.name} | Arrows select | [ENTER] Buy | [BACKSPACE] Sell | ${actions.join(', ')}.`;
   }
 
   // --- Rendering ---
   private _render(): void {
     const currentState = this.stateManager.state;
     try {
-      // Clear physical canvas only if needed (state change or system view)
-      if (currentState === 'system' || this.forceFullRender) {
-        this.renderer.clear(true); // Physical clear
-      } else {
-        // For other states, just clear the internal buffer state
-        this.renderer.clear(false);
-      }
+      this.renderer.clear(true);
 
       // Draw background layer first if in system view
       if (currentState === 'system') {
@@ -970,12 +1035,13 @@ export class Game {
         );
       }
 
-      // Render the main buffer (diff or full)
-      if (this.forceFullRender) {
-        this.renderer.renderBufferFull(false); // Render main buffer fully
-      } else {
-        this.renderer.renderDiff(); // Render only changes in main buffer
-      }
+      this.renderer.renderBufferFull(false);
+
+      this.astrometricOverlay.render(
+        this.renderer.getContext(),
+        this.renderer.getCharWidthPx(),
+        this.renderer.getCharHeightPx()
+      );
 
       // Draw Terminal Overlay on top
       this.terminalOverlay.render(
@@ -1061,17 +1127,17 @@ export class Game {
 
     let totalCreditsEarned = 0;
     let soldItemsLog: string[] = [];
-    for (const elementKey in currentCargo) {
-      const amount = currentCargo[elementKey];
-      const elementInfo = ELEMENTS[elementKey];
-      if (amount > 0 && elementInfo) {
-        const depotItem = market.find((item) => item.elementKey === elementKey);
-        const valuePerUnit = depotItem?.sellPrice ?? Math.max(1, Math.floor(elementInfo.baseValue * CONFIG.TRADE_SELL_MARKDOWN));
+    for (const itemKey in currentCargo) {
+      const amount = currentCargo[itemKey];
+      const itemInfo = this.getTradeItemInfo(itemKey);
+      if (amount > 0 && itemInfo) {
+        const depotItem = market.find((item) => item.itemKey === itemKey);
+        const valuePerUnit = depotItem?.sellPrice ?? Math.max(1, Math.floor(itemInfo.baseValue * CONFIG.TRADE_SELL_MARKDOWN));
         const creditsEarned = amount * valuePerUnit;
         totalCreditsEarned += creditsEarned;
-        soldItemsLog.push(`${amount} ${elementInfo.name || elementKey}`); // Use name if available
+        soldItemsLog.push(`${amount} ${itemInfo.name || itemKey}`);
       } else {
-        logger.warn(`[Game:_handleTradeRequest] Skipping unknown or zero amount item in cargo: ${elementKey}`);
+        logger.warn(`[Game:_handleTradeRequest] Skipping unknown or zero amount item in cargo: ${itemKey}`);
       }
     }
 
@@ -1103,29 +1169,36 @@ export class Game {
   private getTradeDepotManifest(starbaseName: string): TradeDepotItem[] {
     const depotKeys = [
       'WATER_ICE',
-      'IRON',
-      'SILICON',
-      'COPPER',
-      'TITANIUM',
-      'LITHIUM',
-      'COBALT',
-      'URANIUM',
-      'GOLD',
-      'PLATINUM',
-      'HYDROGEN_CYANIDE',
-      'PHOSPHINE',
-    ].filter((key) => ELEMENTS[key]);
+      'HYDROGEN_SLUSH',
+      'HELIUM_3',
+      'DEUTERIUM_PELLETS',
+      'TITANIUM_TRUSS',
+      'SILICON_WAFERS',
+      'RARE_EARTH_MAGNETS',
+      'CATALYST_MESH',
+      'HYDROPONIC_CULTURES',
+      'MEDICAL_ISOTOPES',
+      'SURVEY_DRONES',
+      'NAV_BEACONS',
+      'VACUUM_COFFEE',
+      'CAPTAINS_SOCKS',
+    ].filter((key) => TRADE_COMMODITIES[key]);
 
     const hashOffset = Math.abs(fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.gameSeedPRNG.seed));
-    return depotKeys.map((elementKey, index) => {
-      const element = ELEMENTS[elementKey];
-      const localVariance = 0.9 + ((hashOffset + index * 17) % 30) / 100;
-      const units = CONFIG.TRADE_DEPOT_STOCK_UNITS + ((hashOffset + index * 7) % 9);
+    return depotKeys
+      .filter((itemKey, index) => TRADE_COMMODITIES[itemKey].rarity > 0.1 || (hashOffset + index * 23) % 100 < 18)
+      .map((itemKey, index) => {
+      const commodity = TRADE_COMMODITIES[itemKey];
+      const localVariance = 0.9 + ((hashOffset + index * 17) % 34) / 100;
+      const units = Math.max(1, Math.floor((CONFIG.TRADE_DEPOT_STOCK_UNITS + ((hashOffset + index * 7) % 9)) * commodity.rarity));
       return {
-        elementKey,
+        itemKey,
+        name: commodity.name,
+        description: commodity.description,
+        category: commodity.category,
         units,
-        buyPrice: Math.max(1, Math.ceil(element.baseValue * CONFIG.TRADE_BUY_MARKUP * localVariance)),
-        sellPrice: Math.max(1, Math.floor(element.baseValue * CONFIG.TRADE_SELL_MARKDOWN * localVariance)),
+        buyPrice: Math.max(1, Math.ceil(commodity.baseValue * CONFIG.TRADE_BUY_MARKUP * localVariance)),
+        sellPrice: Math.max(1, Math.floor(commodity.baseValue * CONFIG.TRADE_SELL_MARKDOWN * localVariance)),
       };
     });
   }
@@ -1139,16 +1212,15 @@ export class Game {
       this.tradeSelectionIndex++;
       const unitsToBuy = Math.min(item.units, freeCargo);
       const totalCost = unitsToBuy * item.buyPrice;
-      const element = ELEMENTS[item.elementKey];
       if (unitsToBuy > 0 && this.player.resources.credits >= totalCost) {
-        const added = this.cargoSystem.addItem(this.player.cargoHold, item.elementKey, unitsToBuy);
+        const added = this.cargoSystem.addItem(this.player.cargoHold, item.itemKey, unitsToBuy);
         this.player.resources.credits -= added * item.buyPrice;
-        eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.elementKey, amount: added });
+        eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.itemKey, amount: added });
         eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
           newCredits: this.player.resources.credits,
           amountChanged: -added * item.buyPrice,
         });
-        return `Purchased ${added} ${element.name} for ${added * item.buyPrice} Cr.`;
+        return `Purchased ${added} ${item.name} for ${added * item.buyPrice} Cr.`;
       }
     }
 
@@ -1158,9 +1230,63 @@ export class Game {
   private formatTradeDepotManifest(market: TradeDepotItem[]): string {
     const offers = market
       .slice(0, 6)
-      .map((item) => `${ELEMENTS[item.elementKey].name} ${item.buyPrice}Cr`)
+      .map((item) => `${item.name} ${item.buyPrice}Cr`)
       .join(', ');
     return `Trade depot offers: ${offers}. Need cargo space and credits to buy.`;
+  }
+
+  private buySelectedDepotItem(market: TradeDepotItem[]): string {
+    const item = market[this.tradeSelectionIndex % market.length];
+    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
+
+    const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
+    const unitsToBuy = Math.min(item.units, freeCargo, affordableUnits);
+    if (unitsToBuy <= 0) return `Insufficient credits for ${item.name}.`;
+
+    const added = this.cargoSystem.addItem(this.player.cargoHold, item.itemKey, unitsToBuy);
+    const cost = added * item.buyPrice;
+    this.player.resources.credits -= cost;
+    eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.itemKey, amount: added });
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: -cost,
+    });
+    return `Bought ${added} ${item.name} for ${cost} Cr.`;
+  }
+
+  private sellSelectedDepotItem(market: TradeDepotItem[]): string {
+    const item = market[this.tradeSelectionIndex % market.length];
+    const amount = this.player.cargoHold.items[item.itemKey] || 0;
+    if (amount <= 0) return `No ${item.name} in cargo.`;
+
+    const creditsEarned = amount * item.sellPrice;
+    this.cargoSystem.removeItemType(this.player.cargoHold, item.itemKey);
+    this.player.resources.credits += creditsEarned;
+    eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, {
+      itemsSold: { [item.itemKey]: amount },
+      creditsEarned,
+      newCredits: this.player.resources.credits,
+    });
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: creditsEarned,
+    });
+    return `Sold ${amount} ${item.name} for ${creditsEarned} Cr.`;
+  }
+
+  private formatSelectedTradeLine(market: TradeDepotItem[]): string {
+    const item = market[this.tradeSelectionIndex % market.length];
+    const held = this.player.cargoHold.items[item.itemKey] || 0;
+    return `Selected ${item.name}: buy ${item.buyPrice} Cr, sell ${item.sellPrice} Cr, stock ${item.units}, hold ${held}.`;
+  }
+
+  private getTradeItemInfo(itemKey: string): { name: string; baseValue: number } | null {
+    const commodity = TRADE_COMMODITIES[itemKey];
+    if (commodity) return { name: commodity.name, baseValue: commodity.baseValue };
+    const element = ELEMENTS[itemKey];
+    if (element) return { name: element.name, baseValue: element.baseValue };
+    return null;
   }
 
   /** Handles REFUEL_REQUESTED event */

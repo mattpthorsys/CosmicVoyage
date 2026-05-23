@@ -22,6 +22,8 @@ export class Starbase {
     readonly mineralRichness: MineralRichness = MineralRichness.NONE; //
     heightmap: number[][] | null = null; // Basic map for rendering (placeholder)
     heightLevelColors: string[] | null = null; // Single colour for rendering
+    tradeDisplayRows: string[] = [];
+    selectedTradeIndex: number = 0;
 
     constructor(baseNameSeed: string, systemPRNG: PRNG, systemName: string) {
         // Seed a PRNG specifically for this starbase

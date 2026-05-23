@@ -210,14 +210,14 @@ export class ActionProcessor {
         break;
       case 'TRADE':
         {
-          eventManager.publish('TRADE_REQUESTED'); // Define event
-          message = 'Accessing trade terminal...';
+          eventManager.publish(GameEvents.TRADE_REQUESTED);
+          message = null;
         }
         break;
       case 'REFUEL':
         {
-          eventManager.publish('REFUEL_REQUESTED'); // Define event
-          message = 'Requesting refueling service...';
+          eventManager.publish(GameEvents.REFUEL_REQUESTED);
+          message = null;
         }
         break;
     }

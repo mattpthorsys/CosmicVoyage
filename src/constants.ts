@@ -491,6 +491,32 @@ export const ELEMENTS: Record<string, ElementInfo> = {
     },
 };
 
+export interface TradeCommodityInfo {
+    name: string;
+    symbol: string;
+    description: string;
+    baseValue: number;
+    rarity: number;
+    category: string;
+}
+
+export const TRADE_COMMODITIES: Record<string, TradeCommodityInfo> = {
+    WATER_ICE: { name: 'Water Ice', symbol: 'H2O', description: 'Shielded volatile blocks for life support and fuel cracking.', baseValue: 2, rarity: 0.9, category: 'Volatile' },
+    HYDROGEN_SLUSH: { name: 'Hydrogen Slush', symbol: 'H2', description: 'Cryogenic reaction mass for torch drives and station tenders.', baseValue: 3, rarity: 0.85, category: 'Propellant' },
+    HELIUM_3: { name: 'Helium-3', symbol: 'He3', description: 'Clean fusion feedstock skimmed from gas giant upper atmospheres.', baseValue: 42, rarity: 0.22, category: 'Fuel' },
+    DEUTERIUM_PELLETS: { name: 'Deuterium Pellets', symbol: 'D2', description: 'Dense fusion pellets for civilian reactors and survey craft.', baseValue: 18, rarity: 0.45, category: 'Fuel' },
+    TITANIUM_TRUSS: { name: 'Titanium Truss', symbol: 'Ti+', description: 'Vacuum-rated structural members for hull patches and habitats.', baseValue: 16, rarity: 0.55, category: 'Industrial' },
+    SILICON_WAFERS: { name: 'Silicon Wafers', symbol: 'SiW', description: 'Radiation-binned substrates for navigation and sensor boards.', baseValue: 14, rarity: 0.5, category: 'Electronics' },
+    RARE_EARTH_MAGNETS: { name: 'Rare-Earth Magnets', symbol: 'Nd', description: 'Drive gimbal and field-coil components with tight coercivity tolerances.', baseValue: 38, rarity: 0.28, category: 'Electronics' },
+    CATALYST_MESH: { name: 'Catalyst Mesh', symbol: 'PtM', description: 'Platinum-group reactor mesh for fuel processors and refinery stacks.', baseValue: 62, rarity: 0.18, category: 'Refinery' },
+    HYDROPONIC_CULTURES: { name: 'Hydroponic Cultures', symbol: 'AG', description: 'Hardy food and algae starters sealed against cross-contamination.', baseValue: 9, rarity: 0.62, category: 'Life Support' },
+    MEDICAL_ISOTOPES: { name: 'Medical Isotopes', symbol: 'MED', description: 'Short half-life diagnostic stock packed in smart shielding.', baseValue: 34, rarity: 0.32, category: 'Medical' },
+    SURVEY_DRONES: { name: 'Survey Drones', symbol: 'DRN', description: 'Disposable mapping probes with enough intelligence to be rude.', baseValue: 26, rarity: 0.35, category: 'Exploration' },
+    NAV_BEACONS: { name: 'Nav Beacons', symbol: 'NAV', description: 'Autonomous marker buoys for jump approach corridors.', baseValue: 21, rarity: 0.42, category: 'Navigation' },
+    VACUUM_COFFEE: { name: 'Vacuum Coffee', symbol: 'CAF', description: 'Freeze-dried morale concentrate. Legally food in four sectors.', baseValue: 12, rarity: 0.08, category: 'Luxury' },
+    CAPTAINS_SOCKS: { name: "Captain's Socks", symbol: 'SOX', description: 'One sealed pair. Provenance disputed. Odor containment certified.', baseValue: 7, rarity: 0.015, category: 'Curio' },
+};
+
 // --- User-Facing Messages --- [cite: 28, 479]
 export const STATUS_MESSAGES = {
     // General

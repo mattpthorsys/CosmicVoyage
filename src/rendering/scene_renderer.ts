@@ -111,7 +111,9 @@ export class SceneRenderer {
           if (cellPrng.random() < density) {
             const starType = cellPrng.choice(SPECTRAL_DISTRIBUTION)!;
             const star = this.getRenderedStarCell(starType, starFieldX, starFieldY);
-            backgroundBuffer.drawChar(star.char, x, y, `${star.color}70`, null);
+            const starChar = cellPrng.choice(CONFIG.STAR_BACKGROUND_CHARS)!;
+            const dimStarColor = this.dimHexColour(star.color, layerIndex === 0 ? 0.34 : 0.24);
+            backgroundBuffer.drawChar(starChar, x, y, `${dimStarColor}45`, null);
           }
         }
       }
@@ -128,6 +130,11 @@ export class SceneRenderer {
       char: starInfo.char,
       color: rgbToHex(finalStarRgb.r, finalStarRgb.g, finalStarRgb.b),
     };
+  }
+
+  private dimHexColour(hex: string, factor: number): string {
+    const rgb = hexToRgb(hex);
+    return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
   }
 
   // --- drawSolarSystem (Refactored) ---
@@ -426,6 +433,7 @@ export class SceneRenderer {
       player.render.fgColor,
       null
     );
+    this.drawSurfaceHud(player, planet, viewport);
     this.drawHeightmapLegend(planet);
   }
 
@@ -493,6 +501,7 @@ export class SceneRenderer {
       player.render.fgColor,
       null
     );
+    this.drawSurfaceHud(player, planet, viewport);
   }
 
   // --- drawStarbaseInterior --- (no changes from previous step)
@@ -502,12 +511,48 @@ export class SceneRenderer {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString('== Starbase Docking Bay ==', 5, 3, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('Services:', 5, 6, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(`- [${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] Trade Commodities`, 7, 8, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(`- [${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] Refuel Ship`, 7, 9, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(`Press [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] to depart.`, 5, 12, CONFIG.DEFAULT_FG_COLOUR, CONFIG.DEFAULT_BG_COLOUR);
+    const panelWidth = Math.min(72, Math.max(32, cols - 8));
+    const panelHeight = Math.min(22, Math.max(14, rows - 6));
+    const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
+    const panelY = Math.max(2, Math.floor((rows - panelHeight) / 2));
+
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#00C8FF', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' STARBASE TRADE DEPOT ', panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(starbase.name.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(`[${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] AUTO-TRADE CARGO / BUY DEPOT LOT`, panelX + 4, panelY + 6, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('[UP/DOWN] SELECT   [ENTER] BUY   [BACKSPACE] SELL', panelX + 4, panelY + 7, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(`[${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] REFUEL FROM REACTOR TENDER   [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] DEPART`, panelX + 4, panelY + 8, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    const marketRows = starbase.tradeDisplayRows.slice(0, Math.max(0, panelHeight - 16));
+    marketRows.forEach((row, index) => {
+      const selected = row.startsWith('>');
+      this.screenBuffer.drawString(row.slice(0, panelWidth - 8), panelX + 4, panelY + 10 + index, selected ? '#00FF66' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    });
+    this.screenBuffer.drawString(`Cr ${player.resources.credits.toLocaleString().padStart(7)}  Fuel ${player.resources.fuel.toFixed(0).padStart(3)}/${player.resources.maxFuel}`, panelX + 4, panelY + panelHeight - 6, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(`Cargo ${Object.values(player.cargoHold.items).reduce((sum, qty) => sum + qty, 0).toString().padStart(3)}/${player.cargoHold.capacity}`, panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('> MARKET LINK STABLE  > DOCKSIDE CRANES READY', panelX + 4, panelY + panelHeight - 3, '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
     this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
+  }
+
+  private drawSurfaceHud(
+    player: Player,
+    planet: Planet,
+    viewport: { x: number; y: number; width: number; height: number }
+  ): void {
+    const label = ` ${planet.name}  X:${Math.floor(player.position.surfaceX)} Y:${Math.floor(player.position.surfaceY)} `;
+    const clippedLabel = label.slice(0, Math.max(0, viewport.width - 2));
+    this.screenBuffer.drawString(clippedLabel, viewport.x + 1, viewport.y - 1, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
+
+    const footer = '  N ^   S v   W <   E >  ';
+    const footerX = viewport.x + Math.max(1, viewport.width - footer.length - 1);
+    this.screenBuffer.drawString(footer, footerX, viewport.y + viewport.height, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+
+    const crossX = viewport.x + Math.floor(viewport.width / 2);
+    const crossY = viewport.y + Math.floor(viewport.height / 2);
+    this.screenBuffer.drawChar('+', crossX - 1, crossY, '#001010', '#00FFFF');
+    this.screenBuffer.drawChar('+', crossX + 1, crossY, '#001010', '#00FFFF');
+    this.screenBuffer.drawChar('+', crossX, crossY - 1, '#001010', '#00FFFF');
+    this.screenBuffer.drawChar('+', crossX, crossY + 1, '#001010', '#00FFFF');
   }
 
   // --- drawHeightmapLegend --- (no changes from previous step)
