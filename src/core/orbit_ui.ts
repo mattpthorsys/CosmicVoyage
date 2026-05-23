@@ -77,7 +77,8 @@ export function createOrbitScreenModel(args: {
     telemetry: [
       `Body ${selected.name}`,
       `Class ${selected.type} | Diameter ${selected.diameter.toLocaleString()} km | Density ${selected.density.toFixed(2)} g/cm3`,
-      `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Temp now ${selected.getCurrentTemperature()}K | Moons ${selected.moons.length}`,
+      `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
+      `Temp now ${selected.getCurrentTemperature()}K | Moons ${selected.moons.length}`,
     ],
     footer: [
       args.mode === 'landing'

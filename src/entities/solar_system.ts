@@ -543,7 +543,7 @@ export class SolarSystem {
 
       const moonAngle = moonPRNG.random(0, Math.PI * 2);
       const moonName = `${planetName}.${j + 1}`;
-      const moonType = this.determineMoonType(planet, effectiveTemp, moonPRNG);
+      const moonType = this.determineMoonType(planet, effectiveTemp, moonOrbit_m, innerOrbit_m, outerStableOrbit_m, moonPRNG);
       let moonCharacteristics: PlanetCharacteristics;
       try {
         moonCharacteristics = this.generateRealisticMoonCharacteristics(
@@ -554,7 +554,9 @@ export class SolarSystem {
           parentStar.environment,
           totalFlux,
           planet,
-          j
+          j,
+          innerOrbit_m,
+          outerStableOrbit_m
         );
       } catch (charError) {
         logger.error(`[Planet:${planet.name}] Error generating characteristics for moon ${moonName}: ${charError}`);
@@ -617,11 +619,25 @@ export class SolarSystem {
     return prng.random() < 0.82 ? 1 : 2;
   }
 
-  private determineMoonType(parent: Planet, effectiveTemp: number, prng: PRNG): string {
+  private determineMoonType(
+    parent: Planet,
+    effectiveTemp: number,
+    moonOrbit_m: number,
+    innerOrbit_m: number,
+    outerStableOrbit_m: number,
+    prng: PRNG
+  ): string {
+    const isGiantParent = parent.type === 'GasGiant' || parent.type === 'IceGiant';
+    const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
+    const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
+
+    if (isGiantParent && orbitFraction < 0.28 && tidalHeat > 0.22 && prng.random() < 0.55) {
+      return 'Lunar';
+    }
     if (effectiveTemp < 170) {
       return this.weightedChoice(prng, [
-        { item: 'Frozen', weight: parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 5 : 3 },
-        { item: 'Lunar', weight: 2 },
+        { item: 'Frozen', weight: isGiantParent ? 5 : 3 },
+        { item: 'Lunar', weight: isGiantParent && orbitFraction > 0.6 ? 1 : 2 },
       ]);
     }
     if (effectiveTemp > 320) return 'Lunar';
@@ -639,20 +655,40 @@ export class SolarSystem {
     environment: StellarEnvironment,
     totalFlux: number,
     parent: Planet,
-    moonIndex: number
+    moonIndex: number,
+    innerOrbit_m: number,
+    outerStableOrbit_m: number
   ): PlanetCharacteristics {
     const characteristics = generatePlanetCharacteristics(moonType, moonOrbit_m, prng, parentStarType, environment, totalFlux);
-    const parentDiameterLimit = parent.diameter * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 0.09 : 0.32);
-    const baseMax = parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 5600 : 3600;
+    const isGiantParent = parent.type === 'GasGiant' || parent.type === 'IceGiant';
+    const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
+    const distanceInParentRadii = moonOrbit_m / Math.max(1, (parent.diameter * 1000) / 2);
+    const parentDiameterLimit = parent.diameter * (isGiantParent ? 0.09 : 0.32);
+    const baseMax = isGiantParent ? 5600 : 3600;
+    const isRegularGiantMoon = isGiantParent && (orbitFraction < 0.55 || distanceInParentRadii < 80);
+    const capturedSizeFactor = isGiantParent && !isRegularGiantMoon ? 0.55 : 1;
     const indexFalloff = Math.max(0.35, 1 - moonIndex * 0.045);
     const minDiameter = moonType === 'Frozen' ? 450 : 350;
-    const maxDiameter = Math.max(minDiameter + 50, Math.min(baseMax, parentDiameterLimit) * indexFalloff);
+    const maxDiameter = Math.max(minDiameter + 50, Math.min(baseMax, parentDiameterLimit) * indexFalloff * capturedSizeFactor);
     const diameter = prng.random(minDiameter, maxDiameter);
     const density = moonType === 'Frozen' ? prng.random(1.2, 2.4) : prng.random(2.4, 3.6);
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
     const gravity = calculateGravity(diameter, density);
     const escapeVelocity = Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m);
+    const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
+    const tidallyLocked = isGiantParent ? isRegularGiantMoon || orbitFraction < 0.78 : tidalHeat > 0.16 || moonOrbit_m < parent.diameter * 1000 * 24;
+    const axialTilt = isRegularGiantMoon
+      ? prng.random(0, Math.PI / 90)
+      : tidallyLocked
+        ? prng.random(0, Math.PI / 45)
+        : prng.random(Math.PI / 36, Math.PI / 3);
+    const orbitalInclination = isRegularGiantMoon
+      ? prng.random(0, Math.PI / 180)
+      : isGiantParent
+        ? prng.random(Math.PI / 36, Math.PI / 2.5)
+        : prng.random(0, Math.PI / 18);
+    const tidalTemperatureBoost = isGiantParent ? Math.round(tidalHeat * prng.random(20, 95)) : Math.round(tidalHeat * prng.random(8, 35));
     return {
       ...characteristics,
       diameter,
@@ -660,8 +696,21 @@ export class SolarSystem {
       mass,
       gravity,
       escapeVelocity,
-      magneticFieldStrength: characteristics.magneticFieldStrength * 0.25,
+      surfaceTemp: characteristics.surfaceTemp + tidalTemperatureBoost,
+      magneticFieldStrength: characteristics.magneticFieldStrength * (isRegularGiantMoon ? 0.35 : 0.18),
+      axialTilt,
+      tidallyLocked,
+      orbitalInclination,
     };
+  }
+
+  private getMoonTidalHeatingFactor(parent: Planet, moonOrbit_m: number): number {
+    const parentRadius_m = Math.max(1, (parent.diameter * 1000) / 2);
+    const distanceInRadii = moonOrbit_m / parentRadius_m;
+    const massFactor = this.clamp(Math.sqrt(parent.mass / 1.898e27), 0.15, 2.6);
+    const proximityFactor = Math.pow(this.clamp(18 / Math.max(distanceInRadii, 2.5), 0, 1), 2.4);
+    const giantBoost = parent.type === 'GasGiant' ? 1.2 : parent.type === 'IceGiant' ? 0.75 : 0.35;
+    return this.clamp(proximityFactor * massFactor * giantBoost, 0, 1);
   }
 
   private getEffectiveTemperature(totalFlux_W_m2: number): number {

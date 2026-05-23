@@ -125,4 +125,39 @@ describe('SystemDataGenerator', () => {
 
     throw new Error('Expected at least one moon-bearing planet in representative sector.');
   });
+
+  it('generates regular giant-planet moons with tidal locking and low obliquity', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    let checkedRegularGiantMoon = false;
+    let checkedCapturedLikeMoon = false;
+
+    for (let y = -60; y <= 60; y++) {
+      for (let x = -60; x <= 60; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        const system = new SolarSystem(props, x, y, seed);
+
+        for (const parent of system.planets) {
+          if (!parent || (parent.type !== 'GasGiant' && parent.type !== 'IceGiant')) continue;
+          const parentRadiusM = parent.diameter * 500;
+          for (const moon of parent.moons) {
+            const orbitInParentRadii = moon.orbitDistance / parentRadiusM;
+            if (orbitInParentRadii < 80) {
+              checkedRegularGiantMoon = true;
+              expect(moon.tidallyLocked).toBe(true);
+              expect((moon.axialTilt * 180) / Math.PI).toBeLessThanOrEqual(4);
+              expect((moon.orbitalInclination * 180) / Math.PI).toBeLessThanOrEqual(3);
+            } else if (orbitInParentRadii > 250) {
+              checkedCapturedLikeMoon = true;
+              expect(moon.diameter).toBeLessThan(parent.diameter * 0.1);
+            }
+          }
+        }
+      }
+    }
+
+    expect(checkedRegularGiantMoon).toBe(true);
+    expect(checkedCapturedLikeMoon).toBe(true);
+  });
 });

@@ -44,6 +44,8 @@ export class Planet {
   public readonly mass: number; // Mass (kg)
   public readonly escapeVelocity: number;
   public readonly axialTilt: number; // in radians
+  public readonly tidallyLocked: boolean;
+  public readonly orbitalInclination: number; // in radians
 
   // Resources & Gameplay (Generated + State)
   public readonly mineralRichness: MineralRichness; // Kept for summary/potential use
@@ -111,6 +113,8 @@ export class Planet {
     this.lithosphere = finalCharacteristics.lithosphere;
     this.magneticFieldStrength = finalCharacteristics.magneticFieldStrength;
     this.axialTilt = finalCharacteristics.axialTilt;
+    this.tidallyLocked = finalCharacteristics.tidallyLocked;
+    this.orbitalInclination = finalCharacteristics.orbitalInclination;
     this.mineralRichness = finalCharacteristics.mineralRichness;
     this.baseMinerals = finalCharacteristics.baseMinerals;
     this.elementAbundance = finalCharacteristics.elementAbundance;
@@ -343,6 +347,12 @@ export class Planet {
     // Add Mass and Escape Velocity if desired
     // infoLines.push(`Mass: <hl>${this.mass.toExponential(2)} kg</hl> | Escape Vel: <hl>${this.escapeVelocity.toFixed(0)} m/s</hl>`);
     infoLines.push(`Avg Surface Temp: <hl>${this.surfaceTemp} K</hl>`); // This is the average temp
+    infoLines.push(
+      `Rotation: <hl>${this.tidallyLocked ? 'Tidally locked' : 'Free'}</hl> | Axial Tilt: <hl>${(
+        (this.axialTilt * 180) /
+        Math.PI
+      ).toFixed(1)} deg</hl> | Inclination: <hl>${((this.orbitalInclination * 180) / Math.PI).toFixed(1)} deg</hl>`
+    );
 
     // --- Atmosphere Details ---
     let pressureText = this.atmosphere.pressure < 0.001 ? '~0' : this.atmosphere.pressure.toFixed(3);

@@ -26,6 +26,8 @@ export interface PlanetCharacteristics {
     elementAbundance: Record<string, number>;
     magneticFieldStrength: number;
     axialTilt: number; // in radians
+    tidallyLocked: boolean;
+    orbitalInclination: number; // in radians
 }
 
 /** Main function to generate all characteristics. */
@@ -100,6 +102,8 @@ export function generatePlanetCharacteristics(
 
     // 8. Generate Axial Tilt (in radians)
     const axialTilt = planetPRNG.random(0, Math.PI / 4)
+    const tidallyLocked = false;
+    const orbitalInclination = planetPRNG.random(0, Math.PI / 18);
 
 
     logger.info(`[CharGen] Characteristics generated for ${planetType}. Gravity: ${gravity.toFixed(2)}g, EscapeVel: ${escapeVelocity.toFixed(0)} m/s, Richness: ${mineralRichness}.`);
@@ -119,6 +123,8 @@ export function generatePlanetCharacteristics(
         baseMinerals,
         elementAbundance,
         magneticFieldStrength,
-        axialTilt
+        axialTilt,
+        tidallyLocked,
+        orbitalInclination
     };
 }
