@@ -9,7 +9,6 @@ import { Player } from '../core/player';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
-import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
 import { eventManager, GameEvents } from '../core/event_manager'; // Import Event Manager
@@ -24,7 +23,6 @@ export class RendererFacade {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private screenBuffer: ScreenBuffer; // Main buffer
-  private backgroundScreenBuffer: ScreenBuffer; // Star background buffer
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private sceneRenderer: SceneRenderer;
@@ -57,8 +55,7 @@ export class RendererFacade {
     this.ctx = ctx;
 
     // Initialize components (same as before)
-    this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false); // Main is not transparent
-    this.backgroundScreenBuffer = new ScreenBuffer(this.canvas, this.ctx, true); // Background IS transparent
+    this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false);
     this.drawingContext = new DrawingContext(this.screenBuffer);
     this.nebulaRenderer = new NebulaRenderer();
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
@@ -81,12 +78,10 @@ export class RendererFacade {
   }
 
   public getCharWidthPx(): number {
-    // Assuming both buffers have the same dimensions
     return this.screenBuffer.getCharWidthPx();
   }
 
   public getCharHeightPx(): number {
-    // Assuming both buffers have the same dimensions
     return this.screenBuffer.getCharHeightPx();
   }
 
@@ -127,7 +122,6 @@ export class RendererFacade {
 
     // Update internal buffers and context settings
     this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
-    this.backgroundScreenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx); // Update background buffer too
 
     // Update status bar internal calculations AFTER setting its font size etc.
     this.statusBarUpdater.updateMaxChars(charWidthPx, charHeightPx);
@@ -144,7 +138,6 @@ export class RendererFacade {
     )}px`;
 
     this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
-    this.backgroundScreenBuffer.clear(false); // Clear internal buffers without touching canvas display yet
     this.screenBuffer.clear(false);
 
     logger.info(
@@ -154,20 +147,12 @@ export class RendererFacade {
 
   /** Resets internal buffers and optionally clears the physical canvas. */
   clear(physicalClear: boolean = true): void {
-    // Only the main screen buffer usually needs explicit physical clearing
-    // Background might be handled differently or cleared automatically
     this.screenBuffer.clear(physicalClear);
-    // Optionally clear background buffer too, but maybe not physically
-    this.backgroundScreenBuffer.clear(false);
   }
 
-  /** Renders the entire content of the specified buffer. */
-  renderBufferFull(isBackground: boolean = false): void {
-    if (isBackground) {
-      this.backgroundScreenBuffer.renderFull();
-    } else {
-      this.screenBuffer.renderFull();
-    }
+  /** Renders the entire main scene buffer. */
+  renderBufferFull(): void {
+    this.screenBuffer.renderFull();
   }
 
   /** Updates the text content of the status bar element. (This method is now primarily called internally via event) */
@@ -193,11 +178,6 @@ export class RendererFacade {
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
     this.sceneRenderer.drawPlanetSurface(player, landedObject);
   }
-  drawStarBackground(player: Player): void {
-    // Pass the specific background buffer to the scene renderer
-    this.sceneRenderer.drawStarBackground(player, this.backgroundScreenBuffer);
-  }
-
   // --- Popup Drawing Method ---
   /** Draws a popup window with animations and typing text effect. */
   drawPopup(

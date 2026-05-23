@@ -1,7 +1,3 @@
-// FILE: src/rendering/scene_renderer.ts
-// REFACTORED: Extracted solar system object drawing logic into helper methods.
-// REFACTORED: Flattened moon drawing loop in drawSolarSystem.
-
 import { ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
@@ -9,18 +5,12 @@ import { Player } from '../core/player';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
-import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS, SPECTRAL_DISTRIBUTION } from '../constants';
-import { fastHash } from '../utils/hash';
+import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS } from '../constants';
 import { logger } from '../utils/logger';
-import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex, RgbColour } from './colour';
+import { adjustBrightness, interpolateColour, rgbToHex } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
-
-interface RenderedStarCell {
-  char: string;
-  color: string;
-}
+import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -49,7 +39,6 @@ export class SceneRenderer {
     logger.debug('[SceneRenderer] Instance created.');
   }
 
-  // --- drawHyperspace --- (no changes from previous step)
   /** Draws the hyperspace view (stars, nebulae). */
   drawHyperspace(player: Player): void {
     const cols = this.screenBuffer.getCols();
@@ -73,7 +62,7 @@ export class SceneRenderer {
           const starInfo = SPECTRAL_TYPES[systemProps.starType!];
 
           if (starInfo) {
-            const star = this.getRenderedStarCell(systemProps.starType!, worldX, worldY);
+            const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
             this.screenBuffer.drawChar(star.char, viewX, viewY, star.color, null);
           } else {
             logger.error(`[SceneRenderer.drawHyperspace] Could not find star info for final determined type "${systemProps.starType}" at [${worldX}, ${worldY}].`);
@@ -87,81 +76,14 @@ export class SceneRenderer {
     this.screenBuffer.drawChar(player.render.char, viewCenterX, viewCenterY, player.render.fgColor, null);
   }
 
-  // --- drawStarBackground --- (no changes from previous step)
-  /** Draws the scrolling star background for the system view. */
-  drawStarBackground(player: Player, backgroundBuffer: ScreenBuffer): void {
-    const cols = backgroundBuffer.getCols();
-    const rows = backgroundBuffer.getRows();
-    if (cols <= 0 || rows <= 0) return;
-    const baseBgSeed = `${CONFIG.SEED}_star_background`;
-    const baseBgPrng = new PRNG(baseBgSeed);
-    backgroundBuffer.clear(false);
-    CONFIG.STAR_BACKGROUND_LAYERS.forEach((layer, layerIndex) => {
-      const { factor: parallaxFactor, density, scale } = layer;
-      const scaledPlayerX = player.position.systemX * parallaxFactor;
-      const scaledPlayerY = player.position.systemY * parallaxFactor;
-      const viewOffsetX = Math.floor(scaledPlayerX / scale);
-      const viewOffsetY = Math.floor(scaledPlayerY / scale);
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          const starFieldX = x + viewOffsetX;
-          const starFieldY = y + viewOffsetY;
-          const cellSeedString = `${baseBgSeed}_${layerIndex}_${starFieldX}_${starFieldY}`;
-          const cellPrng = baseBgPrng.seedNew(cellSeedString);
-          if (cellPrng.random() < density) {
-            const starType = cellPrng.choice(SPECTRAL_DISTRIBUTION)!;
-            const star = this.getRenderedStarCell(starType, starFieldX, starFieldY);
-            const starChar = cellPrng.choice(CONFIG.STAR_BACKGROUND_CHARS)!;
-            const dimStarColor = this.dimHexColour(star.color, layerIndex === 0 ? 0.34 : 0.24);
-            backgroundBuffer.drawChar(starChar, x, y, `${dimStarColor}45`, null);
-          }
-        }
-      }
-    });
-  }
-
-  private getRenderedStarCell(starType: string, worldX: number, worldY: number): RenderedStarCell {
-    const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES['G'];
-    const hash = fastHash(worldX, worldY, 0);
-    const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1);
-    const starBaseRgb = hexToRgb(starInfo.colour);
-    const finalStarRgb = adjustBrightness(starBaseRgb, brightnessFactor);
-    return {
-      char: starInfo.char,
-      color: rgbToHex(finalStarRgb.r, finalStarRgb.g, finalStarRgb.b),
-    };
-  }
-
-  private dimHexColour(hex: string, factor: number): string {
-    const rgb = hexToRgb(hex);
-    return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
-  }
-
   private drawSystemTravelStarfield(player: Player): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols <= 0 || rows <= 0) return;
 
-    const baseBgSeed = `${CONFIG.SEED}_star_background`;
-    const baseBgPrng = new PRNG(baseBgSeed);
-    CONFIG.STAR_BACKGROUND_LAYERS.forEach((layer, layerIndex) => {
-      const { factor: parallaxFactor, density, scale } = layer;
-      const viewOffsetX = Math.floor((player.position.systemX * parallaxFactor) / scale);
-      const viewOffsetY = Math.floor((player.position.systemY * parallaxFactor) / scale);
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          const starFieldX = x + viewOffsetX;
-          const starFieldY = y + viewOffsetY;
-          const cellPrng = baseBgPrng.seedNew(`${baseBgSeed}_main_${layerIndex}_${starFieldX}_${starFieldY}`);
-          if (cellPrng.random() < density * 1.35) {
-            const starType = cellPrng.choice(SPECTRAL_DISTRIBUTION)!;
-            const star = this.getRenderedStarCell(starType, starFieldX, starFieldY);
-            const dimStarColor = this.dimHexColour(star.color, layerIndex === 0 ? 0.26 : 0.18);
-            this.screenBuffer.drawChar('.', x, y, dimStarColor, CONFIG.DEFAULT_BG_COLOUR);
-          }
-        }
-      }
-    });
+    for (const cell of createSystemTravelStarfield(cols, rows, player.position.systemX, player.position.systemY)) {
+      this.screenBuffer.drawChar(cell.char, cell.x, cell.y, cell.color, CONFIG.DEFAULT_BG_COLOUR);
+    }
   }
 
   // --- drawSolarSystem (Refactored) ---
@@ -344,7 +266,6 @@ export class SceneRenderer {
     return `${vertical}${horizontal}` || 'HERE';
   }
 
-  // --- drawSystemMinimap --- (no changes from previous step)
   private drawSystemMinimap(system: SolarSystem, player: Player): void {
     const cols = this.screenBuffer.getCols();
     const mapWidth = Math.floor(cols * CONFIG.MINIMAP_SIZE_FACTOR);
@@ -388,12 +309,10 @@ export class SceneRenderer {
     if (playerPos) { this.screenBuffer.drawChar(player.render.char, playerPos.x, playerPos.y, player.render.fgColor, CONFIG.DEFAULT_BG_COLOUR); }
   }
 
-  // --- drawPlanetSurface --- (no changes from previous step)
   /** Draws the surface view for planets or starbases. */
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
     this.screenBuffer.clear(false);
     if (landedObject instanceof Planet) {
-      this.drawPlanetTravelStarfield(player, landedObject);
       if (landedObject.type === 'GasGiant' || landedObject.type === 'IceGiant') {
         this.drawGasGiantSurface(player, landedObject);
       } else {
@@ -407,7 +326,6 @@ export class SceneRenderer {
     }
   }
 
-  // --- drawSolidPlanetSurface --- (no changes from previous step)
   /** Draws the surface of a solid planet. */
   private drawSolidPlanetSurface(player: Player, planet: Planet): void {
     logger.debug(`[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`);
@@ -451,10 +369,6 @@ export class SceneRenderer {
         const screenX = viewport.x + x;
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
-        const backgroundStarColor = this.getPlanetTravelStarColor(player, planet, screenX, screenY, terrainColor, true);
-        if (backgroundStarColor) {
-          this.screenBuffer.drawChar('.', screenX, screenY, backgroundStarColor, terrainColor);
-        }
         const elementKey = elementMap[wrappedMapY]?.[wrappedMapX];
         this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
       }
@@ -481,76 +395,6 @@ export class SceneRenderer {
     };
   }
 
-  private drawPlanetTravelStarfield(player: Player, planet: Planet): void {
-    const cols = this.screenBuffer.getCols();
-    const rows = this.screenBuffer.getRows();
-    if (cols <= 0 || rows <= 0) return;
-
-    const viewport = this.getSurfaceViewport(cols, rows);
-    const protectedX0 = viewport.x - 1;
-    const protectedY0 = viewport.y - 1;
-    const protectedX1 = viewport.x + viewport.width;
-    const protectedY1 = viewport.y + viewport.height;
-    const baseSeed = `${CONFIG.SEED}_surface_stars_${planet.name}`;
-    const layers = [
-      { density: 0.05, parallax: 0.22, colour: '#2F4A4D' },
-      { density: 0.028, parallax: 0.48, colour: '#486A6E' },
-    ];
-
-    for (const [layerIndex, layer] of layers.entries()) {
-      const offsetX = Math.floor(player.position.surfaceX * layer.parallax);
-      const offsetY = Math.floor(player.position.surfaceY * layer.parallax);
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          if (x >= protectedX0 && x <= protectedX1 && y >= protectedY0 && y <= protectedY1) continue;
-          const fieldX = x + offsetX;
-          const fieldY = y + offsetY;
-          const cellPrng = new PRNG(`${baseSeed}_${layerIndex}_${fieldX}_${fieldY}`);
-          if (cellPrng.random() < layer.density) {
-            this.screenBuffer.drawChar('.', x, y, layer.colour, CONFIG.DEFAULT_BG_COLOUR);
-          }
-        }
-      }
-    }
-  }
-
-  private getPlanetTravelStarColor(
-    player: Player,
-    planet: Planet,
-    x: number,
-    y: number,
-    terrainColor: string,
-    insideViewport: boolean
-  ): string | null {
-    const baseSeed = `${CONFIG.SEED}_surface_stars_${planet.name}`;
-    const layers = insideViewport
-      ? [
-          { density: 0.022, parallax: 0.18 },
-          { density: 0.012, parallax: 0.42 },
-        ]
-      : [
-          { density: 0.05, parallax: 0.22 },
-          { density: 0.028, parallax: 0.48 },
-        ];
-
-    for (const [layerIndex, layer] of layers.entries()) {
-      const fieldX = x + Math.floor(player.position.surfaceX * layer.parallax);
-      const fieldY = y + Math.floor(player.position.surfaceY * layer.parallax);
-      const cellPrng = new PRNG(`${baseSeed}_${layerIndex}_${fieldX}_${fieldY}`);
-      if (cellPrng.random() < layer.density) {
-        const terrainRgb = hexToRgb(terrainColor);
-        const luminance = terrainRgb.r * 0.2126 + terrainRgb.g * 0.7152 + terrainRgb.b * 0.0722;
-        if (insideViewport) {
-          return luminance > 125 ? '#243E42' : layerIndex === 0 ? '#6E8E91' : '#9FBABD';
-        }
-        return layerIndex === 0 ? '#2F4A4D' : '#486A6E';
-      }
-    }
-
-    return null;
-  }
-
-  // --- _drawSurfaceOverlay --- (no changes from previous step)
   /** Draws the resource overlay character (%) if applicable for the given cell. */
   private _drawSurfaceOverlay( screenX: number, screenY: number, mapX: number, mapY: number, elementKey: string | null | undefined, terrainColor: string, planet: Planet ): void {
       if (elementKey && elementKey !== '' && !planet.isMined(mapX, mapY)) {
@@ -558,7 +402,6 @@ export class SceneRenderer {
       }
   }
 
-  // --- drawGasGiantSurface --- (no changes from previous step)
   /** Draws the "surface" view for a gas giant. */
   private drawGasGiantSurface(player: Player, planet: Planet): void {
     logger.debug(`[SceneRenderer.drawGasGiantSurface] Drawing atmospheric view: ${planet.name}`);
@@ -606,7 +449,6 @@ export class SceneRenderer {
     this.drawSurfaceHud(player, planet, viewport);
   }
 
-  // --- drawStarbaseInterior --- (no changes from previous step)
   /** Draws the view when docked inside a starbase. */
   private drawStarbaseInterior(player: Player, starbase: Starbase): void {
     logger.debug(`[SceneRenderer.drawStarbaseInterior] Drawing interior: ${starbase.name}`);
@@ -657,7 +499,6 @@ export class SceneRenderer {
     this.screenBuffer.drawChar('+', crossX, crossY + 1, '#001010', '#00FFFF');
   }
 
-  // --- drawHeightmapLegend --- (no changes from previous step)
   /** Draws a legend for the heightmap colours on the planet surface view. */
   private drawHeightmapLegend(planet: Planet): void {
     const heightColors = planet.heightLevelColors;
@@ -678,7 +519,6 @@ export class SceneRenderer {
     this.screenBuffer.drawString("Low", startX - 3, startY + legendHeight - 1, CONFIG.DEFAULT_FG_COLOUR, null);
   }
 
-  // --- _drawError --- (no changes from previous step)
   /** Helper to draw an error message centered on the screen */
   private _drawError(message: string): void {
       const cols = this.screenBuffer.getCols();

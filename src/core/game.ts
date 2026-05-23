@@ -973,12 +973,6 @@ export class Game {
     try {
       this.renderer.clear(true);
 
-      // Draw background layer first if in system view
-      if (currentState === 'system') {
-        this.renderer.drawStarBackground(this.player);
-        this.renderer.renderBufferFull(true); // Render background buffer to canvas
-      }
-
       // Draw main content layer based on state
       switch (currentState) {
         case 'hyperspace':
@@ -1037,7 +1031,7 @@ export class Game {
         );
       }
 
-      this.renderer.renderBufferFull(false);
+      this.renderer.renderBufferFull();
 
       this.astrometricOverlay.render(
         this.renderer.getContext(),
@@ -1069,7 +1063,7 @@ export class Game {
     this.statusMessage = `ERROR: ${message}`;
     this._publishStatusUpdate(); // Update status bar
     // Render the error state immediately
-    this.renderer.renderBufferFull(false);
+    this.renderer.renderBufferFull();
   }
 
   // --- Status Update (Adds Zoom Level) ---
