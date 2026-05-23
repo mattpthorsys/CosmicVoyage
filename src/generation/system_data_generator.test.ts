@@ -126,6 +126,28 @@ describe('SystemDataGenerator', () => {
     throw new Error('Expected at least one moon-bearing planet in representative sector.');
   });
 
+  it('resolves moon proximity scans to the parent planet', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+
+    for (let y = -50; y <= 50; y++) {
+      for (let x = -50; x <= 50; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        const system = new SolarSystem(props, x, y, seed);
+        const parent = system.planets.find((planet) => planet && planet.moons.length > 0);
+        const moon = parent?.moons[0];
+        if (!parent || !moon) continue;
+
+        expect(system.getObjectNear(moon.systemX, moon.systemY)).toBe(moon);
+        expect(system.getScannableObjectNear(moon.systemX, moon.systemY)).toBe(parent);
+        return;
+      }
+    }
+
+    throw new Error('Expected at least one moon-bearing planet in representative sector.');
+  });
+
   it('generates regular giant-planet moons with tidal locking and low obliquity', () => {
     const seed = new PRNG('haunting beauty');
     const generator = new SystemDataGenerator(seed);

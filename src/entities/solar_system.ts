@@ -784,6 +784,15 @@ export class SolarSystem {
     return closestObject;
   }
 
+  /** Finds the object to scan near the given coordinates. Moons resolve to their parent planet. */
+  getScannableObjectNear(x_m: number, y_m: number): Planet | Starbase | null {
+    const nearbyObject = this.getObjectNear(x_m, y_m);
+    if (nearbyObject instanceof Planet) {
+      return this.getOrbitParentFor(nearbyObject);
+    }
+    return nearbyObject;
+  }
+
   /** Returns the parent planet for local orbital operations. Moons resolve to their primary. */
   getOrbitParentFor(body: Planet): Planet {
     for (const planet of this.planets) {

@@ -723,7 +723,7 @@ export class Game {
       const selectedTarget = this.getSelectedTarget();
       if (selectedTarget && this.isTargetWithinScanRange(selectedTarget)) {
         this.terminalOverlay.clear();
-        this._dumpScanToTerminal(selectedTarget);
+        this._dumpScanToTerminal(this.getScannableNavigationTarget(selectedTarget));
         this.statusMessage = '';
         return;
       }
@@ -953,6 +953,7 @@ export class Game {
           scanStatusMessage = '<e>Scan Error: System data missing.</e>';
         } else {
           const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
+          const scannableObject = system.getScannableObjectNear(this.player.position.systemX, this.player.position.systemY);
           const distSqToObject = nearbyObject
             ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY)
             : Infinity;
@@ -968,8 +969,8 @@ export class Game {
           if (nearbyStar && distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
             targetToScan = nearbyStar;
             //scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
-          } else if (nearbyObject && distSqToObject < scanThresholdSq) {
-            targetToScan = nearbyObject;
+          } else if (scannableObject && distSqToObject < scanThresholdSq) {
+            targetToScan = scannableObject;
             // scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_OBJECT(nearbyObject.name);
           } else {
             scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_FAIL_NO_TARGET;
@@ -1419,6 +1420,14 @@ export class Game {
 
   private getTargetCoords(target: NavigationTarget): { x: number; y: number } {
     return { x: target.systemX, y: target.systemY };
+  }
+
+  private getScannableNavigationTarget(target: NavigationTarget): ScanTarget {
+    const system = this.stateManager.currentSystem;
+    if (system && target instanceof Planet) {
+      return system.getOrbitParentFor(target);
+    }
+    return target;
   }
 
   private isTargetWithinScanRange(target: NavigationTarget): boolean {
