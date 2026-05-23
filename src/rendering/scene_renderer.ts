@@ -434,18 +434,48 @@ export class SceneRenderer {
       null
     );
     const visualPrng = planet.systemPRNG.seedNew("gas_surface_visuals");
+    const turbulence = this.getGasGiantTurbulenceFactor(planet);
+    const bandCount = planet.type === 'IceGiant' ? 8 : 13;
+    const stormCount = planet.type === 'IceGiant' ? 1 : Math.max(1, Math.round(1 + turbulence * 4));
+    const storms = Array.from({ length: stormCount }, (_, index) => ({
+      x: visualPrng.random(0, viewport.width),
+      y: visualPrng.random(viewport.height * 0.18, viewport.height * 0.82),
+      rx: visualPrng.random(viewport.width * 0.06, viewport.width * (0.12 + turbulence * 0.08)),
+      ry: visualPrng.random(1.2, 2.4 + turbulence * 3.2),
+      phase: visualPrng.random(0, Math.PI * 2) + index,
+    }));
+
     for (let y = 0; y < viewport.height; y++) {
       const numColors = palette.length;
-      const baseColorIndex = Math.floor((y / viewport.height) * (numColors -1));
+      const latitude = y / Math.max(1, viewport.height - 1);
+      const latitudeBand =
+        latitude +
+        Math.sin(latitude * Math.PI * bandCount) * 0.022 +
+        Math.sin(latitude * Math.PI * (bandCount * 0.47 + 1.7)) * 0.014;
+      const bandPosition = Math.max(0, Math.min(0.999, latitudeBand));
+      const baseColorIndex = Math.floor(bandPosition * (numColors - 1));
       const colour1 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex))];
       const colour2 = palette[Math.max(0, Math.min(numColors - 1, baseColorIndex + 1))];
       for (let x = 0; x < viewport.width; x++) {
-        const interpFactor = (visualPrng.random() + Math.sin(x * 0.1 + y * 0.05 + visualPrng.random() * Math.PI * 2) * 0.4 + 0.5) % 1.0;
+        const windShear =
+          Math.sin(x * 0.08 + y * 0.19) * turbulence * 0.18 +
+          Math.sin(x * 0.21 + latitude * 19) * turbulence * 0.08;
+        const interpFactor = Math.max(0, Math.min(1, (bandPosition * (numColors - 1)) % 1 + windShear));
         const bandColor = interpolateColour(colour1, colour2, Math.max(0, Math.min(1, interpFactor)));
-        const brightness = 0.8 + visualPrng.random() * 0.4;
+        let brightness = 0.86 + Math.sin(latitude * Math.PI * bandCount + x * 0.025) * 0.08 + turbulence * Math.sin(x * 0.34 + y * 0.17) * 0.08;
+        for (const storm of storms) {
+          const dx = (x - storm.x) / storm.rx;
+          const dy = (y - storm.y) / storm.ry;
+          const stormFalloff = Math.max(0, 1 - (dx * dx + dy * dy));
+          if (stormFalloff > 0) {
+            brightness += stormFalloff * (0.18 + turbulence * 0.18) * Math.sin(dx * 3 + storm.phase);
+          }
+        }
+        brightness = Math.max(0.55, Math.min(1.35, brightness));
         const finalColorRgb = adjustBrightness(bandColor, brightness);
         const finalColorHex = rgbToHex(finalColorRgb.r, finalColorRgb.g, finalColorRgb.b);
-        const char = visualPrng.choice([GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK, ' '])!;
+        const texture = Math.abs(Math.sin(x * 0.3 + y * 0.07)) + turbulence * Math.abs(Math.sin(x * 0.52 + y * 0.23));
+        const char = texture > 1.15 ? GLYPHS.SHADE_DARK : texture > 0.76 ? GLYPHS.SHADE_MEDIUM : texture > 0.38 ? GLYPHS.SHADE_LIGHT : ' ';
         this.screenBuffer.drawChar(char, viewport.x + x, viewport.y + y, finalColorHex, finalColorHex);
       }
     }
@@ -457,6 +487,14 @@ export class SceneRenderer {
       null
     );
     this.drawSurfaceHud(player, planet, viewport);
+  }
+
+  private getGasGiantTurbulenceFactor(planet: Planet): number {
+    const tempStress = Math.max(0, Math.min(1, (planet.surfaceTemp - 120) / 520));
+    const proximityStress = Math.max(0, Math.min(1, (1.6e11 - planet.orbitDistance) / 1.3e11));
+    const massStress = Math.max(0, Math.min(1, (planet.gravity - 1.2) / 2.8));
+    const typeFactor = planet.type === 'GasGiant' ? 0.18 : 0.08;
+    return Math.max(0.05, Math.min(0.85, typeFactor + tempStress * 0.34 + proximityStress * 0.32 + massStress * 0.18));
   }
 
   /** Draws the view when docked inside a starbase. */
