@@ -13,6 +13,7 @@ export class PerlinNoise {
     private gradients: GradientCache = {}; // Cache for gradient vectors (instance specific)
     private memory: MemoryCache = {};    // Cache for computed noise values (instance specific)
     private prng: PRNG;                  // Instance-specific PRNG
+    private readonly seed: string;
 
     /**
      * Creates a new PerlinNoise generator instance.
@@ -20,6 +21,7 @@ export class PerlinNoise {
      */
     constructor(seed: string) {
         logger.info(`[PerlinNoise] Initializing instance with seed: "${seed}"`);
+        this.seed = seed;
         // Seed the instance-specific PRNG
         this.prng = new PRNG(seed);
         // Clear caches (done implicitly by creating new empty objects above)
@@ -97,6 +99,7 @@ export class PerlinNoise {
          logger.info(`[PerlinNoise:${this.prng.getInitialSeed()}] Clearing caches.`);
          this.gradients = {};
          this.memory = {};
+         this.prng = new PRNG(this.seed);
      }
 }
 
