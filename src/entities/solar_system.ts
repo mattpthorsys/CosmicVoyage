@@ -735,6 +735,16 @@ export class SolarSystem {
     return closestObject;
   }
 
+  /** Returns the parent planet for local orbital operations. Moons resolve to their primary. */
+  getOrbitParentFor(body: Planet): Planet {
+    for (const planet of this.planets) {
+      if (!planet) continue;
+      if (planet === body) return planet;
+      if (planet.moons.includes(body)) return planet;
+    }
+    return body;
+  }
+
   getStarNear(x_m: number, y_m: number, radius_m: number): StellarBody | null {
     let closestStar: StellarBody | null = null;
     let minDistanceSq = radius_m * radius_m;

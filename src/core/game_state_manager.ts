@@ -168,10 +168,12 @@ export class GameStateManager {
     logger.info(`[GameStateManager] Landing on ${nearbyObject.name} (Type: ${nearbyObject.type})...`);
     try {
       if (nearbyObject instanceof Planet) {
-        this._changeState('orbit', this._currentSystem, nearbyObject, null);
+        const orbitParent = this._currentSystem.getOrbitParentFor(nearbyObject);
+        const insertionTarget = orbitParent === nearbyObject ? nearbyObject.name : `${orbitParent.name} local space`;
+        this._changeState('orbit', this._currentSystem, orbitParent, null);
         this.player.render.char = CONFIG.PLAYER_CHAR;
-        this.statusMessage = `Orbital insertion at ${nearbyObject.name}.`;
-        eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, nearbyObject);
+        this.statusMessage = `Orbital insertion at ${insertionTarget}.`;
+        eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, orbitParent);
         return nearbyObject;
       }
 
