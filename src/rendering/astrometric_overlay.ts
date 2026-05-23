@@ -36,12 +36,18 @@ interface CameraState {
   viewScale: number;
 }
 
+interface HyperspaceStarbaseMarker {
+  x: number;
+  y: number;
+}
+
 export class AstrometricOverlay {
   private readonly systemDataGenerator: SystemDataGenerator;
   private readonly items: OverlayItem[] = [];
   private readonly fontScale = 0.86;
   private lastEmitAt = 0;
   private lastCamera: CameraState | null = null;
+  private hyperspaceStarbaseMarkers: HyperspaceStarbaseMarker[] = [];
 
   constructor(systemDataGenerator: SystemDataGenerator) {
     this.systemDataGenerator = systemDataGenerator;
@@ -50,6 +56,8 @@ export class AstrometricOverlay {
   update(context: OverlayContext, deltaTime: number, cols: number, rows: number): void {
     const now = performance.now();
     this.shiftWithCamera(context);
+    this.hyperspaceStarbaseMarkers =
+      context.state === 'hyperspace' ? this.findHyperspaceStarbaseMarkers(context.player, cols, rows) : [];
     for (const item of this.items) {
       item.typedChars += CONFIG.ASTROMETRIC_OVERLAY_TYPE_SPEED * deltaTime;
     }
@@ -80,6 +88,8 @@ export class AstrometricOverlay {
     ctx.textBaseline = 'top';
     ctx.shadowColor = '#00FF66';
     ctx.shadowBlur = 5;
+
+    this.drawHyperspaceStarbaseMarkers(ctx, charWidth, charHeight, now);
 
     for (const item of this.items) {
       const age = now - item.createdAt;
@@ -257,6 +267,46 @@ export class AstrometricOverlay {
       }
     }
     return best;
+  }
+
+  private findHyperspaceStarbaseMarkers(player: Player, cols: number, rows: number): HyperspaceStarbaseMarker[] {
+    const markers: HyperspaceStarbaseMarker[] = [];
+    const viewCenterX = Math.floor(cols / 2);
+    const viewCenterY = Math.floor(rows / 2);
+    const startWorldX = player.position.worldX - viewCenterX;
+    const startWorldY = player.position.worldY - viewCenterY;
+
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (x <= 0 || x >= cols - 1) continue;
+        const props = this.systemDataGenerator.getSystemProperties(startWorldX + x, startWorldY + y);
+        if (props.exists && props.hasStarbase) {
+          markers.push({ x, y });
+        }
+      }
+    }
+    return markers;
+  }
+
+  private drawHyperspaceStarbaseMarkers(
+    ctx: CanvasRenderingContext2D,
+    charWidth: number,
+    charHeight: number,
+    now: number
+  ): void {
+    if (this.hyperspaceStarbaseMarkers.length === 0) return;
+    const phase = (now % 1900) / 1900;
+    const alpha = 0.13 + ((Math.sin(phase * Math.PI * 2) + 1) / 2) * 0.11;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#2EA6A0';
+    for (const marker of this.hyperspaceStarbaseMarkers) {
+      ctx.fillText('(', (marker.x - 1) * charWidth, marker.y * charHeight);
+      ctx.fillText(')', (marker.x + 1) * charWidth, marker.y * charHeight);
+    }
+    ctx.restore();
   }
 
   private shiftWithCamera(context: OverlayContext): void {

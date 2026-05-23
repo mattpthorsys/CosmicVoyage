@@ -14,6 +14,7 @@ import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
 import { eventManager, GameEvents } from '../core/event_manager'; // Import Event Manager
 import { SystemDataGenerator } from '../generation/system_data_generator';
+import { StarbaseScreenModel } from '../core/starbase_ui';
 
 /**
  * Facade class for the rendering system.
@@ -193,6 +194,9 @@ export class RendererFacade {
   }
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
     this.sceneRenderer.drawPlanetSurface(player, landedObject);
+  }
+  drawStarbaseInterface(player: Player, starbase: Starbase, model: StarbaseScreenModel): void {
+    this.sceneRenderer.drawStarbaseInterface(player, starbase, model);
   }
   // --- Popup Drawing Method ---
   /** Draws a popup window with animations and typing text effect. */

@@ -24,6 +24,14 @@ import { AstrometricOverlay } from '../rendering/astrometric_overlay';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
 import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
+import {
+  clampIndex,
+  createStarbaseScreenModel,
+  StarbaseScreenModel,
+  StarbaseSectionId,
+  StarbaseTableRow,
+  STARBASE_SECTIONS,
+} from './starbase_ui';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -55,6 +63,10 @@ export class Game {
   private readonly astrometricOverlay: AstrometricOverlay;
   private readonly systemDataGenerator: SystemDataGenerator;
   private tradeSelectionIndex: number = 0;
+  private starbaseSectionId: StarbaseSectionId = 'overview';
+  private starbaseSelectionBySection: Record<string, number> = {};
+  private starbaseOffsetBySection: Record<string, number> = {};
+  private starbaseAlert: string = '';
   private currentTargetIndex: number = 0;
   private currentTargetSignature: string = '';
   private approachTargetSignature: string | null = null;
@@ -142,6 +154,10 @@ export class Game {
     this.currentTargetIndex = 0;
     this.currentTargetSignature = '';
     this.approachTargetSignature = null;
+    if (newState === 'starbase') {
+      this.starbaseSectionId = 'overview';
+      this.starbaseAlert = '';
+    }
     // Close popups on state change
     if (this.popupState !== 'inactive') {
       this.popupState = 'inactive';
@@ -300,6 +316,7 @@ export class Game {
         this.inputManager.wasActionJustPressed('MOVE_RIGHT') ||
         this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') ||
         this.inputManager.wasActionJustPressed('QUIT') ||
+        this.inputManager.wasActionJustPressed('HELP') ||
         this.inputManager.wasActionJustPressed('ENTER_SYSTEM')
       ) {
         logger.info('[Game:_handlePopupInput] Closing popup via key press.');
@@ -365,34 +382,80 @@ export class Game {
       return false;
     }
 
-    const market = this.getTradeDepotManifest(this.stateManager.currentStarbase.name);
-    if (market.length === 0) return false;
+    const starbase = this.stateManager.currentStarbase;
+    const visibleRows = this.getStarbaseVisibleRowCount();
+    const rows = this.getStarbaseRows(starbase, this.starbaseSectionId);
+    const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.tradeSelectionIndex = (this.tradeSelectionIndex - 1 + market.length) % market.length;
-      this.statusMessage = this.formatSelectedTradeLine(market);
+      this.setStarbaseSelection(selectedIndex - 1, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.tradeSelectionIndex = (this.tradeSelectionIndex + 1) % market.length;
-      this.statusMessage = this.formatSelectedTradeLine(market);
+      this.setStarbaseSelection(selectedIndex + 1, rows.length, visibleRows);
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      this.switchStarbaseSection(-1);
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
+      this.switchStarbaseSection(1);
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      this.setStarbaseSelection(selectedIndex - visibleRows, rows.length, visibleRows);
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      this.setStarbaseSelection(selectedIndex + visibleRows, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM')) {
-      this.statusMessage = this.buySelectedDepotItem(market);
+      this.activateStarbaseSelection(starbase, rows[selectedIndex]);
       this.forceFullRender = true;
       this._publishStatusUpdate();
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-      this.statusMessage = this.sellSelectedDepotItem(market);
+      this.starbaseSectionId = 'overview';
+      this.starbaseAlert = 'Cancelled current panel.';
       this.forceFullRender = true;
       this._publishStatusUpdate();
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('QUIT')) {
+      this.starbaseSectionId = 'overview';
+      this.starbaseAlert = 'Cancelled current panel.';
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('TRADE')) {
+      this.starbaseSectionId = 'buy';
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('REFUEL')) {
+      this._handleRefuelRequest();
+      this.starbaseAlert = this.statusMessage;
+      this.forceFullRender = true;
       return true;
     }
 
@@ -513,6 +576,12 @@ export class Game {
       case 'depart':
         this._executeActionByName(primaryAction.action);
         break;
+      case 'use-starbase-row':
+        if (this.stateManager.currentStarbase) {
+          const rows = this.getStarbaseRows(this.stateManager.currentStarbase, this.starbaseSectionId);
+          this.activateStarbaseSelection(this.stateManager.currentStarbase, rows[this.getStarbaseSelection()]);
+        }
+        break;
       case 'approach-target':
         this._startApproachAssist();
         break;
@@ -558,7 +627,17 @@ export class Game {
   }
 
   private choosePrimaryAction(actions: AvailableAction[]): AvailableAction | null {
-    const excludedPrimaryIds = new Set(['primary', 'move', 'help', 'cycle-target', 'zoom-in', 'zoom-out']);
+    const excludedPrimaryIds = new Set([
+      'primary',
+      'move',
+      'help',
+      'cycle-target',
+      'zoom-in',
+      'zoom-out',
+      'section-left',
+      'section-right',
+      'cancel-starbase-panel',
+    ]);
     return (
       actions.find((action) => action.enabled && !excludedPrimaryIds.has(action.id)) ??
       null
@@ -1280,23 +1359,8 @@ export class Game {
     if (!starbase) {
       /* ... error handling ... */ return 'Starbase Error: Data missing.';
     }
-    const market = this.getTradeDepotManifest(starbase.name);
-    starbase.selectedTradeIndex = this.tradeSelectionIndex % Math.max(1, market.length);
-    starbase.tradeDisplayRows = market.map((item, index) => {
-      const held = this.player.cargoHold.items[item.itemKey] || 0;
-      const selected = index === starbase.selectedTradeIndex ? '>' : ' ';
-      return `${selected} ${item.name.padEnd(20).slice(0, 20)} B${String(item.buyPrice).padStart(3)} S${String(item.sellPrice).padStart(3)} H${String(held).padStart(2)} ${item.category}`;
-    });
-    const actions = createAvailableActions({
-      state: 'starbase',
-      player: this.player,
-      system: this.stateManager.currentSystem,
-      planet: null,
-      starbase,
-      currentCargoTotal: this.cargoSystem.getTotalUnits(this.player.cargoHold),
-      marketHasItems: market.length > 0,
-    });
-    return `Docked: ${starbase.name} | Actions: ${formatAvailableActions(actions, 5)}.`;
+    const section = STARBASE_SECTIONS.find((candidate) => candidate.id === this.starbaseSectionId)?.label ?? 'Operations';
+    return `Docked: ${starbase.name} | Panel: ${section} | Enter use, Esc cancel, L depart.`;
   }
 
   // --- Rendering ---
@@ -1340,7 +1404,7 @@ export class Game {
             try {
               // Starbases also need ensureSurfaceReady for placeholder data
               starbase.ensureSurfaceReady();
-              this.renderer.drawPlanetSurface(this.player, starbase); // Uses starbase interior drawing logic
+              this.renderer.drawStarbaseInterface(this.player, starbase, this.createCurrentStarbaseScreen());
             } catch (surfaceError) {
               logger.error(`[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`);
               this._renderError(`Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`);
@@ -1505,6 +1569,215 @@ export class Game {
       currentCargoTotal: this.cargoSystem.getTotalUnits(this.player.cargoHold),
       marketHasItems: market.length > 0,
     });
+  }
+
+  private createCurrentStarbaseScreen(): StarbaseScreenModel {
+    const starbase = this.stateManager.currentStarbase!;
+    const visibleRowCount = this.getStarbaseVisibleRowCount();
+    const rows = this.getStarbaseRows(starbase, this.starbaseSectionId);
+    const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
+    const viewOffset = this.getStarbaseOffset();
+    const meta = this.getStarbaseSectionMeta(starbase, this.starbaseSectionId);
+    return createStarbaseScreenModel({
+      starbase,
+      player: this.player,
+      sectionId: this.starbaseSectionId,
+      selectedIndex,
+      viewOffset,
+      visibleRowCount,
+      rows,
+      columns: meta.columns,
+      widths: meta.widths,
+      title: meta.title,
+      subtitle: meta.subtitle,
+      alert: this.starbaseAlert || this.statusMessage,
+    });
+  }
+
+  private getStarbaseVisibleRowCount(): number {
+    const rows = Math.max(1, Math.floor(this.renderer.getCanvas().height / Math.max(1, this.renderer.getCharHeightPx())));
+    return Math.max(6, Math.min(18, rows - 18));
+  }
+
+  private getStarbaseSelection(): number {
+    return this.starbaseSelectionBySection[this.starbaseSectionId] ?? 0;
+  }
+
+  private getStarbaseOffset(): number {
+    return this.starbaseOffsetBySection[this.starbaseSectionId] ?? 0;
+  }
+
+  private setStarbaseSelection(index: number, rowCount: number, visibleRows: number): void {
+    const selected = clampIndex(index, rowCount);
+    let offset = this.getStarbaseOffset();
+    if (selected < offset) offset = selected;
+    if (selected >= offset + visibleRows) offset = selected - visibleRows + 1;
+    offset = Math.max(0, Math.min(offset, Math.max(0, rowCount - visibleRows)));
+    this.starbaseSelectionBySection[this.starbaseSectionId] = selected;
+    this.starbaseOffsetBySection[this.starbaseSectionId] = offset;
+    this.starbaseAlert = '';
+  }
+
+  private switchStarbaseSection(delta: number): void {
+    const currentIndex = STARBASE_SECTIONS.findIndex((section) => section.id === this.starbaseSectionId);
+    const nextIndex = (currentIndex + delta + STARBASE_SECTIONS.length) % STARBASE_SECTIONS.length;
+    this.starbaseSectionId = STARBASE_SECTIONS[nextIndex].id;
+    this.starbaseAlert = '';
+  }
+
+  private activateStarbaseSelection(starbase: Starbase, row: StarbaseTableRow | undefined): void {
+    if (!row) {
+      this.starbaseAlert = 'No item selected.';
+      return;
+    }
+    const market = this.getTradeDepotManifest(starbase.name);
+    if (this.starbaseSectionId === 'overview') {
+      this.starbaseSectionId = (row.id as StarbaseSectionId) || 'buy';
+      return;
+    }
+    if (this.starbaseSectionId === 'buy') {
+      this.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
+      this.starbaseAlert = this.buySelectedDepotItem(market);
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    if (this.starbaseSectionId === 'sell') {
+      this.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
+      this.starbaseAlert = this.sellSelectedDepotItem(market);
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    if (this.starbaseSectionId === 'services' && row.id === 'refuel') {
+      this._handleRefuelRequest();
+      this.starbaseAlert = this.statusMessage;
+      return;
+    }
+    this.starbaseAlert = row.detail || `${row.cells[0]} selected.`;
+  }
+
+  private getStarbaseSectionMeta(
+    starbase: Starbase,
+    sectionId: StarbaseSectionId
+  ): { title: string; subtitle: string; columns: string[]; widths: number[] } {
+    const baseSubtitle = `${starbase.name} | ${new Date(0).toISOString().slice(11, 16)} station time`;
+    switch (sectionId) {
+      case 'overview':
+        return { title: 'Starbase Operations', subtitle: baseSubtitle, columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 16, 48] };
+      case 'cargo':
+        return { title: 'Cargo Manifest', subtitle: 'All cargo currently aboard your vessel.', columns: ['ITEM', 'QTY', 'VALUE', 'CLASS'], widths: [26, 7, 9, 18] };
+      case 'buy':
+        return { title: 'Trade Depot - Buy', subtitle: 'Purchase selected depot stock with Enter.', columns: ['COMMODITY', 'STOCK', 'BUY CR', 'CLASS'], widths: [26, 7, 9, 20] };
+      case 'sell':
+        return { title: 'Trade Depot - Sell', subtitle: 'Sell selected cargo lots with Enter.', columns: ['CARGO', 'HELD', 'SELL CR', 'CLASS'], widths: [26, 7, 9, 20] };
+      case 'services':
+        return { title: 'Port Services', subtitle: 'Station services and ship logistics.', columns: ['SERVICE', 'COST', 'STATUS', 'NOTES'], widths: [22, 10, 14, 34] };
+      case 'notices':
+        return { title: 'Station Notices', subtitle: 'Local bulletins, advisories, and dockmaster traffic.', columns: ['DATE', 'PRIORITY', 'NOTICE'], widths: [10, 10, 58] };
+      case 'missions':
+        return { title: 'Mission Board', subtitle: 'Contract stubs for future mission systems.', columns: ['CONTRACT', 'PAY', 'RISK', 'SUMMARY'], widths: [22, 10, 8, 38] };
+      case 'shipyard':
+        return { title: 'Shipyard', subtitle: 'Refit estimates and upgrade placeholders.', columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'], widths: [18, 10, 8, 42] };
+      case 'crew':
+        return { title: 'Crew Roster', subtitle: 'Recruitment lounge and personnel records.', columns: ['NAME', 'ROLE', 'RATE', 'PROFILE'], widths: [18, 16, 8, 42] };
+    }
+  }
+
+  private getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): StarbaseTableRow[] {
+    const market = this.getTradeDepotManifest(starbase.name);
+    switch (sectionId) {
+      case 'overview':
+        return STARBASE_SECTIONS.filter((section) => section.id !== 'overview').map((section) => ({
+          id: section.id,
+          cells: [section.label, this.getSectionStatus(section.id), this.getSectionSummary(section.id)],
+          detail: `Open ${section.label}.`,
+        }));
+      case 'cargo':
+        return this.getCargoRows();
+      case 'buy':
+        return market.map((item) => ({
+          id: item.itemKey,
+          cells: [item.name, String(item.units), String(item.buyPrice), item.category],
+          detail: item.description,
+        }));
+      case 'sell':
+        return market
+          .filter((item) => (this.player.cargoHold.items[item.itemKey] || 0) > 0)
+          .map((item) => ({
+            id: item.itemKey,
+            cells: [item.name, String(this.player.cargoHold.items[item.itemKey] || 0), String(item.sellPrice), item.category],
+            detail: item.description,
+          }));
+      case 'services':
+        return [
+          { id: 'refuel', cells: ['Reactor tender refuel', `${(1 / CONFIG.FUEL_PER_CREDIT).toFixed(2)}/fuel`, 'Available', 'Top off fuel tanks from station stores.'] },
+          { id: 'repair', cells: ['Hull inspection', 'TBD', 'Standby', 'Stub: repair and damage systems are not online.'] },
+          { id: 'storage', cells: ['Bonded cargo vault', 'TBD', 'Offline', 'Stub: long-term storage contract interface.'] },
+        ];
+      case 'notices':
+        return [
+          { id: 'n1', cells: ['312.044', 'PORT', 'Docking clamps cycling every 19 minutes during radiator purge.'], detail: 'Routine thermal maintenance creates short launch holds.' },
+          { id: 'n2', cells: ['312.046', 'TRADE', 'Helium-3 brokers report thinner inbound traffic from the inner belt.'], detail: 'Future economy hooks can use this as a local price pressure.' },
+          { id: 'n3', cells: ['312.049', 'SAFETY', 'Unregistered beacon pings detected beyond the outer marker.'], detail: 'Possible future mission seed.' },
+        ];
+      case 'missions':
+        return [
+          { id: 'm1', cells: ['Outer marker survey', '850 Cr', 'Low', 'Scan three navigation buoys and return telemetry.'], detail: 'Stub: mission acceptance and objectives pending.' },
+          { id: 'm2', cells: ['Cold-chain courier', '1,420 Cr', 'Med', 'Deliver medical isotopes before decay window closes.'], detail: 'Stub: timed cargo contract.' },
+          { id: 'm3', cells: ['Signal recovery', '2,100 Cr', 'High', 'Investigate a dead relay near companion-star interference.'], detail: 'Stub: exploration encounter.' },
+        ];
+      case 'shipyard':
+        return [
+          { id: 's1', cells: ['Cargo rack tuning', '620 Cr', '2h', '+10 cargo capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
+          { id: 's2', cells: ['Fuel bladder relining', '780 Cr', '3h', '+75 fuel capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
+          { id: 's3', cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'], detail: 'Stub: scanner upgrade path.' },
+        ];
+      case 'crew':
+        return [
+          { id: 'c1', cells: ['Mara Venn', 'Navigator', '12%', 'Former long-haul route analyst; excellent with binary ephemerides.'], detail: 'Stub: crew hiring and bonuses pending.' },
+          { id: 'c2', cells: ['Ilo Rusk', 'Engineer', '10%', 'Keeps old drives running with improvised thermal loops.'], detail: 'Stub: crew hiring and bonuses pending.' },
+          { id: 'c3', cells: ['Sev Anik', 'Broker', '15%', 'Knows which manifests get opened and which get waved through.'], detail: 'Stub: crew hiring and bonuses pending.' },
+        ];
+    }
+  }
+
+  private getCargoRows(): StarbaseTableRow[] {
+    const cargoEntries = Object.entries(this.player.cargoHold.items).filter(([, amount]) => amount > 0);
+    if (cargoEntries.length === 0) {
+      return [{ id: 'empty', cells: ['Cargo hold empty', '0', '0', 'N/A'], detail: 'Mine or buy cargo to fill the manifest.', disabled: true }];
+    }
+    return cargoEntries.map(([itemKey, amount]) => {
+      const info = this.getTradeItemInfo(itemKey);
+      const marketItem = this.stateManager.currentStarbase
+        ? this.getTradeDepotManifest(this.stateManager.currentStarbase.name).find((item) => item.itemKey === itemKey)
+        : null;
+      const value = (marketItem?.sellPrice ?? info?.baseValue ?? 1) * amount;
+      return {
+        id: itemKey,
+        cells: [info?.name ?? itemKey, String(amount), String(value), marketItem?.category ?? 'mineral'],
+        detail: `Estimated lot value ${value} Cr.`,
+      };
+    });
+  }
+
+  private getSectionStatus(sectionId: StarbaseSectionId): string {
+    if (sectionId === 'sell') return this.cargoSystem.getTotalUnits(this.player.cargoHold) > 0 ? 'Ready' : 'No cargo';
+    if (sectionId === 'shipyard' || sectionId === 'crew' || sectionId === 'missions') return 'Stub';
+    return 'Online';
+  }
+
+  private getSectionSummary(sectionId: StarbaseSectionId): string {
+    const summaries: Record<StarbaseSectionId, string> = {
+      overview: 'Station summary',
+      cargo: 'Review hold contents and estimated value.',
+      buy: 'Buy station commodities.',
+      sell: 'Sell cargo carried in your hold.',
+      services: 'Refuel and future station services.',
+      notices: 'Read local port bulletins.',
+      missions: 'Preview contract board stubs.',
+      shipyard: 'Browse future upgrades and refits.',
+      crew: 'Review recruitable crew stubs.',
+    };
+    return summaries[sectionId];
   }
 
   // --- Starbase Action Handlers ---

@@ -11,6 +11,7 @@ import { logger } from '../utils/logger';
 import { adjustBrightness, interpolateColour, rgbToHex } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
+import { StarbaseScreenModel } from '../core/starbase_ui';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -73,6 +74,7 @@ export class SceneRenderer {
         }
       }
     }
+
     this.screenBuffer.drawChar(player.render.char, viewCenterX, viewCenterY, player.render.fgColor, null);
   }
 
@@ -458,31 +460,113 @@ export class SceneRenderer {
 
   /** Draws the view when docked inside a starbase. */
   private drawStarbaseInterior(player: Player, starbase: Starbase): void {
+    this.drawStarbaseInterface(player, starbase, {
+      stationName: starbase.name,
+      sectionId: 'overview',
+      sections: [{ id: 'overview', label: 'Overview' }],
+      title: 'STARBASE TRADE DEPOT',
+      subtitle: starbase.name,
+      columns: ['STATUS'],
+      widths: [60],
+      rows: starbase.tradeDisplayRows.map((row, index) => ({ id: String(index), cells: [row] })),
+      selectedIndex: starbase.selectedTradeIndex,
+      viewOffset: 0,
+      visibleRowCount: Math.max(1, this.screenBuffer.getRows() - 16),
+      footer: [`Cr ${player.resources.credits.toLocaleString()}  Fuel ${player.resources.fuel.toFixed(0)}/${player.resources.maxFuel}`],
+    });
+  }
+
+  drawStarbaseInterface(player: Player, starbase: Starbase, model: StarbaseScreenModel): void {
     logger.debug(`[SceneRenderer.drawStarbaseInterior] Drawing interior: ${starbase.name}`);
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    const panelWidth = Math.min(72, Math.max(32, cols - 8));
-    const panelHeight = Math.min(22, Math.max(14, rows - 6));
+    const panelWidth = Math.min(112, Math.max(48, cols - 6));
+    const panelHeight = Math.min(34, Math.max(18, rows - 5));
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(2, Math.floor((rows - panelHeight) / 2));
 
     this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#00C8FF', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' STARBASE TRADE DEPOT ', panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(starbase.name.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(` ${model.title.toUpperCase()} `, panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(model.stationName.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
     this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(`[${CONFIG.KEY_BINDINGS.TRADE.toUpperCase()}] AUTO-TRADE CARGO / BUY DEPOT LOT`, panelX + 4, panelY + 6, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('[UP/DOWN] SELECT   [ENTER] BUY   [BACKSPACE] SELL', panelX + 4, panelY + 7, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(`[${CONFIG.KEY_BINDINGS.REFUEL.toUpperCase()}] REFUEL FROM REACTOR TENDER   [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] DEPART`, panelX + 4, panelY + 8, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
-    const marketRows = starbase.tradeDisplayRows.slice(0, Math.max(0, panelHeight - 16));
-    marketRows.forEach((row, index) => {
-      const selected = row.startsWith('>');
-      this.screenBuffer.drawString(row.slice(0, panelWidth - 8), panelX + 4, panelY + 10 + index, selected ? '#00FF66' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+
+    let tabX = panelX + 4;
+    model.sections.forEach((section) => {
+      const active = section.id === model.sectionId;
+      const label = active ? `[${section.label}]` : ` ${section.label} `;
+      if (tabX + label.length < panelX + panelWidth - 2) {
+        this.screenBuffer.drawString(label, tabX, panelY + 6, active ? '#001010' : '#00AA66', active ? '#00FFFF' : CONFIG.DEFAULT_BG_COLOUR);
+      }
+      tabX += label.length + 1;
     });
-    this.screenBuffer.drawString(`Cr ${player.resources.credits.toLocaleString().padStart(7)}  Fuel ${player.resources.fuel.toFixed(0).padStart(3)}/${player.resources.maxFuel}`, panelX + 4, panelY + panelHeight - 6, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(`Cargo ${Object.values(player.cargoHold.items).reduce((sum, qty) => sum + qty, 0).toString().padStart(3)}/${player.cargoHold.capacity}`, panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('> MARKET LINK STABLE  > DOCKSIDE CRANES READY', panelX + 4, panelY + panelHeight - 3, '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+
+    const tableX = panelX + 4;
+    const tableY = panelY + 8;
+    const tableWidth = panelWidth - 9;
+    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelY + panelHeight - 6 - tableY));
+    this.drawStarbaseHeader(model, tableX, tableY, tableWidth);
+    this.drawStarbaseRows(model, tableX, tableY + 2, tableWidth, visibleRows);
+    this.drawTextScrollbar(tableX + tableWidth + 1, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
+
+    if (model.alert) {
+      this.screenBuffer.drawString(model.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      const blink = Math.floor(performance.now() / 450) % 2 === 0;
+      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(model.alert.length, panelWidth - 9), panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    }
+    model.footer.forEach((line, index) => {
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#FFD66B' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    });
     this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
+  }
+
+  private drawStarbaseHeader(model: StarbaseScreenModel, x: number, y: number, tableWidth: number): void {
+    let cursorX = x;
+    model.columns.forEach((column, index) => {
+      const width = model.widths[index] ?? 12;
+      this.screenBuffer.drawString(column.padEnd(width).slice(0, width), cursorX, y, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+      cursorX += width + 1;
+    });
+    this.screenBuffer.drawString('-'.repeat(Math.max(1, tableWidth)), x, y + 1, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+  }
+
+  private drawStarbaseRows(model: StarbaseScreenModel, x: number, y: number, tableWidth: number, visibleRows: number): void {
+    const rows = model.rows.slice(model.viewOffset, model.viewOffset + visibleRows);
+    if (rows.length === 0) {
+      this.screenBuffer.drawString('No records available.'.slice(0, tableWidth), x, y, '#506060', CONFIG.DEFAULT_BG_COLOUR);
+      return;
+    }
+    rows.forEach((row, rowIndex) => {
+      const absoluteIndex = model.viewOffset + rowIndex;
+      const selected = absoluteIndex === model.selectedIndex;
+      const fg = row.disabled ? '#506060' : selected ? '#001010' : '#00AA66';
+      const bg = selected ? '#00FF66' : CONFIG.DEFAULT_BG_COLOUR;
+      this.screenBuffer.drawChar(selected ? '>' : ' ', x - 2, y + rowIndex, selected ? '#00FF66' : '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+      let cursorX = x;
+      row.cells.forEach((cell, index) => {
+        const width = model.widths[index] ?? 12;
+        this.screenBuffer.drawString(cell.padEnd(width).slice(0, width), cursorX, y + rowIndex, fg, bg);
+        cursorX += width + 1;
+      });
+    });
+    const selectedRow = model.rows[model.selectedIndex];
+    if (selectedRow?.detail && y + visibleRows + 1 < this.screenBuffer.getRows()) {
+      this.screenBuffer.drawString(selectedRow.detail.slice(0, tableWidth), x, y + visibleRows + 1, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    }
+  }
+
+  private drawTextScrollbar(x: number, y: number, height: number, totalRows: number, offset: number): void {
+    if (height <= 0) return;
+    for (let i = 0; i < height; i++) this.screenBuffer.drawChar('│', x, y + i, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+    if (totalRows <= height) {
+      for (let i = 0; i < height; i++) this.screenBuffer.drawChar('█', x, y + i, '#00AAAA', CONFIG.DEFAULT_BG_COLOUR);
+      return;
+    }
+    const thumbHeight = Math.max(1, Math.floor((height / totalRows) * height));
+    const maxOffset = Math.max(1, totalRows - height);
+    const thumbY = y + Math.floor((offset / maxOffset) * (height - thumbHeight));
+    for (let i = 0; i < thumbHeight; i++) this.screenBuffer.drawChar('█', x, thumbY + i, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private drawSurfaceHud(

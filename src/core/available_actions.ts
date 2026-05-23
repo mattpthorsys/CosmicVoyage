@@ -85,8 +85,10 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       }
       break;
     case 'starbase':
-      actions.push(action('buy', 'Buy Selected', CONFIG.KEY_BINDINGS.ENTER_SYSTEM, 'ENTER_SYSTEM', 'commerce', 10, context.marketHasItems ?? true, context.starbase?.name));
-      actions.push(action('sell', 'Sell Selected', CONFIG.KEY_BINDINGS.LEAVE_SYSTEM, 'LEAVE_SYSTEM', 'commerce', 11, (context.currentCargoTotal ?? 0) > 0, context.starbase?.name));
+      actions.push(action('section-left', 'Prev Section', CONFIG.KEY_BINDINGS.MOVE_LEFT, 'MOVE_LEFT', 'navigation', 6, true));
+      actions.push(action('section-right', 'Next Section', CONFIG.KEY_BINDINGS.MOVE_RIGHT, 'MOVE_RIGHT', 'navigation', 7, true));
+      actions.push(action('use-starbase-row', 'Use Selected', CONFIG.KEY_BINDINGS.ENTER_SYSTEM, 'ENTER_SYSTEM', 'commerce', 10, true, context.starbase?.name));
+      actions.push(action('cancel-starbase-panel', 'Cancel', CONFIG.KEY_BINDINGS.QUIT, 'QUIT', 'navigation', 11, true, context.starbase?.name));
       actions.push(action('refuel', 'Refuel', CONFIG.KEY_BINDINGS.REFUEL, 'REFUEL', 'commerce', 20, true, context.starbase?.name));
       actions.push(action('depart', 'Depart', CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF, 'ACTIVATE_LAND_LIFTOFF', 'navigation', 30, true, context.starbase?.name));
       break;

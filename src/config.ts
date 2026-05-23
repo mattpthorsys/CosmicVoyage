@@ -52,6 +52,8 @@ export const CONFIG = {
     MOVE_DOWN: 'ArrowDown',
     MOVE_LEFT: 'ArrowLeft',
     MOVE_RIGHT: 'ArrowRight',
+    PAGE_UP: 'PageUp',
+    PAGE_DOWN: 'PageDown',
     ENTER_SYSTEM: 'Enter',
     PRIMARY_ACTION: ' ',
     CYCLE_TARGET: 'Tab',
@@ -103,7 +105,7 @@ export const CONFIG = {
   MAX_PLANETS_PER_SYSTEM: 9,
   PLANET_MAIN_VIEW_RADIUS: 3,
   MINIMAP_SIZE_FACTOR: 0.15,
-  STARBASE_PROBABILITY: 0.2,
+  STARBASE_PROBABILITY: 0.03,
   STARBASE_ORBIT_DISTANCE: 1.496e11,
 
   // --- System View Star Background ---
