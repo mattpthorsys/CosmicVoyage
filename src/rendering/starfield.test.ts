@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSystemTravelStarfield } from './starfield';
+import { GLYPHS } from '../constants';
 
 describe('starfield generation', () => {
   it('creates visible deterministic system travel stars', () => {
@@ -8,7 +9,7 @@ describe('starfield generation', () => {
 
     expect(first.length).toBeGreaterThan(0);
     expect(first).toEqual(second);
-    expect(first.every((cell) => cell.char === '.')).toBe(true);
+    expect(first.every((cell) => cell.char === GLYPHS.STAR_DIM)).toBe(true);
   });
 
   it('moves system stars with parallax offsets', () => {

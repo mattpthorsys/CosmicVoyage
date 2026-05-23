@@ -32,6 +32,12 @@ import {
   StarbaseTableRow,
   STARBASE_SECTIONS,
 } from './starbase_ui';
+import {
+  createOrbitScreenModel,
+  getPlanetMapSize,
+  OrbitInteractionMode,
+  OrbitScreenModel,
+} from './orbit_ui';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -67,6 +73,12 @@ export class Game {
   private starbaseSelectionBySection: Record<string, number> = {};
   private starbaseOffsetBySection: Record<string, number> = {};
   private starbaseAlert: string = '';
+  private orbitSelectedBodyIndex: number = 0;
+  private orbitMode: OrbitInteractionMode = 'overview';
+  private orbitLandingX: number = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
+  private orbitLandingY: number = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
+  private orbitAlert: string = '';
+  private orbitElapsedSeconds: number = 0;
   private currentTargetIndex: number = 0;
   private currentTargetSignature: string = '';
   private approachTargetSignature: string | null = null;
@@ -158,6 +170,17 @@ export class Game {
       this.starbaseSectionId = 'overview';
       this.starbaseAlert = '';
     }
+    if (newState === 'orbit') {
+      const planet = this.stateManager.currentPlanet;
+      this.orbitSelectedBodyIndex = 0;
+      this.orbitMode = 'overview';
+      this.orbitAlert = '';
+      if (planet) {
+        const mapSize = getPlanetMapSize(planet);
+        this.orbitLandingX = Math.floor(mapSize / 2);
+        this.orbitLandingY = Math.floor(mapSize / 2);
+      }
+    }
     // Close popups on state change
     if (this.popupState !== 'inactive') {
       this.popupState = 'inactive';
@@ -199,6 +222,9 @@ export class Game {
     } else if (newState === 'planet' && this.stateManager.currentPlanet && !this.tutorialHintsShown.has('planet')) {
       this.tutorialHintsShown.add('planet');
       this.terminalOverlay.addMessage(`<h>Surface operations:</h> scan before mining, then use Space for the next available action.`);
+    } else if (newState === 'orbit' && this.stateManager.currentPlanet && !this.tutorialHintsShown.has('orbit')) {
+      this.tutorialHintsShown.add('orbit');
+      this.terminalOverlay.addMessage(`<h>Orbit:</h> choose a body, inspect the scan, then select a landing site.`);
     } else if (newState === 'starbase' && this.stateManager.currentStarbase && !this.tutorialHintsShown.has('starbase')) {
       this.tutorialHintsShown.add('starbase');
       this.terminalOverlay.addMessage(`<h>Starbase:</h> Enter buys selected goods, Backspace sells selected cargo, R refuels.`);
@@ -455,6 +481,104 @@ export class Game {
     if (this.inputManager.wasActionJustPressed('REFUEL')) {
       this._handleRefuelRequest();
       this.starbaseAlert = this.statusMessage;
+      this.forceFullRender = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  private _handleOrbitInput(): boolean {
+    if (this.stateManager.state !== 'orbit' || !this.stateManager.currentPlanet) {
+      return false;
+    }
+
+    const bodies = this.getOrbitBodies();
+    if (bodies.length === 0) return false;
+    this.orbitSelectedBodyIndex = clampIndex(this.orbitSelectedBodyIndex, bodies.length);
+    const selectedBody = bodies[this.orbitSelectedBodyIndex];
+    const mapSize = getPlanetMapSize(selectedBody);
+
+    if (this.orbitMode === 'overview') {
+      if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+        this.orbitSelectedBodyIndex = (this.orbitSelectedBodyIndex - 1 + bodies.length) % bodies.length;
+        this.resetOrbitLandingCursor();
+        this.forceFullRender = true;
+        return true;
+      }
+      if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') || this.inputManager.wasActionJustPressed('CYCLE_TARGET')) {
+        this.orbitSelectedBodyIndex = (this.orbitSelectedBodyIndex + 1) % bodies.length;
+        this.resetOrbitLandingCursor();
+        this.forceFullRender = true;
+        return true;
+      }
+      if (
+        this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
+        this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
+        this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
+      ) {
+        if (selectedBody.type === 'GasGiant' || selectedBody.type === 'IceGiant') {
+          this.orbitAlert = 'No solid landing solution for giant-class atmosphere.';
+        } else {
+          selectedBody.ensureSurfaceReady();
+          this.orbitMode = 'landing';
+          this.orbitAlert = 'Select landing coordinates.';
+        }
+        this.forceFullRender = true;
+        return true;
+      }
+      if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+        this.stateManager.leaveOrbit();
+        if (this.stateManager.statusMessage) {
+          this.statusMessage = this.stateManager.statusMessage;
+          this.stateManager.statusMessage = '';
+        }
+        this.forceFullRender = true;
+        return true;
+      }
+      return false;
+    }
+
+    let moved = false;
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT') || this.inputManager.isActionActive('MOVE_LEFT')) {
+      this.orbitLandingX = (this.orbitLandingX - 1 + mapSize) % mapSize;
+      moved = true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') || this.inputManager.isActionActive('MOVE_RIGHT')) {
+      this.orbitLandingX = (this.orbitLandingX + 1) % mapSize;
+      moved = true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_UP') || this.inputManager.isActionActive('MOVE_UP')) {
+      this.orbitLandingY = Math.max(0, this.orbitLandingY - 1);
+      moved = true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN') || this.inputManager.isActionActive('MOVE_DOWN')) {
+      this.orbitLandingY = Math.min(mapSize - 1, this.orbitLandingY + 1);
+      moved = true;
+    }
+    if (moved) {
+      this.orbitAlert = '';
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+      this.orbitMode = 'overview';
+      this.orbitAlert = 'Landing selection cancelled.';
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (
+      this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
+      this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
+      this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
+    ) {
+      this.stateManager.landFromOrbit(selectedBody, this.orbitLandingX, this.orbitLandingY);
+      if (this.stateManager.statusMessage) {
+        this.statusMessage = this.stateManager.statusMessage;
+        this.stateManager.statusMessage = '';
+      }
       this.forceFullRender = true;
       return true;
     }
@@ -780,6 +904,10 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
+    if (this._handleOrbitInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
     // 3. Check Zoom (consumes input if zoom changed)
     if (this._handleZoomInput()) {
       // Publish status immediately after zoom changes to reflect new scale/clear messages
@@ -1021,6 +1149,9 @@ export class Game {
             break;
           case 'system':
             stateUpdateStatus = this._updateSystem(deltaTime); // Includes orbit updates
+            break;
+          case 'orbit':
+            stateUpdateStatus = this._updateOrbit(deltaTime);
             break;
           case 'planet':
             stateUpdateStatus = this._updatePlanet(deltaTime);
@@ -1322,6 +1453,26 @@ export class Game {
     this.forceFullRender = true;
   }
 
+  private _updateOrbit(deltaTime: number): string {
+    const planet = this.stateManager.currentPlanet;
+    if (!planet) return 'Orbit Error: Planet data missing.';
+    this.orbitElapsedSeconds += deltaTime;
+    const selectedBody = this.getSelectedOrbitBody();
+    const mapSize = getPlanetMapSize(selectedBody);
+    this.orbitLandingX = ((Math.floor(this.orbitLandingX) % mapSize) + mapSize) % mapSize;
+    this.orbitLandingY = Math.max(0, Math.min(mapSize - 1, Math.floor(this.orbitLandingY)));
+    this.forceFullRender = true;
+
+    const actions = createAvailableActions({
+      state: 'orbit',
+      player: this.player,
+      system: this.stateManager.currentSystem,
+      planet: selectedBody,
+      starbase: null,
+    });
+    return `Orbit: ${selectedBody.name} | Mode: ${this.orbitMode} | Site ${this.orbitLandingX},${this.orbitLandingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
+  }
+
   private _updatePlanet(_deltaTime: number): string {
     const planet = this.stateManager.currentPlanet;
     if (!planet) {
@@ -1381,6 +1532,14 @@ export class Game {
             this.renderer.drawSolarSystem(this.player, system, currentViewScale);
           } else {
             this._renderError('System data missing for render!');
+          }
+          break;
+        case 'orbit':
+          const orbitPlanet = this.stateManager.currentPlanet;
+          if (orbitPlanet) {
+            this.renderer.drawOrbitInterface(this.createCurrentOrbitScreen());
+          } else {
+            this._renderError('Orbit data missing for render!');
           }
           break;
         case 'planet':
@@ -1559,6 +1718,16 @@ export class Game {
       });
     }
 
+    if (state === 'orbit') {
+      return createAvailableActions({
+        state,
+        player: this.player,
+        system: this.stateManager.currentSystem,
+        planet: this.getSelectedOrbitBody(),
+        starbase: null,
+      });
+    }
+
     const market = this.stateManager.currentStarbase ? this.getTradeDepotManifest(this.stateManager.currentStarbase.name) : [];
     return createAvailableActions({
       state,
@@ -1568,6 +1737,47 @@ export class Game {
       starbase: this.stateManager.currentStarbase,
       currentCargoTotal: this.cargoSystem.getTotalUnits(this.player.cargoHold),
       marketHasItems: market.length > 0,
+    });
+  }
+
+  private getOrbitBodies(): Planet[] {
+    const parent = this.stateManager.currentPlanet;
+    if (!parent) return [];
+    return [parent, ...parent.moons];
+  }
+
+  private getSelectedOrbitBody(): Planet {
+    const bodies = this.getOrbitBodies();
+    const parent = this.stateManager.currentPlanet;
+    if (bodies.length === 0 || !parent) {
+      throw new Error('No orbital body selected.');
+    }
+    this.orbitSelectedBodyIndex = clampIndex(this.orbitSelectedBodyIndex, bodies.length);
+    return bodies[this.orbitSelectedBodyIndex];
+  }
+
+  private resetOrbitLandingCursor(): void {
+    const selected = this.getSelectedOrbitBody();
+    const mapSize = getPlanetMapSize(selected);
+    this.orbitLandingX = Math.floor(mapSize / 2);
+    this.orbitLandingY = Math.floor(mapSize / 2);
+    this.orbitMode = 'overview';
+    this.orbitAlert = '';
+  }
+
+  private createCurrentOrbitScreen(): OrbitScreenModel {
+    const parentPlanet = this.stateManager.currentPlanet!;
+    const selectedBody = this.getSelectedOrbitBody();
+    if (!selectedBody.scanned) selectedBody.scan();
+    return createOrbitScreenModel({
+      parentPlanet,
+      selectedBody,
+      selectedIndex: this.orbitSelectedBodyIndex,
+      mode: this.orbitMode,
+      landingCursorX: this.orbitLandingX,
+      landingCursorY: this.orbitLandingY,
+      rotationPhase: this.orbitElapsedSeconds * 0.18,
+      alert: this.orbitAlert || this.statusMessage,
     });
   }
 

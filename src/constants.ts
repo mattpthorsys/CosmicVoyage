@@ -10,8 +10,8 @@ export const GLYPHS = {
     SHADE_LIGHT: '\u2591',
     SHADE_MEDIUM: '\u2592',
     SHADE_DARK: '\u2593',
-    STAR_DIM: '.',
-    STAR_MEDIUM: 'o',
+    STAR_DIM: '\u00B7',
+    STAR_MEDIUM: '\u2022',
     STAR_BRIGHT: '*',
     PLANET_ICON: 'O', // Used? Maybe for minimap? Keep for now. [cite: 412]
     SHIP_NORTH: '^',

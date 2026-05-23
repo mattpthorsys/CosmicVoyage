@@ -73,6 +73,7 @@ export const GameEvents = {
     SYSTEM_ENTERED: 'systemEntered',       // data: SolarSystem (the system entered)
     SYSTEM_LEFT: 'systemLeft',           // data: null
     PLANET_LANDED: 'planetLanded',         // data: Planet (the planet landed on)
+    PLANET_ORBIT_ENTERED: 'planetOrbitEntered', // data: Planet (the planet entered orbit around)
     STARBASE_DOCKED: 'starbaseDocked',     // data: Starbase (the starbase docked at)
     LIFT_OFF: 'liftOff',               // data: null (lifted off from planet/starbase)
 

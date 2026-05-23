@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import { SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants';
+import { GLYPHS, SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants';
 import { fastHash } from '../utils/hash';
 import { PRNG } from '../utils/prng';
 import { adjustBrightness, hexToRgb, rgbToHex } from './colour';
@@ -53,7 +53,7 @@ export function createSystemTravelStarfield(
         if (cellPrng.random() < density) {
           const starType = cellPrng.choice(SPECTRAL_DISTRIBUTION)!;
           const star = getRenderedStarCell(starType, fieldX, fieldY);
-          cells.push({ x, y, char: '.', color: dimHexColour(star.color, dimFactor) });
+          cells.push({ x, y, char: GLYPHS.STAR_DIM, color: dimHexColour(star.color, dimFactor) });
         }
       }
     }

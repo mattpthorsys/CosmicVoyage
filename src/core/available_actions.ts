@@ -59,7 +59,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
         actions.push(action('approach-target', 'Approach Target', CONFIG.KEY_BINDINGS.APPROACH_TARGET, 'APPROACH_TARGET', 'navigation', 35, true, context.selectedTargetName ?? undefined));
       }
       if (context.nearbyObject) {
-        const label = context.nearbyObject instanceof Starbase ? 'Dock' : 'Land';
+        const label = context.nearbyObject instanceof Starbase ? 'Dock' : 'Orbit';
         actions.push(action('land-dock', label, CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF, 'ACTIVATE_LAND_LIFTOFF', 'navigation', 10, true, context.nearbyObject.name));
         actions.push(action('scan-object', 'Scan', CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT, 'SCAN_SYSTEM_OBJECT', 'target', 20, true, context.nearbyObject.name));
       } else if (context.nearbyStar) {
@@ -70,6 +70,12 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       }
       actions.push(action('zoom-in', 'Zoom In', CONFIG.KEY_BINDINGS.ZOOM_IN, 'ZOOM_IN', 'utility', 80, true));
       actions.push(action('zoom-out', 'Zoom Out', CONFIG.KEY_BINDINGS.ZOOM_OUT, 'ZOOM_OUT', 'utility', 81, true));
+      break;
+    case 'orbit':
+      actions.push(action('select-body', 'Select Body', 'Left/Right', 'MOVE', 'target', 6, true, context.planet?.name));
+      actions.push(action('landing-site', 'Landing Site', CONFIG.KEY_BINDINGS.ENTER_SYSTEM, 'ENTER_SYSTEM', 'navigation', 10, true, context.planet?.name));
+      actions.push(action('land-from-orbit', 'Land', CONFIG.KEY_BINDINGS.PRIMARY_ACTION, 'PRIMARY_ACTION', 'navigation', 11, true, context.planet?.name));
+      actions.push(action('break-orbit', 'Break Orbit', CONFIG.KEY_BINDINGS.QUIT, 'QUIT', 'navigation', 20, true, context.planet?.name));
       break;
     case 'planet':
       actions.push(action('liftoff', 'Liftoff', CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF, 'ACTIVATE_LAND_LIFTOFF', 'navigation', 10, true, context.planet?.name));
@@ -109,7 +115,7 @@ export function formatAvailableActions(actions: AvailableAction[], maxActions: n
 function moveAction(state: GameState): AvailableAction {
   return action(
     'move',
-    state === 'starbase' ? 'Select' : 'Move',
+    state === 'starbase' ? 'Select' : state === 'orbit' ? 'Select Site' : 'Move',
     state === 'starbase' ? 'Up/Down' : 'Arrows',
     'MOVE',
     'movement',

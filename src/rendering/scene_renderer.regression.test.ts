@@ -141,7 +141,7 @@ describe('SceneRenderer visual regressions', () => {
     renderer.drawSolarSystem(player, createSystem(), CONFIG.SYSTEM_VIEW_SCALE);
 
     const backgroundStars = drawCalls.filter(
-      (call) => call.char === '.' && call.bg === CONFIG.DEFAULT_BG_COLOUR && typeof call.fg === 'string'
+      (call) => call.char === GLYPHS.STAR_DIM && call.bg === CONFIG.DEFAULT_BG_COLOUR && typeof call.fg === 'string'
     );
     expect(backgroundStars.length).toBeGreaterThan(0);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
@@ -157,7 +157,7 @@ describe('SceneRenderer visual regressions', () => {
 
     renderer.drawPlanetSurface(player, createSolidPlanet());
 
-    expect(drawCalls.some((call) => call.char === '.')).toBe(false);
+    expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(false);
     expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK)).toBe(true);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
@@ -172,7 +172,7 @@ describe('SceneRenderer visual regressions', () => {
 
     renderer.drawPlanetSurface(player, starbase);
 
-    expect(drawCalls.some((call) => call.char === '.')).toBe(false);
+    expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(false);
     expect(drawCalls.length).toBeGreaterThan(0);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();

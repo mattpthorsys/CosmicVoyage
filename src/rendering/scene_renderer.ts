@@ -12,6 +12,7 @@ import { adjustBrightness, interpolateColour, rgbToHex } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
+import { OrbitScreenModel } from '../core/orbit_ui';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -519,6 +520,169 @@ export class SceneRenderer {
       this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#FFD66B' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
     });
     this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
+  }
+
+  drawOrbitInterface(model: OrbitScreenModel): void {
+    logger.debug(`[SceneRenderer.drawOrbitInterface] Drawing orbit screen: ${model.selectedBody.name}`);
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    this.screenBuffer.clear(false);
+    this.drawingContext.drawBox(0, 0, cols, rows, '#008A9A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+
+    const panelWidth = Math.min(126, Math.max(64, cols - 4));
+    const panelHeight = Math.min(46, Math.max(32, Math.floor(rows * 0.78)));
+    const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
+    const panelY = Math.max(1, Math.floor((rows - panelHeight) / 3));
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#00C8FF', CONFIG.DEFAULT_BG_COLOUR, ' ');
+
+    this.screenBuffer.drawString(` ${model.title.toUpperCase()} `, panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(model.selectedBody.name.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+
+    let bodyTabX = panelX + 4;
+    model.bodies.forEach((body) => {
+      const label = body.selected ? `[${body.label}]` : ` ${body.label} `;
+      if (bodyTabX + label.length < panelX + panelWidth - 2) {
+        this.screenBuffer.drawString(label, bodyTabX, panelY + 6, body.selected ? '#001010' : '#00AA66', body.selected ? '#00FFFF' : CONFIG.DEFAULT_BG_COLOUR);
+      }
+      bodyTabX += label.length + 1;
+    });
+
+    const contentTop = panelY + 8;
+    const contentBottom = panelY + panelHeight - 6;
+    const contentHeight = Math.max(12, contentBottom - contentTop + 1);
+    const leftColumnWidth = Math.max(28, Math.min(38, Math.floor(panelWidth * 0.3)));
+    const sphereRadius = Math.max(5, Math.min(13, Math.floor((leftColumnWidth - 8) / 2), Math.floor((contentHeight - 8) / 2)));
+    const sphereBoxHeight = contentHeight;
+    const sphereCx = panelX + 3 + Math.floor(leftColumnWidth / 2);
+    const sphereCy = contentTop + 3 + sphereRadius;
+    this.drawingContext.drawBox(panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' ORBITAL VIEW ', panelX + 5, contentTop, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawRotatingPlanetSphere(model, sphereCx, sphereCy, sphereRadius);
+    this.drawOrbitViewReadout(model, panelX + 5, contentTop + sphereBoxHeight - 3, leftColumnWidth - 4);
+
+    const mapWidth = Math.max(20, Math.min(32, Math.floor(panelWidth * 0.25)));
+    const mapHeight = Math.max(10, Math.min(20, contentHeight - 4));
+    const mapX = panelX + panelWidth - mapWidth - 6;
+    const mapY = contentTop;
+    this.drawingContext.drawBox(mapX - 1, mapY, mapWidth + 2, mapHeight + 4, model.mode === 'landing' ? '#00FFFF' : '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' LANDING MAP ', mapX + 1, mapY, model.mode === 'landing' ? '#8CFFFF' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawOrbitLandingMap(model, mapX, mapY + 2, mapWidth, mapHeight);
+
+    const descX = panelX + leftColumnWidth + 8;
+    const descY = contentTop;
+    const descWidth = Math.max(30, mapX - descX - 3);
+    const descHeight = Math.max(10, contentBottom - descY + 1);
+    this.drawingContext.drawBox(descX - 1, descY, descWidth + 2, descHeight, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' SCAN SUMMARY ', descX + 1, descY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    const lines = [
+      ...this.formatOrbitSummaryLines(model.telemetry, descWidth - 2),
+      '',
+      ...this.formatOrbitSummaryLines(model.description, descWidth - 2),
+    ];
+    lines.slice(0, descHeight - 3).forEach((line, index) => {
+      this.screenBuffer.drawString(line.slice(0, descWidth - 2), descX + 1, descY + 2 + index, index < 3 ? '#9FFFE0' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    });
+
+    if (model.alert) {
+      this.screenBuffer.drawString(model.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      const blink = Math.floor(performance.now() / 450) % 2 === 0;
+      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(model.alert.length, panelWidth - 9), panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    }
+    model.footer.forEach((line, index) => {
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#5FC8FF' : '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    });
+  }
+
+  private drawRotatingPlanetSphere(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
+    const planet = model.selectedBody;
+    const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#557777', '#669999', '#88BBBB', '#AADDDD'];
+    const phase = model.rotationPhase * Math.PI * 2;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const nx = dx / radius;
+        const ny = dy / radius;
+        const d = nx * nx + ny * ny;
+        if (d > 1) continue;
+        const z = Math.sqrt(Math.max(0, 1 - d));
+        const lon = Math.atan2(nx, z) + phase;
+        const lat = Math.asin(Math.max(-1, Math.min(1, ny)));
+        const band = Math.abs(Math.sin(lat * 3 + phase * 0.35) + Math.sin(lon * 2.2)) / 2;
+        const light = Math.max(0.08, Math.min(1, 0.25 + 0.75 * (Math.cos(lon - phase * 0.6) * z)));
+        const colour = palette[Math.max(0, Math.min(palette.length - 1, Math.floor(band * palette.length)))] ?? '#88BBBB';
+        const finalColour = adjustBrightness(this.hexToRgbFallback(colour), 0.28 + light * 0.85);
+        const char = light < 0.22 ? GLYPHS.SHADE_DARK : light < 0.48 ? GLYPHS.SHADE_MEDIUM : light < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
+        this.screenBuffer.drawChar(char, cx + dx, cy + dy, rgbToHex(finalColour.r, finalColour.g, finalColour.b), CONFIG.DEFAULT_BG_COLOUR);
+      }
+    }
+  }
+
+  private drawOrbitViewReadout(model: OrbitScreenModel, x: number, y: number, width: number): void {
+    const phaseText = `ROT ${Math.floor((model.rotationPhase % 1) * 360).toString().padStart(3)} DEG`;
+    const modeText = model.mode === 'landing' ? 'LANDING SOLUTION' : 'SURVEY HOLD';
+    this.screenBuffer.drawString(phaseText.slice(0, width), x, y, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(modeText.slice(0, width), x, y + 1, model.mode === 'landing' ? '#FFD66B' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+  }
+
+  private formatOrbitSummaryLines(paragraphs: string[], width: number): string[] {
+    const lines: string[] = [];
+    paragraphs.forEach((paragraph, index) => {
+      if (index > 0) lines.push('');
+      lines.push(...this.wrapText(paragraph, width));
+    });
+    return lines;
+  }
+
+  private drawOrbitLandingMap(model: OrbitScreenModel, x: number, y: number, width: number, height: number): void {
+    const planet = model.selectedBody;
+    const map = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
+    const colours = planet.heightLevelColors;
+    const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#4A7777', '#6A9999', '#9FCCCC'];
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const mapX = Math.floor((col / Math.max(1, width - 1)) * (model.mapSize - 1));
+        const mapY = Math.floor((row / Math.max(1, height - 1)) * (model.mapSize - 1));
+        let colour = palette[(row + col) % palette.length] ?? '#669999';
+        if (map && colours) {
+          const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(map[mapY]?.[mapX] ?? 0)));
+          colour = colours[heightValue] ?? colour;
+        }
+        const cursorX = Math.round((model.landingCursorX / Math.max(1, model.mapSize - 1)) * (width - 1));
+        const cursorY = Math.round((model.landingCursorY / Math.max(1, model.mapSize - 1)) * (height - 1));
+        if (col === cursorX && row === cursorY) {
+          this.screenBuffer.drawChar('+', x + col, y + row, '#001010', model.mode === 'landing' ? '#00FFFF' : '#00AA66');
+        } else {
+          this.screenBuffer.drawChar(GLYPHS.BLOCK, x + col, y + row, colour, colour);
+        }
+      }
+    }
+    this.screenBuffer.drawString(`X ${model.landingCursorX.toString().padStart(3)} Y ${model.landingCursorY.toString().padStart(3)}`.slice(0, width), x, y + height + 1, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+  }
+
+  private wrapText(text: string, width: number): string[] {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let line = '';
+    words.forEach((word) => {
+      if ((line + ' ' + word).trim().length > width && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = (line + ' ' + word).trim();
+      }
+    });
+    if (line) lines.push(line);
+    return lines.length > 0 ? lines : [''];
+  }
+
+  private hexToRgbFallback(hex: string): { r: number; g: number; b: number } {
+    const clean = hex.replace('#', '').slice(0, 6).padEnd(6, '8');
+    return {
+      r: Number.parseInt(clean.slice(0, 2), 16) || 128,
+      g: Number.parseInt(clean.slice(2, 4), 16) || 128,
+      b: Number.parseInt(clean.slice(4, 6), 16) || 128,
+    };
   }
 
   private drawStarbaseHeader(model: StarbaseScreenModel, x: number, y: number, tableWidth: number): void {

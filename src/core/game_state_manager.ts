@@ -13,7 +13,7 @@ import { eventManager, GameEvents } from './event_manager'; // Import Event Mana
 import { SystemDataGenerator } from '../generation/system_data_generator';
 
 // Define GameState type here or import from a shared types file
-export type GameState = 'hyperspace' | 'system' | 'planet' | 'starbase';
+export type GameState = 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase';
 
 /** Manages the game's current state, context (system/planet/starbase), and transitions. */
 export class GameStateManager {
@@ -167,6 +167,14 @@ export class GameStateManager {
 
     logger.info(`[GameStateManager] Landing on ${nearbyObject.name} (Type: ${nearbyObject.type})...`);
     try {
+      if (nearbyObject instanceof Planet) {
+        this._changeState('orbit', this._currentSystem, nearbyObject, null);
+        this.player.render.char = CONFIG.PLAYER_CHAR;
+        this.statusMessage = `Orbital insertion at ${nearbyObject.name}.`;
+        eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, nearbyObject);
+        return nearbyObject;
+      }
+
       // Prepare surface and update state if successful
       const newState = this._prepareSurfaceAndLand(nearbyObject);
       if (newState) {
@@ -189,8 +197,54 @@ export class GameStateManager {
     }
   }
 
+  landFromOrbit(targetPlanet: Planet, surfaceX: number, surfaceY: number): Planet | null {
+    if (this._state !== 'orbit') {
+      logger.warn(`[GameStateManager.landFromOrbit] Attempted orbital landing from state ${this._state}.`);
+      return null;
+    }
+    try {
+      const newState = this._prepareSurfaceAndLand(targetPlanet, surfaceX, surfaceY);
+      if (newState) {
+        this.statusMessage = STATUS_MESSAGES.SYSTEM_LAND_APPROACHING(targetPlanet.name);
+        logger.info(`[GameStateManager] Orbital landing committed for ${targetPlanet.name}.`);
+        return targetPlanet;
+      }
+    } catch (error) {
+      logger.error(`[GameStateManager] Failed orbital landing on ${targetPlanet.name}: ${error}`);
+      this.statusMessage = `Landing Error on ${targetPlanet.name}: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+    }
+    return null;
+  }
+
+  leaveOrbit(): boolean {
+    if (this._state !== 'orbit') {
+      logger.warn(`[GameStateManager.leaveOrbit] Attempted to leave orbit from state ${this._state}.`);
+      return false;
+    }
+    if (!this._currentSystem) {
+      this._changeState('hyperspace', null, null, null);
+      this.statusMessage = 'Orbit error: system data lost. Returning to hyperspace.';
+      return false;
+    }
+    const planet = this._currentPlanet;
+    if (planet) {
+      this.player.position.systemX = planet.systemX + CONFIG.LANDING_DISTANCE * 0.85;
+      this.player.position.systemY = planet.systemY - CONFIG.LANDING_DISTANCE * 0.35;
+      this.player.render.directionGlyph = GLYPHS.SHIP_NORTH;
+      this.player.render.char = this.player.render.directionGlyph;
+    }
+    this._changeState('system', this._currentSystem, null, null);
+    this.statusMessage = planet ? `Departed orbit of ${planet.name}.` : 'Departed orbit.';
+    return true;
+  }
+
   /** Attempts to lift off from a planet or starbase. Returns true on success, false otherwise. */
   liftOff(): boolean {
+    if (this._state === 'orbit') {
+      return this.leaveOrbit();
+    }
     if (this._state !== 'planet' && this._state !== 'starbase') {
       logger.warn(`[GameStateManager.liftOff] Attempted liftoff while not landed/docked (State: ${this._state})`);
       return false;
@@ -279,7 +333,7 @@ export class GameStateManager {
   }
 
   /** Prepares the target object's surface and updates game state for landing/docking. */
-  private _prepareSurfaceAndLand(targetObject: Planet | Starbase): GameState | null {
+  private _prepareSurfaceAndLand(targetObject: Planet | Starbase, surfaceX?: number, surfaceY?: number): GameState | null {
     targetObject.ensureSurfaceReady(); // Throws on failure
 
     const oldState = this._state;
@@ -290,8 +344,8 @@ export class GameStateManager {
     if (targetObject instanceof Planet) {
       newState = 'planet';
       const mapSize = targetObject.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
-      this.player.position.surfaceX = Math.floor(mapSize / 2);
-      this.player.position.surfaceY = Math.floor(mapSize / 2);
+      this.player.position.surfaceX = ((Math.floor(surfaceX ?? mapSize / 2) % mapSize) + mapSize) % mapSize;
+      this.player.position.surfaceY = Math.max(0, Math.min(mapSize - 1, Math.floor(surfaceY ?? mapSize / 2)));
       eventToPublish = GameEvents.PLANET_LANDED;
       eventData = targetObject;
     } else if (targetObject instanceof Starbase) {

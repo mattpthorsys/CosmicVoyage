@@ -61,10 +61,10 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
   "chars": {
     " ": 324,
     "*": 1,
-    ".": 100,
     "<null>": 324,
     "@": 2,
     "A": 1,
+    "·": 100,
     "─": 36,
     "│": 36,
     "┌": 1,

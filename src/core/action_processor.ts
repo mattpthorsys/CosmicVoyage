@@ -52,7 +52,7 @@ export class ActionProcessor {
       // ... (logic as before) ...
       if (currentState === 'system') {
         effectiveAction = 'LAND';
-      } else if (currentState === 'planet' || currentState === 'starbase') {
+      } else if (currentState === 'orbit' || currentState === 'planet' || currentState === 'starbase') {
         effectiveAction = 'LIFTOFF';
       } else {
         logger.warn(`[ActionProcessor] Action '${action}' triggered in unexpected state '${currentState}'. Ignoring.`);
@@ -96,6 +96,10 @@ export class ActionProcessor {
           }
           // Note: systemResult should not be { requestSystemPeek: true } here, but no explicit check needed now.
           // *** END FIX ***
+          break;
+
+        case 'orbit':
+          statusMessage = this._processOrbitAction(effectiveAction);
           break;
 
         case 'planet':
@@ -197,6 +201,15 @@ export class ActionProcessor {
         break;
     }
     return message; // Return string message or null if not scanning/mining
+  }
+
+  private _processOrbitAction(action: string): string | null {
+    switch (action) {
+      case 'LIFTOFF':
+        eventManager.publish(GameEvents.LIFTOFF_REQUESTED);
+        return 'Breaking orbit...';
+    }
+    return null;
   }
 
   private _processStarbaseAction(action: string): string | null {
