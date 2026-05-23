@@ -64,6 +64,7 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
     ".": 100,
     "<null>": 324,
     "@": 2,
+    "A": 1,
     "─": 36,
     "│": 36,
     "┌": 1,
@@ -72,7 +73,7 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
     "┘": 1,
     "▓": 1,
   },
-  "totalCalls": 828,
+  "totalCalls": 829,
 }
 `;
 

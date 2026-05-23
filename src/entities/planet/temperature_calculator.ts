@@ -37,7 +37,8 @@ export function calculateSurfaceTemp(
     orbitDistance_m: number,
     parentStarType: string,
     atmosphere: Atmosphere, // Pass generated atmosphere
-    stellarEnvironment?: StellarEnvironment
+    stellarEnvironment?: StellarEnvironment,
+    totalFlux_W_m2?: number
 ): number {
     // Use a slightly different logger prefix for clarity
     const logPrefix = `[TempCalc:${planetType}]`;
@@ -76,7 +77,7 @@ export function calculateSurfaceTemp(
          logger.error(`${logPrefix} Calculated invalid orbital sphere area for distance ${orbitDistance_m.toExponential(2)}m. Using fallback temp.`);
          return PLANET_TYPES[planetType]?.baseTemp ?? 280;
     }
-    const flux_W_m2 = starLuminosity_W / orbitalSphereArea_m2;
+    const flux_W_m2 = totalFlux_W_m2 ?? (starLuminosity_W / orbitalSphereArea_m2);
     logger.debug(`${logPrefix} Flux at orbit: ${flux_W_m2.toExponential(3)} W/m^2`);
 
     // --- 3. Estimate Planetary Albedo ---

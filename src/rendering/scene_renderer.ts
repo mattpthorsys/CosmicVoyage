@@ -109,18 +109,15 @@ export class SceneRenderer {
     this.screenBuffer.clear(false); // Clear main buffer's internal state
     this.drawSystemTravelStarfield(player);
 
-    // --- Calculate Star Position and Radius ---
-    const starInfo = SPECTRAL_TYPES[system.starType];
-    const starColor = starInfo?.colour || '#FFFFFF';
-    const starViewX = Math.floor((0 - viewWorldStartX) / viewScale);
-    const starViewY = Math.floor((0 - viewWorldStartY) / viewScale);
-    let starRadius = 1; // Default visual radius
-    if (starInfo?.radius) {
-        starRadius = Math.max(0, Math.round(starInfo.radius / viewScale));
-    }
-
-    // --- Draw Star ---
-    this._drawStarInSystem(starViewX, starViewY, starRadius, starColor);
+    // --- Draw Stars ---
+    system.stars.forEach((star) => {
+      const starInfo = SPECTRAL_TYPES[star.starType];
+      const starColor = starInfo?.colour || '#FFFFFF';
+      const starViewX = Math.floor((star.systemX - viewWorldStartX) / viewScale);
+      const starViewY = Math.floor((star.systemY - viewWorldStartY) / viewScale);
+      const starRadius = starInfo?.radius ? Math.max(0, Math.round(starInfo.radius / viewScale)) : 1;
+      this._drawStarInSystem(starViewX, starViewY, starRadius, starColor, star.id);
+    });
 
     // --- Collect Visible Planets and Moons ---
     const visiblePlanets: VisiblePlanetMarker[] = [];
@@ -130,7 +127,10 @@ export class SceneRenderer {
       if (!planet) return;
 
       // Draw Planet Orbit (Helper handles visibility checks)
-      this._drawPlanetOrbit(planet, starViewX, starViewY, viewScale);
+      const orbitCenter = system.getOrbitCenter(planet.orbitHost);
+      const orbitCenterViewX = Math.floor((orbitCenter.x - viewWorldStartX) / viewScale);
+      const orbitCenterViewY = Math.floor((orbitCenter.y - viewWorldStartY) / viewScale);
+      this._drawPlanetOrbit(planet, orbitCenterViewX, orbitCenterViewY, viewScale);
 
       // Calculate Planet Position
       const planetViewX = Math.floor((planet.systemX - viewWorldStartX) / viewScale);
@@ -169,7 +169,9 @@ export class SceneRenderer {
 
     // --- Draw Starbase ---
     if (system.starbase) {
-      this._drawStarbaseInSystem(system.starbase, starViewX, starViewY, viewWorldStartX, viewWorldStartY, viewScale);
+      const barycenterViewX = Math.floor((0 - viewWorldStartX) / viewScale);
+      const barycenterViewY = Math.floor((0 - viewWorldStartY) / viewScale);
+      this._drawStarbaseInSystem(system.starbase, barycenterViewX, barycenterViewY, viewWorldStartX, viewWorldStartY, viewScale);
     }
 
     this.drawSystemPlanetHud(system, player, visiblePlanets);
@@ -183,13 +185,16 @@ export class SceneRenderer {
 
   // --- Private Helper Methods for drawSolarSystem ---
 
-  private _drawStarInSystem(starViewX: number, starViewY: number, starRadius: number, starColor: string): void {
+  private _drawStarInSystem(starViewX: number, starViewY: number, starRadius: number, starColor: string, label?: string): void {
       const cols = this.screenBuffer.getCols();
       const rows = this.screenBuffer.getRows();
       // Draw star only if potentially visible
       if (starViewX + starRadius >= 0 && starViewX - starRadius < cols && starViewY + starRadius >= 0 && starViewY - starRadius < rows) {
           this.drawingContext.drawCircle(starViewX, starViewY, starRadius, GLYPHS.SHADE_DARK, starColor, starColor);
           this.drawingContext.drawOrbit(starViewX, starViewY, starRadius, GLYPHS.SHADE_MEDIUM, starColor, 0, 0, cols - 1, rows - 1);
+          if (label && starViewX + 1 < cols && starViewY >= 0 && starViewY < rows) {
+            this.screenBuffer.drawString(label, starViewX + 1, starViewY, starColor, null);
+          }
       }
   }
 
@@ -295,12 +300,14 @@ export class SceneRenderer {
         this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOUR);
       }
     });
-    const starPos = worldToMinimap(0, 0);
-    if (starPos) {
-        const starInfo = SPECTRAL_TYPES[system.starType];
+    system.stars.forEach((star) => {
+      const starPos = worldToMinimap(star.systemX, star.systemY);
+      if (starPos) {
+        const starInfo = SPECTRAL_TYPES[star.starType];
         const starColor = starInfo?.colour || '#FFFFFF';
-        this.screenBuffer.drawChar('*', starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
-    }
+        this.screenBuffer.drawChar(star.id === 'A' ? '*' : star.id.toLowerCase(), starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
+      }
+    });
     if (system.starbase) {
         const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
         if (sbPos) { this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR); }

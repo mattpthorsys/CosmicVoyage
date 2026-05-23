@@ -4,20 +4,24 @@
 import { CONFIG } from '../config';
 // Import constants including G and updated SPECTRAL_TYPES
 import {
-  SPECTRAL_DISTRIBUTION,
   SPECTRAL_TYPES,
   GRAVITATIONAL_CONSTANT_G,
   AU_IN_METERS,
-  GLYPHS,
-  PLANET_TYPES,
 } from '../constants';
 import { PRNG } from '../utils/prng';
 import { Planet } from './planet'; // Assuming Planet class has mass, escapeVelocity, axialTilt, moons properties
 import { Starbase } from './starbase';
 import { logger } from '../utils/logger';
 import { generatePlanetCharacteristics } from '../entities/planet/planet_characteristics_generator';
-import { SystemBasicProperties, SystemDataGenerator } from '@/generation/system_data_generator';
+import { SystemBasicProperties } from '@/generation/system_data_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
+import {
+  getHostLabel,
+  getPrimaryStar,
+  OrbitHost,
+  StellarArchitecture,
+  StellarBody,
+} from './stellar_body';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -27,6 +31,8 @@ export class SolarSystem {
   readonly starY: number; // World coordinate Y
   readonly systemPRNG: PRNG; // PRNG seeded specifically for this system
   readonly starType: string; // e.g., 'G', 'M', 'A'
+  readonly architecture: StellarArchitecture;
+  readonly stars: StellarBody[];
   readonly name: string; // Procedurally generated name
   readonly ageGyr: number;
   readonly metallicityFeH: number;
@@ -42,19 +48,20 @@ export class SolarSystem {
     this.systemPRNG = gameSeedPRNG.seedNew(starSeed);
     logger.debug(`[System:${starX},${starY}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`);
 
-    this.starType = basicProps.starType!;
+    this.architecture = basicProps.architecture ?? this.createFallbackArchitecture(basicProps);
+    this.stars = this.architecture.stars;
+    this.configureStellarOrbits();
+    this.updateStarPositions(0);
+    const primaryStar = getPrimaryStar(this.architecture);
+    this.starType = primaryStar.starType;
     this.name = basicProps.name!;
-    const fallbackEnvironment = getDefaultStellarEnvironment(this.starType);
+    const fallbackEnvironment = primaryStar.environment ?? getDefaultStellarEnvironment(this.starType);
     this.ageGyr = basicProps.ageGyr ?? fallbackEnvironment.ageGyr;
     this.metallicityFeH = basicProps.metallicityFeH ?? fallbackEnvironment.metallicityFeH;
-    this.stellarEnvironment = {
-      starType: this.starType,
-      ageGyr: this.ageGyr,
-      metallicityFeH: this.metallicityFeH,
-    };
+    this.stellarEnvironment = primaryStar.environment;
 
     logger.info(
-      `[System:${this.name}] Created system at world [${this.starX},${this.starY}]. Star Type: ${this.starType}, Age: ${this.ageGyr} Gyr, [Fe/H]: ${this.metallicityFeH}.`
+      `[System:${this.name}] Created ${this.architecture.kind} system at world [${this.starX},${this.starY}]. Primary: ${this.starType}, Age: ${this.ageGyr} Gyr, [Fe/H]: ${this.metallicityFeH}.`
     );
 
     this.planets = new Array(CONFIG.MAX_PLANETS_PER_SYSTEM).fill(null);
@@ -91,6 +98,10 @@ export class SolarSystem {
     if (this.starbase) {
       maxOrbit_m = Math.max(maxOrbit_m, this.starbase.orbitDistance);
     }
+    this.stars.forEach((star) => {
+      maxOrbit_m = Math.max(maxOrbit_m, Math.sqrt(star.systemX * star.systemX + star.systemY * star.systemY));
+      if (star.orbit) maxOrbit_m = Math.max(maxOrbit_m, star.orbit.radius);
+    });
 
     logger.debug(`[System:${this.name}] Furthest object orbit distance: ${maxOrbit_m.toExponential(2)}m`);
     // Ensure a minimum size even if no objects generated far out
@@ -152,6 +163,82 @@ export class SolarSystem {
     return name;
   }
 
+  private createFallbackArchitecture(basicProps: SystemBasicProperties): StellarArchitecture {
+    const starType = basicProps.starType ?? 'G';
+    const environment = {
+      starType,
+      ageGyr: basicProps.ageGyr ?? getDefaultStellarEnvironment(starType).ageGyr,
+      metallicityFeH: basicProps.metallicityFeH ?? 0,
+    };
+    const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
+    return {
+      kind: 'single',
+      stars: [
+        {
+          id: 'A',
+          name: `${basicProps.name ?? 'Unnamed'} A`,
+          starType,
+          massKg: starInfo.mass,
+          radiusM: starInfo.radius,
+          luminosityW: this.calculateStarLuminosity(starType, environment),
+          systemX: 0,
+          systemY: 0,
+          orbit: null,
+          environment,
+        },
+      ],
+      primaryStarId: 'A',
+      binarySeparation: 0,
+      outerSeparation: 0,
+      habitableLabel: 'A',
+    };
+  }
+
+  private calculateStarLuminosity(starType: string, _environment: StellarEnvironment): number {
+    const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
+    const sigma = 5.670374419e-8;
+    return 4 * Math.PI * Math.pow(starInfo.radius, 2) * sigma * Math.pow(starInfo.temp, 4);
+  }
+
+  private configureStellarOrbits(): void {
+    if (this.stars.length < 2) return;
+    const primary = this.stars.find((star) => star.id === 'A');
+    const secondary = this.stars.find((star) => star.id === 'B');
+    if (!primary || !secondary) return;
+
+    const separation = Math.max(0.05 * AU_IN_METERS, this.architecture.binarySeparation);
+    const totalMass = primary.massKg + secondary.massKg;
+    const baseAngle = secondary.orbit?.angle ?? 0;
+    const periodSeconds = secondary.orbit?.periodSeconds ?? 140 * 60;
+    primary.orbit = {
+      center: 'barycenter',
+      radius: separation * (secondary.massKg / totalMass),
+      angle: baseAngle + Math.PI,
+      periodSeconds,
+    };
+    secondary.orbit = {
+      center: 'barycenter',
+      radius: separation * (primary.massKg / totalMass),
+      angle: baseAngle,
+      periodSeconds,
+    };
+  }
+
+  private updateStarPositions(deltaTime: number): void {
+    for (const star of this.stars) {
+      if (!star.orbit) {
+        star.systemX = 0;
+        star.systemY = 0;
+        continue;
+      }
+      if (deltaTime > 0 && star.orbit.periodSeconds > 0) {
+        star.orbit.angle = (star.orbit.angle + (2 * Math.PI * deltaTime) / star.orbit.periodSeconds) % (Math.PI * 2);
+      }
+      star.systemX = Math.cos(star.orbit.angle) * star.orbit.radius;
+      star.systemY = Math.sin(star.orbit.angle) * star.orbit.radius;
+    }
+  }
+
   /** Populates the planets array for the system using meter-based distances and generates moons. */
   private generatePlanets(): void {
     logger.info(`[System:${this.name}] Generating planets (using meters)...`);
@@ -160,12 +247,18 @@ export class SolarSystem {
     // const AU_IN_METERS = 1.495978707e11; // Defined globally in constants.ts now
 
     // Define realistic distance ranges in METERS (e.g., 0.2 AU to 50+ AU)
-    const MIN_INNER_ORBIT_M = 0.2 * AU_IN_METERS; // e.g., ~3e10 meters
+    const stabilityInnerLimit =
+      this.architecture.kind === 'single' ? 0.2 * AU_IN_METERS : Math.max(0.7 * AU_IN_METERS, this.architecture.binarySeparation * 4.2);
+    const MIN_INNER_ORBIT_M = stabilityInnerLimit; // e.g., ~3e10 meters
     const MAX_INNER_ORBIT_M = 0.7 * AU_IN_METERS; // e.g., ~1e11 meters
-    const MIN_OUTER_ORBIT_M = 50 * AU_IN_METERS; // Example outer limit (adjust as needed)
+    const wideCompanionLimit =
+      this.architecture.kind === 'triple' && this.architecture.outerSeparation > 0
+        ? Math.max(MIN_INNER_ORBIT_M * 1.8, this.architecture.outerSeparation * 0.25)
+        : 50 * AU_IN_METERS;
+    const MIN_OUTER_ORBIT_M = Math.min(50 * AU_IN_METERS, wideCompanionLimit); // Example outer limit (adjust as needed)
 
     const orbitScaleBase = this.systemPRNG.random(1.5, 2.0);
-    let lastOrbitDistance = this.systemPRNG.random(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M);
+    let lastOrbitDistance = this.systemPRNG.random(MIN_INNER_ORBIT_M, Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M));
     const MIN_PLANET_SEPARATION_M = 0.1 * AU_IN_METERS; // e.g., 0.1 AU separation minimum
 
     let planetsGenerated = 0;
@@ -205,10 +298,17 @@ export class SolarSystem {
       const formationChance = 0.9 - i * 0.03;
       if (this.systemPRNG.random() < formationChance) {
         logger.debug(`[System:${this.name}] Slot ${i + 1}: Planet formation roll success.`);
-        const planetType = this.determinePlanetType(currentOrbitDistance);
         const angle = this.systemPRNG.random(0, Math.PI * 2);
+        const orbitHost = this.getDefaultPlanetOrbitHost();
+        const orbitCenter = this.getOrbitCenter(orbitHost);
+        const totalFlux = this.calculateFluxAt(
+          orbitCenter.x + Math.cos(angle) * currentOrbitDistance,
+          orbitCenter.y + Math.sin(angle) * currentOrbitDistance
+        );
+        const planetType = this.determinePlanetType(currentOrbitDistance, totalFlux);
         const planetName = `${this.name} ${this.getRomanNumeral(i + 1)}`;
-        const parentStarType = this.starType; // Pass star type to planet constructor
+        const parentStar = this.getPlanetEnvironmentStar(orbitHost);
+        const parentStarType = parentStar.starType; // Pass star type to planet constructor
 
         // Create the planet (ensure constructor accepts meters)
         const planet = new Planet(
@@ -217,9 +317,13 @@ export class SolarSystem {
           currentOrbitDistance,
           angle,
           this.systemPRNG,
-          this.starType,
+          parentStarType,
           undefined,
-          this.stellarEnvironment
+          parentStar.environment,
+          orbitHost,
+          orbitCenter.x,
+          orbitCenter.y,
+          totalFlux
         );
         this.planets[i] = planet;
         planetsGenerated++;
@@ -272,7 +376,8 @@ export class SolarSystem {
                   moonOrbit_m,
                   moonPRNG,
                   parentStarType,
-                  this.stellarEnvironment
+                  parentStar.environment,
+                  totalFlux
                 );
               } catch (charError) {
                 logger.error(
@@ -285,7 +390,7 @@ export class SolarSystem {
               if (moonCharacteristics.diameter * 1000 > planet.diameter * 1000 * 0.8) {
                 // Moon diameter < 80% of planet diameter
                 logger.warn(
-                  `[Planet:${planet.name}] Generated moon <span class="math-inline">\{moonName\} characteristics resulted in excessive size \(</span>{moonCharacteristics.diameter}km) compared to planet (${planet.diameter}km). Skipping.`
+                  `[Planet:${planet.name}] Generated moon ${moonName} characteristics resulted in excessive size (${moonCharacteristics.diameter}km) compared to planet (${planet.diameter}km). Skipping.`
                 );
                 continue; // Skip this moon
               }
@@ -303,7 +408,11 @@ export class SolarSystem {
                   moonPRNG,
                   parentStarType,
                   moonCharacteristics,
-                  this.stellarEnvironment
+                  parentStar.environment,
+                  { kind: 'circumstellar', starId: parentStar.id },
+                  planet.systemX,
+                  planet.systemY,
+                  totalFlux
                 );
 
                 planet.moons.push(moon);
@@ -372,24 +481,44 @@ export class SolarSystem {
     return romanMap[num] || num.toString();
   }
 
-  /** Determines the likely planet type based on orbit distance (in meters) and star properties. */
-  private determinePlanetType(orbitDistance_m: number): string {
+  private getDefaultPlanetOrbitHost(): OrbitHost {
+    if (this.architecture.kind === 'single') return { kind: 'circumstellar', starId: 'A' };
+    return { kind: 'circumbinary' };
+  }
+
+  getOrbitCenter(host: OrbitHost): { x: number; y: number } {
+    if (host.kind === 'circumstellar' && host.starId) {
+      const star = this.stars.find((s) => s.id === host.starId);
+      if (star) return { x: star.systemX, y: star.systemY };
+    }
+    return { x: 0, y: 0 };
+  }
+
+  private getPlanetEnvironmentStar(host: OrbitHost): StellarBody {
+    if (host.kind === 'circumstellar' && host.starId) {
+      return this.stars.find((star) => star.id === host.starId) ?? getPrimaryStar(this.architecture);
+    }
+    return getPrimaryStar(this.architecture);
+  }
+
+  private calculateFluxAt(x_m: number, y_m: number): number {
+    let flux = 0;
+    for (const star of this.stars) {
+      const dx = x_m - star.systemX;
+      const dy = y_m - star.systemY;
+      const distanceSq = Math.max(star.radiusM * star.radiusM, dx * dx + dy * dy);
+      flux += star.luminosityW / (4 * Math.PI * distanceSq);
+    }
+    return Number.isFinite(flux) && flux > 0 ? flux : 1361;
+  }
+
+  /** Determines the likely planet type based on local stellar flux. */
+  private determinePlanetType(orbitDistance_m: number, totalFlux_W_m2?: number): string {
     logger.debug(`[System:${this.name}] Determining planet type for orbit ${orbitDistance_m.toExponential(2)}m...`);
     const typePRNG = this.systemPRNG.seedNew('type_' + orbitDistance_m.toFixed(0));
-    const starInfo = SPECTRAL_TYPES[this.starType];
-    if (!starInfo || !starInfo.radius || !starInfo.temp) {
-      logger.warn(
-        `[System:${this.name}] Unknown star type '${this.starType}' or missing radius/temp data. Defaulting to G type properties.`
-      );
-    }
-    const starTemp = starInfo?.temp ?? SPECTRAL_TYPES['G'].temp;
-    const starRadius_m = starInfo?.radius ?? 1.0 * 6.957e8;
-
     const orbitDistance_AU = orbitDistance_m / AU_IN_METERS;
-    const SUN_TEMP = SPECTRAL_TYPES['G'].temp;
-    const SUN_RADIUS_M = 6.957e8;
-    const relativeLuminosity = Math.pow(starTemp / SUN_TEMP, 4) * Math.pow(starRadius_m / SUN_RADIUS_M, 2);
-    const effectiveTemp = (278.3 * Math.pow(relativeLuminosity, 0.25)) / Math.sqrt(orbitDistance_AU);
+    const flux = totalFlux_W_m2 ?? this.calculateFluxAt(orbitDistance_m, 0);
+    const effectiveTemp = 278.3 * Math.pow(Math.max(flux, 0.0001) / 1361, 0.25);
 
     if (!Number.isFinite(effectiveTemp)) {
       logger.error(
@@ -400,7 +529,7 @@ export class SolarSystem {
     logger.debug(
       `[System:${this.name}] Effective temp at orbit ${orbitDistance_AU.toFixed(2)} AU: ${effectiveTemp.toFixed(
         1
-      )}K (RelLum: ${relativeLuminosity.toFixed(2)})`
+      )}K (Flux: ${flux.toExponential(2)} W/m^2, Host: ${getHostLabel(this.getDefaultPlanetOrbitHost())})`
     );
 
     const innerHabitable = 260,
@@ -470,6 +599,36 @@ export class SolarSystem {
     return closestObject;
   }
 
+  getStarNear(x_m: number, y_m: number, radius_m: number): StellarBody | null {
+    let closestStar: StellarBody | null = null;
+    let minDistanceSq = radius_m * radius_m;
+    for (const star of this.stars) {
+      const dx = star.systemX - x_m;
+      const dy = star.systemY - y_m;
+      const distanceSq = dx * dx + dy * dy;
+      if (distanceSq < minDistanceSq) {
+        minDistanceSq = distanceSq;
+        closestStar = star;
+      }
+    }
+    return closestStar;
+  }
+
+  getNearestStar(x_m: number, y_m: number): StellarBody {
+    let closestStar = this.stars[0];
+    let minDistanceSq = Number.POSITIVE_INFINITY;
+    for (const star of this.stars) {
+      const dx = star.systemX - x_m;
+      const dy = star.systemY - y_m;
+      const distanceSq = dx * dx + dy * dy;
+      if (distanceSq < minDistanceSq) {
+        minDistanceSq = distanceSq;
+        closestStar = star;
+      }
+    }
+    return closestStar;
+  }
+
   /** Checks if the given coordinates (in meters) are beyond the system's edge radius. */
   isAtEdge(x_m: number, y_m: number): boolean {
     const distSq = x_m * x_m + y_m * y_m;
@@ -482,8 +641,8 @@ export class SolarSystem {
   updateOrbits(deltaTime: number): void {
     const G = GRAVITATIONAL_CONSTANT_G;
     const SECONDS_PER_SIMULATED_YEAR = 4 * 60 * 60; // 4 hours
-    const starInfo = SPECTRAL_TYPES[this.starType];
-    const starMassKg = starInfo?.mass;
+    this.updateStarPositions(deltaTime);
+    const starMassKg = this.stars.reduce((sum, star) => sum + star.massKg, 0);
 
     if (!starMassKg || starMassKg <= 0) {
       logger.error(`[System:${this.name}] Cannot update orbits: Invalid star mass.`);
@@ -506,8 +665,9 @@ export class SolarSystem {
       const planet_deltaAngle = baseStarAngularSpeedRadPerSec * deltaTime;
       planet.orbitAngle = (planet.orbitAngle + planet_deltaAngle) % (Math.PI * 2);
       if (!Number.isFinite(planet.orbitAngle)) planet.orbitAngle = 0;
-      const planetX_abs = Math.cos(planet.orbitAngle) * planet_r;
-      const planetY_abs = Math.sin(planet.orbitAngle) * planet_r;
+      const orbitCenter = this.getOrbitCenter(planet.orbitHost ?? { kind: 'barycentric' });
+      const planetX_abs = orbitCenter.x + Math.cos(planet.orbitAngle) * planet_r;
+      const planetY_abs = orbitCenter.y + Math.sin(planet.orbitAngle) * planet_r;
       if (!Number.isFinite(planetX_abs) || !Number.isFinite(planetY_abs)) {
         logger.error(`[System:${this.name}] Non-finite position for ${planet.name}. Resetting.`);
         planet.systemX = 0;

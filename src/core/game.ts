@@ -22,9 +22,10 @@ import { MiningSystem } from '../systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
 import { AstrometricOverlay } from '../rendering/astrometric_overlay';
 import { SystemDataGenerator } from '../generation/system_data_generator';
+import { StellarBody } from '../entities/stellar_body';
 
 // ScanTarget type includes SolarSystem now
-type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
+type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 
 interface TradeDepotItem {
   itemKey: string;
@@ -545,7 +546,7 @@ export class Game {
   private _handleScanRequest(scanType: 'system_object' | 'planet_surface'): void {
     const currentState = this.stateManager.state;
     logger.debug(
-      `[Game:_handleScanRequest] Handling scan request type '<span class="math-inline">\{scanType\}' in state '</span>{currentState}'`
+      `[Game:_handleScanRequest] Handling scan request type '${scanType}' in state '${currentState}'`
     );
 
     // ** CLEAR Terminal Overlay ** Moved to _handleDiscreteActions where the request originates
@@ -563,10 +564,17 @@ export class Game {
           const distSqToObject = nearbyObject
             ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY)
             : Infinity;
-          const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
+          const nearbyStar = system.getStarNear(
+            this.player.position.systemX,
+            this.player.position.systemY,
+            CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER
+          );
+          const distSqToStar = nearbyStar
+            ? this.player.distanceSqToSystemCoords(nearbyStar.systemX, nearbyStar.systemY)
+            : Infinity;
           const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
-          if (distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
-            targetToScan = { type: 'Star', name: system.name, starType: system.starType };
+          if (nearbyStar && distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
+            targetToScan = nearbyStar;
             //scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
           } else if (nearbyObject && distSqToObject < scanThresholdSq) {
             targetToScan = nearbyObject;
@@ -613,16 +621,9 @@ export class Game {
       if (target instanceof SolarSystem) {
         lines = this._formatStarScanPopup(target);
         targetName = `Star (${target.name})`;
-      } else if (typeof target === 'object' && target !== null && 'type' in target && target.type === 'Star') {
-        const starTarget = target as { type: 'Star'; name: string; starType: string };
-        const system = this.stateManager.currentSystem;
-        if (system && system.name === starTarget.name && system.starType === starTarget.starType) {
-          lines = this._formatStarScanPopup(system);
-          targetName = `Star (${system.name})`;
-        } else {
-          lines = [`<e>Error: System context mismatch for star scan.</e>`];
-          targetName = `Star (${starTarget.name})`;
-        }
+      } else if (typeof target === 'object' && target !== null && 'starType' in target && 'luminosityW' in target) {
+        lines = this._formatStarScanPopup(target as StellarBody);
+        targetName = `Star (${(target as StellarBody).name})`;
       } else if (target instanceof Planet || target instanceof Starbase) {
         targetName = target.name;
         if (target instanceof Planet && !target.scanned) {
@@ -650,14 +651,17 @@ export class Game {
   }
 
   /** Formats scan results for a star/system */
-  private _formatStarScanPopup(system: SolarSystem): string[] {
+  private _formatStarScanPopup(target: SolarSystem | StellarBody): string[] {
     const lines: string[] = [];
-    const starInfo = SPECTRAL_TYPES[system.starType];
+    const system = target instanceof SolarSystem ? target : null;
+    const star: StellarBody = system ? system.stars[0] : target as StellarBody;
+    const starInfo = SPECTRAL_TYPES[star.starType];
     lines.push(``);
-    lines.push(`<h>--- STELLAR SCAN: ${system.name} ---</h>`);
-    lines.push(`Spectral Type: <hl>${system.starType}</hl>`); // Use highlight tag
-    lines.push(`Stellar Age: <hl>~${system.ageGyr.toFixed(2)} Gyr</hl>`);
-    lines.push(`Metallicity: <hl>${system.metallicityFeH >= 0 ? '+' : ''}${system.metallicityFeH.toFixed(2)} [Fe/H]</hl>`);
+    lines.push(`<h>--- STELLAR SCAN: ${star.name} ---</h>`);
+    if (system) lines.push(`Architecture: <hl>${system.architecture.kind.toUpperCase()}</hl> (${system.stars.length} star${system.stars.length === 1 ? '' : 's'})`);
+    lines.push(`Spectral Type: <hl>${star.starType}</hl>`); // Use highlight tag
+    lines.push(`Stellar Age: <hl>~${star.environment.ageGyr.toFixed(2)} Gyr</hl>`);
+    lines.push(`Metallicity: <hl>${star.environment.metallicityFeH >= 0 ? '+' : ''}${star.environment.metallicityFeH.toFixed(2)} [Fe/H]</hl>`);
     if (starInfo) {
       lines.push(`Temperature: <hl>~${starInfo.temp.toLocaleString()} K</hl>`);
       // Calculate approx luminosity relative to Sol if possible
@@ -674,8 +678,10 @@ export class Game {
       lines.push(`Mass: [-W-]Unknown</w>`);
       lines.push(`Radius: [-W-]Unknown</w>`);
     }
-    lines.push(`Planetary Bodies: <hl>${system.planets.filter((p) => p !== null).length}</hl>`);
-    lines.push(`Facilities: <hl>${system.starbase ? 'Starbase Detected' : 'None Detected'}</hl>`);
+    if (system) {
+      lines.push(`Planetary Bodies: <hl>${system.planets.filter((p) => p !== null).length}</hl>`);
+      lines.push(`Facilities: <hl>${system.starbase ? 'Starbase Detected' : 'None Detected'}</hl>`);
+    }
     lines.push('<h>--- SCAN COMPLETE---</h>');
     lines.push(``);
     return lines;
@@ -875,7 +881,7 @@ export class Game {
 
     // Determine status message based on proximity
     const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
-    let status = `System: ${system.name} (${system.starType}) | Pos: ${this.player.position.systemX.toExponential(
+    let status = `System: ${system.name} (${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}) | Pos: ${this.player.position.systemX.toExponential(
       1
     )},${this.player.position.systemY.toExponential(1)}m`; // Use meters
 
@@ -886,17 +892,18 @@ export class Game {
       )} AU). [${CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF.toUpperCase()}] Land/Dock / [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan`; // Show dist in AU
     } else {
       // Check proximity to star for scanning
-      const distSqToStar = this.player.distanceSqToSystemCoords(0, 0);
+      const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
+      const distSqToStar = this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY);
       const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
       const nearStar = distSqToStar < scanThresholdSq;
 
       if (this.isPlayerNearExit()) {
         // Check if near edge
         status += ` | Near system edge.`;
-        if (nearStar) status += ` [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star /`; // Allow star scan even near edge
+        if (nearStar) status += ` [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan ${nearestStar.id} /`; // Allow star scan even near edge
         status += ` [${CONFIG.KEY_BINDINGS.LEAVE_SYSTEM.toUpperCase()}] Leave System`;
       } else if (nearStar) {
-        status += ` | [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star`;
+        status += ` | Near ${nearestStar.name}. [${CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT.toUpperCase()}] Scan Star`;
       }
     }
     return status;
@@ -906,7 +913,7 @@ export class Game {
   private isPlayerNearExit(): boolean {
     const system = this.stateManager.currentSystem;
     if (!system) return false;
-    const distSq = this.player.distanceSqToSystemCoords(0, 0); // Distance from star center
+    const distSq = this.player.distanceSqToSystemCoords(0, 0); // Distance from barycenter
     // Use edgeRadius which is in meters
     const exitThresholdSq = (system.edgeRadius * CONFIG.SYSTEM_EDGE_LEAVE_FACTOR) ** 2;
     return distSq > exitThresholdSq;

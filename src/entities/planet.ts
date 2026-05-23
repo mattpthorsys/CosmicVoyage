@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 // Import the specific interface from the generator file
 import { generatePlanetCharacteristics, PlanetCharacteristics } from './planet/planet_characteristics_generator';
 import { StellarEnvironment } from './stellar_environment';
+import { OrbitHost } from './stellar_body';
 // Import the generator and data interface
 import { SurfaceGenerator, SurfaceData } from './planet/surface_generator';
 // Re-export needed types if they aren't in a shared file
@@ -29,6 +30,7 @@ export class Planet {
   public orbitAngle: number; // Mutable
   public systemX: number; // Mutable
   public systemY: number; // Mutable
+  public readonly orbitHost: OrbitHost;
 
   // Physical Characteristics (Generated)
   public readonly diameter: number; //
@@ -71,12 +73,17 @@ export class Planet {
     systemPRNG: PRNG, // PRNG seeded for the parent system
     parentStarType: string,
     characteristics?: PlanetCharacteristics,
-    stellarEnvironment?: StellarEnvironment
+    stellarEnvironment?: StellarEnvironment,
+    orbitHost?: OrbitHost,
+    orbitCenterX: number = 0,
+    orbitCenterY: number = 0,
+    totalFlux_W_m2?: number
   ) {
     this.name = name; //
     this.type = type; //
     this.orbitDistance = orbitDistance; //
     this.orbitAngle = angle; //
+    this.orbitHost = orbitHost ?? { kind: 'barycentric' };
 
     // Seed PRNG specifically for this planet
     this.systemPRNG = systemPRNG.seedNew('planet_' + name); //
@@ -88,7 +95,8 @@ export class Planet {
         this.orbitDistance,
         this.systemPRNG,
         parentStarType,
-        stellarEnvironment
+        stellarEnvironment,
+        totalFlux_W_m2
     );
 
     // Assign properties from finalCharacteristics
@@ -108,8 +116,8 @@ export class Planet {
     this.elementAbundance = finalCharacteristics.elementAbundance;
 
     // Initial position
-    this.systemX = Math.cos(this.orbitAngle) * this.orbitDistance;
-    this.systemY = Math.sin(this.orbitAngle) * this.orbitDistance;
+    this.systemX = orbitCenterX + Math.cos(this.orbitAngle) * this.orbitDistance;
+    this.systemY = orbitCenterY + Math.sin(this.orbitAngle) * this.orbitDistance;
 
     // Map seed for surface generation
     this.mapSeed = this.systemPRNG.getInitialSeed() + '_map'; //

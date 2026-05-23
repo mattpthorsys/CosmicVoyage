@@ -34,7 +34,8 @@ export function generatePlanetCharacteristics(
     orbitDistance: number,
     planetPRNG: PRNG,
     parentStarType: string,
-    stellarEnvironment?: StellarEnvironment
+    stellarEnvironment?: StellarEnvironment,
+    totalFlux_W_m2?: number
 ): PlanetCharacteristics {
     const environment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
     logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toExponential(2)}m, Star: ${parentStarType}, Age: ${environment.ageGyr} Gyr, [Fe/H]: ${environment.metallicityFeH}...`);
@@ -58,7 +59,7 @@ export function generatePlanetCharacteristics(
     const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance, environment);
 
     // 5. Calculate Final Surface Temperature (uses atmosphere)
-    const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere, environment);
+    const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere, environment, totalFlux_W_m2);
 
     // 6. Generate Surface Descriptors (use final temp)
     const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere);

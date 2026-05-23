@@ -181,18 +181,19 @@ export class AstrometricOverlay {
       .sort((a, b) => a.distSq - b.distSq);
 
     if (candidates.length === 0) {
-      const starRangeAu = Math.sqrt(player.distanceSqToSystemCoords(0, 0)) / AU_IN_METERS;
+      const nearestStar = context.system.getNearestStar(player.position.systemX, player.position.systemY);
+      const starRangeAu = Math.sqrt(player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)) / AU_IN_METERS;
       return {
         state: context.state,
         x: Math.max(1, Math.floor(cols * 0.62)),
         y: Math.max(2, Math.floor(rows * 0.24)),
-        targetX: Math.floor((0 - viewWorldStartX) / context.viewScale),
-        targetY: Math.floor((0 - viewWorldStartY) / context.viewScale),
+        targetX: Math.floor((nearestStar.systemX - viewWorldStartX) / context.viewScale),
+        targetY: Math.floor((nearestStar.systemY - viewWorldStartY) / context.viewScale),
         color: '#9FFFE0',
         createdAt: now,
         typedChars: 0,
         durationMs: this.getDuration(context.state),
-        lines: ['STELLAR REFERENCE', `RANGE ${starRangeAu.toFixed(3)} AU`, `FRAME ${context.system.name}`],
+        lines: ['STELLAR REFERENCE', `${nearestStar.name} ${nearestStar.starType}`, `RANGE ${starRangeAu.toFixed(3)} AU`, `FRAME ${context.system.name}`],
       };
     }
 

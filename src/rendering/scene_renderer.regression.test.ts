@@ -69,9 +69,37 @@ function createSystem(): SolarSystem {
   return {
     name: 'Regression',
     starType: 'G2V',
+    architecture: { kind: 'single', stars: [], primaryStarId: 'A', binarySeparation: 0, outerSeparation: 0, habitableLabel: 'A' },
+    stars: [
+      {
+        id: 'A',
+        name: 'Regression A',
+        starType: 'G2V',
+        massKg: 1.98847e30,
+        radiusM: 6.957e8,
+        luminosityW: 3.828e26,
+        systemX: 0,
+        systemY: 0,
+        orbit: null,
+        environment: { starType: 'G2V', ageGyr: 4.6, metallicityFeH: 0 },
+      },
+    ],
     planets: [],
     starbase: null,
     edgeRadius: 5e12,
+    getOrbitCenter: () => ({ x: 0, y: 0 }),
+    getNearestStar: () => ({
+      id: 'A',
+      name: 'Regression A',
+      starType: 'G2V',
+      massKg: 1.98847e30,
+      radiusM: 6.957e8,
+      luminosityW: 3.828e26,
+      systemX: 0,
+      systemY: 0,
+      orbit: null,
+      environment: { starType: 'G2V', ageGyr: 4.6, metallicityFeH: 0 },
+    }),
   } as unknown as SolarSystem;
 }
 

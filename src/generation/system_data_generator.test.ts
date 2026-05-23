@@ -24,6 +24,10 @@ describe('SystemDataGenerator', () => {
     expect(first).toEqual(second);
     expect(first.exists).toBe(true);
     expect(first.starType).toMatch(/^[OBAFGKM](\dV)?$/);
+    expect(first.architecture).toBeTruthy();
+    expect(first.architecture!.stars.length).toBeGreaterThanOrEqual(1);
+    expect(first.architecture!.stars.length).toBeLessThanOrEqual(3);
+    expect(first.architecture!.stars[0].starType).toBe(first.starType);
     expect(first.name).toBeTruthy();
     expect(first.ageGyr).toBeGreaterThan(0);
     expect(first.ageGyr).toBeLessThanOrEqual(13.2);
@@ -40,6 +44,7 @@ describe('SystemDataGenerator', () => {
 
     expect(empty.exists).toBe(false);
     expect(empty.starType).toBeNull();
+    expect(empty.architecture).toBeNull();
     expect(empty.ageGyr).toBeNull();
     expect(empty.metallicityFeH).toBeNull();
   });
