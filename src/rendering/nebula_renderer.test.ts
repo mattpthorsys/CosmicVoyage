@@ -22,7 +22,7 @@ describe('NebulaRenderer', () => {
       }
     }
 
-    const visible = samples.filter((colour) => colour !== CONFIG.DEFAULT_BG_COLOUR);
+    const visible = samples.filter((colour) => colour !== CONFIG.DEFAULT_BG_COLOUR && luminance(colour) > 1.5);
     const visibleRatio = visible.length / samples.length;
     expect(visibleRatio).toBeGreaterThan(0.015);
     expect(visibleRatio).toBeLessThan(0.3);

@@ -105,14 +105,15 @@ export class NebulaRenderer {
     }
 
     alpha *= Math.max(0, Math.min(1, CONFIG.NEBULA_INTENSITY));
-    if (alpha < 0.008) return this.defaultBgColor;
+    if (alpha < 0.002) return this.defaultBgColor;
 
     const colour = this.sampleNebulaColour(region, cloud, wisps);
     const dustOcclusion = Math.max(0, dust - 0.56) * (region.kind === 'dark' ? 0.75 : 0.52);
     const attenuated = interpolateColour(colour, BLACK, Math.min(0.78, dustOcclusion));
+    const edgeAlpha = this.smoothstep(0.002, 0.18, alpha);
     const brightness = region.kind === 'dark'
-      ? 0.18 + alpha * 0.32
-      : 0.3 + alpha * (region.kind === 'remnant' ? 0.72 : 0.62);
+      ? edgeAlpha * (0.08 + alpha * 0.42)
+      : edgeAlpha * (0.2 + alpha * (region.kind === 'remnant' ? 0.84 : 0.76));
     const final = interpolateColour(BLACK, attenuated, Math.min(0.82, brightness));
     return rgbToHex(final.r, final.g, final.b);
   }
@@ -126,7 +127,7 @@ export class NebulaRenderer {
     const presence = broadCloud * 0.86 + finePresence * 0.14;
     const threshold = 0.47 + CONFIG.NEBULA_SPARSITY * 0.045;
     const density = this.smoothstep(threshold, 0.96, presence);
-    if (density < 0.018) return null;
+    if (density < 0.004) return null;
 
     const typeValue = this.normalizedNoise(regionX * 0.83 - 118.0, regionY * 0.83 + 57.0);
     const rareValue = this.normalizedNoise(regionX * 3.8 + 6.4, regionY * 3.8 - 91.3);
