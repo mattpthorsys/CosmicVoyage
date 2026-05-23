@@ -211,7 +211,7 @@ export class SceneRenderer {
   }
 
   private _drawPlanetBody(planet: Planet, planetViewX: number, planetViewY: number, marker: string): void {
-      const planetColor = PLANET_TYPES[planet.type]?.terrainColours[4] || '#CCCCCC';
+      const planetColor = this.getPlanetDisplayColour(planet.type);
       this.screenBuffer.drawChar(marker, planetViewX, planetViewY, '#000000', planetColor);
   }
 
@@ -223,7 +223,7 @@ export class SceneRenderer {
       // Moons are only drawn if visible and not exactly overlapping parent (checked in caller)
       // Determine moon glyph based on zoom? For now, always '.'
       const moonGlyph = '.';
-      const moonColor = PLANET_TYPES[moon.type]?.terrainColours[6] || '#999999';
+      const moonColor = this.getPlanetDisplayColour(moon.type);
       this.screenBuffer.drawChar(moonGlyph, moonViewX, moonViewY, moonColor, null);
   }
 
@@ -256,7 +256,7 @@ export class SceneRenderer {
     this.screenBuffer.drawString(' NAV TARGETS ', startX + 2, startY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
 
     visiblePlanets.slice(0, maxRows).forEach((item, row) => {
-      const planetColor = PLANET_TYPES[item.planet.type]?.terrainColours[4] || '#CCCCCC';
+      const planetColor = this.getPlanetDisplayColour(item.planet.type);
       const distanceAu = Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY)) / AU_IN_METERS;
       const bearing = this.formatBearing(item.planet.systemX - player.position.systemX, item.planet.systemY - player.position.systemY);
       const name = item.planet.name.replace(`${system.name} `, '');
@@ -299,7 +299,7 @@ export class SceneRenderer {
       const planetPos = worldToMinimap(p.systemX, p.systemY);
       if (planetPos) {
         const planetIcon = '.';
-        const planetColor = PLANET_TYPES[p.type]?.terrainColours[4] || '#CCCCCC';
+        const planetColor = this.getPlanetDisplayColour(p.type);
         this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOUR);
       }
     });
@@ -317,6 +317,27 @@ export class SceneRenderer {
     }
     const playerPos = worldToMinimap(player.position.systemX, player.position.systemY);
     if (playerPos) { this.screenBuffer.drawChar(player.render.char, playerPos.x, playerPos.y, player.render.fgColor, CONFIG.DEFAULT_BG_COLOUR); }
+  }
+
+  private getPlanetDisplayColour(planetType: string): string {
+    switch (planetType) {
+      case 'Molten':
+        return '#FF6A00';
+      case 'Rock':
+        return '#9A9488';
+      case 'Oceanic':
+        return '#3380FF';
+      case 'Lunar':
+        return '#B8B8B8';
+      case 'GasGiant':
+        return '#D6A15B';
+      case 'IceGiant':
+        return '#66D6FF';
+      case 'Frozen':
+        return '#D8FFFF';
+      default:
+        return PLANET_TYPES[planetType]?.terrainColours[4] || '#CCCCCC';
+    }
   }
 
   /** Draws the surface view for planets or starbases. */

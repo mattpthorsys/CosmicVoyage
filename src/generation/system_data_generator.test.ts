@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PRNG } from '../utils/prng';
 import { SystemDataGenerator } from './system_data_generator';
+import { SolarSystem } from '../entities/solar_system';
 
 function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: number } {
   for (let y = -80; y <= 80; y++) {
@@ -47,5 +48,59 @@ describe('SystemDataGenerator', () => {
     expect(empty.architecture).toBeNull();
     expect(empty.ageGyr).toBeNull();
     expect(empty.metallicityFeH).toBeNull();
+  });
+
+  it('still produces Jovian worlds across a representative sector', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    const counts: Record<string, number> = {};
+    let systems = 0;
+
+    for (let y = -40; y <= 40; y++) {
+      for (let x = -40; x <= 40; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        systems++;
+        const system = new SolarSystem(props, x, y, seed);
+        for (const planet of system.planets) {
+          if (!planet) continue;
+          counts[planet.type] = (counts[planet.type] ?? 0) + 1;
+        }
+      }
+    }
+
+    expect(systems).toBeGreaterThan(0);
+    expect(counts.GasGiant ?? 0).toBeGreaterThan(0);
+    expect((counts.GasGiant ?? 0) + (counts.IceGiant ?? 0)).toBeGreaterThan(5);
+  });
+
+  it('keeps moon systems plausible for parent type and stellar heating', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    let giantWithMoons = false;
+
+    for (let y = -50; y <= 50; y++) {
+      for (let x = -50; x <= 50; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        const system = new SolarSystem(props, x, y, seed);
+
+        for (const planet of system.planets) {
+          if (!planet) continue;
+          const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
+          const maxMoons = planet.type === 'GasGiant' ? 24 : planet.type === 'IceGiant' ? 14 : 3;
+          expect(planet.moons.length).toBeLessThanOrEqual(maxMoons);
+          if (planet.surfaceTemp > 390 || planet.orbitDistance < 0.35 * 1.495978707e11) {
+            expect(planet.moons.length).toBeLessThanOrEqual(isGiant ? 5 : 1);
+          }
+          if (isGiant && planet.moons.length >= 4) giantWithMoons = true;
+          for (const moon of planet.moons) {
+            expect(moon.diameter).toBeLessThan(planet.diameter * (isGiant ? 0.1 : 0.35));
+          }
+        }
+      }
+    }
+
+    expect(giantWithMoons).toBe(true);
   });
 });
