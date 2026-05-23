@@ -164,7 +164,7 @@ export const SPECTRAL_DISTRIBUTION: string[] = [
 // --- Planet Data ---
 interface PlanetTypeInfo {
     terrainColours: string[]; // Array of hex colour strings [cite: 428]
-    baseTemp: number; [cite: 429]
+    baseTemp: number; // [cite: 429]
 }
 
 export const PLANET_TYPES: Record<string, PlanetTypeInfo> = {

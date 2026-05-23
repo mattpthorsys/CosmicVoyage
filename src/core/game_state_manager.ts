@@ -10,7 +10,6 @@ import { GLYPHS, STATUS_MESSAGES } from '../constants';
 import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
-import { TerminalOverlay } from '@/rendering/terminal_overlay';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 
 // Define GameState type here or import from a shared types file
@@ -18,13 +17,10 @@ export type GameState = 'hyperspace' | 'system' | 'planet' | 'starbase';
 
 /** Manages the game's current state, context (system/planet/starbase), and transitions. */
 export class GameStateManager {
-  private readonly terminalOverlay: TerminalOverlay;
-
   private _state: GameState;
   private _currentSystem: SolarSystem | null = null;
   private _currentPlanet: Planet | null = null;
   private _currentStarbase: Starbase | null = null;
-  private peekedSystem: SolarSystem | null = null; // Keep for peeking logic
   /** Holds the latest status message for the game state manager. */
   public statusMessage: string = ''; // Keep for action processor status
 
@@ -38,7 +34,6 @@ export class GameStateManager {
     this.player = player;
     this.gameSeedPRNG = gameSeedPRNG;
     this.systemDataGenerator = systemDataGenerator;
-    this.terminalOverlay = new TerminalOverlay();
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
 
     // --- Subscribe to Action Request Events ---
@@ -68,12 +63,6 @@ export class GameStateManager {
   // Methods now primarily act as event handlers, but can still be called directly if needed
 
   /** Attempts to enter a system from hyperspace. Returns true on success, false otherwise. */
-  setState(newState: GameState) {
-    if (newState === 'system') {
-      this.clearPlayArea();
-    }
-  }
-  
   enterSystem(): boolean {
     if (this._state !== 'hyperspace') {
       logger.warn(`[GameStateManager] Cannot enter system, not in hyperspace (State: ${this._state})`);

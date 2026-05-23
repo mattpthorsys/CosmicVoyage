@@ -25,6 +25,13 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | { type: 'Star'; name: string; starType: string } | SolarSystem;
 
+interface TradeDepotItem {
+  elementKey: string;
+  units: number;
+  buyPrice: number;
+  sellPrice: number;
+}
+
 /** Main game class - Coordinates components and manages the loop. */
 export class Game {
   // Core Components
@@ -38,6 +45,7 @@ export class Game {
   private readonly cargoSystem: CargoSystem;
   private readonly miningSystem: MiningSystem;
   private readonly terminalOverlay: TerminalOverlay;
+  private tradeSelectionIndex: number = 0;
 
   // Game Loop State, Status, Flags
   private lastUpdateTime: number = 0;
@@ -1040,13 +1048,14 @@ export class Game {
       return;
     }
 
+    const market = this.getTradeDepotManifest(this.stateManager.currentStarbase.name);
     const currentCargo = { ...this.player.cargoHold.items };
     const totalUnitsSold = this.cargoSystem.getTotalUnits(this.player.cargoHold);
 
     if (totalUnitsSold <= 0) {
-      this.statusMessage = STATUS_MESSAGES.STARBASE_TRADE_EMPTY;
-      logger.info('[Game:_handleTradeRequest] No cargo to sell.');
-      this._publishStatusUpdate(); // Update status bar
+      const purchaseMessage = this.buyNextDepotItem(market);
+      this.statusMessage = purchaseMessage ?? this.formatTradeDepotManifest(market);
+      this._publishStatusUpdate();
       return;
     }
 
@@ -1056,7 +1065,8 @@ export class Game {
       const amount = currentCargo[elementKey];
       const elementInfo = ELEMENTS[elementKey];
       if (amount > 0 && elementInfo) {
-        const valuePerUnit = elementInfo.baseValue; // Use defined base value
+        const depotItem = market.find((item) => item.elementKey === elementKey);
+        const valuePerUnit = depotItem?.sellPrice ?? Math.max(1, Math.floor(elementInfo.baseValue * CONFIG.TRADE_SELL_MARKDOWN));
         const creditsEarned = amount * valuePerUnit;
         totalCreditsEarned += creditsEarned;
         soldItemsLog.push(`${amount} ${elementInfo.name || elementKey}`); // Use name if available
@@ -1088,6 +1098,69 @@ export class Game {
       amountChanged: totalCreditsEarned,
     });
     // Status bar will update automatically via _publishStatusUpdate in the next loop
+  }
+
+  private getTradeDepotManifest(starbaseName: string): TradeDepotItem[] {
+    const depotKeys = [
+      'WATER_ICE',
+      'IRON',
+      'SILICON',
+      'COPPER',
+      'TITANIUM',
+      'LITHIUM',
+      'COBALT',
+      'URANIUM',
+      'GOLD',
+      'PLATINUM',
+      'HYDROGEN_CYANIDE',
+      'PHOSPHINE',
+    ].filter((key) => ELEMENTS[key]);
+
+    const hashOffset = Math.abs(fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.gameSeedPRNG.seed));
+    return depotKeys.map((elementKey, index) => {
+      const element = ELEMENTS[elementKey];
+      const localVariance = 0.9 + ((hashOffset + index * 17) % 30) / 100;
+      const units = CONFIG.TRADE_DEPOT_STOCK_UNITS + ((hashOffset + index * 7) % 9);
+      return {
+        elementKey,
+        units,
+        buyPrice: Math.max(1, Math.ceil(element.baseValue * CONFIG.TRADE_BUY_MARKUP * localVariance)),
+        sellPrice: Math.max(1, Math.floor(element.baseValue * CONFIG.TRADE_SELL_MARKDOWN * localVariance)),
+      };
+    });
+  }
+
+  private buyNextDepotItem(market: TradeDepotItem[]): string | null {
+    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
+
+    for (let attempts = 0; attempts < market.length; attempts++) {
+      const item = market[this.tradeSelectionIndex % market.length];
+      this.tradeSelectionIndex++;
+      const unitsToBuy = Math.min(item.units, freeCargo);
+      const totalCost = unitsToBuy * item.buyPrice;
+      const element = ELEMENTS[item.elementKey];
+      if (unitsToBuy > 0 && this.player.resources.credits >= totalCost) {
+        const added = this.cargoSystem.addItem(this.player.cargoHold, item.elementKey, unitsToBuy);
+        this.player.resources.credits -= added * item.buyPrice;
+        eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.elementKey, amount: added });
+        eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+          newCredits: this.player.resources.credits,
+          amountChanged: -added * item.buyPrice,
+        });
+        return `Purchased ${added} ${element.name} for ${added * item.buyPrice} Cr.`;
+      }
+    }
+
+    return this.formatTradeDepotManifest(market);
+  }
+
+  private formatTradeDepotManifest(market: TradeDepotItem[]): string {
+    const offers = market
+      .slice(0, 6)
+      .map((item) => `${ELEMENTS[item.elementKey].name} ${item.buyPrice}Cr`)
+      .join(', ');
+    return `Trade depot offers: ${offers}. Need cargo space and credits to buy.`;
   }
 
   /** Handles REFUEL_REQUESTED event */

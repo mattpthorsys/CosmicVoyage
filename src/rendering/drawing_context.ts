@@ -76,7 +76,7 @@ export class DrawingContext {
     }
   }
 
-  /** Draws an orbit outline using Midpoint Circle Algorithm, respecting bounds. */
+  /** Draws an orbit outline, including arcs whose centre is outside the viewport. */
   drawOrbit(
     cx: number,
     cy: number,
@@ -88,11 +88,37 @@ export class DrawingContext {
     maxX: number = this.screenBuffer.getCols() - 1,
     maxY: number = this.screenBuffer.getRows() - 1
   ): void {
-    // logger.debug(`[DrawingContext.drawOrbit] Drawing orbit at [${cx},${cy}], radius ${radius}`); // Noisy
     cx = Math.floor(cx);
     cy = Math.floor(cy);
     radius = Math.floor(radius);
     if (radius <= 0) return;
+
+    const left = Math.max(0, minX);
+    const top = Math.max(0, minY);
+    const right = Math.min(this.screenBuffer.getCols() - 1, maxX);
+    const bottom = Math.min(this.screenBuffer.getRows() - 1, maxY);
+    if (left > right || top > bottom) return;
+
+    // Fast reject only when the circle cannot intersect the clipped viewport.
+    const nearestX = Math.max(left, Math.min(cx, right));
+    const nearestY = Math.max(top, Math.min(cy, bottom));
+    const dx = nearestX - cx;
+    const dy = nearestY - cy;
+    const distanceToBox = Math.sqrt(dx * dx + dy * dy);
+    const farthestDistance = Math.max(
+      Math.hypot(left - cx, top - cy),
+      Math.hypot(right - cx, top - cy),
+      Math.hypot(left - cx, bottom - cy),
+      Math.hypot(right - cx, bottom - cy)
+    );
+    if (radius < distanceToBox - 1 || radius > farthestDistance + 1) return;
+
+    const viewWidth = right - left + 1;
+    const viewHeight = bottom - top + 1;
+    if (radius > Math.max(viewWidth, viewHeight) * 2) {
+      this.drawOrbitByViewportScan(cx, cy, radius, char, colour, left, top, right, bottom);
+      return;
+    }
 
     let x = radius;
     let y = 0;
@@ -108,9 +134,8 @@ export class DrawingContext {
         const screenX = cx + p.dx;
         const screenY = cy + p.dy;
         // Check against provided bounds
-        if (screenX >= minX && screenX <= maxX && screenY >= minY && screenY <= maxY) {
-          // Use null background for orbits to make them transparent overlays
-          this.screenBuffer.drawChar(char, screenX, screenY, colour, '#000000');
+        if (screenX >= left && screenX <= right && screenY >= top && screenY <= bottom) {
+          this.screenBuffer.drawChar(char, screenX, screenY, colour, null);
         }
       });
     };
@@ -124,6 +149,33 @@ export class DrawingContext {
       } else {
         x--;
         err += 2 * (y - x) + 1; // Move diagonally
+      }
+    }
+  }
+
+  private drawOrbitByViewportScan(
+    cx: number,
+    cy: number,
+    radius: number,
+    char: string,
+    colour: string | null,
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number
+  ): void {
+    const tolerance = Math.max(0.75, radius * 0.006);
+    const minRadiusSq = (radius - tolerance) * (radius - tolerance);
+    const maxRadiusSq = (radius + tolerance) * (radius + tolerance);
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        const distSq = dx * dx + dy * dy;
+        if (distSq >= minRadiusSq && distSq <= maxRadiusSq) {
+          this.screenBuffer.drawChar(char, x, y, colour, null);
+        }
       }
     }
   }

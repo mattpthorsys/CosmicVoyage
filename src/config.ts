@@ -28,6 +28,9 @@ export const CONFIG = {
   DEFAULT_VIEW_SCALE: 1.0,
 
   // --- Movement / Physics ---
+  HYPERSPACE_MOVE_INTERVAL_MS: 145,
+  HYPERSPACE_FINE_MOVE_INTERVAL_MS: 260,
+  HYPERSPACE_BOOST_MOVE_INTERVAL_MS: 70,
   SYSTEM_MOVE_INCREMENT: 3e10, // World units per input step in system view (adjust for speed)
   SYSTEM_ORBIT_SPEED_FACTOR: 0.01, // How fast planets orbit (higher is faster)
   LANDING_DISTANCE: 8.3e10, // Max distance from planet/starbase center to allow landing action prompt //
@@ -39,6 +42,9 @@ export const CONFIG = {
   SYSTEM_MOVE_FUEL_COST: 0.0, // Fuel cost per move update within a system (Set > 0 to enable)
   FUEL_PER_CREDIT: 10, // Units of fuel bought per credit at starbase
   MINERAL_SELL_PRICE: 5, // Credits received per unit of mineral sold
+  TRADE_BUY_MARKUP: 1.35,
+  TRADE_SELL_MARKDOWN: 0.85,
+  TRADE_DEPOT_STOCK_UNITS: 12,
 
   // --- Input Keys --- (Using KeyboardEvent.key values - Case sensitive!)
   KEY_BINDINGS: {
@@ -69,6 +75,8 @@ export const CONFIG = {
   PLANET_MAP_BASE_SIZE: 256, // Target size for heightmap generation (actual will be power of 2 + 1)
   PLANET_SURFACE_ROUGHNESS: 0.7, // Diamond-Square roughness factor
   PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colours
+  PLANET_SURFACE_VIEW_WIDTH: 72,
+  PLANET_SURFACE_VIEW_HEIGHT: 38,
   MINING_RATE_FACTOR: 5, // Base number of minerals mined per action (scales with richness)
 
   // --- Hyperspace Generation ---

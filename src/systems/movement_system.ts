@@ -22,6 +22,7 @@ export interface MoveRequestData {
 
 export class MovementSystem {
     private player: Player;
+    private lastHyperspaceMoveAt = 0;
 
     constructor(player: Player) {
         this.player = player;
@@ -51,8 +52,7 @@ export class MovementSystem {
             // Process movement based on the game state context provided in the event data
             switch (data.context) {
                 case 'hyperspace':
-                    // Hyperspace movement is typically 1 unit per step, not affected by zoom
-                    this._moveWorld(position, render, data.dx, data.dy);
+                    this._moveWorld(position, render, data.dx, data.dy, data.isFineControl, data.isBoost);
                     break;
                 case 'system':
                     // System movement IS affected by zoom speed multiplier
@@ -85,11 +85,23 @@ export class MovementSystem {
     // --- Private Helper Methods for Movement Logic ---
 
     /** Updates player position in hyperspace (world coordinates). */
-    private _moveWorld(position: PositionComponent, render: RenderComponent, dx: number, dy: number): void {
+    private _moveWorld(position: PositionComponent, render: RenderComponent, dx: number, dy: number, isFineControl: boolean, isBoost: boolean): void {
+        const now = performance.now();
+        const moveInterval = isBoost
+            ? CONFIG.HYPERSPACE_BOOST_MOVE_INTERVAL_MS
+            : isFineControl
+              ? CONFIG.HYPERSPACE_FINE_MOVE_INTERVAL_MS
+              : CONFIG.HYPERSPACE_MOVE_INTERVAL_MS;
+
+        if (now - this.lastHyperspaceMoveAt < moveInterval) {
+            return;
+        }
+
         const oldX = position.worldX;
         const oldY = position.worldY;
         position.worldX += dx; // Simple integer addition
         position.worldY += dy;
+        this.lastHyperspaceMoveAt = now;
         render.char = CONFIG.PLAYER_CHAR; // Ensure player char is used
         logger.debug(`[MovementSystem] Player moved HYPERSPACE: [${oldX},${oldY}] -> [${position.worldX},${position.worldY}] (Delta: ${dx},${dy})`);
     }

@@ -139,8 +139,8 @@ describe('DrawingContext', () => {
       expect(drawCharSpy).toHaveBeenCalledWith('.', 7, 5, '#888', null);  // (10-3, 5)
       expect(drawCharSpy).toHaveBeenCalledWith('.', 10, 8, '#888', null); // (10, 5+3)
       expect(drawCharSpy).toHaveBeenCalledWith('.', 10, 2, '#888', null); // (10, 5-3)
-      expect(drawCharSpy).toHaveBeenCalledWith('.', 12, 6, '#888', null); // Example from step 2
-      expect(drawCharSpy).toHaveBeenCalledWith('.', 9, 3, '#888', null);  // Example from step 2
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 13, 6, '#888', null); // Midpoint arc point
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 8, 3, '#888', null);  // Midpoint arc point
     });
 
     it('should respect boundary limits', () => {
@@ -148,12 +148,25 @@ describe('DrawingContext', () => {
         drawingContext.drawOrbit(18, 5, 3, '.', '#888', 0, 0, 19, 9); // MaxX=19, MaxY=9
         // Point (18+3, 5) = (21, 5) is out of bounds (x > 19)
         expect(drawCharSpy).not.toHaveBeenCalledWith('.', 21, 5, '#888', null);
-        // Point (18-1, 5+2) = (17, 7) is in bounds
-        expect(drawCharSpy).toHaveBeenCalledWith('.', 17, 7, '#888', null);
+        // Point (18-2, 5+2) = (16, 7) is in bounds
+        expect(drawCharSpy).toHaveBeenCalledWith('.', 16, 7, '#888', null);
         // Point (18, 5+3) = (18, 8) is in bounds
         expect(drawCharSpy).toHaveBeenCalledWith('.', 18, 8, '#888', null);
         // Point (18, 5-3) = (18, 2) is in bounds
         expect(drawCharSpy).toHaveBeenCalledWith('.', 18, 2, '#888', null);
+    });
+
+    it('should draw visible arcs for large off-screen orbits', () => {
+      drawingContext.drawOrbit(-30, 5, 40, '.', '#888', 0, 0, 19, 9);
+
+      expect(drawCharSpy).toHaveBeenCalled();
+      for (const call of drawCharSpy.mock.calls) {
+        expect(call[1]).toBeGreaterThanOrEqual(0);
+        expect(call[1]).toBeLessThanOrEqual(19);
+        expect(call[2]).toBeGreaterThanOrEqual(0);
+        expect(call[2]).toBeLessThanOrEqual(9);
+        expect(call[4]).toBeNull();
+      }
     });
 
      it('should not draw if radius is zero or negative', () => {
