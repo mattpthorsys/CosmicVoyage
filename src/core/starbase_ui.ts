@@ -1,5 +1,6 @@
 import { Player } from './player';
 import { Starbase } from '../entities/starbase';
+import { clampIndex, TextMenuSection, TextTableModel, TextTableRow } from './text_ui';
 
 export type StarbaseSectionId =
   | 'overview'
@@ -12,30 +13,15 @@ export type StarbaseSectionId =
   | 'shipyard'
   | 'crew';
 
-export interface StarbaseSection {
-  id: StarbaseSectionId;
-  label: string;
-}
+export type StarbaseSection = TextMenuSection<StarbaseSectionId>;
+export type StarbaseTableRow = TextTableRow;
 
-export interface StarbaseTableRow {
-  id: string;
-  cells: string[];
-  detail?: string;
-  disabled?: boolean;
-}
-
-export interface StarbaseScreenModel {
+export interface StarbaseScreenModel extends TextTableModel {
   stationName: string;
   sectionId: StarbaseSectionId;
   sections: StarbaseSection[];
   title: string;
   subtitle: string;
-  columns: string[];
-  widths: number[];
-  rows: StarbaseTableRow[];
-  selectedIndex: number;
-  viewOffset: number;
-  visibleRowCount: number;
   footer: string[];
   alert?: string;
 }
@@ -88,9 +74,4 @@ export function createStarbaseScreenModel(args: {
     footer,
     alert: args.alert,
   };
-}
-
-export function clampIndex(index: number, length: number): number {
-  if (length <= 0) return 0;
-  return Math.max(0, Math.min(index, length - 1));
 }

@@ -13,6 +13,7 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
+import { TextMenuSection, TextTableModel } from '../core/text_ui';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -703,22 +704,14 @@ export class SceneRenderer {
     this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
     this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
 
-    let tabX = panelX + 4;
-    model.sections.forEach((section) => {
-      const active = section.id === model.sectionId;
-      const label = active ? `[${section.label}]` : ` ${section.label} `;
-      if (tabX + label.length < panelX + panelWidth - 2) {
-        this.screenBuffer.drawString(label, tabX, panelY + 6, active ? '#001010' : '#00AA66', active ? '#00FFFF' : CONFIG.DEFAULT_BG_COLOUR);
-      }
-      tabX += label.length + 1;
-    });
+    this.drawTextTabs(model.sections, model.sectionId, panelX + 4, panelY + 6, panelX + panelWidth - 2);
 
     const tableX = panelX + 4;
     const tableY = panelY + 8;
     const tableWidth = panelWidth - 9;
     const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelY + panelHeight - 6 - tableY));
-    this.drawStarbaseHeader(model, tableX, tableY, tableWidth);
-    this.drawStarbaseRows(model, tableX, tableY + 2, tableWidth, visibleRows);
+    this.drawTextTableHeader(model, tableX, tableY, tableWidth);
+    this.drawTextTableRows(model, tableX, tableY + 2, tableWidth, visibleRows);
     this.drawTextScrollbar(tableX + tableWidth + 1, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
 
     if (model.alert) {
@@ -946,7 +939,31 @@ export class SceneRenderer {
     };
   }
 
-  private drawStarbaseHeader(model: StarbaseScreenModel, x: number, y: number, tableWidth: number): void {
+  private drawTextTabs<Id extends string>(
+    sections: TextMenuSection<Id>[],
+    activeId: Id,
+    x: number,
+    y: number,
+    maxX: number
+  ): void {
+    let cursorX = x;
+    sections.forEach((section) => {
+      const active = section.id === activeId;
+      const label = active ? `[${section.label}]` : ` ${section.label} `;
+      if (cursorX + label.length < maxX) {
+        this.screenBuffer.drawString(
+          label,
+          cursorX,
+          y,
+          active ? '#001010' : '#00AA66',
+          active ? '#00FFFF' : CONFIG.DEFAULT_BG_COLOUR
+        );
+      }
+      cursorX += label.length + 1;
+    });
+  }
+
+  private drawTextTableHeader(model: TextTableModel, x: number, y: number, tableWidth: number): void {
     let cursorX = x;
     model.columns.forEach((column, index) => {
       const width = model.widths[index] ?? 12;
@@ -956,7 +973,7 @@ export class SceneRenderer {
     this.screenBuffer.drawString('-'.repeat(Math.max(1, tableWidth)), x, y + 1, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
   }
 
-  private drawStarbaseRows(model: StarbaseScreenModel, x: number, y: number, tableWidth: number, visibleRows: number): void {
+  private drawTextTableRows(model: TextTableModel, x: number, y: number, tableWidth: number, visibleRows: number): void {
     const rows = model.rows.slice(model.viewOffset, model.viewOffset + visibleRows);
     if (rows.length === 0) {
       this.screenBuffer.drawString('No records available.'.slice(0, tableWidth), x, y, '#506060', CONFIG.DEFAULT_BG_COLOUR);

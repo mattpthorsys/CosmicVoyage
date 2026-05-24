@@ -25,13 +25,14 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
 import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
 import {
-  clampIndex,
   createStarbaseScreenModel,
   StarbaseScreenModel,
   StarbaseSectionId,
   StarbaseTableRow,
   STARBASE_SECTIONS,
 } from './starbase_ui';
+import { clampIndex, moveSelection } from './text_ui';
+import { createHelpReferenceLines } from './help_reference';
 import {
   createOrbitScreenModel,
   getPlanetMapSize,
@@ -459,13 +460,13 @@ export class Game {
     const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.setStarbaseSelection(selectedIndex - 1, rows.length, visibleRows);
+      this.moveStarbaseSelection(-1, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.setStarbaseSelection(selectedIndex + 1, rows.length, visibleRows);
+      this.moveStarbaseSelection(1, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
@@ -483,13 +484,13 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
-      this.setStarbaseSelection(selectedIndex - visibleRows, rows.length, visibleRows);
+      this.moveStarbaseSelection(-visibleRows, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
-      this.setStarbaseSelection(selectedIndex + visibleRows, rows.length, visibleRows);
+      this.moveStarbaseSelection(visibleRows, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
@@ -849,31 +850,13 @@ export class Game {
 
   private _showHelpOverlay(): void {
     const actions = this.getCurrentAvailableActions().filter((action) => action.enabled);
-    const lines = [
-      'COSMIC VOYAGE COMMANDS',
-      '',
-      ...actions.slice(0, 9).map((action) => `${this.formatKeyForHelp(action.key).padEnd(10)} ${action.label}`),
-      '',
-      'Space performs the best available action.',
-      'Tab cycles targets in system view.',
-      'A approaches the selected system target.',
-      'F3 toggles the performance profiler.',
-      'Esc, arrows, Enter, or Backspace closes this panel.',
-      CONFIG.POPUP_CLOSE_TEXT,
-    ];
+    const lines = createHelpReferenceLines(this.stateManager.state, actions);
     this.popupContent = lines;
     this.popupState = 'opening';
     this.popupOpenCloseProgress = 0;
     this.popupTextProgress = 0;
     this.popupTotalChars = lines.reduce((sum, line) => sum + line.length + 1, 0);
     this.forceFullRender = true;
-  }
-
-  private formatKeyForHelp(key: string): string {
-    if (key === ' ') return '[SPACE]';
-    if (key === 'Up/Down') return '[UP/DOWN]';
-    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') return '[ARROWS]';
-    return `[${key.toUpperCase()}]`;
   }
 
   /** Handles movement input and publishes MOVE_REQUESTED event. */
@@ -2039,14 +2022,10 @@ export class Game {
     return this.starbaseOffsetBySection[this.starbaseSectionId] ?? 0;
   }
 
-  private setStarbaseSelection(index: number, rowCount: number, visibleRows: number): void {
-    const selected = clampIndex(index, rowCount);
-    let offset = this.getStarbaseOffset();
-    if (selected < offset) offset = selected;
-    if (selected >= offset + visibleRows) offset = selected - visibleRows + 1;
-    offset = Math.max(0, Math.min(offset, Math.max(0, rowCount - visibleRows)));
-    this.starbaseSelectionBySection[this.starbaseSectionId] = selected;
-    this.starbaseOffsetBySection[this.starbaseSectionId] = offset;
+  private moveStarbaseSelection(delta: number, rowCount: number, visibleRows: number): void {
+    const viewport = moveSelection(this.getStarbaseSelection(), delta, rowCount, visibleRows, this.getStarbaseOffset());
+    this.starbaseSelectionBySection[this.starbaseSectionId] = viewport.selectedIndex;
+    this.starbaseOffsetBySection[this.starbaseSectionId] = viewport.viewOffset;
     this.starbaseAlert = '';
   }
 
