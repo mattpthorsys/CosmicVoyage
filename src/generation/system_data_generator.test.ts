@@ -15,6 +15,16 @@ function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: nu
   throw new Error('Expected at least one generated system in search window.');
 }
 
+function findRoguePlanetaryMassObject(generator: SystemDataGenerator): { x: number; y: number } {
+  for (let y = -140; y <= 140; y++) {
+    for (let x = -140; x <= 140; x++) {
+      const props = generator.getRoguePlanetSystemProperties(x, y);
+      if (props) return { x, y };
+    }
+  }
+  throw new Error('Expected at least one rogue planetary-mass object in search window.');
+}
+
 function createSystem(seed: PRNG, x: number, y: number): SolarSystem {
   const generator = new SystemDataGenerator(seed);
   const props = generator.getSystemProperties(x, y);
@@ -494,5 +504,31 @@ describe('SystemDataGenerator', () => {
 
     expect(checkedRegularGiantMoon).toBe(true);
     expect(checkedCapturedLikeMoon).toBe(true);
+  });
+
+  it('creates explorable starless systems for rogue planetary-mass objects', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    const coords = findRoguePlanetaryMassObject(generator);
+    const props = generator.getRoguePlanetSystemProperties(coords.x, coords.y);
+    if (!props) throw new Error('Expected rogue object properties.');
+
+    const system = new SolarSystem(props, coords.x, coords.y, seed);
+    const primary = system.planets.find((planet) => planet !== null);
+
+    expect(system.isStarless).toBe(true);
+    expect(system.stars).toHaveLength(0);
+    expect(system.starbase).toBeNull();
+    expect(primary).toBeTruthy();
+    expect(primary?.orbitDistance).toBe(0);
+    expect(primary?.surfaceTemp).toBeLessThan(100);
+    expect(primary?.moons.every((moon) => moon.orbitDistance > primary.diameter * 1000)).toBe(true);
+
+    system.updateOrbits(60);
+    expect(primary?.systemX).toBe(0);
+    expect(primary?.systemY).toBe(0);
+    if (primary && primary.moons.length > 0) {
+      expect(system.getOrbitParentFor(primary.moons[0])).toBe(primary);
+    }
   });
 });

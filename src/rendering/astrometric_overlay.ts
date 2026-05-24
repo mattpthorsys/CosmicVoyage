@@ -279,7 +279,7 @@ export class AstrometricOverlay {
       .filter((entry) => entry.viewX >= 0 && entry.viewX < cols && entry.viewY >= 0 && entry.viewY < rows)
       .sort((a, b) => a.distSq - b.distSq);
 
-    if (candidates.length === 0) {
+    if (candidates.length === 0 && context.system.stars.length > 0) {
       const nearestStar = context.system.getNearestStar(player.position.systemX, player.position.systemY);
       const starRangeAu = Math.sqrt(player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)) / AU_IN_METERS;
       return {
@@ -301,6 +301,7 @@ export class AstrometricOverlay {
         ],
       };
     }
+    if (candidates.length === 0) return null;
 
     const selected = this.pickCycledPopupCandidate(
       'system',
@@ -373,10 +374,11 @@ export class AstrometricOverlay {
             : this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
         if (props.exists && props.name && props.starType) {
           const range = Math.sqrt(distSq);
+          const objectKind = props.objectKind === 'brown-dwarf' ? 'brown-dwarf' : props.objectKind === 'stellar' ? 'stellar' : null;
           const detectRadius =
-            (props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
+            (objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
             sensorRangeMultiplier;
-          if (range <= detectRadius) contacts.push({ kind: 'system', dx, dy, name: props.name, starType: props.starType, distSq, objectKind: props.objectKind });
+          if (range <= detectRadius) contacts.push({ kind: 'system', dx, dy, name: props.name, starType: props.starType, distSq, objectKind });
           continue;
         }
         const phenomenon =

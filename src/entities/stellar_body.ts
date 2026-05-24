@@ -3,7 +3,7 @@ import { StellarEnvironment } from './stellar_environment';
 
 const STEFAN_BOLTZMANN_SIGMA = 5.670374419e-8;
 
-export type StellarSystemKind = 'single' | 'binary' | 'triple';
+export type StellarSystemKind = 'single' | 'binary' | 'triple' | 'starless';
 export type StellarOrbitCenter = 'barycenter' | 'primary' | 'ab-barycenter';
 export type PlanetOrbitKind = 'circumbinary' | 'circumstellar' | 'barycentric';
 

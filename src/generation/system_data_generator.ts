@@ -26,7 +26,7 @@ export interface SystemBasicProperties {
     ageGyr: number | null;
     metallicityFeH: number | null;
     architecture: StellarArchitecture | null;
-    objectKind: 'stellar' | 'brown-dwarf' | null;
+    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null;
 }
 
 export interface SystemMapProperties {
@@ -179,6 +179,34 @@ export class SystemDataGenerator {
 
         this.cacheSystemProperties(cacheKey, result);
         return result;
+    }
+
+    getRoguePlanetSystemProperties(worldX: number, worldY: number): SystemBasicProperties | null {
+        const phenomenon = this.getDeepSpacePhenomenonProperties(worldX, worldY);
+        if (!phenomenon.exists || phenomenon.type !== 'rogue-planet' || !phenomenon.name) {
+            return null;
+        }
+
+        const prng = this.gameSeedPRNG.seedNew(`rogue_system_${worldX},${worldY}`);
+        const ageGyr = Number(prng.random(0.3, 12.8).toFixed(2));
+        const metallicityFeH = Number(prng.random(-0.9, 0.35).toFixed(2));
+        return {
+            exists: true,
+            starType: null,
+            name: phenomenon.name,
+            hasStarbase: false,
+            ageGyr,
+            metallicityFeH,
+            architecture: {
+                kind: 'starless',
+                stars: [],
+                primaryStarId: 'A',
+                binarySeparation: 0,
+                outerSeparation: 0,
+                habitableLabel: 'none',
+            },
+            objectKind: 'rogue-planet',
+        };
     }
 
     getDeepSpacePhenomenonProperties(worldX: number, worldY: number): DeepSpacePhenomenonProperties {

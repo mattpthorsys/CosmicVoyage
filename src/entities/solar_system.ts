@@ -8,6 +8,7 @@ import {
   GRAVITATIONAL_CONSTANT_G,
   SOLAR_MASS_KG,
   AU_IN_METERS,
+  MineralRichness,
 } from '../constants';
 import { PRNG } from '../utils/prng';
 import { Planet } from './planet'; // Assuming Planet class has mass, escapeVelocity, axialTilt, moons properties
@@ -45,6 +46,7 @@ export class SolarSystem {
   readonly planets: (Planet | null)[]; // Array for planets (includes moons nested)
   readonly starbase: Starbase | null; // Optional starbase
   readonly edgeRadius: number; // System boundary radius in meters
+  readonly isStarless: boolean;
 
   constructor(basicProps: SystemBasicProperties, starX: number, starY: number, gameSeedPRNG: PRNG) {
     this.starX = starX;
@@ -55,15 +57,22 @@ export class SolarSystem {
 
     this.architecture = basicProps.architecture ?? this.createFallbackArchitecture(basicProps);
     this.stars = this.architecture.stars;
-    this.configureStellarOrbits();
-    this.updateStarPositions(0);
-    const primaryStar = getPrimaryStar(this.architecture);
-    this.starType = primaryStar.starType;
+    this.isStarless = this.architecture.kind === 'starless' || basicProps.objectKind === 'rogue-planet';
+    if (!this.isStarless) {
+      this.configureStellarOrbits();
+      this.updateStarPositions(0);
+    }
+    const primaryStar = this.stars.length > 0 ? getPrimaryStar(this.architecture) : null;
+    this.starType = primaryStar?.starType ?? 'ROGUE';
     this.name = basicProps.name!;
-    const fallbackEnvironment = primaryStar.environment ?? getDefaultStellarEnvironment(this.starType);
+    const fallbackEnvironment = primaryStar?.environment ?? {
+      starType: 'ROGUE',
+      ageGyr: basicProps.ageGyr ?? 5.0,
+      metallicityFeH: basicProps.metallicityFeH ?? 0,
+    };
     this.ageGyr = basicProps.ageGyr ?? fallbackEnvironment.ageGyr;
     this.metallicityFeH = basicProps.metallicityFeH ?? fallbackEnvironment.metallicityFeH;
-    this.stellarEnvironment = primaryStar.environment;
+    this.stellarEnvironment = fallbackEnvironment;
 
     logger.info(
       `[System:${this.name}] Created ${this.architecture.kind} system at world [${this.starX},${this.starY}]. Primary: ${this.starType}, Age: ${this.ageGyr} Gyr, [Fe/H]: ${this.metallicityFeH}.`
@@ -73,7 +82,7 @@ export class SolarSystem {
 
     // Generate starbase first (its orbit distance is fixed in config)
     this.starbase =
-      basicProps.hasStarbase
+      basicProps.hasStarbase && !this.isStarless
         ? // Pass systemPRNG to Starbase constructor
           new Starbase(this.name, this.systemPRNG, this.name)
         : null;
@@ -86,7 +95,11 @@ export class SolarSystem {
     }
 
     // Generate planets and their moons
-    this.generatePlanets(); // Uses meter-based distances now
+    if (this.isStarless) {
+      this.generateRoguePlanetaryMassObject();
+    } else {
+      this.generatePlanets(); // Uses meter-based distances now
+    }
 
     // Calculate edge radius based on furthest object (planet or starbase)
     let maxOrbit_m = 0;
@@ -110,7 +123,9 @@ export class SolarSystem {
 
     logger.debug(`[System:${this.name}] Furthest object orbit distance: ${maxOrbit_m.toExponential(2)}m`);
     // Ensure a minimum size even if no objects generated far out
-    this.edgeRadius = Math.max(5 * AU_IN_METERS, maxOrbit_m * CONFIG.SYSTEM_EDGE_RADIUS_FACTOR); // Min edge 5 AU
+    this.edgeRadius = this.isStarless
+      ? Math.max(0.08 * AU_IN_METERS, maxOrbit_m * CONFIG.SYSTEM_EDGE_RADIUS_FACTOR)
+      : Math.max(5 * AU_IN_METERS, maxOrbit_m * CONFIG.SYSTEM_EDGE_RADIUS_FACTOR); // Min edge 5 AU
     logger.debug(
       `[System:${this.name}] System edge radius calculated: ${this.edgeRadius.toExponential(2)}m (Factor: ${
         CONFIG.SYSTEM_EDGE_RADIUS_FACTOR
@@ -169,6 +184,16 @@ export class SolarSystem {
   }
 
   private createFallbackArchitecture(basicProps: SystemBasicProperties): StellarArchitecture {
+    if (basicProps.objectKind === 'rogue-planet') {
+      return {
+        kind: 'starless',
+        stars: [],
+        primaryStarId: 'A',
+        binarySeparation: 0,
+        outerSeparation: 0,
+        habitableLabel: 'none',
+      };
+    }
     const starType = basicProps.starType ?? 'G';
     const environment = {
       starType,
@@ -393,6 +418,175 @@ export class SolarSystem {
     logger.info(`[System:${this.name}] Planet generation complete. ${planetsGenerated} planets created.`);
   }
 
+  private generateRoguePlanetaryMassObject(): void {
+    const prng = this.systemPRNG.seedNew('rogue_planetary_mass_object');
+    const planetType = this.weightedChoice(prng, [
+      { item: 'GasGiant', weight: 5.5 },
+      { item: 'IceGiant', weight: 3.2 },
+      { item: 'Frozen', weight: 0.8 },
+    ]);
+    const planet = new Planet(
+      this.name,
+      planetType,
+      0,
+      0,
+      this.systemPRNG,
+      'ROGUE',
+      this.generateRoguePlanetCharacteristics(planetType, prng),
+      this.stellarEnvironment,
+      { kind: 'barycentric' },
+      0,
+      0,
+      0.0001
+    );
+    planet.systemX = 0;
+    planet.systemY = 0;
+    this.planets[0] = planet;
+    this.generateMoonsForRoguePlanet(planet, this.name, prng);
+    logger.info(`[System:${this.name}] Generated starless ${planet.type} with ${planet.moons.length} retained moon${planet.moons.length === 1 ? '' : 's'}.`);
+  }
+
+  private generateRoguePlanetCharacteristics(planetType: string, prng: PRNG): PlanetCharacteristics {
+    const physical =
+      planetType === 'GasGiant'
+        ? { diameter: prng.randomInt(52000, 146000), density: prng.random(0.55, 1.75) }
+        : planetType === 'IceGiant'
+          ? { diameter: prng.randomInt(22000, 62000), density: prng.random(1.1, 2.05) }
+          : { diameter: prng.randomInt(2600, 14500), density: prng.random(1.0, 3.2) };
+    const radius_m = (physical.diameter * 1000) / 2;
+    const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * physical.density * 1000;
+    const escapeVelocity = Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m);
+    const surfaceTemp =
+      planetType === 'GasGiant'
+        ? prng.randomInt(18, 95)
+        : planetType === 'IceGiant'
+          ? prng.randomInt(14, 70)
+          : prng.randomInt(8, 45);
+    const atmosphere: PlanetCharacteristics['atmosphere'] =
+      planetType === 'GasGiant'
+        ? { density: 'Superdense', pressure: prng.random(200, 1500), composition: { Hydrogen: 0.82, Helium: 0.16, Methane: 0.02 } }
+        : planetType === 'IceGiant'
+          ? { density: 'Superdense', pressure: prng.random(80, 700), composition: { Hydrogen: 0.52, Helium: 0.18, Methane: 0.18, Ammonia: 0.12 } }
+          : { density: 'Trace', pressure: prng.random(0.001, 0.08), composition: { Nitrogen: 0.35, Methane: 0.28, 'Carbon Dioxide': 0.22, Argon: 0.15 } };
+    const volatileAbundance: Record<string, number> =
+      planetType === 'GasGiant'
+        ? { Hydrogen: 0.62, Helium: 0.2, 'Methane Ice': 0.08, 'Ammonia Ice': 0.06, 'Water Ice': 0.04 }
+        : planetType === 'IceGiant'
+          ? { 'Water Ice': 0.34, 'Methane Ice': 0.22, 'Ammonia Ice': 0.18, Hydrogen: 0.16, Helium: 0.1 }
+          : { 'Water Ice': 0.38, 'Methane Ice': 0.22, 'Ammonia Ice': 0.14, Silicon: 0.14, Iron: 0.12 };
+
+    return {
+      diameter: physical.diameter,
+      density: physical.density,
+      gravity: calculateGravity(physical.diameter, physical.density),
+      mass,
+      escapeVelocity,
+      atmosphere,
+      surfaceTemp,
+      hydrosphere: planetType === 'Frozen' ? 'Cryogenic surface volatiles' : 'Deep volatile atmosphere',
+      lithosphere: planetType === 'Frozen' ? 'Ice-rock crust' : 'No solid surface',
+      mineralRichness: planetType === 'Frozen' ? MineralRichness.POOR : MineralRichness.NONE,
+      baseMinerals: planetType === 'Frozen' ? prng.randomInt(4, 16) : 0,
+      elementAbundance: volatileAbundance,
+      magneticFieldStrength: planetType === 'GasGiant' ? prng.random(120, 1800) : planetType === 'IceGiant' ? prng.random(60, 900) : prng.random(0, 3),
+      axialTilt: prng.random(0, Math.PI / 3),
+      tidallyLocked: false,
+      orbitalInclination: 0,
+    };
+  }
+
+  private generateMoonsForRoguePlanet(parent: Planet, planetName: string, prng: PRNG): void {
+    if (!parent.mass || parent.mass <= 0 || !parent.diameter || parent.diameter <= 0) return;
+    const parentRadius_m = (parent.diameter * 1000) / 2;
+    const innerOrbit_m = parentRadius_m * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 3.2 : 5.0);
+    const outerStableOrbit_m = parentRadius_m * (parent.type === 'GasGiant' ? 520 : parent.type === 'IceGiant' ? 360 : 120);
+    const targetMoonCount =
+      parent.type === 'GasGiant'
+        ? this.clamp(Math.round(prng.random(4, 16)), 0, 18)
+        : parent.type === 'IceGiant'
+          ? this.clamp(Math.round(prng.random(2, 9)), 0, 12)
+          : this.clamp(Math.round(prng.random(0, 2)), 0, 3);
+
+    let lastMoonOrbit_m = innerOrbit_m;
+    for (let j = 0; j < targetMoonCount; j++) {
+      const moonOrbit_m = lastMoonOrbit_m * prng.random(1.38, parent.type === 'Frozen' ? 2.7 : 1.85);
+      if (moonOrbit_m > outerStableOrbit_m) break;
+      const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
+      const moonType = orbitFraction < 0.25 && this.getMoonTidalHeatingFactor(parent, moonOrbit_m) > 0.18 && prng.random() < 0.45
+        ? 'Lunar'
+        : this.weightedChoice(prng, [
+          { item: 'Frozen', weight: parent.type === 'Frozen' ? 2.2 : 5 },
+          { item: 'Lunar', weight: orbitFraction > 0.65 ? 2.2 : 1.1 },
+        ]);
+      const moonCharacteristics = this.generateRogueMoonCharacteristics(
+        moonType,
+        moonOrbit_m,
+        prng,
+        parent,
+        j,
+        innerOrbit_m,
+        outerStableOrbit_m
+      );
+      const moon = new Planet(
+        `${planetName}.${j + 1}`,
+        moonType,
+        moonOrbit_m,
+        prng.random(0, Math.PI * 2),
+        this.systemPRNG,
+        'ROGUE',
+        moonCharacteristics,
+        this.stellarEnvironment,
+        { kind: 'barycentric' },
+        parent.systemX,
+        parent.systemY,
+        0.0001
+      );
+      parent.moons.push(moon);
+      lastMoonOrbit_m = moonOrbit_m;
+    }
+  }
+
+  private generateRogueMoonCharacteristics(
+    moonType: string,
+    moonOrbit_m: number,
+    prng: PRNG,
+    parent: Planet,
+    moonIndex: number,
+    innerOrbit_m: number,
+    outerStableOrbit_m: number
+  ): PlanetCharacteristics {
+    const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
+    const parentDiameterLimit = parent.diameter * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 0.08 : 0.22);
+    const maxDiameter = Math.max(420, Math.min(moonType === 'Frozen' ? 5200 : 3800, parentDiameterLimit) * Math.max(0.45, 1 - moonIndex * 0.055));
+    const diameter = prng.random(moonType === 'Frozen' ? 520 : 420, maxDiameter);
+    const density = moonType === 'Frozen' ? prng.random(1.15, 2.25) : prng.random(2.35, 3.7);
+    const radius_m = (diameter * 1000) / 2;
+    const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
+    const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
+    const surfaceTemp = Math.round((moonType === 'Frozen' ? prng.random(9, 34) : prng.random(12, 52)) + tidalHeat * prng.random(12, 95));
+    const tidallyLocked = orbitFraction < 0.82 || tidalHeat > 0.12;
+    return {
+      diameter,
+      density,
+      gravity: calculateGravity(diameter, density),
+      mass,
+      escapeVelocity: Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m),
+      atmosphere: { density: surfaceTemp > 35 && diameter > 2400 ? 'Trace' : 'None', pressure: surfaceTemp > 35 ? prng.random(0.001, 0.03) : 0, composition: { Nitrogen: 0.45, Methane: 0.35, Argon: 0.2 } },
+      surfaceTemp,
+      hydrosphere: 'Cryogenic ice deposits',
+      lithosphere: moonType === 'Frozen' ? 'Ice-rock crust' : 'Cratered silicate crust',
+      mineralRichness: prng.random() < 0.14 ? MineralRichness.AVERAGE : MineralRichness.POOR,
+      baseMinerals: prng.randomInt(2, 18),
+      elementAbundance: moonType === 'Frozen'
+        ? { 'Water Ice': 0.34, 'Methane Ice': 0.2, 'Ammonia Ice': 0.14, Silicon: 0.18, Iron: 0.14 }
+        : { Silicon: 0.34, Iron: 0.24, Aluminium: 0.12, Magnesium: 0.12, 'Water Ice': 0.18 },
+      magneticFieldStrength: prng.random(0, 4) * (tidalHeat > 0.2 ? 1.4 : 0.45),
+      axialTilt: tidallyLocked ? prng.random(0, Math.PI / 60) : prng.random(0, Math.PI / 3),
+      tidallyLocked,
+      orbitalInclination: orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 2.8),
+    };
+  }
+
   /** Converts a number to a Roman numeral string (simplified). */
   private getRomanNumeral(num: number): string {
     if (num < 1 || num > 20) return num.toString();
@@ -422,6 +616,7 @@ export class SolarSystem {
   }
 
   private getDefaultPlanetOrbitHost(): OrbitHost {
+    if (this.isStarless) return { kind: 'barycentric' };
     if (this.architecture.kind === 'single') return { kind: 'circumstellar', starId: 'A' };
     return { kind: 'circumbinary' };
   }
@@ -442,6 +637,7 @@ export class SolarSystem {
   }
 
   private calculateFluxAt(x_m: number, y_m: number): number {
+    if (this.isStarless || this.stars.length === 0) return 0.0001;
     let flux = 0;
     for (const star of this.stars) {
       const dx = x_m - star.systemX;
@@ -859,6 +1055,9 @@ export class SolarSystem {
   }
 
   getNearestStar(x_m: number, y_m: number): StellarBody {
+    if (this.stars.length === 0) {
+      throw new Error(`System ${this.name} has no stellar primary.`);
+    }
     let closestStar = this.stars[0];
     let minDistanceSq = Number.POSITIVE_INFINITY;
     for (const star of this.stars) {
@@ -888,7 +1087,7 @@ export class SolarSystem {
     this.updateStarPositions(deltaTime);
     const starMassKg = this.stars.reduce((sum, star) => sum + star.massKg, 0);
 
-    if (!starMassKg || starMassKg <= 0) {
+    if (!this.isStarless && (!starMassKg || starMassKg <= 0)) {
       logger.error(`[System:${this.name}] Cannot update orbits: Invalid star mass.`);
       return;
     }
@@ -900,26 +1099,31 @@ export class SolarSystem {
     this.planets.forEach((planet) => {
       if (!planet) return;
 
-      // === Update Planet Orbit Around Star ===
+      // === Update Planet Orbit Around Star or hold central free planet at barycenter ===
       const planet_r = planet.orbitDistance;
-      if (!Number.isFinite(planet_r) || planet_r <= 0) {
+      if (!Number.isFinite(planet_r) || planet_r < 0 || (!this.isStarless && planet_r <= 0)) {
         logger.warn(`[System:${this.name}] Invalid orbit distance for ${planet.name}. Skipping.`);
         return;
       }
-      const planet_deltaAngle = baseStarAngularSpeedRadPerSec * deltaTime;
-      planet.orbitAngle = (planet.orbitAngle + planet_deltaAngle) % (Math.PI * 2);
-      if (!Number.isFinite(planet.orbitAngle)) planet.orbitAngle = 0;
-      const orbitCenter = this.getOrbitCenter(planet.orbitHost ?? { kind: 'barycentric' });
-      const planetX_abs = orbitCenter.x + Math.cos(planet.orbitAngle) * planet_r;
-      const planetY_abs = orbitCenter.y + Math.sin(planet.orbitAngle) * planet_r;
-      if (!Number.isFinite(planetX_abs) || !Number.isFinite(planetY_abs)) {
-        logger.error(`[System:${this.name}] Non-finite position for ${planet.name}. Resetting.`);
+      if (this.isStarless && planet_r === 0) {
         planet.systemX = 0;
         planet.systemY = 0;
-        return;
+      } else {
+        const planet_deltaAngle = baseStarAngularSpeedRadPerSec * deltaTime;
+        planet.orbitAngle = (planet.orbitAngle + planet_deltaAngle) % (Math.PI * 2);
+        if (!Number.isFinite(planet.orbitAngle)) planet.orbitAngle = 0;
+        const orbitCenter = this.getOrbitCenter(planet.orbitHost ?? { kind: 'barycentric' });
+        const planetX_abs = orbitCenter.x + Math.cos(planet.orbitAngle) * planet_r;
+        const planetY_abs = orbitCenter.y + Math.sin(planet.orbitAngle) * planet_r;
+        if (!Number.isFinite(planetX_abs) || !Number.isFinite(planetY_abs)) {
+          logger.error(`[System:${this.name}] Non-finite position for ${planet.name}. Resetting.`);
+          planet.systemX = 0;
+          planet.systemY = 0;
+          return;
+        }
+        planet.systemX = planetX_abs;
+        planet.systemY = planetY_abs;
       }
-      planet.systemX = planetX_abs;
-      planet.systemY = planetY_abs;
 
       // === Update Moons Orbiting This Planet ===
       // Use physics-based period for moons relative to planet

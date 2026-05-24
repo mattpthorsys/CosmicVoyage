@@ -81,7 +81,9 @@ export class GameStateManager {
       const system = this._createAndInitializeSystem();
       this._setPlayerStateForSystemEntry(system);
       this._changeState('system', system, null, null); // Use helper to change state and publish event
-      this.statusMessage = STATUS_MESSAGES.HYPERSPACE_ENTERING(system.name);
+      this.statusMessage = system.isStarless
+        ? `<h>--- Entering local frame: ${system.name} ---</h>`
+        : STATUS_MESSAGES.HYPERSPACE_ENTERING(system.name);
       logger.info(`[GameStateManager] Successfully entered system ${system.name}`);
       return true; // Indicate success
     } catch (error) {
@@ -275,9 +277,12 @@ export class GameStateManager {
 
   // --- Private Helper Methods for State Transitions ---
 
-  /** Checks if a star system exists at the player's current world coordinates. */
+  /** Checks if a star system or explorable rogue planetary-mass object exists at the player's current world coordinates. */
   private _canEnterSystemAtCurrentLocation(): boolean {
-    return this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY).exists;
+    return (
+      this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY).exists ||
+      this.systemDataGenerator.getRoguePlanetSystemProperties(this.player.position.worldX, this.player.position.worldY) !== null
+    );
   }
 
   /** Creates and initializes a new SolarSystem instance. */
@@ -285,7 +290,9 @@ export class GameStateManager {
     logger.info(
       `[GameStateManager] Creating system at <span class="math-inline">\{this\.player\.position\.worldX\},</span>{this.player.position.worldY}...`
     );
-    const basicProps = this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
+    const basicProps =
+      this.systemDataGenerator.getRoguePlanetSystemProperties(this.player.position.worldX, this.player.position.worldY) ??
+      this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
     const system = new SolarSystem(basicProps, this.player.position.worldX, this.player.position.worldY, this.gameSeedPRNG);
     logger.info(
       `[GameStateManager] Generated System: <span class="math-inline">\{system\.name\} \(</span>{system.starType})`
@@ -417,7 +424,9 @@ export class GameStateManager {
    */
   peekAtSystem(worldX: number, worldY: number): SolarSystem | null {
     logger.debug(`[GameStateManager] Peeking at system at: ${worldX}, ${worldY}`);
-    const basicProps = this.systemDataGenerator.getSystemProperties(worldX, worldY);
+    const basicProps =
+      this.systemDataGenerator.getRoguePlanetSystemProperties(worldX, worldY) ??
+      this.systemDataGenerator.getSystemProperties(worldX, worldY);
 
     if (!basicProps.exists) {
       return null;

@@ -259,10 +259,13 @@ export class Game {
       if (this.autoScannedSystemName !== system.name) {
         this.autoScannedSystemName = system.name;
         const planetCount = system.planets.filter((planet) => planet !== null).length;
+        const stellarSummary = system.isStarless
+          ? 'None - free planetary-mass object'
+          : system.stars.map((star) => `${star.id}:${star.starType}`).join(' ');
         this.terminalOverlay.clear();
         this.terminalOverlay.addMessageLines([
           `<h>Entered ${system.name}</h>`,
-          `System: <hl>${system.architecture.kind}</hl> | Stars: <hl>${system.stars.map((star) => `${star.id}:${star.starType}`).join(' ')}</hl>`,
+          `System: <hl>${system.architecture.kind}</hl> | Stars: <hl>${stellarSummary}</hl>`,
           `Bodies: <hl>${planetCount}</hl> | Facility: <hl>${system.starbase ? system.starbase.name : 'None detected'}</hl>`,
           `Tip: <hl>Tab</hl> cycles targets, <hl>Space</hl> performs the best action, <hl>A</hl> approaches target.`,
         ]);
@@ -1125,6 +1128,25 @@ export class Game {
   private _formatStarScanPopup(target: SolarSystem | StellarBody): string[] {
     const lines: string[] = [];
     const system = target instanceof SolarSystem ? target : null;
+    if (system?.isStarless) {
+      const primaryBody = system.planets.find((planet) => planet !== null);
+      lines.push(``);
+      lines.push(`<h>--- DEEP SPACE OBJECT SCAN: ${system.name} ---</h>`);
+      lines.push(`Classification: <hl>FREE PLANETARY-MASS OBJECT</hl>`);
+      lines.push(`Architecture: <hl>STARLESS</hl> (${primaryBody?.moons.length ?? 0} retained moon${primaryBody?.moons.length === 1 ? '' : 's'})`);
+      lines.push(`Thermal Source: <hl>residual formation heat and tidal dissipation</hl>`);
+      lines.push(`Chart Radius: <hl>${formatDistanceAu(system.edgeRadius)}</hl>`);
+      lines.push(`One-way Light Time: <hl>${formatLightTimeFromMeters(system.edgeRadius)}</hl> to chart edge`);
+      if (primaryBody) {
+        lines.push(`Primary Body: <hl>${primaryBody.name}</hl> (${primaryBody.type})`);
+        lines.push(`Mass: <hl>${primaryBody.mass.toExponential(2)} kg</hl> | Gravity: <hl>${primaryBody.gravity.toFixed(2)}g</hl>`);
+        lines.push(`Temperature: <hl>${primaryBody.surfaceTemp} K</hl>`);
+      }
+      lines.push(`Facilities: <hl>None Detected</hl>`);
+      lines.push('<h>--- SCAN COMPLETE---</h>');
+      lines.push(``);
+      return lines;
+    }
     const star: StellarBody = system ? system.stars[0] : target as StellarBody;
     const starInfo = SPECTRAL_TYPES[star.starType];
     lines.push(``);
@@ -1308,6 +1330,11 @@ export class Game {
         Math.floor(survey.rows / 2) * survey.cols + Math.floor(survey.cols / 2)
       ]?.system ?? this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY);
     const isNearStar = currentProps.exists;
+    const currentPhenomenon =
+      survey.visibleCells[
+        Math.floor(survey.rows / 2) * survey.cols + Math.floor(survey.cols / 2)
+      ]?.phenomenon ?? this.systemDataGenerator.getDeepSpacePhenomenonProperties(this.player.position.worldX, this.player.position.worldY);
+    const isNearRoguePlanet = currentPhenomenon?.exists && currentPhenomenon.type === 'rogue-planet';
     const medium = survey.medium;
     const contact = this.toNavigationContact(survey.nearestSystemContact);
     const fuelReach = Math.floor(this.player.resources.fuel / Math.max(1, CONFIG.HYPERSPACE_FUEL_COST));
@@ -1322,11 +1349,12 @@ export class Game {
     }
     baseStatus += ` | Fuel reach: ${fuelReach} jump${fuelReach === 1 ? '' : 's'} / ${formatHyperspaceSpan(fuelReach)}`;
 
-    if (isNearStar) {
+    if (isNearStar || isNearRoguePlanet) {
       // Only peek if necessary for status display
       const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
       if (peekedSystem) {
         const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
+        const objectLabel = peekedSystem.isStarless ? 'Free planetary mass' : 'Near';
         const actions = createAvailableActions({
           state: 'hyperspace',
           player: this.player,
@@ -1336,11 +1364,11 @@ export class Game {
           isNearHyperspaceSystem: true,
           nearbySystemName: peekedSystem.name,
         });
-        baseStatus += ` | Near ${peekedSystem.name}${starbaseText}. Actions: ${formatAvailableActions(actions)}`;
+        baseStatus += ` | ${objectLabel} ${peekedSystem.name}${starbaseText}. Actions: ${formatAvailableActions(actions)}`;
       } else {
         // Hash indicated star, but peek failed? Log warning.
         logger.warn(
-          `[Game:_updateHyperspace] Hash indicated star at ${this.player.position.worldX},${this.player.position.worldY} but peek failed.`
+          `[Game:_updateHyperspace] Hash indicated explorable contact at ${this.player.position.worldX},${this.player.position.worldY} but peek failed.`
         );
         const actions = createAvailableActions({
           state: 'hyperspace',
@@ -1350,7 +1378,7 @@ export class Game {
           starbase: null,
           isNearHyperspaceSystem: true,
         });
-        baseStatus += ` | Near star system. Actions: ${formatAvailableActions(actions, 2)}`;
+        baseStatus += ` | Near navigable contact. Actions: ${formatAvailableActions(actions, 2)}`;
       }
     } else {
       this.stateManager.resetPeekedSystem(); // Clear peek cache if not near star
@@ -1422,7 +1450,10 @@ export class Game {
     // Determine status message based on proximity
     const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
     const selectedTarget = this.getSelectedTarget();
-    let status = `System: ${system.name} (${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}) | Pos: ${this.player.position.systemX.toExponential(
+    const systemKindLabel = system.isStarless
+      ? 'starless rogue planetary-mass object'
+      : `${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}`;
+    let status = `System: ${system.name} (${systemKindLabel}) | Pos: ${this.player.position.systemX.toExponential(
       1
     )},${this.player.position.systemY.toExponential(1)}m`; // Use meters
     if (selectedTarget) status += ` | Target: ${this.getTargetName(selectedTarget)}`;
@@ -1434,22 +1465,28 @@ export class Game {
       )} AU).`; // Show dist in AU
     } else {
       // Check proximity to star for scanning
-      const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
-      const distSqToStar = this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY);
+      const nearestStar = system.stars.length > 0
+        ? system.getNearestStar(this.player.position.systemX, this.player.position.systemY)
+        : null;
+      const distSqToStar = nearestStar
+        ? this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)
+        : Infinity;
       const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
-      const nearStar = distSqToStar < scanThresholdSq;
+      const nearStar = Boolean(nearestStar && distSqToStar < scanThresholdSq);
 
       if (this.isPlayerNearExit()) {
         // Check if near edge
         status += ` | Near system edge.`;
-        if (nearStar) status += ` Near ${nearestStar.id}.`; // Allow star scan even near edge
-      } else if (nearStar) {
+        if (nearStar && nearestStar) status += ` Near ${nearestStar.id}.`; // Allow star scan even near edge
+      } else if (nearStar && nearestStar) {
         status += ` | Near ${nearestStar.name}.`;
       }
     }
-    const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
-    const distSqToStar = this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY);
-    const nearStar = distSqToStar < (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
+    const nearestStar = system.stars.length > 0
+      ? system.getNearestStar(this.player.position.systemX, this.player.position.systemY)
+      : null;
+    const distSqToStar = nearestStar ? this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY) : Infinity;
+    const nearStar = Boolean(nearestStar && distSqToStar < (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2);
     const actions = createAvailableActions({
       state: 'system',
       player: this.player,
@@ -1943,8 +1980,11 @@ export class Game {
         return createAvailableActions({ state, player: this.player, system: null, planet: null, starbase: null });
       }
       const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
-      const nearestStar = system.getNearestStar(this.player.position.systemX, this.player.position.systemY);
+      const nearestStar = system.stars.length > 0
+        ? system.getNearestStar(this.player.position.systemX, this.player.position.systemY)
+        : null;
       const nearStar =
+        nearestStar !== null &&
         this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY) <
         (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
       const selectedTarget = this.getSelectedTarget();
