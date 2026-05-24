@@ -52,6 +52,8 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       } else {
         actions.push(action('scan-local', 'Scan Local Space', CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT, 'SCAN_SYSTEM_OBJECT', 'target', 20, true));
       }
+      actions.push(action('boost', 'Boost Drift', CONFIG.KEY_BINDINGS.BOOST, 'BOOST', 'movement', 82, true));
+      actions.push(action('fine-control', 'Fine Drift', CONFIG.KEY_BINDINGS.FINE_CONTROL, 'FINE_CONTROL', 'movement', 83, true));
       break;
     case 'system':
       actions.push(action('cycle-target', 'Cycle Target', CONFIG.KEY_BINDINGS.CYCLE_TARGET, 'CYCLE_TARGET', 'target', 6, true, context.selectedTargetName ?? undefined));
@@ -100,6 +102,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       break;
   }
   actions.push(action('help', 'Help', CONFIG.KEY_BINDINGS.HELP, 'HELP', 'utility', 95, true));
+  actions.push(action('profiler', 'Profiler', CONFIG.KEY_BINDINGS.TOGGLE_PROFILER, 'TOGGLE_PROFILER', 'utility', 96, true));
 
   return actions.sort((a, b) => a.priority - b.priority);
 }

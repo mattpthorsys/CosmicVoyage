@@ -53,6 +53,25 @@ interface TradeDepotItem {
   sellPrice: number;
 }
 
+interface FrameProfile {
+  frameMs: number;
+  inputMs: number;
+  updateMs: number;
+  renderMs: number;
+  renderPrepMs: number;
+  overlayMs: number;
+  fps: number;
+}
+
+interface HyperspaceNavigationContact {
+  dx: number;
+  dy: number;
+  rangeCells: number;
+  name: string;
+  starType: string;
+  hasStarbase: boolean;
+}
+
 /** Main game class - Coordinates components and manages the loop. */
 export class Game {
   // Core Components
@@ -93,6 +112,18 @@ export class Game {
   private forceFullRender: boolean = true;
   private lastRenderStatsLogAt: number = 0;
   private lastMainRenderSignature: string = '';
+  private profilerVisible: boolean = false;
+  private hyperspaceNavigationContactSignature = '';
+  private hyperspaceNavigationContact: HyperspaceNavigationContact | null = null;
+  private lastFrameProfile: FrameProfile = {
+    frameMs: 0,
+    inputMs: 0,
+    updateMs: 0,
+    renderMs: 0,
+    renderPrepMs: 0,
+    overlayMs: 0,
+    fps: 0,
+  };
 
   // Popup State
   private popupState: 'inactive' | 'opening' | 'active' | 'closing' = 'inactive';
@@ -286,22 +317,34 @@ export class Game {
   private _loop(currentTime: DOMHighResTimeStamp): void {
     if (!this.isRunning) return; // Exit if stopped
 
+    const frameStart = performance.now();
+    let inputMs = 0;
+    let updateMs = 0;
+    let renderMs = 0;
+
     // Calculate deltaTime, capping it to prevent large jumps if paused/tabbed out
     const deltaTime = Math.min(0.1, (currentTime - this.lastUpdateTime) / 1000.0);
     this.lastUpdateTime = currentTime;
 
     try {
       // 1. Handle Input (including zoom)
+      const inputStart = performance.now();
       this._processInput();
       // 2. Update Input Manager (clears justPressed)
       this.inputManager.update();
+      inputMs = performance.now() - inputStart;
       // 3. Update Game State & Entities
+      const updateStart = performance.now();
       this._update(deltaTime);
+      updateMs = performance.now() - updateStart;
       // 4. Render Current State
+      const renderStart = performance.now();
       this._render();
+      renderMs = performance.now() - renderStart;
 
       // Reset force render flag after rendering
       if (this.forceFullRender) this.forceFullRender = false;
+      this.updateFrameProfile(performance.now() - frameStart, inputMs, updateMs, renderMs);
     } catch (loopError) {
       // --- Robust Error Handling ---
       const currentState = this.stateManager?.state ?? 'UNKNOWN'; // Safely get state
@@ -606,6 +649,7 @@ export class Game {
       'PRIMARY_ACTION',
       'CYCLE_TARGET',
       'HELP',
+      'TOGGLE_PROFILER',
       'APPROACH_TARGET',
     ];
 
@@ -620,6 +664,12 @@ export class Game {
         }
         if (action === 'HELP') {
           this._showHelpOverlay();
+          return true;
+        }
+        if (action === 'TOGGLE_PROFILER') {
+          this.profilerVisible = !this.profilerVisible;
+          this.forceFullRender = true;
+          this.statusMessage = this.profilerVisible ? 'Performance profiler enabled.' : 'Performance profiler hidden.';
           return true;
         }
         if (action === 'CYCLE_TARGET') {
@@ -807,6 +857,7 @@ export class Game {
       'Space performs the best available action.',
       'Tab cycles targets in system view.',
       'A approaches the selected system target.',
+      'F3 toggles the performance profiler.',
       'Esc, arrows, Enter, or Backspace closes this panel.',
       CONFIG.POPUP_CLOSE_TEXT,
     ];
@@ -1228,8 +1279,17 @@ export class Game {
     const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
     const hash = fastHash(this.player.position.worldX, this.player.position.worldY, baseSeedInt);
     const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
+    const contact = this.getNearestHyperspaceNavigationContact(18);
+    const fuelReach = Math.floor(this.player.resources.fuel / Math.max(1, CONFIG.HYPERSPACE_FUEL_COST));
 
     let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY}`;
+    if (contact) {
+      baseStatus += ` | Contact: ${contact.name} ${contact.starType} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`;
+      if (contact.hasStarbase) baseStatus += ' Starbase';
+    } else {
+      baseStatus += ' | Contact: none within 18c';
+    }
+    baseStatus += ` | Fuel reach: ${fuelReach} jump${fuelReach === 1 ? '' : 's'}`;
 
     if (isNearStar) {
       // Only peek if necessary for status display
@@ -1271,9 +1331,41 @@ export class Game {
         starbase: null,
         isNearHyperspaceSystem: false,
       });
-      baseStatus += ` | Actions: ${formatAvailableActions(actions, 2)}`;
+      baseStatus += ` | Actions: ${formatAvailableActions(actions, 5)}`;
     }
     return baseStatus;
+  }
+
+  private getNearestHyperspaceNavigationContact(radius: number): HyperspaceNavigationContact | null {
+    const signature = `${this.player.position.worldX},${this.player.position.worldY}|${radius}`;
+    if (signature === this.hyperspaceNavigationContactSignature) {
+      return this.hyperspaceNavigationContact;
+    }
+
+    let best: HyperspaceNavigationContact | null = null;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const props = this.systemDataGenerator.getSystemProperties(
+          this.player.position.worldX + dx,
+          this.player.position.worldY + dy
+        );
+        if (!props.exists || !props.name || !props.starType) continue;
+        const rangeCells = Math.sqrt(dx * dx + dy * dy);
+        if (!best || rangeCells < best.rangeCells) {
+          best = { dx, dy, rangeCells, name: props.name, starType: props.starType, hasStarbase: props.hasStarbase };
+        }
+      }
+    }
+    this.hyperspaceNavigationContactSignature = signature;
+    this.hyperspaceNavigationContact = best;
+    return best;
+  }
+
+  private formatHyperspaceBearing(contact: HyperspaceNavigationContact): string {
+    if (contact.dx === 0 && contact.dy === 0) return 'HERE';
+    const vertical = contact.dy < 0 ? 'N' : contact.dy > 0 ? 'S' : '';
+    const horizontal = contact.dx < 0 ? 'W' : contact.dx > 0 ? 'E' : '';
+    return `${vertical}${horizontal}`;
   }
 
   private _updateSystem(deltaTime: number): string {
@@ -1530,11 +1622,12 @@ export class Game {
     const currentState = this.stateManager.state;
     try {
       const directCanvasOverlayVisible =
-        this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent();
+        this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent() || this.profilerVisible;
       const mainRenderSignature = this.getMainRenderSignature();
       if (this.canSkipMainRender(currentState, directCanvasOverlayVisible, mainRenderSignature)) {
         return;
       }
+      const renderPrepStart = performance.now();
       const fullCanvasRepaint = this.forceFullRender || directCanvasOverlayVisible;
       this.renderer.clear(fullCanvasRepaint);
 
@@ -1609,9 +1702,11 @@ export class Game {
       } else {
         this.renderer.renderDiff();
       }
+      this.lastFrameProfile.renderPrepMs = performance.now() - renderPrepStart;
       this.logRenderStats();
       this.lastMainRenderSignature = mainRenderSignature;
 
+      const overlayStart = performance.now();
       this.astrometricOverlay.render(
         this.renderer.getContext(),
         this.renderer.getCharWidthPx(),
@@ -1624,6 +1719,8 @@ export class Game {
         this.renderer.getCanvas().width,
         this.renderer.getCanvas().height
       );
+      this.renderPerformanceOverlay();
+      this.lastFrameProfile.overlayMs = performance.now() - overlayStart;
     } catch (renderError) {
       logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, renderError);
       this.statusMessage = `FATAL RENDER ERROR: ${
@@ -1667,6 +1764,54 @@ export class Game {
       default:
         return `${state}|${performance.now()}`;
     }
+  }
+
+  private updateFrameProfile(frameMs: number, inputMs: number, updateMs: number, renderMs: number): void {
+    const blend = this.lastFrameProfile.frameMs > 0 ? 0.18 : 1;
+    this.lastFrameProfile.frameMs = this.blendProfileValue(this.lastFrameProfile.frameMs, frameMs, blend);
+    this.lastFrameProfile.inputMs = this.blendProfileValue(this.lastFrameProfile.inputMs, inputMs, blend);
+    this.lastFrameProfile.updateMs = this.blendProfileValue(this.lastFrameProfile.updateMs, updateMs, blend);
+    this.lastFrameProfile.renderMs = this.blendProfileValue(this.lastFrameProfile.renderMs, renderMs, blend);
+    this.lastFrameProfile.fps = this.lastFrameProfile.frameMs > 0 ? 1000 / this.lastFrameProfile.frameMs : 0;
+  }
+
+  private blendProfileValue(previous: number, next: number, blend: number): number {
+    return previous * (1 - blend) + next * blend;
+  }
+
+  private renderPerformanceOverlay(): void {
+    if (!this.profilerVisible) return;
+    const ctx = this.renderer.getContext();
+    const charWidth = this.renderer.getCharWidthPx();
+    const charHeight = this.renderer.getCharHeightPx();
+    if (charWidth <= 0 || charHeight <= 0) return;
+
+    const stats = this.renderer.getLastRenderStats();
+    const lines = [
+      `PERF ${this.lastFrameProfile.fps.toFixed(0)} FPS  FRAME ${this.lastFrameProfile.frameMs.toFixed(1)}ms`,
+      `INPUT ${this.lastFrameProfile.inputMs.toFixed(1)}  UPDATE ${this.lastFrameProfile.updateMs.toFixed(1)}  RENDER ${this.lastFrameProfile.renderMs.toFixed(1)}ms`,
+      `PREP ${this.lastFrameProfile.renderPrepMs.toFixed(1)}  OVERLAY ${this.lastFrameProfile.overlayMs.toFixed(1)}  CANVAS ${stats.durationMs.toFixed(1)}ms`,
+      `${stats.mode.toUpperCase()} CELLS ${stats.cellsDrawn}  BG ${stats.backgroundsDrawn}  GLYPHS ${stats.glyphsDrawn}`,
+    ];
+    const widthChars = lines.reduce((max, line) => Math.max(max, line.length), 0) + 2;
+    const x = charWidth;
+    const y = charHeight;
+    const width = widthChars * charWidth;
+    const height = (lines.length + 1) * charHeight;
+
+    ctx.save();
+    ctx.globalAlpha = 0.72;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(x - Math.floor(charWidth * 0.5), y - Math.floor(charHeight * 0.35), width, height);
+    ctx.globalAlpha = 0.92;
+    ctx.font = `${charHeight * 0.78}px ${CONFIG.THIN_FONT_FAMILY}`;
+    ctx.textBaseline = 'top';
+    ctx.shadowBlur = 0;
+    lines.forEach((line, index) => {
+      ctx.fillStyle = index === 0 ? '#00CCAA' : '#7FE8C4';
+      ctx.fillText(line, x, y + index * charHeight);
+    });
+    ctx.restore();
   }
 
   private logRenderStats(): void {
@@ -1723,12 +1868,20 @@ export class Game {
     eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
 
     const actions = this.getCurrentAvailableActions();
-    const selectedTarget = this.getSelectedTarget();
     eventManager.publish(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, {
       actions,
       primaryActionId: this.choosePrimaryAction(actions)?.id,
-      targetName: selectedTarget ? this.getTargetName(selectedTarget) : undefined,
+      targetName: this.getCommandStripTargetName(),
     });
+  }
+
+  private getCommandStripTargetName(): string | undefined {
+    if (this.stateManager.state === 'hyperspace') {
+      const contact = this.getNearestHyperspaceNavigationContact(18);
+      return contact ? `${contact.name} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c` : undefined;
+    }
+    const selectedTarget = this.getSelectedTarget();
+    return selectedTarget ? this.getTargetName(selectedTarget) : undefined;
   }
 
   private getCurrentAvailableActions(): AvailableAction[] {

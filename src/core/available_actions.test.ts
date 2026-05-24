@@ -29,6 +29,16 @@ describe('available actions', () => {
     expect(formatAvailableActions(actions)).toContain(`[${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter System`);
   });
 
+  it('surfaces hyperspace drift controls for discoverability', () => {
+    const actions = createAvailableActions({
+      ...baseContext(),
+      state: 'hyperspace',
+      isNearHyperspaceSystem: false,
+    });
+
+    expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining(['boost', 'fine-control', 'profiler']));
+  });
+
   it('offers landing and scanning near a system object', () => {
     const starbase = Object.create(Starbase.prototype) as Starbase;
     Object.defineProperties(starbase, {
