@@ -29,6 +29,14 @@ export interface SystemBasicProperties {
     objectKind: 'stellar' | 'brown-dwarf' | null;
 }
 
+export interface SystemMapProperties {
+    exists: boolean;
+    starType: string | null;
+    name: string | null;
+    hasStarbase: boolean;
+    objectKind: 'stellar' | 'brown-dwarf' | null;
+}
+
 export type DeepSpacePhenomenonType =
     | 'rogue-planet'
     | 'dark-nebula'
@@ -80,6 +88,7 @@ const SYSTEM_NAME_PREFIXES = [
 
 export class SystemDataGenerator {
     private gameSeedPRNG: PRNG;
+    private systemMapPropertiesCache: Map<string, SystemMapProperties> = new Map();
     private systemPropertiesCache: Map<string, SystemBasicProperties> = new Map();
     private phenomenonPropertiesCache: Map<string, DeepSpacePhenomenonProperties> = new Map();
     private interstellarMediumCache: Map<string, InterstellarMediumProperties> = new Map();
@@ -96,19 +105,16 @@ export class SystemDataGenerator {
      * Gets the basic, deterministic properties of a potential system at world coordinates.
      * This method performs minimal generation needed for quick checks (like hyperspace view).
      */
-    getSystemProperties(worldX: number, worldY: number): SystemBasicProperties {
+    getSystemMapProperties(worldX: number, worldY: number): SystemMapProperties {
         const cacheKey = `${worldX},${worldY}`;
-        const cached = this.systemPropertiesCache.get(cacheKey);
+        const cached = this.systemMapPropertiesCache.get(cacheKey);
         if (cached) return cached;
 
-        const result: SystemBasicProperties = {
+        const result: SystemMapProperties = {
             exists: false,
             starType: null,
             name: null,
             hasStarbase: false,
-            ageGyr: null,
-            metallicityFeH: null,
-            architecture: null,
             objectKind: null,
         };
 
@@ -122,25 +128,46 @@ export class SystemDataGenerator {
         result.exists = hasNormalStar || hasBrownDwarf;
 
         if (!result.exists) {
-            this.cacheSystemProperties(cacheKey, result);
+            this.cacheSystemMapProperties(cacheKey, result);
             return result;
         }
 
         const typePRNG = this.gameSeedPRNG.seedNew(`star_type_${worldX},${worldY}`);
         result.objectKind = hasBrownDwarf ? 'brown-dwarf' : 'stellar';
         result.starType = hasBrownDwarf ? this.generateBrownDwarfType(typePRNG) : this.generateStarType(typePRNG);
+        const nameSeed = `star_name_${worldX},${worldY}`;
+        const namePRNG = this.gameSeedPRNG.seedNew(nameSeed);
+        result.name = this.generateSystemNameInternal(namePRNG);
+        const starbaseSeed = `star_starbase_${worldX},${worldY}`;
+        const starbasePRNG = this.gameSeedPRNG.seedNew(starbaseSeed);
+        result.hasStarbase = result.objectKind === 'stellar' && starbasePRNG.random() < CONFIG.STARBASE_PROBABILITY;
+
+        this.cacheSystemMapProperties(cacheKey, result);
+        return result;
+    }
+
+    getSystemProperties(worldX: number, worldY: number): SystemBasicProperties {
+        const cacheKey = `${worldX},${worldY}`;
+        const cached = this.systemPropertiesCache.get(cacheKey);
+        if (cached) return cached;
+
+        const mapProps = this.getSystemMapProperties(worldX, worldY);
+        const result: SystemBasicProperties = {
+            ...mapProps,
+            ageGyr: null,
+            metallicityFeH: null,
+            architecture: null,
+        };
+
+        if (!result.exists || !result.starType || !result.name) {
+            this.cacheSystemProperties(cacheKey, result);
+            return result;
+        }
+
         const agePRNG = this.gameSeedPRNG.seedNew(`star_age_${worldX},${worldY}`);
         result.ageGyr = generateStellarAgeGyr(result.starType, agePRNG);
         const metallicityPRNG = this.gameSeedPRNG.seedNew(`star_metallicity_${worldX},${worldY}`);
         result.metallicityFeH = generateMilkyWayMetallicityFeH(result.ageGyr, result.starType, metallicityPRNG);
-
-        const nameSeed = `star_name_${worldX},${worldY}`;
-        const namePRNG = this.gameSeedPRNG.seedNew(nameSeed);
-        result.name = this.generateSystemNameInternal(namePRNG);
-
-        const starbaseSeed = `star_starbase_${worldX},${worldY}`;
-        const starbasePRNG = this.gameSeedPRNG.seedNew(starbaseSeed);
-        result.hasStarbase = result.objectKind === 'stellar' && starbasePRNG.random() < CONFIG.STARBASE_PROBABILITY;
         result.architecture = this.generateArchitecture(
             result.name,
             result.starType,
@@ -170,7 +197,7 @@ export class SystemDataGenerator {
             rarity: null,
         };
 
-        if (this.getSystemProperties(worldX, worldY).exists) {
+        if (this.getSystemMapProperties(worldX, worldY).exists) {
             this.cachePhenomenonProperties(cacheKey, empty);
             return empty;
         }
@@ -240,10 +267,19 @@ export class SystemDataGenerator {
     }
 
     clearCache(): void {
+        this.systemMapPropertiesCache.clear();
         this.systemPropertiesCache.clear();
         this.phenomenonPropertiesCache.clear();
         this.interstellarMediumCache.clear();
         this.interstellarMediumNoise.clearCache();
+    }
+
+    private cacheSystemMapProperties(cacheKey: string, properties: SystemMapProperties): void {
+        if (this.systemMapPropertiesCache.size >= this.maxSystemPropertiesCacheSize) {
+            const firstKey = this.systemMapPropertiesCache.keys().next().value;
+            if (firstKey !== undefined) this.systemMapPropertiesCache.delete(firstKey);
+        }
+        this.systemMapPropertiesCache.set(cacheKey, properties);
     }
 
     private cacheSystemProperties(cacheKey: string, properties: SystemBasicProperties): void {

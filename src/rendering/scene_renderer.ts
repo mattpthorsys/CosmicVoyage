@@ -15,6 +15,7 @@ import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { TextMenuSection, TextTableModel } from '../core/text_ui';
 import { formatLightTimeFromMeters } from '../utils/space_scale';
+import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -48,6 +49,7 @@ export class SceneRenderer {
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private systemDataGenerator: SystemDataGenerator;
+  private hyperspaceSurveyService: HyperspaceSurveyService | null;
   private hyperspaceTileCache: Map<string, HyperspaceTile> = new Map();
   private hyperspaceFrameCache: HyperspaceFrameCache | null = null;
   private readonly maxHyperspaceTileCacheSize = 60000;
@@ -56,12 +58,14 @@ export class SceneRenderer {
     screenBuffer: ScreenBuffer,
     drawingContext: DrawingContext,
     nebulaRenderer: NebulaRenderer,
-    systemDataGenerator: SystemDataGenerator
+    systemDataGenerator: SystemDataGenerator,
+    hyperspaceSurveyService: HyperspaceSurveyService | null = null
   ) {
     this.screenBuffer = screenBuffer;
     this.drawingContext = drawingContext;
     this.nebulaRenderer = nebulaRenderer;
     this.systemDataGenerator = systemDataGenerator;
+    this.hyperspaceSurveyService = hyperspaceSurveyService;
     logger.debug('[SceneRenderer] Instance created.');
   }
 
@@ -88,12 +92,17 @@ export class SceneRenderer {
       return;
     }
 
+    const survey = this.hyperspaceSurveyService?.getSurvey(player.position.worldX, player.position.worldY, cols, rows);
     const cells = new Array<CellState>(cols * rows);
     for (let viewY = 0; viewY < rows; viewY++) {
       for (let viewX = 0; viewX < cols; viewX++) {
-        const worldX = startWorldX + viewX;
-        const worldY = startWorldY + viewY;
-        const tile = this.getHyperspaceTile(worldX, worldY, Math.hypot(viewX - viewCenterX, viewY - viewCenterY));
+        const surveyCell = survey?.visibleCells[viewY * cols + viewX];
+        const worldX = surveyCell?.worldX ?? startWorldX + viewX;
+        const worldY = surveyCell?.worldY ?? startWorldY + viewY;
+        const rangeCells = surveyCell?.rangeCells ?? Math.hypot(viewX - viewCenterX, viewY - viewCenterY);
+        const tile = surveyCell
+          ? this.getHyperspaceTileFromSurveyCell(surveyCell)
+          : this.getHyperspaceTile(worldX, worldY, rangeCells);
         const index = viewY * cols + viewX;
 
         if (tile.starChar) {
@@ -129,7 +138,43 @@ export class SceneRenderer {
     if (cached) return cached;
 
     const bg = this.nebulaRenderer.getBackgroundColor(worldX, worldY);
-    const systemProps = this.systemDataGenerator.getSystemProperties(worldX, worldY);
+    const systemProps = this.systemDataGenerator.getSystemMapProperties(worldX, worldY);
+    const phenomenon = systemProps.exists
+      ? null
+      : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
+    const tile = this.createHyperspaceTile(bg, systemProps, phenomenon, worldX, worldY, rangeCells);
+
+    if (this.hyperspaceTileCache.size >= this.maxHyperspaceTileCacheSize) {
+      const firstKey = this.hyperspaceTileCache.keys().next().value;
+      if (firstKey !== undefined) this.hyperspaceTileCache.delete(firstKey);
+    }
+    this.hyperspaceTileCache.set(key, tile);
+    return tile;
+  }
+
+  private getHyperspaceTileFromSurveyCell(cell: HyperspaceSurveyCell): HyperspaceTile {
+    const key = `${cell.worldX},${cell.worldY}|${Math.floor(cell.rangeCells)}`;
+    const cached = this.hyperspaceTileCache.get(key);
+    if (cached) return cached;
+
+    const bg = this.nebulaRenderer.getBackgroundColor(cell.worldX, cell.worldY);
+    const tile = this.createHyperspaceTile(bg, cell.system, cell.phenomenon, cell.worldX, cell.worldY, cell.rangeCells);
+    if (this.hyperspaceTileCache.size >= this.maxHyperspaceTileCacheSize) {
+      const firstKey = this.hyperspaceTileCache.keys().next().value;
+      if (firstKey !== undefined) this.hyperspaceTileCache.delete(firstKey);
+    }
+    this.hyperspaceTileCache.set(key, tile);
+    return tile;
+  }
+
+  private createHyperspaceTile(
+    bg: string,
+    systemProps: { exists: boolean; starType: string | null; objectKind: 'stellar' | 'brown-dwarf' | null },
+    phenomenon: { exists: boolean; char: string | null; colour: string | null; type: string | null } | null,
+    worldX: number,
+    worldY: number,
+    rangeCells: number
+  ): HyperspaceTile {
     let tile: HyperspaceTile;
     if (systemProps.exists) {
       const starInfo = SPECTRAL_TYPES[systemProps.starType!];
@@ -150,20 +195,13 @@ export class SceneRenderer {
         tile = { bg, starChar: '?', starColor: '#FF00FF' };
       }
     } else {
-      const phenomenon = this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
-      if (phenomenon.exists && phenomenon.char && phenomenon.colour && rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) {
+      if (phenomenon?.exists && phenomenon.char && phenomenon.colour && rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) {
         const dimFactor = phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
         tile = { bg, starChar: phenomenon.char, starColor: this.dimHexColour(phenomenon.colour, dimFactor) };
       } else {
         tile = { bg, starChar: null, starColor: null };
       }
     }
-
-    if (this.hyperspaceTileCache.size >= this.maxHyperspaceTileCacheSize) {
-      const firstKey = this.hyperspaceTileCache.keys().next().value;
-      if (firstKey !== undefined) this.hyperspaceTileCache.delete(firstKey);
-    }
-    this.hyperspaceTileCache.set(key, tile);
     return tile;
   }
 

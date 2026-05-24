@@ -16,6 +16,7 @@ import { eventManager, GameEvents } from '../core/event_manager'; // Import Even
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
+import { HyperspaceSurveyService } from '../core/hyperspace_survey';
 
 /**
  * Facade class for the rendering system.
@@ -32,7 +33,12 @@ export class RendererFacade {
   private statusBarUpdater: ImportedStatusBarUpdater; // Use imported alias
   private commandStripUpdater: CommandStripUpdater | null = null;
 
-  constructor(canvasId: string, statusBarId: string, systemDataGenerator: SystemDataGenerator) {
+  constructor(
+    canvasId: string,
+    statusBarId: string,
+    systemDataGenerator: SystemDataGenerator,
+    hyperspaceSurveyService: HyperspaceSurveyService | null = null
+  ) {
     logger.info('[RendererFacade] Constructing instance...');
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
@@ -65,7 +71,13 @@ export class RendererFacade {
     this.nebulaRenderer = new NebulaRenderer();
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
     this.commandStripUpdater = commandStripElement ? new CommandStripUpdater(commandStripElement) : null;
-    this.sceneRenderer = new SceneRenderer(this.screenBuffer, this.drawingContext, this.nebulaRenderer, systemDataGenerator);
+    this.sceneRenderer = new SceneRenderer(
+      this.screenBuffer,
+      this.drawingContext,
+      this.nebulaRenderer,
+      systemDataGenerator,
+      hyperspaceSurveyService
+    );
 
     // *** Subscribe to Status Updates ***
     eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));

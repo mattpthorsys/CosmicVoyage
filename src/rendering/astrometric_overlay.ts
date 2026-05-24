@@ -11,6 +11,7 @@ import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { formatHyperspaceSignalDelay, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
+import { HyperspaceSurveyContact, HyperspaceSurveyService } from '../core/hyperspace_survey';
 
 interface OverlayContext {
   state: GameState;
@@ -58,6 +59,7 @@ type HyperspaceContact =
 
 export class AstrometricOverlay {
   private readonly systemDataGenerator: SystemDataGenerator;
+  private readonly hyperspaceSurveyService: HyperspaceSurveyService | null;
   private readonly items: OverlayItem[] = [];
   private readonly fontScale = 0.86;
   private lastEmitAt = 0;
@@ -67,15 +69,18 @@ export class AstrometricOverlay {
   private popupCycleSignature = '';
   private popupCycleIndex = 0;
 
-  constructor(systemDataGenerator: SystemDataGenerator) {
+  constructor(systemDataGenerator: SystemDataGenerator, hyperspaceSurveyService: HyperspaceSurveyService | null = null) {
     this.systemDataGenerator = systemDataGenerator;
+    this.hyperspaceSurveyService = hyperspaceSurveyService;
   }
 
   update(context: OverlayContext, deltaTime: number, cols: number, rows: number): void {
     const now = performance.now();
     this.shiftWithCamera(context);
     if (context.state === 'hyperspace') {
-      this.hyperspaceStarbaseMarkers = this.getHyperspaceStarbaseMarkers(context.player, cols, rows);
+      this.hyperspaceStarbaseMarkers = this.hyperspaceSurveyService
+        ? this.hyperspaceSurveyService.getSurvey(context.player.position.worldX, context.player.position.worldY, cols, rows).starbaseMarkers
+        : this.getHyperspaceStarbaseMarkers(context.player, cols, rows);
     } else {
       this.hyperspaceMarkerSignature = '';
       this.hyperspaceStarbaseMarkers = [];
@@ -161,12 +166,16 @@ export class AstrometricOverlay {
       4,
       Math.ceil(CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier)
     );
-    const contacts = this.findHyperspaceContacts(
-      player.position.worldX,
-      player.position.worldY,
-      detectionRadius,
-      medium.sensorRangeMultiplier
-    );
+    const contacts = this.hyperspaceSurveyService
+      ? this.convertSurveyContacts(
+          this.hyperspaceSurveyService.getSurvey(player.position.worldX, player.position.worldY, cols, rows).overlayContacts
+        )
+      : this.findHyperspaceContacts(
+          player.position.worldX,
+          player.position.worldY,
+          detectionRadius,
+          medium.sensorRangeMultiplier
+        );
     const contact = this.pickCycledPopupCandidate(
       'hyperspace',
       `${player.position.worldX},${player.position.worldY}`,
@@ -356,7 +365,10 @@ export class AstrometricOverlay {
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const distSq = dx * dx + dy * dy;
-        const props = this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
+        const props =
+          typeof this.systemDataGenerator.getSystemMapProperties === 'function'
+            ? this.systemDataGenerator.getSystemMapProperties(worldX + dx, worldY + dy)
+            : this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
         if (props.exists && props.name && props.starType) {
           const range = Math.sqrt(distSq);
           const detectRadius =
@@ -381,6 +393,34 @@ export class AstrometricOverlay {
       const bName = b.kind === 'system' ? b.name : b.phenomenon.name ?? '';
       return aName.localeCompare(bName);
     });
+  }
+
+  private convertSurveyContacts(contacts: HyperspaceSurveyContact[]): HyperspaceContact[] {
+    return contacts
+      .map((contact): HyperspaceContact | null => {
+        if (contact.kind === 'system' && contact.system?.name && contact.system.starType) {
+          return {
+            kind: 'system',
+            dx: contact.dx,
+            dy: contact.dy,
+            name: contact.system.name,
+            starType: contact.system.starType,
+            distSq: contact.distSq,
+            objectKind: contact.system.objectKind,
+          };
+        }
+        if (contact.kind === 'phenomenon' && contact.phenomenon) {
+          return {
+            kind: 'phenomenon',
+            dx: contact.dx,
+            dy: contact.dy,
+            phenomenon: contact.phenomenon,
+            distSq: contact.distSq,
+          };
+        }
+        return null;
+      })
+      .filter((contact): contact is HyperspaceContact => contact !== null);
   }
 
   private getInterstellarMedium(worldX: number, worldY: number): InterstellarMediumProperties {
@@ -435,7 +475,10 @@ export class AstrometricOverlay {
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         if (x <= 0 || x >= cols - 1) continue;
-        const props = this.systemDataGenerator.getSystemProperties(startWorldX + x, startWorldY + y);
+        const props =
+          typeof this.systemDataGenerator.getSystemMapProperties === 'function'
+            ? this.systemDataGenerator.getSystemMapProperties(startWorldX + x, startWorldY + y)
+            : this.systemDataGenerator.getSystemProperties(startWorldX + x, startWorldY + y);
         if (props.exists && props.hasStarbase) {
           markers.push({
             x,

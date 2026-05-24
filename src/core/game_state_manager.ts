@@ -277,7 +277,7 @@ export class GameStateManager {
 
   /** Checks if a star system exists at the player's current world coordinates. */
   private _canEnterSystemAtCurrentLocation(): boolean {
-    return this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY).exists;
+    return this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY).exists;
   }
 
   /** Creates and initializes a new SolarSystem instance. */

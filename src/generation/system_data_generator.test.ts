@@ -108,6 +108,27 @@ describe('SystemDataGenerator', () => {
     expect(rebuilt).toEqual(first);
   });
 
+  it('keeps lightweight map properties consistent with full system properties', () => {
+    const generator = new SystemDataGenerator(new PRNG('map-properties-regression'));
+    const { x, y } = findGeneratedSystem(generator);
+
+    const mapProps = generator.getSystemMapProperties(x, y);
+    const fullProps = generator.getSystemProperties(x, y);
+    const emptyMap = generator.getSystemMapProperties(x + 1000, y - 1000);
+    const emptyFull = generator.getSystemProperties(x + 1000, y - 1000);
+
+    expect(mapProps).toEqual({
+      exists: fullProps.exists,
+      starType: fullProps.starType,
+      name: fullProps.name,
+      hasStarbase: fullProps.hasStarbase,
+      objectKind: fullProps.objectKind,
+    });
+    expect(emptyMap.exists).toBe(emptyFull.exists);
+    expect(emptyMap.starType).toBe(emptyFull.starType);
+    expect(emptyMap.objectKind).toBe(emptyFull.objectKind);
+  });
+
   it('keeps interstellar medium deterministic, cached, and physically bounded', () => {
     const generator = new SystemDataGenerator(new PRNG('medium-cache-regression'));
     const first = generator.getInterstellarMediumProperties(42, -17);

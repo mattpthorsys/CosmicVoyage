@@ -48,6 +48,7 @@ import {
   StarbaseMission,
 } from './mission_board';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
+import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -98,6 +99,7 @@ export class Game {
   private readonly terminalOverlay: TerminalOverlay;
   private readonly astrometricOverlay: AstrometricOverlay;
   private readonly systemDataGenerator: SystemDataGenerator;
+  private readonly hyperspaceSurveyService: HyperspaceSurveyService;
   private tradeSelectionIndex: number = 0;
   private starbaseSectionId: StarbaseSectionId = 'overview';
   private starbaseSelectionBySection: Record<string, number> = {};
@@ -127,8 +129,6 @@ export class Game {
   private lastRenderStatsLogAt: number = 0;
   private lastMainRenderSignature: string = '';
   private profilerVisible: boolean = false;
-  private hyperspaceNavigationContactSignature = '';
-  private hyperspaceNavigationContact: HyperspaceNavigationContact | null = null;
   private lastFrameProfile: FrameProfile = {
     frameMs: 0,
     inputMs: 0,
@@ -168,13 +168,14 @@ export class Game {
     const initialSeed = seed !== undefined ? String(seed) : String(Date.now());
     this.gameSeedPRNG = new PRNG(initialSeed);
     this.systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG);
-    this.renderer = new RendererFacade(canvasId, statusBarId, this.systemDataGenerator);
+    this.hyperspaceSurveyService = new HyperspaceSurveyService(this.systemDataGenerator);
+    this.renderer = new RendererFacade(canvasId, statusBarId, this.systemDataGenerator, this.hyperspaceSurveyService);
     this.player = new Player(); // Assumes Player constructor uses CONFIG defaults
     this.inputManager = new InputManager();
     this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this.systemDataGenerator);
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
     this.terminalOverlay = new TerminalOverlay(); // Initialize terminal overlay
-    this.astrometricOverlay = new AstrometricOverlay(this.systemDataGenerator);
+    this.astrometricOverlay = new AstrometricOverlay(this.systemDataGenerator, this.hyperspaceSurveyService);
 
     // Instantiate systems
     this.movementSystem = new MovementSystem(this.player);
@@ -1301,13 +1302,14 @@ export class Game {
   // --- State-specific update methods ---
   private _updateHyperspace(_deltaTime: number): string {
     // Check for nearby star system for status message
-    const currentProps = this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
+    const survey = this.getCurrentHyperspaceSurvey();
+    const currentProps =
+      survey.visibleCells[
+        Math.floor(survey.rows / 2) * survey.cols + Math.floor(survey.cols / 2)
+      ]?.system ?? this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY);
     const isNearStar = currentProps.exists;
-    const medium = this.systemDataGenerator.getInterstellarMediumProperties(this.player.position.worldX, this.player.position.worldY);
-    const contact = this.getNearestHyperspaceNavigationContact(
-      Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier),
-      medium.sensorRangeMultiplier
-    );
+    const medium = survey.medium;
+    const contact = this.toNavigationContact(survey.nearestSystemContact);
     const fuelReach = Math.floor(this.player.resources.fuel / Math.max(1, CONFIG.HYPERSPACE_FUEL_COST));
 
     let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY} | ISM: ${medium.label} sensors ${(medium.sensorRangeMultiplier * 100).toFixed(0)}%`;
@@ -1365,33 +1367,23 @@ export class Game {
     return baseStatus;
   }
 
-  private getNearestHyperspaceNavigationContact(radius: number, sensorRangeMultiplier: number = 1): HyperspaceNavigationContact | null {
-    const signature = `${this.player.position.worldX},${this.player.position.worldY}|${radius}|${sensorRangeMultiplier.toFixed(3)}`;
-    if (signature === this.hyperspaceNavigationContactSignature) {
-      return this.hyperspaceNavigationContact;
-    }
+  private getCurrentHyperspaceSurvey() {
+    const cols = Math.max(1, Math.floor(this.renderer.getCanvas().width / Math.max(1, this.renderer.getCharWidthPx())));
+    const rows = Math.max(1, Math.floor(this.renderer.getCanvas().height / Math.max(1, this.renderer.getCharHeightPx())));
+    return this.hyperspaceSurveyService.getSurvey(this.player.position.worldX, this.player.position.worldY, cols, rows);
+  }
 
-    let best: HyperspaceNavigationContact | null = null;
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const props = this.systemDataGenerator.getSystemProperties(
-          this.player.position.worldX + dx,
-          this.player.position.worldY + dy
-        );
-        if (!props.exists || !props.name || !props.starType) continue;
-        const rangeCells = Math.sqrt(dx * dx + dy * dy);
-        if (!best || rangeCells < best.rangeCells) {
-          const detectionRadius =
-            (props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18) *
-            sensorRangeMultiplier;
-          if (rangeCells > detectionRadius) continue;
-          best = { dx, dy, rangeCells, name: props.name, starType: props.starType, hasStarbase: props.hasStarbase, objectKind: props.objectKind };
-        }
-      }
-    }
-    this.hyperspaceNavigationContactSignature = signature;
-    this.hyperspaceNavigationContact = best;
-    return best;
+  private toNavigationContact(contact: HyperspaceSurveyContact | null): HyperspaceNavigationContact | null {
+    if (!contact || contact.kind !== 'system' || !contact.system?.name || !contact.system.starType) return null;
+    return {
+      dx: contact.dx,
+      dy: contact.dy,
+      rangeCells: Math.sqrt(contact.distSq),
+      name: contact.system.name,
+      starType: contact.system.starType,
+      hasStarbase: contact.system.hasStarbase,
+      objectKind: contact.system.objectKind,
+    };
   }
 
   private formatHyperspaceBearing(contact: HyperspaceNavigationContact): string {
@@ -1910,14 +1902,7 @@ export class Game {
 
   private getCommandStripTargetName(): string | undefined {
     if (this.stateManager.state === 'hyperspace') {
-      const medium = this.systemDataGenerator.getInterstellarMediumProperties(
-        this.player.position.worldX,
-        this.player.position.worldY
-      );
-      const contact = this.getNearestHyperspaceNavigationContact(
-        Math.ceil(18 * medium.sensorRangeMultiplier),
-        medium.sensorRangeMultiplier
-      );
+      const contact = this.toNavigationContact(this.getCurrentHyperspaceSurvey().nearestSystemContact);
       return contact ? `${contact.name} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c` : undefined;
     }
     const selectedTarget = this.getSelectedTarget();
