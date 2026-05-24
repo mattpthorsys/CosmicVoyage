@@ -14,7 +14,7 @@ import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { TextMenuSection, TextTableModel } from '../core/text_ui';
-import { formatLightTimeFromMeters } from '../utils/space_scale';
+import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 
 interface VisiblePlanetMarker {
@@ -512,6 +512,8 @@ export class SceneRenderer {
     const mapScale_m_per_cell = (2 * worldRadius_m) / Math.min(mapWidth, mapHeight);
     if (mapScale_m_per_cell <= 0 || !Number.isFinite(mapScale_m_per_cell)) { return; }
     this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', CONFIG.DEFAULT_BG_COLOUR);
+    const title = system.isStarless ? ' LOCAL FRAME ' : ' LOCAL SYSTEM ';
+    this.screenBuffer.drawString(title.slice(0, mapWidth), mapStartX + 1, mapStartY - 1, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
     const worldToMinimap = (worldX_m: number, worldY_m: number): { x: number; y: number } | null => {
       const mapX = Math.floor(worldX_m / mapScale_m_per_cell + mapWidth / 2);
       const mapY = Math.floor(worldY_m / mapScale_m_per_cell + mapHeight / 2);
@@ -544,6 +546,8 @@ export class SceneRenderer {
     }
     const playerPos = worldToMinimap(player.position.systemX, player.position.systemY);
     if (playerPos) { this.screenBuffer.drawChar(player.render.char, playerPos.x, playerPos.y, player.render.fgColor, CONFIG.DEFAULT_BG_COLOUR); }
+    const scaleText = `1 cell ${formatDistanceAu(mapScale_m_per_cell)}`;
+    this.screenBuffer.drawString(scaleText.slice(0, mapWidth), mapStartX, mapStartY + mapHeight + 1, '#777777', CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private getPlanetDisplayColour(planetType: string): string {
