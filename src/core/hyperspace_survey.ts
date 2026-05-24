@@ -44,6 +44,11 @@ export interface HyperspaceSurvey {
   starbaseMarkers: HyperspaceSurveyStarbaseMarker[];
 }
 
+interface ContactRadii {
+  statusRadius: number;
+  overlayRadius: number;
+}
+
 const EMPTY_PHENOMENON: DeepSpacePhenomenonProperties = {
   exists: false,
   type: null,
@@ -59,6 +64,7 @@ export class HyperspaceSurveyService {
   private readonly systemDataGenerator: SystemDataGenerator;
   private cellCache: Map<string, Omit<HyperspaceSurveyCell, 'rangeCells'>> = new Map();
   private surveyCache: HyperspaceSurvey | null = null;
+  private overlayContactsCache: { signature: string; contacts: HyperspaceSurveyContact[] } | null = null;
   private readonly maxCellCacheSize = 80000;
 
   constructor(systemDataGenerator: SystemDataGenerator) {
@@ -68,6 +74,7 @@ export class HyperspaceSurveyService {
   clearCache(): void {
     this.cellCache.clear();
     this.surveyCache = null;
+    this.overlayContactsCache = null;
   }
 
   getSurvey(worldX: number, worldY: number, cols: number, rows: number): HyperspaceSurvey {
@@ -101,38 +108,9 @@ export class HyperspaceSurveyService {
       }
     }
 
-    const contacts: HyperspaceSurveyContact[] = [];
-    const overlayContacts: HyperspaceSurveyContact[] = [];
     const scanRadius = Math.max(detectionRadius, Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier));
-
-    for (let dy = -scanRadius; dy <= scanRadius; dy++) {
-      for (let dx = -scanRadius; dx <= scanRadius; dx++) {
-        const distSq = dx * dx + dy * dy;
-        const range = Math.sqrt(distSq);
-        const cell = this.getCell(worldX + dx, worldY + dy, range);
-        if (cell.system.exists && cell.system.name && cell.system.starType) {
-          const statusRadius =
-            (cell.system.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18) *
-            medium.sensorRangeMultiplier;
-          const overlayRadius =
-            (cell.system.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
-            medium.sensorRangeMultiplier;
-          const contact: HyperspaceSurveyContact = { kind: 'system', dx, dy, distSq, system: cell.system };
-          if (range <= statusRadius) contacts.push(contact);
-          if (range <= overlayRadius) overlayContacts.push(contact);
-          continue;
-        }
-        if (cell.phenomenon?.exists && range <= detectionRadius) {
-          const contact: HyperspaceSurveyContact = { kind: 'phenomenon', dx, dy, distSq, phenomenon: cell.phenomenon };
-          contacts.push(contact);
-          overlayContacts.push(contact);
-        }
-      }
-    }
-
-    contacts.sort(this.compareContacts);
-    overlayContacts.sort(this.compareContacts);
-    const nearestSystemContact = contacts.find((contact) => contact.kind === 'system') ?? null;
+    const nearestSystemContact = this.findNearestSystemContact(worldX, worldY, scanRadius, medium.sensorRangeMultiplier);
+    const contacts = nearestSystemContact ? [nearestSystemContact] : [];
 
     const survey: HyperspaceSurvey = {
       signature,
@@ -144,12 +122,97 @@ export class HyperspaceSurveyService {
       detectionRadius,
       visibleCells,
       contacts,
-      overlayContacts,
+      overlayContacts: [],
       nearestSystemContact,
       starbaseMarkers,
     };
     this.surveyCache = survey;
     return survey;
+  }
+
+  getOverlayContacts(survey: HyperspaceSurvey): HyperspaceSurveyContact[] {
+    if (this.overlayContactsCache?.signature === survey.signature) {
+      return this.overlayContactsCache.contacts;
+    }
+
+    const contacts: HyperspaceSurveyContact[] = [];
+    const scanRadius = Math.max(
+      survey.detectionRadius,
+      Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * survey.medium.sensorRangeMultiplier)
+    );
+
+    for (let dy = -scanRadius; dy <= scanRadius; dy++) {
+      for (let dx = -scanRadius; dx <= scanRadius; dx++) {
+        const distSq = dx * dx + dy * dy;
+        const range = Math.sqrt(distSq);
+        const cell = this.getCell(survey.worldX + dx, survey.worldY + dy, range);
+        if (cell.system.exists && cell.system.name && cell.system.starType) {
+          const radii = this.getContactRadii(cell.system, survey.medium.sensorRangeMultiplier);
+          if (range <= radii.overlayRadius) {
+            contacts.push({ kind: 'system', dx, dy, distSq, system: cell.system });
+          }
+          continue;
+        }
+        if (cell.phenomenon?.exists && range <= survey.detectionRadius) {
+          contacts.push({ kind: 'phenomenon', dx, dy, distSq, phenomenon: cell.phenomenon });
+        }
+      }
+    }
+
+    contacts.sort(this.compareContacts);
+    this.overlayContactsCache = { signature: survey.signature, contacts };
+    survey.overlayContacts = contacts;
+    return contacts;
+  }
+
+  private findNearestSystemContact(
+    worldX: number,
+    worldY: number,
+    scanRadius: number,
+    sensorRangeMultiplier: number
+  ): HyperspaceSurveyContact | null {
+    let best: HyperspaceSurveyContact | null = null;
+    let bestRange = Number.POSITIVE_INFINITY;
+
+    for (let radius = 0; radius <= scanRadius; radius++) {
+      const shellContacts: HyperspaceSurveyContact[] = [];
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+          const distSq = dx * dx + dy * dy;
+          const range = Math.sqrt(distSq);
+          if (range > scanRadius || range > bestRange) continue;
+          const cell = this.getCell(worldX + dx, worldY + dy, range);
+          if (!cell.system.exists || !cell.system.name || !cell.system.starType) continue;
+          const radii = this.getContactRadii(cell.system, sensorRangeMultiplier);
+          if (range > radii.statusRadius) continue;
+          shellContacts.push({ kind: 'system', dx, dy, distSq, system: cell.system });
+        }
+      }
+
+      if (shellContacts.length > 0) {
+        shellContacts.sort(this.compareContacts);
+        best = shellContacts[0];
+        bestRange = Math.sqrt(best.distSq);
+      }
+
+      if (best && radius >= Math.ceil(bestRange)) {
+        return best;
+      }
+    }
+
+    return best;
+  }
+
+  private getContactRadii(system: SystemMapProperties, sensorRangeMultiplier: number): ContactRadii {
+    return {
+      statusRadius:
+        (system.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18) *
+        sensorRangeMultiplier,
+      overlayRadius:
+        (system.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
+        sensorRangeMultiplier,
+    };
   }
 
   private getCell(worldX: number, worldY: number, rangeCells: number): HyperspaceSurveyCell {

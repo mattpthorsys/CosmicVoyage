@@ -57,4 +57,77 @@ describe('HyperspaceSurveyService', () => {
     expect(first.nearestSystemContact?.system?.name).toBe('Survey-2');
     expect(first.starbaseMarkers.some((marker) => marker.x === 7 && marker.y === 4)).toBe(true);
   });
+
+  it('finds nearest system contact by outward shells before scanning the full brown-dwarf horizon', () => {
+    let farMapCalls = 0;
+    const generator = {
+      getSystemMapProperties: (x: number, y: number): SystemMapProperties => {
+        if (Math.abs(x) > 6 || Math.abs(y) > 6) farMapCalls++;
+        if (x === 2 && y === 0) {
+          return { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' };
+        }
+        if (x === 28 && y === 0) {
+          return { exists: true, starType: 'T5', name: 'Brown-28', hasStarbase: false, objectKind: 'brown-dwarf' };
+        }
+        return emptySystem;
+      },
+      getDeepSpacePhenomenonProperties: () => ({ exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null }),
+      getInterstellarMediumProperties: () => ({
+        kind: 'diffuse-hydrogen',
+        label: 'diffuse neutral hydrogen',
+        summary: 'ordinary low-density interstellar hydrogen',
+        density: 1,
+        electronDensity: 0.03,
+        dustExtinction: 0,
+        radiation: 0.04,
+        gravitationalShear: 0,
+        sensorRangeMultiplier: 1,
+        driftBiasX: 0,
+        driftBiasY: 0,
+      }),
+    } as unknown as SystemDataGenerator;
+
+    const survey = new HyperspaceSurveyService(generator).getSurvey(0, 0, 5, 5);
+
+    expect(survey.nearestSystemContact?.system?.name).toBe('Near-2');
+    expect(farMapCalls).toBe(0);
+  });
+
+  it('collects full overlay contacts lazily when the astrometric overlay asks for them', () => {
+    const generator = {
+      getSystemMapProperties: (x: number, y: number): SystemMapProperties => {
+        if (x === 2 && y === 0) {
+          return { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' };
+        }
+        if (x === 28 && y === 0) {
+          return { exists: true, starType: 'T5', name: 'Brown-28', hasStarbase: false, objectKind: 'brown-dwarf' };
+        }
+        return emptySystem;
+      },
+      getDeepSpacePhenomenonProperties: () => ({ exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null }),
+      getInterstellarMediumProperties: () => ({
+        kind: 'diffuse-hydrogen',
+        label: 'diffuse neutral hydrogen',
+        summary: 'ordinary low-density interstellar hydrogen',
+        density: 1,
+        electronDensity: 0.03,
+        dustExtinction: 0,
+        radiation: 0.04,
+        gravitationalShear: 0,
+        sensorRangeMultiplier: 1,
+        driftBiasX: 0,
+        driftBiasY: 0,
+      }),
+    } as unknown as SystemDataGenerator;
+    const service = new HyperspaceSurveyService(generator);
+    const survey = service.getSurvey(0, 0, 5, 5);
+
+    expect(survey.overlayContacts).toEqual([]);
+
+    const overlayContacts = service.getOverlayContacts(survey);
+
+    expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Near-2');
+    expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Brown-28');
+    expect(service.getOverlayContacts(survey)).toBe(overlayContacts);
+  });
 });

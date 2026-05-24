@@ -168,7 +168,9 @@ export class AstrometricOverlay {
     );
     const contacts = this.hyperspaceSurveyService
       ? this.convertSurveyContacts(
-          this.hyperspaceSurveyService.getSurvey(player.position.worldX, player.position.worldY, cols, rows).overlayContacts
+          this.hyperspaceSurveyService.getOverlayContacts(
+            this.hyperspaceSurveyService.getSurvey(player.position.worldX, player.position.worldY, cols, rows)
+          )
         )
       : this.findHyperspaceContacts(
           player.position.worldX,
