@@ -353,6 +353,43 @@ export class SolarSystem {
         break;
       }
     }
+
+    if (planetsGenerated === 0) {
+      const fallbackOrbit = this.clamp(
+        lastOrbitDistance,
+        MIN_INNER_ORBIT_M,
+        Math.max(MIN_INNER_ORBIT_M, MIN_OUTER_ORBIT_M * 0.7)
+      );
+      const orbitHost = this.getDefaultPlanetOrbitHost();
+      const orbitCenter = this.getOrbitCenter(orbitHost);
+      const angle = this.systemPRNG.random(0, Math.PI * 2);
+      const totalFlux = this.calculateFluxAt(
+        orbitCenter.x + Math.cos(angle) * fallbackOrbit,
+        orbitCenter.y + Math.sin(angle) * fallbackOrbit
+      );
+      const planetType = this.determinePlanetType(fallbackOrbit, totalFlux);
+      const planetName = `${this.name} ${this.getRomanNumeral(1)}`;
+      const parentStar = this.getPlanetEnvironmentStar(orbitHost);
+      const planet = new Planet(
+        planetName,
+        planetType,
+        fallbackOrbit,
+        angle,
+        this.systemPRNG,
+        parentStar.starType,
+        undefined,
+        parentStar.environment,
+        orbitHost,
+        orbitCenter.x,
+        orbitCenter.y,
+        totalFlux
+      );
+      this.planets[0] = planet;
+      planetsGenerated = 1;
+      this.generateMoonsForPlanet(planet, planetName, parentStar, parentStar.starType, totalFlux);
+      logger.info(`[System:${this.name}] Added fallback planetary body for exploration pacing.`);
+    }
+
     logger.info(`[System:${this.name}] Planet generation complete. ${planetsGenerated} planets created.`);
   }
 

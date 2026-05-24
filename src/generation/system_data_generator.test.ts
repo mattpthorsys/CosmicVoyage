@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PRNG } from '../utils/prng';
 import { SystemDataGenerator } from './system_data_generator';
 import { SolarSystem } from '../entities/solar_system';
+import { CONFIG } from '../config';
 
 function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: number } {
   for (let y = -80; y <= 80; y++) {
@@ -83,6 +84,46 @@ describe('SystemDataGenerator', () => {
     expect(systems).toBeGreaterThan(0);
     expect(counts.GasGiant ?? 0).toBeGreaterThan(0);
     expect((counts.GasGiant ?? 0) + (counts.IceGiant ?? 0)).toBeGreaterThan(5);
+  });
+
+  it('keeps sector-level discovery pacing within playable bounds', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    let systems = 0;
+    let starbases = 0;
+    let systemsWithPlanets = 0;
+    let planets = 0;
+    let giants = 0;
+    const sectorCells = 101 * 101;
+
+    for (let y = -50; y <= 50; y++) {
+      for (let x = -50; x <= 50; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        systems++;
+        if (props.hasStarbase) starbases++;
+        const system = new SolarSystem(props, x, y, seed);
+        const systemPlanets = system.planets.filter((planet) => planet !== null);
+        if (systemPlanets.length > 0) systemsWithPlanets++;
+        planets += systemPlanets.length;
+        giants += systemPlanets.filter((planet) => planet.type === 'GasGiant' || planet.type === 'IceGiant').length;
+      }
+    }
+
+    const starDensity = systems / sectorCells;
+    const starbaseRate = starbases / systems;
+    const averagePlanets = planets / systems;
+    const giantRate = giants / planets;
+
+    expect(starDensity).toBeGreaterThan(CONFIG.STAR_DENSITY * 0.65);
+    expect(starDensity).toBeLessThan(CONFIG.STAR_DENSITY * 1.35);
+    expect(starbaseRate).toBeGreaterThan(0.005);
+    expect(starbaseRate).toBeLessThan(0.075);
+    expect(systemsWithPlanets).toBe(systems);
+    expect(averagePlanets).toBeGreaterThan(2.5);
+    expect(averagePlanets).toBeLessThan(7.5);
+    expect(giantRate).toBeGreaterThan(0.08);
+    expect(giantRate).toBeLessThan(0.45);
   });
 
   it('keeps moon systems plausible for parent type and stellar heating', () => {

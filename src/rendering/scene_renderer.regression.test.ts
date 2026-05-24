@@ -87,6 +87,28 @@ function createGasGiantPlanet(): Planet {
   return planet;
 }
 
+function createOrbitPlanet(): Planet {
+  const planet = Object.create(Planet.prototype) as Planet;
+  Object.defineProperties(planet, {
+    name: { value: 'Regression Orbit I' },
+    type: { value: 'Rock' },
+    heightmap: { value: Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => (x + y) % 8)) },
+    heightLevelColors: {
+      value: Array.from({ length: CONFIG.PLANET_HEIGHT_LEVELS }, (_, index) => `#${index.toString(16).padStart(2, '0')}7050`),
+    },
+    diameter: { value: 11000 },
+    density: { value: 5.1 },
+    gravity: { value: 0.95 },
+    surfaceTemp: { value: 288 },
+    axialTilt: { value: 0.23 },
+    orbitalInclination: { value: 0.03 },
+    tidallyLocked: { value: false },
+    moons: { value: [] },
+    getCurrentTemperature: { value: () => 291 },
+  });
+  return planet;
+}
+
 function createSystem(): SolarSystem {
   return {
     name: 'Regression',
@@ -215,6 +237,69 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(false);
     expect(drawCalls.length).toBeGreaterThan(0);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
+    expect(createRenderSignature(drawCalls)).toMatchSnapshot();
+  });
+
+  it('renders the starbase operations table with tabs, headings, and scrollbar', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(120, 54);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+    const starbase = new Starbase('regression-base', new PRNG('regression-system'), 'Regression');
+
+    renderer.drawStarbaseInterface(player, starbase, {
+      stationName: starbase.name,
+      sectionId: 'buy',
+      sections: [
+        { id: 'overview', label: 'Overview' },
+        { id: 'buy', label: 'Buy' },
+        { id: 'sell', label: 'Sell' },
+      ],
+      title: 'Trade Depot - Buy',
+      subtitle: 'Regression dockside exchange',
+      columns: ['COMMODITY', 'STOCK', 'BUY CR', 'CLASS'],
+      widths: [20, 7, 8, 16],
+      rows: [
+        { id: 'water', cells: ['Water Ice', '12', '3', 'volatile'], detail: 'Bulk water ice for station processing.' },
+        { id: 'helium', cells: ['Helium-3', '4', '42', 'fuel'], detail: 'Fusion reserve lots.' },
+        { id: 'drones', cells: ['Survey Drones', '2', '180', 'equipment'], detail: 'Autonomous mapping packages.' },
+      ],
+      selectedIndex: 1,
+      viewOffset: 0,
+      visibleRowCount: 3,
+      footer: ['Cr 1,000   Fuel 500/500   Cargo 0/100', 'Up/Down select  PgUp/PgDn page  Left/Right sections  Enter use  Esc back'],
+    });
+
+    expect(drawCalls.some((call) => call.char === 'C')).toBe(true);
+    expect(drawCalls.some((call) => call.char === '█')).toBe(true);
+    expect(createRenderSignature(drawCalls)).toMatchSnapshot();
+  });
+
+  it('renders the orbital operations screen with globe, landing map, and summary panels', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer);
+    const planet = createOrbitPlanet();
+
+    renderer.drawOrbitInterface({
+      title: 'Orbital Operations',
+      subtitle: 'Regression Orbit I local space',
+      parentPlanet: planet,
+      selectedBody: planet,
+      bodies: [{ label: 'Primary', planet, selected: true }],
+      mode: 'landing',
+      rotationPhase: 0.35,
+      landingCursorX: 12,
+      landingCursorY: 18,
+      mapSize: 32,
+      description: [
+        'Regression Orbit I is a stable rocky test body with a restrained scan summary.',
+        'Landing map and orbital sphere should remain visually framed.',
+      ],
+      telemetry: ['Body Regression Orbit I', 'Class Rock | Diameter 11,000 km | Density 5.10 g/cm3', 'Tilt 13.2 deg | Incl 1.7 deg | Free rotation'],
+      footer: ['Landing site: arrows move cursor, Enter/Space confirms, Esc cancels.', 'Site X 12  Y 18  Map 32x32'],
+    });
+
+    expect(drawCalls.some((call) => call.char === '+')).toBe(true);
+    expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK)).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 });
