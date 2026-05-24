@@ -5,6 +5,7 @@ import { fastHash } from '../utils/hash';
 import { CONFIG } from '../config';
 import { GLYPHS, SPECTRAL_TYPES, SPECTRAL_DISTRIBUTION } from '../constants';
 import { logger } from '../utils/logger';
+import { PerlinNoise } from './perlin';
 import {
     estimateEvolutionaryLuminosityFactor,
     generateMilkyWayMetallicityFeH,
@@ -47,6 +48,28 @@ export interface DeepSpacePhenomenonProperties {
     rarity: 'uncommon' | 'rare' | 'very-rare' | 'exceedingly-rare' | null;
 }
 
+export type InterstellarMediumKind =
+    | 'cold-void'
+    | 'diffuse-hydrogen'
+    | 'molecular-dust'
+    | 'ionised-plasma'
+    | 'radiation-front'
+    | 'gravitational-shear';
+
+export interface InterstellarMediumProperties {
+    kind: InterstellarMediumKind;
+    label: string;
+    summary: string;
+    density: number;
+    electronDensity: number;
+    dustExtinction: number;
+    radiation: number;
+    gravitationalShear: number;
+    sensorRangeMultiplier: number;
+    driftBiasX: number;
+    driftBiasY: number;
+}
+
 const SYSTEM_NAME_PREFIXES = [
     'Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta',
     'Iota', 'Kappa', 'Lambda', 'Mu', 'Nu', 'Xi', 'Omicron', 'Pi',
@@ -59,10 +82,13 @@ export class SystemDataGenerator {
     private gameSeedPRNG: PRNG;
     private systemPropertiesCache: Map<string, SystemBasicProperties> = new Map();
     private phenomenonPropertiesCache: Map<string, DeepSpacePhenomenonProperties> = new Map();
+    private interstellarMediumCache: Map<string, InterstellarMediumProperties> = new Map();
+    private interstellarMediumNoise: PerlinNoise;
     private readonly maxSystemPropertiesCacheSize = 50000;
 
     constructor(gameSeedPRNG: PRNG) {
         this.gameSeedPRNG = gameSeedPRNG;
+        this.interstellarMediumNoise = new PerlinNoise(`${gameSeedPRNG.getInitialSeed()}_interstellar_medium`);
         logger.debug('[SystemDataGenerator] Initialized.');
     }
 
@@ -162,9 +188,62 @@ export class SystemDataGenerator {
         return result;
     }
 
+    getInterstellarMediumProperties(worldX: number, worldY: number): InterstellarMediumProperties {
+        const cacheKey = `${worldX},${worldY}`;
+        const cached = this.interstellarMediumCache.get(cacheKey);
+        if (cached) return cached;
+
+        const scale = CONFIG.INTERSTELLAR_MEDIUM_SCALE;
+        const densityField = this.normalizedNoise(worldX * scale, worldY * scale);
+        const filamentField = this.normalizedNoise(worldX * scale * 2.7 + 91.3, worldY * scale * 2.7 - 17.8);
+        const ionField = this.normalizedNoise(worldX * scale * 1.55 - 41.2, worldY * scale * 1.55 + 66.4);
+        const shearField = this.normalizedNoise(worldX * scale * 0.85 + 13.9, worldY * scale * 0.85 + 102.1);
+        const remnantInfluence = this.getCompactRemnantInfluence(worldX, worldY);
+
+        const density = this.clamp(0.02 + densityField * 1.8 + Math.max(0, filamentField - 0.68) * 3.2, 0.01, 4.5);
+        const electronDensity = this.clamp(0.005 + ionField * 0.18 + remnantInfluence.neutron * 0.12, 0.001, 0.7);
+        const dustExtinction = this.clamp(Math.max(0, densityField - 0.55) * 1.6 + Math.max(0, filamentField - 0.62) * 2.1, 0, 1.8);
+        const radiation = this.clamp(0.04 + remnantInfluence.neutron * 1.4 + Math.max(0, ionField - 0.76) * 0.7, 0.02, 2.2);
+        const gravitationalShear = this.clamp(remnantInfluence.blackHole * 1.25 + Math.max(0, shearField - 0.86) * 0.45, 0, 1.5);
+
+        let kind: InterstellarMediumKind = 'diffuse-hydrogen';
+        if (gravitationalShear > 0.55) kind = 'gravitational-shear';
+        else if (radiation > 0.7) kind = 'radiation-front';
+        else if (dustExtinction > 0.85) kind = 'molecular-dust';
+        else if (electronDensity > 0.12) kind = 'ionised-plasma';
+        else if (density < 0.35 && dustExtinction < 0.12) kind = 'cold-void';
+
+        const sensorRangeMultiplier = this.clamp(
+            1.08 - dustExtinction * 0.22 - electronDensity * 0.35 - radiation * 0.08 - gravitationalShear * 0.16 + (kind === 'cold-void' ? 0.08 : 0),
+            0.58,
+            1.18
+        );
+        const driftBiasX = this.clamp((this.normalizedNoise(worldX * scale * 3.1 + 4.4, worldY * scale * 3.1) - 0.5) * gravitationalShear, -0.35, 0.35);
+        const driftBiasY = this.clamp((this.normalizedNoise(worldX * scale * 3.1, worldY * scale * 3.1 - 5.7) - 0.5) * gravitationalShear, -0.35, 0.35);
+
+        const result: InterstellarMediumProperties = {
+            kind,
+            label: this.getMediumLabel(kind),
+            summary: this.getMediumSummary(kind),
+            density: Number(density.toFixed(3)),
+            electronDensity: Number(electronDensity.toFixed(3)),
+            dustExtinction: Number(dustExtinction.toFixed(3)),
+            radiation: Number(radiation.toFixed(3)),
+            gravitationalShear: Number(gravitationalShear.toFixed(3)),
+            sensorRangeMultiplier: Number(sensorRangeMultiplier.toFixed(3)),
+            driftBiasX: Number(driftBiasX.toFixed(3)),
+            driftBiasY: Number(driftBiasY.toFixed(3)),
+        };
+
+        this.cacheInterstellarMediumProperties(cacheKey, result);
+        return result;
+    }
+
     clearCache(): void {
         this.systemPropertiesCache.clear();
         this.phenomenonPropertiesCache.clear();
+        this.interstellarMediumCache.clear();
+        this.interstellarMediumNoise.clearCache();
     }
 
     private cacheSystemProperties(cacheKey: string, properties: SystemBasicProperties): void {
@@ -181,6 +260,59 @@ export class SystemDataGenerator {
             if (firstKey !== undefined) this.phenomenonPropertiesCache.delete(firstKey);
         }
         this.phenomenonPropertiesCache.set(cacheKey, properties);
+    }
+
+    private cacheInterstellarMediumProperties(cacheKey: string, properties: InterstellarMediumProperties): void {
+        if (this.interstellarMediumCache.size >= this.maxSystemPropertiesCacheSize) {
+            const firstKey = this.interstellarMediumCache.keys().next().value;
+            if (firstKey !== undefined) this.interstellarMediumCache.delete(firstKey);
+        }
+        this.interstellarMediumCache.set(cacheKey, properties);
+    }
+
+    private normalizedNoise(x: number, y: number): number {
+        return this.clamp(this.interstellarMediumNoise.get(x, y) + 0.5, 0, 1);
+    }
+
+    private getCompactRemnantInfluence(worldX: number, worldY: number): { neutron: number; blackHole: number } {
+        let neutron = 0;
+        let blackHole = 0;
+        for (let dy = -8; dy <= 8; dy++) {
+            for (let dx = -8; dx <= 8; dx++) {
+                const distance = Math.hypot(dx, dy);
+                if (distance > 8) continue;
+                const phenomenon = this.getDeepSpacePhenomenonProperties(worldX + dx, worldY + dy);
+                if (!phenomenon.exists) continue;
+                const influence = Math.max(0, 1 - distance / 8);
+                if (phenomenon.type === 'neutron-star') neutron = Math.max(neutron, influence);
+                if (phenomenon.type === 'black-hole') blackHole = Math.max(blackHole, influence);
+            }
+        }
+        return { neutron, blackHole };
+    }
+
+    private getMediumLabel(kind: InterstellarMediumKind): string {
+        const labels: Record<InterstellarMediumKind, string> = {
+            'cold-void': 'cold interstellar void',
+            'diffuse-hydrogen': 'diffuse neutral hydrogen',
+            'molecular-dust': 'molecular dust lane',
+            'ionised-plasma': 'ionised plasma sheet',
+            'radiation-front': 'remnant radiation front',
+            'gravitational-shear': 'weak gravitational shear',
+        };
+        return labels[kind];
+    }
+
+    private getMediumSummary(kind: InterstellarMediumKind): string {
+        const summaries: Record<InterstellarMediumKind, string> = {
+            'cold-void': 'very low gas and dust; optical returns are clean but sparse',
+            'diffuse-hydrogen': 'ordinary low-density interstellar hydrogen',
+            'molecular-dust': 'cold dust and molecules dim distant optical returns',
+            'ionised-plasma': 'free electrons rotate and smear radio polarisation',
+            'radiation-front': 'elevated particle background from compact-remnant activity',
+            'gravitational-shear': 'background astrometry is weakly lensed by compact mass',
+        };
+        return summaries[kind];
     }
 
     private generateStarType(prng: PRNG): string {
@@ -242,6 +374,10 @@ export class SystemDataGenerator {
             if (roll <= 0) return choice.item;
         }
         return choices[choices.length - 1].item;
+    }
+
+    private clamp(value: number, min: number, max: number): number {
+        return Math.max(min, Math.min(max, value));
     }
 
     private generateArchitecture(

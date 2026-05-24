@@ -26,6 +26,7 @@ export const GLYPHS = {
 export const GRAVITATIONAL_CONSTANT_G = 6.67430e-11; // m^3 kg^-1 s^-2 [cite: 414]
 export const SOLAR_MASS_KG = 1.98847e30;            // kg
 export const AU_IN_METERS = 1.495978707e11;         // meters
+export const LIGHT_SPEED_M_PER_S = 299792458;       // meters per second
 export const EARTH_RADIUS_KM = 6371;                // km (Reference) - Can be converted to meters if needed elsewhere [cite: 415]
 export const SOLAR_RADIUS_M = 6.957e8;              // metres [cite: 416]
 export const BOLTZMANN_CONSTANT_K = 1.380649e-23;   // J/K (Joules per Kelvin)

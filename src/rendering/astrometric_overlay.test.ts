@@ -100,6 +100,28 @@ describe('AstrometricOverlay starbase markers', () => {
     expect(contacts.map((contact: any) => contact.name)).not.toContain('Lurker-31');
   });
 
+  it('lets interstellar medium reduce hyperspace contact detection range', () => {
+    const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
+    Object.defineProperties(overlay, {
+      systemDataGenerator: {
+        value: {
+          getSystemProperties: (x: number, y: number) => {
+            if (y === 0 && x === 5) return { exists: true, name: 'Clear-5', starType: 'K2V', objectKind: 'stellar', hasStarbase: false };
+            if (y === 0 && x === 8) return { exists: true, name: 'Lost-8', starType: 'G1V', objectKind: 'stellar', hasStarbase: false };
+            return { exists: false };
+          },
+          getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+        },
+      },
+    });
+
+    const contacts = (overlay as any).findHyperspaceContacts(0, 0, 10, 0.62);
+    const names = contacts.map((contact: any) => contact.name);
+
+    expect(names).toContain('Clear-5');
+    expect(names).not.toContain('Lost-8');
+  });
+
   it('cycles system overlay body locks outward from a stationary ship', () => {
     const player = new Player();
     player.position.systemX = 0;

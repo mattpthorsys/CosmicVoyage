@@ -108,6 +108,48 @@ describe('SystemDataGenerator', () => {
     expect(rebuilt).toEqual(first);
   });
 
+  it('keeps interstellar medium deterministic, cached, and physically bounded', () => {
+    const generator = new SystemDataGenerator(new PRNG('medium-cache-regression'));
+    const first = generator.getInterstellarMediumProperties(42, -17);
+    const cached = generator.getInterstellarMediumProperties(42, -17);
+    generator.clearCache();
+    const rebuilt = generator.getInterstellarMediumProperties(42, -17);
+
+    expect(cached).toBe(first);
+    expect(rebuilt).toEqual(first);
+    expect(first.density).toBeGreaterThanOrEqual(0.01);
+    expect(first.electronDensity).toBeGreaterThanOrEqual(0.001);
+    expect(first.dustExtinction).toBeGreaterThanOrEqual(0);
+    expect(first.radiation).toBeGreaterThanOrEqual(0.02);
+    expect(first.gravitationalShear).toBeGreaterThanOrEqual(0);
+    expect(first.sensorRangeMultiplier).toBeGreaterThanOrEqual(0.58);
+    expect(first.sensorRangeMultiplier).toBeLessThanOrEqual(1.18);
+    expect(Math.abs(first.driftBiasX)).toBeLessThanOrEqual(0.35);
+    expect(Math.abs(first.driftBiasY)).toBeLessThanOrEqual(0.35);
+  });
+
+  it('generates varied interstellar medium without depending on visit order', () => {
+    const seedLabel = 'haunting beauty';
+    const generator = new SystemDataGenerator(new PRNG(seedLabel));
+    const sampleCoords = [
+      [-180, -120],
+      [-80, -20],
+      [0, 0],
+      [65, 25],
+      [140, 90],
+      [220, -160],
+    ];
+    const samples = sampleCoords.map(([x, y]) => generator.getInterstellarMediumProperties(x, y));
+
+    generator.getSystemProperties(4, 9);
+    generator.getDeepSpacePhenomenonProperties(-7, 12);
+    generator.clearCache();
+
+    const rebuilt = sampleCoords.map(([x, y]) => generator.getInterstellarMediumProperties(x, y));
+    expect(rebuilt).toEqual(samples);
+    expect(new Set(samples.map((sample) => sample.kind)).size).toBeGreaterThan(1);
+  });
+
   it('generates deterministic stellar evolution properties for systems', () => {
     const firstGenerator = new SystemDataGenerator(new PRNG('system-data-test'));
     const secondGenerator = new SystemDataGenerator(new PRNG('system-data-test'));

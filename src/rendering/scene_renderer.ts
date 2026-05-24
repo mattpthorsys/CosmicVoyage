@@ -14,6 +14,7 @@ import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { TextMenuSection, TextTableModel } from '../core/text_ui';
+import { formatLightTimeFromMeters } from '../utils/space_scale';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -355,9 +356,12 @@ export class SceneRenderer {
     visiblePlanets.slice(0, maxRows).forEach((item, row) => {
       const planetColor = this.getPlanetDisplayColour(item.planet.type);
       const distanceAu = Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY)) / AU_IN_METERS;
+      const lightTime = formatLightTimeFromMeters(Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY)))
+        .replace(' light-', '')
+        .replace('light-', '');
       const bearing = this.formatBearing(item.planet.systemX - player.position.systemX, item.planet.systemY - player.position.systemY);
       const name = item.planet.name.replace(`${system.name} `, '');
-      const label = `${item.marker} ${name.padEnd(5).slice(0, 5)} ${distanceAu.toFixed(2).padStart(5)}AU ${bearing}`;
+      const label = `${item.marker} ${name.padEnd(5).slice(0, 5)} ${distanceAu.toFixed(2).padStart(5)}AU ${lightTime.padStart(7).slice(0, 7)} ${bearing}`;
       const y = startY + 2 + row;
       this.screenBuffer.drawChar(item.marker, startX + 2, y, '#000000', planetColor);
       this.screenBuffer.drawString(label.slice(2, panelWidth - 4), startX + 4, y, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);

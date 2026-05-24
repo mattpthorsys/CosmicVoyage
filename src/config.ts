@@ -93,8 +93,10 @@ export const CONFIG = {
   BROWN_DWARF_DENSITY: 0.006, // Cool substellar systems: common enough, but faint and short-ranged.
   STAR_CHECK_HASH_SCALE: 10000, // Divisor for hash check
   DEEP_SPACE_PHENOMENA_SCALE: 1000000,
+  HYPERSPACE_CELL_LIGHT_YEARS: 3.26,
   BROWN_DWARF_DETECTION_RADIUS_CELLS: 30,
   DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS: 30,
+  INTERSTELLAR_MEDIUM_SCALE: 0.018,
   NEBULA_SCALE: 0.05, // Perlin noise scale for nebulae
   NEBULA_INTENSITY: 1, // How much nebula colour affects background (0-1)
   NEBULA_SPARSITY: 0.52, // Higher values make nebulae rarer and more region-based.

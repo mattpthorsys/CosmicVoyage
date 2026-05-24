@@ -1,6 +1,7 @@
 import { CONFIG } from '../config';
-import { ELEMENTS } from '../constants';
+import { AU_IN_METERS, ELEMENTS } from '../constants';
 import { Planet } from '../entities/planet';
+import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 
 export type OrbitInteractionMode = 'overview' | 'landing';
 
@@ -46,8 +47,10 @@ export function createOrbitScreenModel(args: {
     .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} ${abundance.toFixed(1)}%`);
 
   const pressure = selected.atmosphere.pressure < 0.001 ? '~0' : selected.atmosphere.pressure.toFixed(3);
+  const parentSeparation = selected === args.parentPlanet ? selected.orbitDistance : args.parentPlanet.orbitDistance + selected.orbitDistance;
   const description = [
     `${selected.name} is a ${selected.type} body with ${selected.gravity.toFixed(2)}g gravity and a mean surface temperature of ${selected.surfaceTemp}K.`,
+    `Orbital scale ${formatDistanceAu(parentSeparation)} from the system primary; one-way signal delay ${formatLightTimeFromMeters(parentSeparation)}.`,
     `Atmosphere ${selected.atmosphere.density.toLowerCase()} at ${pressure} bar; hydrosphere ${selected.hydrosphere.toLowerCase()}, lithosphere ${selected.lithosphere.toLowerCase()}.`,
     selected.type === 'GasGiant' || selected.type === 'IceGiant'
       ? `Atmospheric resources: ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
@@ -77,6 +80,7 @@ export function createOrbitScreenModel(args: {
     telemetry: [
       `Body ${selected.name}`,
       `Class ${selected.type} | Diameter ${selected.diameter.toLocaleString()} km | Density ${selected.density.toFixed(2)} g/cm3`,
+      `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
       `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
       `Temp now ${selected.getCurrentTemperature()}K | Moons ${selected.moons.length}`,
     ],

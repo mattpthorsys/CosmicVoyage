@@ -47,6 +47,7 @@ import {
   isMissionCompletedByScan,
   StarbaseMission,
 } from './mission_board';
+import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -1148,6 +1149,8 @@ export class Game {
       lines.push(`Radius: [-W-]Unknown</w>`);
     }
     if (system) {
+      lines.push(`System Radius: <hl>${formatDistanceAu(system.edgeRadius)}</hl>`);
+      lines.push(`One-way Light Time: <hl>${formatLightTimeFromMeters(system.edgeRadius)}</hl> to chart edge`);
       lines.push(`Planetary Bodies: <hl>${system.planets.filter((p) => p !== null).length}</hl>`);
       lines.push(`Facilities: <hl>${system.starbase ? 'Starbase Detected' : 'None Detected'}</hl>`);
     }
@@ -1300,18 +1303,22 @@ export class Game {
     // Check for nearby star system for status message
     const currentProps = this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
     const isNearStar = currentProps.exists;
-    const contact = this.getNearestHyperspaceNavigationContact(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS);
+    const medium = this.systemDataGenerator.getInterstellarMediumProperties(this.player.position.worldX, this.player.position.worldY);
+    const contact = this.getNearestHyperspaceNavigationContact(
+      Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier),
+      medium.sensorRangeMultiplier
+    );
     const fuelReach = Math.floor(this.player.resources.fuel / Math.max(1, CONFIG.HYPERSPACE_FUEL_COST));
 
-    let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY}`;
+    let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY} | ISM: ${medium.label} sensors ${(medium.sensorRangeMultiplier * 100).toFixed(0)}%`;
     if (contact) {
-      baseStatus += ` | Contact: ${contact.name} ${contact.starType} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`;
+      baseStatus += ` | Contact: ${contact.name} ${contact.starType} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c/${formatHyperspaceSpan(contact.rangeCells)}`;
       if (contact.objectKind === 'brown-dwarf') baseStatus += ' faint';
       if (contact.hasStarbase) baseStatus += ' Starbase';
     } else {
-      baseStatus += ` | Contact: none within ${CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS}c`;
+      baseStatus += ` | Contact: none within ${formatHyperspaceSpan(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}`;
     }
-    baseStatus += ` | Fuel reach: ${fuelReach} jump${fuelReach === 1 ? '' : 's'}`;
+    baseStatus += ` | Fuel reach: ${fuelReach} jump${fuelReach === 1 ? '' : 's'} / ${formatHyperspaceSpan(fuelReach)}`;
 
     if (isNearStar) {
       // Only peek if necessary for status display
@@ -1358,8 +1365,8 @@ export class Game {
     return baseStatus;
   }
 
-  private getNearestHyperspaceNavigationContact(radius: number): HyperspaceNavigationContact | null {
-    const signature = `${this.player.position.worldX},${this.player.position.worldY}|${radius}`;
+  private getNearestHyperspaceNavigationContact(radius: number, sensorRangeMultiplier: number = 1): HyperspaceNavigationContact | null {
+    const signature = `${this.player.position.worldX},${this.player.position.worldY}|${radius}|${sensorRangeMultiplier.toFixed(3)}`;
     if (signature === this.hyperspaceNavigationContactSignature) {
       return this.hyperspaceNavigationContact;
     }
@@ -1374,7 +1381,9 @@ export class Game {
         if (!props.exists || !props.name || !props.starType) continue;
         const rangeCells = Math.sqrt(dx * dx + dy * dy);
         if (!best || rangeCells < best.rangeCells) {
-          const detectionRadius = props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18;
+          const detectionRadius =
+            (props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18) *
+            sensorRangeMultiplier;
           if (rangeCells > detectionRadius) continue;
           best = { dx, dy, rangeCells, name: props.name, starType: props.starType, hasStarbase: props.hasStarbase, objectKind: props.objectKind };
         }
@@ -1597,7 +1606,7 @@ export class Game {
       planet: selectedBody,
       starbase: null,
     });
-    return `Orbit: ${selectedBody.name} | Mode: ${this.orbitMode} | Site ${this.orbitLandingX},${this.orbitLandingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
+    return `Orbit: ${selectedBody.name} | ${formatDistanceAu(selectedBody.orbitDistance)} from primary | Signal ${formatLightTimeFromMeters(selectedBody.orbitDistance)} | Mode: ${this.orbitMode} | Site ${this.orbitLandingX},${this.orbitLandingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
   }
 
   private _updatePlanet(_deltaTime: number): string {
@@ -1901,7 +1910,14 @@ export class Game {
 
   private getCommandStripTargetName(): string | undefined {
     if (this.stateManager.state === 'hyperspace') {
-      const contact = this.getNearestHyperspaceNavigationContact(18);
+      const medium = this.systemDataGenerator.getInterstellarMediumProperties(
+        this.player.position.worldX,
+        this.player.position.worldY
+      );
+      const contact = this.getNearestHyperspaceNavigationContact(
+        Math.ceil(18 * medium.sensorRangeMultiplier),
+        medium.sensorRangeMultiplier
+      );
       return contact ? `${contact.name} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c` : undefined;
     }
     const selectedTarget = this.getSelectedTarget();

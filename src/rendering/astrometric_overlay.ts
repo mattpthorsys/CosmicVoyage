@@ -2,10 +2,15 @@ import { CONFIG } from '../config';
 import { AU_IN_METERS, PLANET_TYPES, SPECTRAL_TYPES } from '../constants';
 import { GameState } from '../core/game_state_manager';
 import { Player } from '../core/player';
-import { DeepSpacePhenomenonProperties, SystemDataGenerator } from '../generation/system_data_generator';
+import {
+  DeepSpacePhenomenonProperties,
+  InterstellarMediumProperties,
+  SystemDataGenerator,
+} from '../generation/system_data_generator';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
+import { formatHyperspaceSignalDelay, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 
 interface OverlayContext {
   state: GameState;
@@ -151,7 +156,17 @@ export class AstrometricOverlay {
 
   private createHyperspaceItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
     const player = context.player;
-    const contacts = this.findHyperspaceContacts(player.position.worldX, player.position.worldY, CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS);
+    const medium = this.getInterstellarMedium(player.position.worldX, player.position.worldY);
+    const detectionRadius = Math.max(
+      4,
+      Math.ceil(CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier)
+    );
+    const contacts = this.findHyperspaceContacts(
+      player.position.worldX,
+      player.position.worldY,
+      detectionRadius,
+      medium.sensorRangeMultiplier
+    );
     const contact = this.pickCycledPopupCandidate(
       'hyperspace',
       `${player.position.worldX},${player.position.worldY}`,
@@ -183,6 +198,8 @@ export class AstrometricOverlay {
             `${certainty} ${contact.phenomenon.classification ?? 'UNKNOWN SOURCE'}`,
             `ID ${contact.phenomenon.name ?? 'UNNAMED'}`,
             `VECTOR ${bearing} CELLS`,
+            `SPAN ${formatHyperspaceSpan(range)} / ${formatHyperspaceSignalDelay(range)}`,
+            `MEDIUM ${medium.label.toUpperCase()}`,
             `TRACE ${contact.phenomenon.signal ?? 'intermittent'}`,
           ],
         };
@@ -208,6 +225,8 @@ export class AstrometricOverlay {
           `ID ${contact.name}`,
           typeLabel,
           `VECTOR ${this.formatSigned(contact.dx)},${this.formatSigned(contact.dy)} CELLS`,
+          `SPAN ${formatHyperspaceSpan(range)} / ${formatHyperspaceSignalDelay(range)}`,
+          `MEDIUM ${medium.label.toUpperCase()}`,
         ],
       };
     }
@@ -223,7 +242,9 @@ export class AstrometricOverlay {
       lines: [
         'DRIFT SOLUTION',
         `GRID ${player.position.worldX},${player.position.worldY}`,
-        'LOCAL MASS SIGNATURE: NIL',
+        `NO RETURNS INSIDE ${formatHyperspaceSpan(detectionRadius)}`,
+        `MEDIUM ${medium.label.toUpperCase()}`,
+        `DUST ${medium.dustExtinction.toFixed(2)}  ION ${medium.electronDensity.toFixed(3)}`,
       ],
     };
   }
@@ -260,7 +281,13 @@ export class AstrometricOverlay {
         createdAt: now,
         typedChars: 0,
         durationMs: this.getDuration(context.state),
-        lines: ['STELLAR REFERENCE', `${nearestStar.name} ${nearestStar.starType}`, `RANGE ${starRangeAu.toFixed(3)} AU`, `FRAME ${context.system.name}`],
+        lines: [
+          'STELLAR REFERENCE',
+          `${nearestStar.name} ${nearestStar.starType}`,
+          `RANGE ${starRangeAu.toFixed(3)} AU`,
+          `LIGHT TIME ${formatLightTimeFromMeters(Math.sqrt(player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)))}`,
+          `FRAME ${context.system.name}`,
+        ],
       };
     }
 
@@ -289,6 +316,7 @@ export class AstrometricOverlay {
         `${selected.planet.name}`,
         `CLASS ${selected.planet.type}  ${info?.baseTemp ?? '?'}K BASE`,
         `RANGE ${rangeAu.toFixed(3)} AU`,
+        `LIGHT TIME ${formatLightTimeFromMeters(Math.sqrt(selected.distSq))}`,
       ],
     };
   }
@@ -318,7 +346,12 @@ export class AstrometricOverlay {
     };
   }
 
-  private findHyperspaceContacts(worldX: number, worldY: number, radius: number): HyperspaceContact[] {
+  private findHyperspaceContacts(
+    worldX: number,
+    worldY: number,
+    radius: number,
+    sensorRangeMultiplier: number = 1
+  ): HyperspaceContact[] {
     const contacts: HyperspaceContact[] = [];
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
@@ -326,7 +359,9 @@ export class AstrometricOverlay {
         const props = this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
         if (props.exists && props.name && props.starType) {
           const range = Math.sqrt(distSq);
-          const detectRadius = props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9;
+          const detectRadius =
+            (props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
+            sensorRangeMultiplier;
           if (range <= detectRadius) contacts.push({ kind: 'system', dx, dy, name: props.name, starType: props.starType, distSq, objectKind: props.objectKind });
           continue;
         }
@@ -346,6 +381,26 @@ export class AstrometricOverlay {
       const bName = b.kind === 'system' ? b.name : b.phenomenon.name ?? '';
       return aName.localeCompare(bName);
     });
+  }
+
+  private getInterstellarMedium(worldX: number, worldY: number): InterstellarMediumProperties {
+    if (typeof this.systemDataGenerator.getInterstellarMediumProperties === 'function') {
+      return this.systemDataGenerator.getInterstellarMediumProperties(worldX, worldY);
+    }
+
+    return {
+      kind: 'diffuse-hydrogen',
+      label: 'diffuse neutral hydrogen',
+      summary: 'ordinary low-density interstellar hydrogen',
+      density: 1,
+      electronDensity: 0.03,
+      dustExtinction: 0,
+      radiation: 0.04,
+      gravitationalShear: 0,
+      sensorRangeMultiplier: 1,
+      driftBiasX: 0,
+      driftBiasY: 0,
+    };
   }
 
   private pickCycledPopupCandidate<T>(
