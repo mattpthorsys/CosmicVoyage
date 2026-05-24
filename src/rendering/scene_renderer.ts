@@ -31,7 +31,10 @@ interface HyperspaceTile {
 }
 
 interface HyperspaceFrameCache {
-  signature: string;
+  cols: number;
+  rows: number;
+  startWorldX: number;
+  startWorldY: number;
   cells: CellState[];
 }
 
@@ -84,19 +87,45 @@ export class SceneRenderer {
     const viewCenterY = Math.floor(rows / 2);
     const startWorldX = player.position.worldX - viewCenterX;
     const startWorldY = player.position.worldY - viewCenterY;
-    const signature = `${cols}x${rows}|${startWorldX},${startWorldY}|${player.render.char}|${player.render.fgColor}`;
 
     this.screenBuffer.clear(false);
-    if (this.hyperspaceFrameCache?.signature === signature) {
-      this.screenBuffer.stageCells(this.hyperspaceFrameCache.cells);
+    if (
+      this.hyperspaceFrameCache &&
+      this.hyperspaceFrameCache.cols === cols &&
+      this.hyperspaceFrameCache.rows === rows &&
+      this.hyperspaceFrameCache.startWorldX === startWorldX &&
+      this.hyperspaceFrameCache.startWorldY === startWorldY
+    ) {
+      this.stageHyperspaceCells(this.hyperspaceFrameCache.cells, viewCenterX, viewCenterY, player);
+      return;
+    }
+
+    const shiftedCells = this.tryShiftHyperspaceFrame(startWorldX, startWorldY, cols, rows, viewCenterX, viewCenterY);
+    if (shiftedCells) {
+      this.hyperspaceFrameCache = { cols, rows, startWorldX, startWorldY, cells: shiftedCells };
+      this.stageHyperspaceCells(shiftedCells, viewCenterX, viewCenterY, player);
       return;
     }
 
     const survey = this.hyperspaceSurveyService?.getSurvey(player.position.worldX, player.position.worldY, cols, rows);
+    const cells = this.createHyperspaceBackgroundCells(cols, rows, startWorldX, startWorldY, viewCenterX, viewCenterY, survey?.visibleCells);
+    this.hyperspaceFrameCache = { cols, rows, startWorldX, startWorldY, cells };
+    this.stageHyperspaceCells(cells, viewCenterX, viewCenterY, player);
+  }
+
+  private createHyperspaceBackgroundCells(
+    cols: number,
+    rows: number,
+    startWorldX: number,
+    startWorldY: number,
+    viewCenterX: number,
+    viewCenterY: number,
+    surveyCells?: readonly HyperspaceSurveyCell[]
+  ): CellState[] {
     const cells = new Array<CellState>(cols * rows);
     for (let viewY = 0; viewY < rows; viewY++) {
       for (let viewX = 0; viewX < cols; viewX++) {
-        const surveyCell = survey?.visibleCells[viewY * cols + viewX];
+        const surveyCell = surveyCells?.[viewY * cols + viewX];
         const worldX = surveyCell?.worldX ?? startWorldX + viewX;
         const worldY = surveyCell?.worldY ?? startWorldY + viewY;
         const rangeCells = surveyCell?.rangeCells ?? Math.hypot(viewX - viewCenterX, viewY - viewCenterY);
@@ -112,14 +141,73 @@ export class SceneRenderer {
         }
       }
     }
+    return cells;
+  }
 
-    cells[viewCenterY * cols + viewCenterX] = this.createCell(
+  private tryShiftHyperspaceFrame(
+    startWorldX: number,
+    startWorldY: number,
+    cols: number,
+    rows: number,
+    viewCenterX: number,
+    viewCenterY: number
+  ): CellState[] | null {
+    const previous = this.hyperspaceFrameCache;
+    if (!previous || previous.cols !== cols || previous.rows !== rows || previous.cells.length !== cols * rows) {
+      return null;
+    }
+
+    const deltaX = startWorldX - previous.startWorldX;
+    const deltaY = startWorldY - previous.startWorldY;
+    if (deltaX === 0 && deltaY === 0) return previous.cells;
+    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) return null;
+
+    const cells = new Array<CellState>(cols * rows);
+    for (let viewY = 0; viewY < rows; viewY++) {
+      for (let viewX = 0; viewX < cols; viewX++) {
+        const sourceX = viewX + deltaX;
+        const sourceY = viewY + deltaY;
+        const index = viewY * cols + viewX;
+        if (sourceX >= 0 && sourceX < cols && sourceY >= 0 && sourceY < rows) {
+          const previousRange = Math.hypot(sourceX - viewCenterX, sourceY - viewCenterY);
+          const currentRange = Math.hypot(viewX - viewCenterX, viewY - viewCenterY);
+          if (this.getHyperspaceRangeBand(previousRange) === this.getHyperspaceRangeBand(currentRange)) {
+            cells[index] = previous.cells[sourceY * cols + sourceX];
+            continue;
+          }
+        }
+
+        const worldX = startWorldX + viewX;
+        const worldY = startWorldY + viewY;
+        const tile = this.getHyperspaceTile(worldX, worldY, Math.hypot(viewX - viewCenterX, viewY - viewCenterY));
+        cells[index] = tile.starChar
+          ? this.createCell(tile.starChar, tile.starColor, CONFIG.TRANSPARENT_COLOUR, true)
+          : this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
+      }
+    }
+    return cells;
+  }
+
+  private getHyperspaceRangeBand(rangeCells: number): number {
+    if (rangeCells <= 12) return 0;
+    if (rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) return 1;
+    if (rangeCells <= CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS) return 2;
+    return 3;
+  }
+
+  private stageHyperspaceCells(
+    backgroundCells: readonly CellState[],
+    viewCenterX: number,
+    viewCenterY: number,
+    player: Player
+  ): void {
+    const cells = backgroundCells.slice();
+    cells[viewCenterY * this.screenBuffer.getCols() + viewCenterX] = this.createCell(
       player.render.char,
       player.render.fgColor,
       CONFIG.TRANSPARENT_COLOUR,
       true
     );
-    this.hyperspaceFrameCache = { signature, cells };
     this.screenBuffer.stageCells(cells);
   }
 

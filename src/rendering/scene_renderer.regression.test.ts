@@ -20,10 +20,14 @@ type DrawCall = {
   bg: string | null | undefined;
 };
 
-function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuffer; drawCalls: DrawCall[] } {
+function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuffer; drawCalls: DrawCall[]; stagedFrames: readonly unknown[][] } {
   const drawCalls: DrawCall[] = [];
+  const stagedFrames: readonly unknown[][] = [];
   const buffer = {
     clear: vi.fn(),
+    stageCells: vi.fn((cells: readonly unknown[]) => {
+      stagedFrames.push(cells.slice());
+    }),
     drawChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
       drawCalls.push({ char, x, y, fg, bg });
     }),
@@ -38,7 +42,7 @@ function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuf
     getDefaultBgColor: vi.fn(() => CONFIG.DEFAULT_BG_COLOUR),
   } as unknown as ScreenBuffer;
 
-  return { buffer, drawCalls };
+  return { buffer, drawCalls, stagedFrames };
 }
 
 function createSceneRenderer(buffer: ScreenBuffer): SceneRenderer {
@@ -175,6 +179,35 @@ function createRenderSignature(drawCalls: DrawCall[]): {
 }
 
 describe('SceneRenderer visual regressions', () => {
+  it('shifts hyperspace frames by one-cell movement without rebuilding the full viewport', () => {
+    const { buffer, stagedFrames } = createMockScreenBuffer(7, 5);
+    let mapCalls = 0;
+    const generator = {
+      getSystemMapProperties: () => {
+        mapCalls++;
+        return { exists: false, starType: null, name: null, hasStarbase: false, objectKind: null };
+      },
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), new NebulaRenderer(), generator);
+    const player = new Player();
+
+    renderer.drawHyperspace(player);
+    const callsAfterFirstFrame = mapCalls;
+    player.position.worldX += 1;
+    renderer.drawHyperspace(player);
+
+    const shiftedCalls = mapCalls - callsAfterFirstFrame;
+    const lastFrame = stagedFrames[stagedFrames.length - 1] as Array<{ char: string | null }>;
+    const playerGlyphs = lastFrame.filter((cell) => cell.char === player.render.char);
+    const centerCell = lastFrame[2 * 7 + 3];
+
+    expect(callsAfterFirstFrame).toBe(35);
+    expect(shiftedCalls).toBeLessThanOrEqual(5);
+    expect(playerGlyphs).toHaveLength(1);
+    expect(centerCell.char).toBe(player.render.char);
+  });
+
   it('draws subtle background stars during interplanetary travel', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(120, 60);
     const renderer = createSceneRenderer(buffer);
