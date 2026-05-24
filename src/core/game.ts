@@ -1163,7 +1163,7 @@ export class Game {
       const starRadius_m = starInfo.radius ?? SUN_RADIUS_M;
       const relativeLuminosity = Math.pow(starInfo.temp / SUN_TEMP, 4) * Math.pow(starRadius_m / SUN_RADIUS_M, 2);
       lines.push(`Luminosity: <hl>~${relativeLuminosity.toExponential(1)}</hl> (Rel. Sol)`);
-      lines.push(`Mass: <hl>~${(starInfo.mass / 1.98847e30).toFixed(1)} Solar Masses</hl>`); // Show solar masses
+      lines.push(`Mass: <hl>~${(starInfo.mass / 1.98847e30).toFixed(2)} Solar Masses</hl>`); // Show solar masses
       lines.push(`Radius: <hl>~${(starInfo.radius / 6.957e8).toFixed(1)} Solar Radii</hl>`); // Show solar radii
     } else {
       lines.push(`Temperature: [-W-]Unknown</w>`);
@@ -1635,7 +1635,9 @@ export class Game {
       planet: selectedBody,
       starbase: null,
     });
-    return `Orbit: ${selectedBody.name} | ${formatDistanceAu(selectedBody.orbitDistance)} from primary | Signal ${formatLightTimeFromMeters(selectedBody.orbitDistance)} | Mode: ${this.orbitMode} | Site ${this.orbitLandingX},${this.orbitLandingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
+    const orbitText = selectedBody.orbitDistance <= 0 ? 'none' : `${formatDistanceAu(selectedBody.orbitDistance)} from primary`;
+    const signalText = selectedBody.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(selectedBody.orbitDistance);
+    return `Orbit: ${selectedBody.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.orbitMode} | Site ${this.orbitLandingX},${this.orbitLandingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
   }
 
   private _updatePlanet(_deltaTime: number): string {

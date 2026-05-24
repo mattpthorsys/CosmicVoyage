@@ -1,6 +1,6 @@
 import { CONFIG } from '../config';
 import { AU_IN_METERS, ELEMENTS } from '../constants';
-import { Planet } from '../entities/planet';
+import { describePlanetType, Planet } from '../entities/planet';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 
 export type OrbitInteractionMode = 'overview' | 'landing';
@@ -48,9 +48,14 @@ export function createOrbitScreenModel(args: {
 
   const pressure = selected.atmosphere.pressure < 0.001 ? '~0' : selected.atmosphere.pressure.toFixed(3);
   const parentSeparation = selected === args.parentPlanet ? selected.orbitDistance : args.parentPlanet.orbitDistance + selected.orbitDistance;
+  const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(parentSeparation);
+  const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(parentSeparation);
+  const classText = describePlanetType(selected.type);
   const description = [
-    `${selected.name} is a ${selected.type} body with ${selected.gravity.toFixed(2)}g gravity and a mean surface temperature of ${selected.surfaceTemp}K.`,
-    `Orbital scale ${formatDistanceAu(parentSeparation)} from the system primary; one-way signal delay ${formatLightTimeFromMeters(parentSeparation)}.`,
+    `${selected.name} is a ${classText} with ${selected.gravity.toFixed(2)}g gravity and a mean surface temperature of ${selected.surfaceTemp}K.`,
+    selected.orbitDistance <= 0
+      ? 'Orbit none; free planetary-mass object in interstellar space.'
+      : `Orbital scale ${orbitText} from the system primary; one-way signal delay ${signalText}.`,
     `Atmosphere ${selected.atmosphere.density.toLowerCase()} at ${pressure} bar; hydrosphere ${selected.hydrosphere.toLowerCase()}, lithosphere ${selected.lithosphere.toLowerCase()}.`,
     selected.type === 'GasGiant' || selected.type === 'IceGiant'
       ? `Atmospheric resources: ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
@@ -79,8 +84,10 @@ export function createOrbitScreenModel(args: {
     description,
     telemetry: [
       `Body ${selected.name}`,
-      `Class ${selected.type} | Diameter ${selected.diameter.toLocaleString()} km | Density ${selected.density.toFixed(2)} g/cm3`,
-      `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
+      `Class ${classText} | Diameter ${selected.diameter.toLocaleString()} km | Density ${selected.density.toFixed(2)} g/cm3`,
+      selected.orbitDistance <= 0
+        ? 'Orbit none | Light time none'
+        : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
       `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
       `Temp now ${selected.getCurrentTemperature()}K | Moons ${selected.moons.length}`,
     ],
