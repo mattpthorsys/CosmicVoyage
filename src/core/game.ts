@@ -39,6 +39,14 @@ import {
   OrbitInteractionMode,
   OrbitScreenModel,
 } from './orbit_ui';
+import {
+  formatMissionDetail,
+  generateStarbaseMissions,
+  generateStarbaseNotices,
+  getMissionStatus,
+  isMissionCompletedByScan,
+  StarbaseMission,
+} from './mission_board';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -93,6 +101,9 @@ export class Game {
   private starbaseSelectionBySection: Record<string, number> = {};
   private starbaseOffsetBySection: Record<string, number> = {};
   private starbaseAlert: string = '';
+  private acceptedMissionIds: Set<string> = new Set();
+  private completedMissionIds: Set<string> = new Set();
+  private activeMissions: Record<string, StarbaseMission> = {};
   private orbitSelectedBodyIndex: number = 0;
   private orbitMode: OrbitInteractionMode = 'overview';
   private orbitLandingX: number = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
@@ -1068,6 +1079,9 @@ export class Game {
         logger.info(`[Game] Dumping scan results for ${targetName} to terminal overlay.`);
         // ** Use the new method to add all lines at once **
         this.terminalOverlay.addMessageLines(lines);
+        if (target instanceof Planet || target instanceof SolarSystem || (typeof target === 'object' && target !== null && 'starType' in target && 'luminosityW' in target)) {
+          this.completeMissionsForScan(target as Planet | SolarSystem | StellarBody);
+        }
       } else {
         logger.error('[Game:_dumpScanToTerminal] Generated scan lines array was null or empty for target:', targetName);
         this.terminalOverlay.addMessage(`<e>Error: Failed to generate scan information for ${targetName}.</e>`);
@@ -1076,6 +1090,31 @@ export class Game {
       logger.error(`[Game:_dumpScanToTerminal] Error generating or sending scan content: ${error}`);
       const errorMsg = `<e>Scan Error: ${error instanceof Error ? error.message : 'Failed to get info'}</e>`;
       this.terminalOverlay.addMessage(errorMsg);
+    }
+  }
+
+  private completeMissionsForScan(target: Planet | SolarSystem | StellarBody): void {
+    const system = this.stateManager.currentSystem;
+    const completed: StarbaseMission[] = [];
+
+    for (const mission of Object.values(this.activeMissions)) {
+      if (this.completedMissionIds.has(mission.id)) continue;
+      if (system && mission.systemName !== system.name) continue;
+      if (!isMissionCompletedByScan(mission, target)) continue;
+      completed.push(mission);
+    }
+
+    for (const mission of completed) {
+      this.completedMissionIds.add(mission.id);
+      delete this.activeMissions[mission.id];
+      this.player.resources.credits += mission.rewardCredits;
+      this.statusMessage = `Mission complete: ${mission.title}. Payment authorised: ${mission.rewardCredits} Cr.`;
+      this.terminalOverlay.addMessage(`<h>${this.statusMessage}</h>`);
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: mission.rewardCredits,
+      });
+      logger.info(`[Game] Mission completed: ${mission.id} (${mission.rewardCredits} Cr).`);
     }
   }
 
@@ -2063,7 +2102,43 @@ export class Game {
       this.starbaseAlert = this.statusMessage;
       return;
     }
+    if (this.starbaseSectionId === 'missions') {
+      this.activateMissionSelection(starbase, row);
+      return;
+    }
     this.starbaseAlert = row.detail || `${row.cells[0]} selected.`;
+  }
+
+  private activateMissionSelection(starbase: Starbase, row: StarbaseTableRow): void {
+    const system = this.stateManager.currentSystem;
+    if (!system) {
+      this.starbaseAlert = 'Mission board unavailable: local system record missing.';
+      return;
+    }
+
+    const mission = generateStarbaseMissions(starbase, system).find((candidate) => candidate.id === row.id);
+    if (!mission) {
+      this.starbaseAlert = row.detail || 'No contract selected.';
+      return;
+    }
+
+    const status = getMissionStatus(mission, {
+      acceptedMissionIds: this.acceptedMissionIds,
+      completedMissionIds: this.completedMissionIds,
+    });
+    if (status === 'COMPLETE') {
+      this.starbaseAlert = formatMissionDetail(mission, status);
+      return;
+    }
+    if (status === 'ACTIVE') {
+      this.starbaseAlert = formatMissionDetail(mission, status);
+      return;
+    }
+
+    this.acceptedMissionIds.add(mission.id);
+    this.activeMissions[mission.id] = mission;
+    this.starbaseAlert = `Accepted: ${mission.title}. ${mission.objective.targetLabel}.`;
+    this.statusMessage = this.starbaseAlert;
   }
 
   private getStarbaseSectionMeta(
@@ -2085,7 +2160,7 @@ export class Game {
       case 'notices':
         return { title: 'Station Notices', subtitle: 'Local bulletins, advisories, and dockmaster traffic.', columns: ['DATE', 'PRIORITY', 'NOTICE'], widths: [10, 10, 58] };
       case 'missions':
-        return { title: 'Mission Board', subtitle: 'Contract stubs for future mission systems.', columns: ['CONTRACT', 'PAY', 'RISK', 'SUMMARY'], widths: [22, 10, 8, 38] };
+        return { title: 'Mission Board', subtitle: 'Local contracts authorised by station offices.', columns: ['CONTRACT', 'PAY', 'RISK', 'STATUS', 'SUMMARY'], widths: [22, 9, 7, 10, 32] };
       case 'shipyard':
         return { title: 'Shipyard', subtitle: 'Refit estimates and upgrade placeholders.', columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'], widths: [18, 10, 8, 42] };
       case 'crew':
@@ -2125,17 +2200,29 @@ export class Game {
           { id: 'storage', cells: ['Bonded cargo vault', 'TBD', 'Offline', 'Stub: long-term storage contract interface.'] },
         ];
       case 'notices':
-        return [
-          { id: 'n1', cells: ['312.044', 'PORT', 'Docking clamps cycling every 19 minutes during radiator purge.'], detail: 'Routine thermal maintenance creates short launch holds.' },
-          { id: 'n2', cells: ['312.046', 'TRADE', 'Helium-3 brokers report thinner inbound traffic from the inner belt.'], detail: 'Future economy hooks can use this as a local price pressure.' },
-          { id: 'n3', cells: ['312.049', 'SAFETY', 'Unregistered beacon pings detected beyond the outer marker.'], detail: 'Possible future mission seed.' },
-        ];
+        if (!this.stateManager.currentSystem) {
+          return [{ id: 'no-notices', cells: ['--', 'OFFLINE', 'Station notice cache unavailable.'], detail: 'No local system record is attached to this dock.', disabled: true }];
+        }
+        return generateStarbaseNotices(starbase, this.stateManager.currentSystem).map((notice) => ({
+          id: notice.id,
+          cells: [notice.date, notice.priority, notice.text],
+          detail: notice.relatedMissionId ? `${notice.detail} Related contract is listed on the mission board.` : notice.detail,
+        }));
       case 'missions':
-        return [
-          { id: 'm1', cells: ['Outer marker survey', '850 Cr', 'Low', 'Scan three navigation buoys and return telemetry.'], detail: 'Stub: mission acceptance and objectives pending.' },
-          { id: 'm2', cells: ['Cold-chain courier', '1,420 Cr', 'Med', 'Deliver medical isotopes before decay window closes.'], detail: 'Stub: timed cargo contract.' },
-          { id: 'm3', cells: ['Signal recovery', '2,100 Cr', 'High', 'Investigate a dead relay near companion-star interference.'], detail: 'Stub: exploration encounter.' },
-        ];
+        if (!this.stateManager.currentSystem) {
+          return [{ id: 'no-missions', cells: ['Board unavailable', '0 Cr', '--', 'OFFLINE', 'No local system record.'], detail: 'Dock services cannot issue contracts without a system record.', disabled: true }];
+        }
+        return generateStarbaseMissions(starbase, this.stateManager.currentSystem).map((mission) => {
+          const status = getMissionStatus(mission, {
+            acceptedMissionIds: this.acceptedMissionIds,
+            completedMissionIds: this.completedMissionIds,
+          });
+          return {
+            id: mission.id,
+            cells: [mission.title, `${mission.rewardCredits} Cr`, mission.risk, status, mission.summary],
+            detail: formatMissionDetail(mission, status),
+          };
+        });
       case 'shipyard':
         return [
           { id: 's1', cells: ['Cargo rack tuning', '620 Cr', '2h', '+10 cargo capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
@@ -2172,7 +2259,11 @@ export class Game {
 
   private getSectionStatus(sectionId: StarbaseSectionId): string {
     if (sectionId === 'sell') return this.cargoSystem.getTotalUnits(this.player.cargoHold) > 0 ? 'Ready' : 'No cargo';
-    if (sectionId === 'shipyard' || sectionId === 'crew' || sectionId === 'missions') return 'Stub';
+    if (sectionId === 'missions') {
+      const active = Object.keys(this.activeMissions).filter((id) => !this.completedMissionIds.has(id)).length;
+      return active > 0 ? `${active} Active` : 'Available';
+    }
+    if (sectionId === 'shipyard' || sectionId === 'crew') return 'Stub';
     return 'Online';
   }
 
@@ -2184,7 +2275,7 @@ export class Game {
       sell: 'Sell cargo carried in your hold.',
       services: 'Refuel and future station services.',
       notices: 'Read local port bulletins.',
-      missions: 'Preview contract board stubs.',
+      missions: 'Accept local scan and charting contracts.',
       shipyard: 'Browse future upgrades and refits.',
       crew: 'Review recruitable crew stubs.',
     };
