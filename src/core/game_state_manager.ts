@@ -233,10 +233,7 @@ export class GameStateManager {
     }
     const planet = this._currentPlanet;
     if (planet) {
-      this.player.position.systemX = planet.systemX + CONFIG.LANDING_DISTANCE * 0.85;
-      this.player.position.systemY = planet.systemY - CONFIG.LANDING_DISTANCE * 0.35;
-      this.player.render.directionGlyph = GLYPHS.SHIP_NORTH;
-      this.player.render.char = this.player.render.directionGlyph;
+      this._setPlayerStateAtSystemObject(planet);
     }
     this._changeState('system', this._currentSystem, null, null);
     this.statusMessage = planet ? `Departed orbit of ${planet.name}.` : 'Departed orbit.';
@@ -268,7 +265,7 @@ export class GameStateManager {
     const liftedFromName = sourceObj?.name ?? 'Unknown Location';
 
     logger.info(`[GameStateManager] Lifting off from ${liftedFromName}...`);
-    this._setPlayerStateAfterLiftoff(sourceObj); // Update player position/render state
+    this._setPlayerStateAtSystemObject(sourceObj); // Update player position/render state
     this._changeState('system', this._currentSystem, null, null); // Change state and publish
     this.statusMessage = STATUS_MESSAGES.LIFTOFF_SUCCESS(liftedFromName);
     logger.info(`[GameStateManager] Successfully lifted off from ${liftedFromName}`);
@@ -382,13 +379,11 @@ export class GameStateManager {
     return newState; // Indicate success
   }
 
-  /** Sets the player's position and rendering state after lifting off. */
-  private _setPlayerStateAfterLiftoff(sourceObject: Planet | Starbase | null): void {
+  /** Sets the player's system position and rendering state at the current object coordinates. */
+  private _setPlayerStateAtSystemObject(sourceObject: Planet | Starbase | null): void {
     if (sourceObject) {
-      // Position slightly offset from the source object
-      this.player.position.systemX =
-        sourceObject.systemX + CONFIG.LANDING_DISTANCE * CONFIG.LIFTOFF_DISTANCE_FACTOR * 0.1; // Small X offset
-      this.player.position.systemY = sourceObject.systemY - CONFIG.LANDING_DISTANCE * CONFIG.LIFTOFF_DISTANCE_FACTOR; // Offset 'above'
+      this.player.position.systemX = sourceObject.systemX;
+      this.player.position.systemY = sourceObject.systemY;
     } else {
       // Fallback position if source object somehow null
       this.player.position.systemX = 0;
