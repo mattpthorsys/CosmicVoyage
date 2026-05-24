@@ -1,6 +1,6 @@
 // src/rendering/renderer_facade.ts (Subscribe to status events)
 
-import { ScreenBuffer } from './screen_buffer';
+import { RenderStats, ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
 import { SceneRenderer } from './scene_renderer';
@@ -156,6 +156,7 @@ export class RendererFacade {
     )}px`;
 
     this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
+    this.sceneRenderer.clearCaches();
     this.screenBuffer.clear(false);
 
     logger.info(
@@ -171,6 +172,10 @@ export class RendererFacade {
   /** Renders the entire main scene buffer. */
   renderBufferFull(): void {
     this.screenBuffer.renderFull();
+  }
+
+  getLastRenderStats(): RenderStats {
+    return this.screenBuffer.getLastRenderStats();
   }
 
   /** Updates the text content of the status bar element. (This method is now primarily called internally via event) */

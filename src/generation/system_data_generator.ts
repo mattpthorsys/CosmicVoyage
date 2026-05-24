@@ -37,6 +37,8 @@ const SYSTEM_NAME_PREFIXES = [
 
 export class SystemDataGenerator {
     private gameSeedPRNG: PRNG;
+    private systemPropertiesCache: Map<string, SystemBasicProperties> = new Map();
+    private readonly maxSystemPropertiesCacheSize = 50000;
 
     constructor(gameSeedPRNG: PRNG) {
         this.gameSeedPRNG = gameSeedPRNG;
@@ -48,6 +50,10 @@ export class SystemDataGenerator {
      * This method performs minimal generation needed for quick checks (like hyperspace view).
      */
     getSystemProperties(worldX: number, worldY: number): SystemBasicProperties {
+        const cacheKey = `${worldX},${worldY}`;
+        const cached = this.systemPropertiesCache.get(cacheKey);
+        if (cached) return cached;
+
         const result: SystemBasicProperties = {
             exists: false,
             starType: null,
@@ -64,6 +70,7 @@ export class SystemDataGenerator {
         result.exists = (hash % CONFIG.STAR_CHECK_HASH_SCALE) < starPresenceThreshold;
 
         if (!result.exists) {
+            this.cacheSystemProperties(cacheKey, result);
             return result;
         }
 
@@ -90,7 +97,20 @@ export class SystemDataGenerator {
             worldY
         );
 
+        this.cacheSystemProperties(cacheKey, result);
         return result;
+    }
+
+    clearCache(): void {
+        this.systemPropertiesCache.clear();
+    }
+
+    private cacheSystemProperties(cacheKey: string, properties: SystemBasicProperties): void {
+        if (this.systemPropertiesCache.size >= this.maxSystemPropertiesCacheSize) {
+            const firstKey = this.systemPropertiesCache.keys().next().value;
+            if (firstKey !== undefined) this.systemPropertiesCache.delete(firstKey);
+        }
+        this.systemPropertiesCache.set(cacheKey, properties);
     }
 
     private generateStarType(prng: PRNG): string {

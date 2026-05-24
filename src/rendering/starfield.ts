@@ -1,7 +1,6 @@
 import { CONFIG } from '../config';
 import { GLYPHS, SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants';
 import { fastHash } from '../utils/hash';
-import { PRNG } from '../utils/prng';
 import { adjustBrightness, hexToRgb, rgbToHex } from './colour';
 
 export interface StarfieldCell {
@@ -37,21 +36,21 @@ export function createSystemTravelStarfield(
   const cells: StarfieldCell[] = [];
   if (cols <= 0 || rows <= 0) return cells;
 
-  const baseSeed = `${CONFIG.SEED}_star_background`;
-  const basePrng = new PRNG(baseSeed);
+  const baseSeedHash = fastHash(CONFIG.SEED.length, CONFIG.SEED.charCodeAt(0) || 0, CONFIG.SEED.charCodeAt(CONFIG.SEED.length - 1) || 0);
   CONFIG.STAR_BACKGROUND_LAYERS.forEach((layer, layerIndex) => {
     const viewOffsetX = Math.floor((systemX * layer.factor) / layer.scale);
     const viewOffsetY = Math.floor((systemY * layer.factor) / layer.scale);
     const density = layer.density * 1.35;
     const dimFactor = layerIndex === 0 ? 0.26 : 0.18;
+    const densityThreshold = Math.floor(density * 1000000);
 
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const fieldX = x + viewOffsetX;
         const fieldY = y + viewOffsetY;
-        const cellPrng = basePrng.seedNew(`${baseSeed}_main_${layerIndex}_${fieldX}_${fieldY}`);
-        if (cellPrng.random() < density) {
-          const starType = cellPrng.choice(SPECTRAL_DISTRIBUTION)!;
+        const hash = fastHash(fieldX, fieldY, baseSeedHash + layerIndex * 7919);
+        if (hash % 1000000 < densityThreshold) {
+          const starType = SPECTRAL_DISTRIBUTION[Math.floor(hash / 1000000) % SPECTRAL_DISTRIBUTION.length]!;
           const star = getRenderedStarCell(starType, fieldX, fieldY);
           cells.push({ x, y, char: GLYPHS.STAR_DIM, color: dimHexColour(star.color, dimFactor) });
         }

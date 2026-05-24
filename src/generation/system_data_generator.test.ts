@@ -14,6 +14,17 @@ function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: nu
 }
 
 describe('SystemDataGenerator', () => {
+  it('returns stable cached system properties and can rebuild them after clearing cache', () => {
+    const generator = new SystemDataGenerator(new PRNG('system-cache-regression'));
+    const first = generator.getSystemProperties(12, -34);
+    const cached = generator.getSystemProperties(12, -34);
+    generator.clearCache();
+    const rebuilt = generator.getSystemProperties(12, -34);
+
+    expect(cached).toBe(first);
+    expect(rebuilt).toEqual(first);
+  });
+
   it('generates deterministic stellar evolution properties for systems', () => {
     const firstGenerator = new SystemDataGenerator(new PRNG('system-data-test'));
     const secondGenerator = new SystemDataGenerator(new PRNG('system-data-test'));

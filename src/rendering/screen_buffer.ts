@@ -12,6 +12,14 @@ export interface CellState {
   isTransparentBg: boolean; // Flag if background should be transparent
 }
 
+export interface RenderStats {
+  mode: 'full' | 'diff';
+  cellsDrawn: number;
+  backgroundsDrawn: number;
+  glyphsDrawn: number;
+  durationMs: number;
+}
+
 /** Manages the character grid buffers and physical drawing to the canvas. */
 export class ScreenBuffer {
 
@@ -31,6 +39,13 @@ export class ScreenBuffer {
   private readonly defaultCellState: Readonly<CellState>; // Template for empty/default cells
   private readonly defaultBgColor: string;
   private readonly defaultFgColor: string;
+  private lastRenderStats: RenderStats = {
+    mode: 'full',
+    cellsDrawn: 0,
+    backgroundsDrawn: 0,
+    glyphsDrawn: 0,
+    durationMs: 0,
+  };
 
   private isTransparent: boolean = false; // Flag for the buffer itself
 
@@ -60,6 +75,7 @@ export class ScreenBuffer {
   getCharHeightPx(): number { return this.charHeightPx; }
   getDefaultFgColor(): string { return this.defaultFgColor; }
   getDefaultBgColor(): string { return this.defaultBgColor; }
+  getLastRenderStats(): RenderStats { return { ...this.lastRenderStats }; }
 
   /** Initializes or re-initializes the screen buffers based on current dimensions. */
   initBuffers(cols: number, rows: number): void {
@@ -130,10 +146,7 @@ export class ScreenBuffer {
     }
   }
 
-  /**
-   * Resets the drawing buffers and optionally clears the physical canvas.
-   * MODIFIED: Respects physicalClear flag better.
-   */
+  /** Resets staging state and optionally clears the rendered state and physical canvas. */
   clear(physicalClear: boolean = true): void {
     logger.debug(
       `[ScreenBuffer.clear] Clearing buffers (Physical Clear: ${physicalClear})...`
@@ -144,11 +157,11 @@ export class ScreenBuffer {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    // Always reset both internal buffers to the default state
+    // Reset the staging buffer every frame. Only reset the rendered-state buffer
+    // when the physical canvas is also cleared, otherwise diff rendering loses its baseline.
     const size = this.cols * this.rows;
     for (let i = 0; i < size; i++) {
-       // Ensure index is within bounds, though size should match buffer lengths if initBuffers worked
-       if (i < this.screenBuffer.length) {
+       if (physicalClear && i < this.screenBuffer.length) {
            this.screenBuffer[i] = this.defaultCellState;
        }
        if (i < this.newBuffer.length) {
@@ -218,6 +231,20 @@ export class ScreenBuffer {
     }
   }
 
+  /** Replaces the staged drawing buffer with a complete precomputed frame. */
+  stageCells(cells: readonly CellState[]): void {
+    const size = this.cols * this.rows;
+    if (cells.length !== size || this.newBuffer.length !== size) {
+      logger.error(
+        `[ScreenBuffer.stageCells] Buffer size mismatch. Grid: ${size}, Cells: ${cells.length}, New: ${this.newBuffer.length}`
+      );
+      return;
+    }
+    for (let i = 0; i < size; i++) {
+      this.newBuffer[i] = cells[i] || this.defaultCellState;
+    }
+  }
+
   /**
    * *** NEW METHOD ***
    * Copies the content of another ScreenBuffer's *rendered* state (screenBuffer)
@@ -259,25 +286,19 @@ export class ScreenBuffer {
       }
 
       let cellsDrawn = 0;
+      let backgroundsDrawn = 0;
+      let glyphsDrawn = 0;
+      this.drawBackgroundRuns(this.newBuffer);
       for (let i = 0; i < size; i++) {
           const newState = this.newBuffer[i];
-          // No need to compare with old state, just draw what's in newBuffer
           const y = Math.floor(i / this.cols);
           const x = i % this.cols;
-
-          // Draw the cell state
-          this._physicalDrawChar(
-              newState.char,
-              x,
-              y,
-              newState.fg,
-              newState.bg,
-              newState.isTransparentBg,
-              // When doing full render, the 'old' background concept is less relevant,
-              // but provide the default buffer background for consistency if needed by transparency logic.
-              this.defaultBgColor
-          );
           cellsDrawn++;
+          if (!newState.isTransparentBg) backgroundsDrawn++;
+          if ((newState.char || ' ') !== ' ') {
+              this._physicalDrawGlyph(newState.char, x, y, newState.fg);
+              glyphsDrawn++;
+          }
 
           // Update screenBuffer to match what was just drawn
           this.screenBuffer[i] = newState;
@@ -286,6 +307,7 @@ export class ScreenBuffer {
       }
 
       const endTime = performance.now();
+      this.lastRenderStats = { mode: 'full', cellsDrawn, backgroundsDrawn, glyphsDrawn, durationMs: endTime - startTime };
       // Reduce logging frequency if needed
       // if (cellsDrawn > 0) {
       //   logger.debug(
@@ -312,6 +334,7 @@ export class ScreenBuffer {
     }
 
     const startTime = performance.now();
+    const dirtyIndices: number[] = [];
 
     for (let i = 0; i < size; i++) {
       const oldState = this.screenBuffer[i];
@@ -342,17 +365,7 @@ export class ScreenBuffer {
       }
 
       // State differs, draw the new state
-      const y = Math.floor(i / this.cols);
-      const x = i % this.cols;
-      this._physicalDrawChar(
-        newState.char,
-        x,
-        y,
-        newState.fg,
-        newState.bg,
-        newState.isTransparentBg,
-        oldState.bg // Pass old background for transparency handling in _physicalDrawChar
-      );
+      dirtyIndices.push(i);
       cellsDrawn++;
 
       // Update screenBuffer to reflect the drawn state
@@ -361,7 +374,26 @@ export class ScreenBuffer {
       this.newBuffer[i] = this.defaultCellState;
     }
 
+    const backgroundsDrawn = this.drawBackgroundRunsForIndices(dirtyIndices, this.screenBuffer);
+    let glyphsDrawn = 0;
+    for (const i of dirtyIndices) {
+      const state = this.screenBuffer[i];
+      const charToDraw = state.char || ' ';
+      if (state.isTransparentBg && charToDraw !== ' ') {
+        const x = i % this.cols;
+        const y = Math.floor(i / this.cols);
+        this.ctx.clearRect(x * this.charWidthPx, y * this.charHeightPx, this.charWidthPx, this.charHeightPx);
+      }
+      if (charToDraw !== ' ') {
+        const x = i % this.cols;
+        const y = Math.floor(i / this.cols);
+        this._physicalDrawGlyph(state.char, x, y, state.fg);
+        glyphsDrawn++;
+      }
+    }
+
     const endTime = performance.now();
+    this.lastRenderStats = { mode: 'diff', cellsDrawn, backgroundsDrawn, glyphsDrawn, durationMs: endTime - startTime };
     if (cellsDrawn > 0) {
       // logger.debug( // Can be noisy
       //   `[ScreenBuffer.renderDiff] Completed: ${cellsDrawn} cells drawn in ${(
@@ -371,41 +403,68 @@ export class ScreenBuffer {
     }
   }
 
-  /** Physically draws a single character to the canvas context. Internal helper. */
-  private _physicalDrawChar(
-    char: string | null,
-    x: number, // Grid coordinates
-    y: number, // Grid coordinates
-    fgColor: string | null,
-    bgColor: string | null,
-    isTransparentBg: boolean,
-    _oldBgColor: string | null // Keep param for signature compatibility
-  ): void {
-    const px = x * this.charWidthPx;
-    const py = y * this.charHeightPx;
-
-    // Determine the background colour to draw for this cell
-    const drawBgColor = isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : (bgColor || this.defaultBgColor);
-
-    // Optimization: Only clearRect or fillRect if the background is NOT transparent *or* if there's a non-space foreground char.
-    const charToDraw = char || ' '; // Treat null as space
-
-    if (drawBgColor !== CONFIG.TRANSPARENT_COLOUR) {
-        // Fill background rectangle first if it's not transparent
-        this.ctx.fillStyle = drawBgColor;
-        this.ctx.fillRect(px, py, this.charWidthPx, this.charHeightPx);
-    } else if (charToDraw !== ' ') {
-        // If background IS transparent, but we have a char, clear the area first
-        this.ctx.clearRect(px, py, this.charWidthPx, this.charHeightPx);
+  private drawBackgroundRuns(buffer: CellState[]): number {
+    let backgroundsDrawn = 0;
+    for (let y = 0; y < this.rows; y++) {
+      let x = 0;
+      while (x < this.cols) {
+        const state = buffer[y * this.cols + x];
+        if (state.isTransparentBg) {
+          x++;
+          continue;
+        }
+        const bg = state.bg || this.defaultBgColor;
+        let runEnd = x + 1;
+        while (runEnd < this.cols) {
+          const next = buffer[y * this.cols + runEnd];
+          if (next.isTransparentBg || (next.bg || this.defaultBgColor) !== bg) break;
+          runEnd++;
+        }
+        this.ctx.fillStyle = bg;
+        this.ctx.fillRect(x * this.charWidthPx, y * this.charHeightPx, (runEnd - x) * this.charWidthPx, this.charHeightPx);
+        backgroundsDrawn += runEnd - x;
+        x = runEnd;
+      }
     }
-    // Else (transparent bg AND no char), do nothing for background.
-
-    // If there's a non-space character to draw
-    if (charToDraw !== ' ') {
-      this.ctx.fillStyle = fgColor || this.defaultFgColor; // Set foreground colour
-      // Draw the character
-      this.ctx.fillText(charToDraw, px, py);
-      // logger.debug(`Drew char '${char}' at px [${px}, ${py}]`); // Extremely noisy
-    }
+    return backgroundsDrawn;
   }
+
+  private drawBackgroundRunsForIndices(indices: number[], buffer: CellState[]): number {
+    let backgroundsDrawn = 0;
+    let cursor = 0;
+    while (cursor < indices.length) {
+      const startIndex = indices[cursor];
+      const startState = buffer[startIndex];
+      if (startState.isTransparentBg) {
+        cursor++;
+        continue;
+      }
+      const y = Math.floor(startIndex / this.cols);
+      const startX = startIndex % this.cols;
+      const bg = startState.bg || this.defaultBgColor;
+      let endX = startX + 1;
+      cursor++;
+      while (cursor < indices.length) {
+        const nextIndex = indices[cursor];
+        const nextY = Math.floor(nextIndex / this.cols);
+        const nextX = nextIndex % this.cols;
+        const nextState = buffer[nextIndex];
+        if (nextY !== y || nextX !== endX || nextState.isTransparentBg || (nextState.bg || this.defaultBgColor) !== bg) break;
+        endX++;
+        cursor++;
+      }
+      this.ctx.fillStyle = bg;
+      this.ctx.fillRect(startX * this.charWidthPx, y * this.charHeightPx, (endX - startX) * this.charWidthPx, this.charHeightPx);
+      backgroundsDrawn += endX - startX;
+    }
+    return backgroundsDrawn;
+  }
+
+  private _physicalDrawGlyph(char: string | null, x: number, y: number, fgColor: string | null): void {
+    const charToDraw = char || ' ';
+    if (charToDraw === ' ') return;
+    this.ctx.fillStyle = fgColor || this.defaultFgColor;
+    this.ctx.fillText(charToDraw, x * this.charWidthPx, y * this.charHeightPx);
+  }
+
 }

@@ -48,6 +48,7 @@ export class AstrometricOverlay {
   private lastEmitAt = 0;
   private lastCamera: CameraState | null = null;
   private hyperspaceStarbaseMarkers: HyperspaceStarbaseMarker[] = [];
+  private hyperspaceMarkerSignature = '';
 
   constructor(systemDataGenerator: SystemDataGenerator) {
     this.systemDataGenerator = systemDataGenerator;
@@ -56,8 +57,12 @@ export class AstrometricOverlay {
   update(context: OverlayContext, deltaTime: number, cols: number, rows: number): void {
     const now = performance.now();
     this.shiftWithCamera(context);
-    this.hyperspaceStarbaseMarkers =
-      context.state === 'hyperspace' ? this.findHyperspaceStarbaseMarkers(context.player, cols, rows) : [];
+    if (context.state === 'hyperspace') {
+      this.hyperspaceStarbaseMarkers = this.getHyperspaceStarbaseMarkers(context.player, cols, rows);
+    } else {
+      this.hyperspaceMarkerSignature = '';
+      this.hyperspaceStarbaseMarkers = [];
+    }
     for (const item of this.items) {
       item.typedChars += CONFIG.ASTROMETRIC_OVERLAY_TYPE_SPEED * deltaTime;
     }
@@ -111,6 +116,10 @@ export class AstrometricOverlay {
     }
 
     ctx.restore();
+  }
+
+  hasVisibleContent(): boolean {
+    return this.items.length > 0 || this.hyperspaceStarbaseMarkers.length > 0;
   }
 
   private createItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
@@ -286,6 +295,15 @@ export class AstrometricOverlay {
       }
     }
     return markers;
+  }
+
+  private getHyperspaceStarbaseMarkers(player: Player, cols: number, rows: number): HyperspaceStarbaseMarker[] {
+    const signature = `${player.position.worldX},${player.position.worldY}|${cols}x${rows}`;
+    if (signature === this.hyperspaceMarkerSignature) {
+      return this.hyperspaceStarbaseMarkers;
+    }
+    this.hyperspaceMarkerSignature = signature;
+    return this.findHyperspaceStarbaseMarkers(player, cols, rows);
   }
 
   private drawHyperspaceStarbaseMarkers(

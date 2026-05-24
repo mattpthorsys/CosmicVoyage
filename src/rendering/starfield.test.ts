@@ -19,4 +19,13 @@ describe('starfield generation', () => {
     expect(afterTravel).not.toEqual(atOrigin);
   });
 
+  it('keeps hash-generated system star density restrained', () => {
+    const stars = createSystemTravelStarfield(160, 90, -2.4e11, 3.1e11);
+    const ratio = stars.length / (160 * 90);
+
+    expect(ratio).toBeGreaterThan(0.004);
+    expect(ratio).toBeLessThan(0.03);
+    expect(new Set(stars.map((cell) => `${cell.x},${cell.y}`)).size).toBeGreaterThan(stars.length * 0.9);
+  });
+
 });

@@ -55,7 +55,7 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
   "bounds": {
     "maxX": 119,
     "maxY": 59,
-    "minX": 1,
+    "minX": 0,
     "minY": 0,
   },
   "chars": {
@@ -64,7 +64,7 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
     "<null>": 324,
     "@": 2,
     "A": 1,
-    "·": 100,
+    "·": 107,
     "─": 36,
     "│": 36,
     "┌": 1,
@@ -73,7 +73,7 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
     "┘": 1,
     "▓": 1,
   },
-  "totalCalls": 829,
+  "totalCalls": 836,
 }
 `;
 

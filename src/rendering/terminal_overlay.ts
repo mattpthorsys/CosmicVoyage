@@ -131,6 +131,10 @@ export class TerminalOverlay {
     this.currentTypingProgressChars = 0;
   }
 
+  hasVisibleContent(): boolean {
+    return this.displayMessages.length > 0 || this.messageQueue.length > 0 || this.isCurrentlyTyping;
+  }
+
   /** Starts displaying the next message from the queue */
   private _startNextMessage(): void {
     if (this.isCurrentlyTyping || this.messageQueue.length === 0) return;

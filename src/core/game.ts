@@ -91,6 +91,8 @@ export class Game {
   private animationFrameId: number | null = null;
   private statusMessage: string = 'Initializing Systems...';
   private forceFullRender: boolean = true;
+  private lastRenderStatsLogAt: number = 0;
+  private lastMainRenderSignature: string = '';
 
   // Popup State
   private popupState: 'inactive' | 'opening' | 'active' | 'closing' = 'inactive';
@@ -1527,7 +1529,14 @@ export class Game {
   private _render(): void {
     const currentState = this.stateManager.state;
     try {
-      this.renderer.clear(true);
+      const directCanvasOverlayVisible =
+        this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent();
+      const mainRenderSignature = this.getMainRenderSignature();
+      if (this.canSkipMainRender(currentState, directCanvasOverlayVisible, mainRenderSignature)) {
+        return;
+      }
+      const fullCanvasRepaint = this.forceFullRender || directCanvasOverlayVisible;
+      this.renderer.clear(fullCanvasRepaint);
 
       // Draw main content layer based on state
       switch (currentState) {
@@ -1595,7 +1604,13 @@ export class Game {
         );
       }
 
-      this.renderer.renderBufferFull();
+      if (fullCanvasRepaint) {
+        this.renderer.renderBufferFull();
+      } else {
+        this.renderer.renderDiff();
+      }
+      this.logRenderStats();
+      this.lastMainRenderSignature = mainRenderSignature;
 
       this.astrometricOverlay.render(
         this.renderer.getContext(),
@@ -1617,6 +1632,51 @@ export class Game {
       this._publishStatusUpdate(); // Try to show error
       this.stopGame(); // Stop loop on render errors
     }
+  }
+
+  private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive') return false;
+    if (state === 'starbase' && this.starbaseAlert) return false;
+    if (state !== 'planet' && state !== 'starbase') return false;
+    return signature === this.lastMainRenderSignature;
+  }
+
+  private getMainRenderSignature(): string {
+    const state = this.stateManager.state;
+    switch (state) {
+      case 'planet':
+        return [
+          state,
+          this.stateManager.currentPlanet?.name ?? '',
+          this.player.position.surfaceX,
+          this.player.position.surfaceY,
+          this.player.render.char,
+          this.stateManager.currentPlanet?.scanned ? 'scanned' : 'unscanned',
+        ].join('|');
+      case 'starbase':
+        return [
+          state,
+          this.stateManager.currentStarbase?.name ?? '',
+          this.starbaseSectionId,
+          this.getStarbaseSelection(),
+          this.getStarbaseOffset(),
+          this.starbaseAlert,
+          this.player.resources.credits,
+          this.player.resources.fuel,
+        ].join('|');
+      default:
+        return `${state}|${performance.now()}`;
+    }
+  }
+
+  private logRenderStats(): void {
+    const now = performance.now();
+    if (now - this.lastRenderStatsLogAt < 2000) return;
+    this.lastRenderStatsLogAt = now;
+    const stats = this.renderer.getLastRenderStats();
+    logger.debug(
+      `[Game:_render] ${stats.mode} render: ${stats.cellsDrawn} changed cells, ${stats.backgroundsDrawn} bg cells, ${stats.glyphsDrawn} glyphs in ${stats.durationMs.toFixed(2)}ms`
+    );
   }
 
   /** Helper to render an error message */
