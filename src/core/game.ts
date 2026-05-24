@@ -1759,13 +1759,20 @@ export class Game {
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
     if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive') return false;
     if (state === 'starbase' && this.starbaseAlert) return false;
-    if (state !== 'planet' && state !== 'starbase') return false;
+    if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
   }
 
   private getMainRenderSignature(): string {
     const state = this.stateManager.state;
     switch (state) {
+      case 'hyperspace':
+        return [
+          state,
+          this.player.position.worldX,
+          this.player.position.worldY,
+          this.player.render.char,
+        ].join('|');
       case 'planet':
         return [
           state,
