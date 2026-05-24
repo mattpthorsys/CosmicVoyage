@@ -72,7 +72,8 @@ export function generateSurfaceElementMap(
       // 1. Determine if *anything* should spawn here (Sparsity Check)
       const richnessNoise = (richnessNoiseGenerator.get(x * richnessNoiseScale, y * richnessNoiseScale) + 1) / 2; // Noise 0-1
       const localSparsityThreshold = baseSparsity + richnessNoise * richnessInfluence; // Cells in 'rich' areas are less sparse
-      const sparsityRoll = prng.random(); // Use planet's main PRNG for this roll
+      const cellChoicePRNG = prng.seedNew(`elem_cell_${x}_${y}`);
+      const sparsityRoll = cellChoicePRNG.random();
 
       if (sparsityRoll > localSparsityThreshold) {
         surfaceMap[y][x] = ''; // Cell remains empty
@@ -137,8 +138,6 @@ export function generateSurfaceElementMap(
       // 3. Choose Element based on Local Weights
       let potentialElement = '';
       if (localTotalWeight > 0 && localWeights.length > 0) {
-        // Use a PRNG seeded uniquely for this cell to make the *choice* deterministic if needed
-        const cellChoicePRNG = prng.seedNew(`elem_choice_${x}_${y}`);
         let roll = cellChoicePRNG.random(0, localTotalWeight);
         for (const localElement of localWeights) {
           roll -= localElement.adjustedWeight;

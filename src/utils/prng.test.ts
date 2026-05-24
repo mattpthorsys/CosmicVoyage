@@ -123,4 +123,22 @@ describe('PRNG (Mulberry32)', () => {
          expect(val3_base).not.toEqual(val1_base);
          expect(val3_base).not.toEqual(val2_base);
     });
+
+    it('seedNew() should not depend on the parent generator state', () => {
+        const basePrng = new PRNG('root-seed');
+        const beforeAdvance = basePrng.seedNew('system', 12, -34);
+
+        basePrng.random();
+        basePrng.randomInt(1, 100);
+        basePrng.choice(['scan', 'orbit', 'dock']);
+
+        const afterAdvance = basePrng.seedNew('system', 12, -34);
+
+        expect(afterAdvance.getInitialSeed()).toBe(beforeAdvance.getInitialSeed());
+        expect([afterAdvance.next(), afterAdvance.next(), afterAdvance.randomInt(1, 999)]).toEqual([
+            beforeAdvance.next(),
+            beforeAdvance.next(),
+            beforeAdvance.randomInt(1, 999),
+        ]);
+    });
 });

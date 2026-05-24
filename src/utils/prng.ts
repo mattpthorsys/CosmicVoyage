@@ -56,10 +56,9 @@ export class PRNG {
         return arr[this.randomInt(0, arr.length - 1)];
     }
 
-    /** Creates a new PRNG instance seeded from the current state and additional seeds. */
+    /** Creates a new PRNG instance from this generator's immutable root seed and additional seeds. */
     seedNew(...additionalSeeds: (string | number)[]): PRNG {
-        // Combine current internal state 'a' with additional seeds
-        const combinedSeed = this.a + ":" + additionalSeeds.join(':');
+        const combinedSeed = `${this.initialSeedString}:${additionalSeeds.join(':')}`;
         return new PRNG(combinedSeed);
     }
 

@@ -3,6 +3,7 @@ import { PRNG } from '../utils/prng';
 import { SystemDataGenerator } from './system_data_generator';
 import { SolarSystem } from '../entities/solar_system';
 import { CONFIG } from '../config';
+import { Planet } from '../entities/planet';
 
 function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: number } {
   for (let y = -80; y <= 80; y++) {
@@ -12,6 +13,87 @@ function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: nu
     }
   }
   throw new Error('Expected at least one generated system in search window.');
+}
+
+function createSystem(seed: PRNG, x: number, y: number): SolarSystem {
+  const generator = new SystemDataGenerator(seed);
+  const props = generator.getSystemProperties(x, y);
+  if (!props.exists) throw new Error(`Expected a generated system at ${x},${y}.`);
+  return new SolarSystem(props, x, y, seed);
+}
+
+function getSystemFingerprint(system: SolarSystem): unknown {
+  return {
+    name: system.name,
+    starType: system.starType,
+    ageGyr: Number(system.ageGyr.toFixed(3)),
+    metallicityFeH: Number(system.metallicityFeH.toFixed(3)),
+    architecture: {
+      kind: system.architecture.kind,
+      primaryStarId: system.architecture.primaryStarId,
+      stars: system.stars.map((star) => ({
+        id: star.id,
+        type: star.starType,
+        mass: Math.round(star.massKg),
+        radius: Math.round(star.radiusM),
+        orbitRadius: star.orbit ? Math.round(star.orbit.radius) : 0,
+      })),
+    },
+    starbase: system.starbase
+      ? {
+          name: system.starbase.name,
+          orbitDistance: Math.round(system.starbase.orbitDistance),
+          orbitAngle: Number(system.starbase.orbitAngle.toFixed(6)),
+        }
+      : null,
+    planets: system.planets.map((planet) =>
+      planet
+        ? {
+            name: planet.name,
+            type: planet.type,
+            orbitDistance: Math.round(planet.orbitDistance),
+            orbitAngle: Number(planet.orbitAngle.toFixed(6)),
+            diameter: Number(planet.diameter.toFixed(2)),
+            density: Number(planet.density.toFixed(3)),
+            gravity: Number(planet.gravity.toFixed(3)),
+            surfaceTemp: Math.round(planet.surfaceTemp),
+            atmosphere: planet.atmosphere.density,
+            hydrosphere: planet.hydrosphere,
+            lithosphere: planet.lithosphere,
+            moons: planet.moons.map((moon) => ({
+              name: moon.name,
+              type: moon.type,
+              orbitDistance: Math.round(moon.orbitDistance),
+              diameter: Number(moon.diameter.toFixed(2)),
+              density: Number(moon.density.toFixed(3)),
+              gravity: Number(moon.gravity.toFixed(3)),
+              surfaceTemp: Math.round(moon.surfaceTemp),
+              tidallyLocked: moon.tidallyLocked,
+            })),
+          }
+        : null
+    ),
+  };
+}
+
+function getSurfaceFingerprint(planet: Planet): unknown {
+  planet.ensureSurfaceReady();
+  const heightmap = planet.heightmap;
+  const elementMap = planet.surfaceElementMap;
+  if (!heightmap || !elementMap) throw new Error(`Expected solid surface data for ${planet.name}.`);
+
+  const samplePoints = [
+    [0, 0],
+    [Math.floor(heightmap.length / 3), Math.floor(heightmap.length / 4)],
+    [Math.floor(heightmap.length / 2), Math.floor(heightmap.length / 2)],
+    [heightmap.length - 1, heightmap.length - 1],
+  ];
+
+  return {
+    mapSeed: planet.mapSeed,
+    heightSamples: samplePoints.map(([x, y]) => heightmap[y][x]),
+    elementSamples: samplePoints.map(([x, y]) => elementMap[y][x]),
+  };
 }
 
 describe('SystemDataGenerator', () => {
@@ -46,6 +128,65 @@ describe('SystemDataGenerator', () => {
     expect(first.ageGyr).toBeLessThanOrEqual(13.2);
     expect(first.metallicityFeH).toBeGreaterThanOrEqual(-1.75);
     expect(first.metallicityFeH).toBeLessThanOrEqual(0.55);
+  });
+
+  it('keeps system generation independent from parent PRNG consumption and visit order', () => {
+    const seedLabel = 'order-independent-sector';
+    const locator = new SystemDataGenerator(new PRNG(seedLabel));
+    const first = findGeneratedSystem(locator);
+    let second = first;
+    for (let y = first.y; y <= 90 && second.x === first.x && second.y === first.y; y++) {
+      for (let x = -90; x <= 90; x++) {
+        const props = locator.getSystemProperties(x, y);
+        if (props.exists && (x !== first.x || y !== first.y)) {
+          second = { x, y };
+          break;
+        }
+      }
+    }
+
+    const cleanFirst = createSystem(new PRNG(seedLabel), first.x, first.y);
+    const cleanSecond = createSystem(new PRNG(seedLabel), second.x, second.y);
+
+    const gameplayAdvancedSeed = new PRNG(seedLabel);
+    gameplayAdvancedSeed.random();
+    gameplayAdvancedSeed.randomInt(1, 999);
+    gameplayAdvancedSeed.choice(['scan', 'orbit', 'mine']);
+    const advancedSecond = createSystem(gameplayAdvancedSeed, second.x, second.y);
+    const advancedFirst = createSystem(gameplayAdvancedSeed, first.x, first.y);
+
+    expect(getSystemFingerprint(advancedFirst)).toEqual(getSystemFingerprint(cleanFirst));
+    expect(getSystemFingerprint(advancedSecond)).toEqual(getSystemFingerprint(cleanSecond));
+  });
+
+  it('keeps surface generation independent from scan/runtime order', () => {
+    const seedLabel = 'surface-order-independent-sector';
+    const seed = new PRNG(seedLabel);
+    const generator = new SystemDataGenerator(seed);
+
+    for (let y = -60; y <= 60; y++) {
+      for (let x = -60; x <= 60; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        const system = new SolarSystem(props, x, y, seed);
+        const planetIndex = system.planets.findIndex(
+          (planet) => planet && planet.type !== 'GasGiant' && planet.type !== 'IceGiant'
+        );
+        if (planetIndex === -1) continue;
+
+        const baseline = createSystem(new PRNG(seedLabel), x, y).planets[planetIndex]!;
+        const scannedFirst = createSystem(new PRNG(seedLabel), x, y).planets[planetIndex]!;
+
+        scannedFirst.scan();
+        scannedFirst.systemPRNG.random();
+        scannedFirst.systemPRNG.randomInt(1, 100);
+
+        expect(getSurfaceFingerprint(scannedFirst)).toEqual(getSurfaceFingerprint(baseline));
+        return;
+      }
+    }
+
+    throw new Error('Expected at least one solid planet in representative sector.');
   });
 
   it('leaves stellar details empty when no system exists', () => {
