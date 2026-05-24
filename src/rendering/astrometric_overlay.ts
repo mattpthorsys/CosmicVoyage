@@ -39,6 +39,12 @@ interface CameraState {
 interface HyperspaceStarbaseMarker {
   x: number;
   y: number;
+  distanceCells: number;
+}
+
+interface OverlayCycleCandidate<T> {
+  item: T;
+  signature: string;
 }
 
 export class AstrometricOverlay {
@@ -49,6 +55,8 @@ export class AstrometricOverlay {
   private lastCamera: CameraState | null = null;
   private hyperspaceStarbaseMarkers: HyperspaceStarbaseMarker[] = [];
   private hyperspaceMarkerSignature = '';
+  private popupCycleSignature = '';
+  private popupCycleIndex = 0;
 
   constructor(systemDataGenerator: SystemDataGenerator) {
     this.systemDataGenerator = systemDataGenerator;
@@ -139,7 +147,15 @@ export class AstrometricOverlay {
 
   private createHyperspaceItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
     const player = context.player;
-    const contact = this.findNearestHyperspaceContact(player.position.worldX, player.position.worldY, 5);
+    const contacts = this.findHyperspaceContacts(player.position.worldX, player.position.worldY, 7);
+    const contact = this.pickCycledPopupCandidate(
+      'hyperspace',
+      `${player.position.worldX},${player.position.worldY}`,
+      contacts.map((candidate) => ({
+        item: candidate,
+        signature: `${candidate.name}:${candidate.dx},${candidate.dy}`,
+      }))
+    );
     const x = Math.max(1, Math.floor(cols * 0.58));
     const y = Math.max(1, Math.floor(rows * 0.16));
 
@@ -216,7 +232,14 @@ export class AstrometricOverlay {
       };
     }
 
-    const selected = candidates[Math.floor((now / this.getEmitInterval(context.state)) % Math.min(candidates.length, 4))];
+    const selected = this.pickCycledPopupCandidate(
+      'system',
+      `${context.system.name}:${Math.round(player.position.systemX)},${Math.round(player.position.systemY)}:${context.viewScale}`,
+      candidates.map((candidate) => ({
+        item: candidate,
+        signature: candidate.planet.name,
+      }))
+    ) ?? candidates[0];
     const info = PLANET_TYPES[selected.planet.type];
     const rangeAu = Math.sqrt(selected.distSq) / AU_IN_METERS;
     return {
@@ -263,19 +286,39 @@ export class AstrometricOverlay {
     };
   }
 
-  private findNearestHyperspaceContact(worldX: number, worldY: number, radius: number): { dx: number; dy: number; name: string; starType: string } | null {
-    let best: { dx: number; dy: number; name: string; starType: string; distSq: number } | null = null;
+  private findHyperspaceContacts(worldX: number, worldY: number, radius: number): Array<{ dx: number; dy: number; name: string; starType: string; distSq: number }> {
+    const contacts: Array<{ dx: number; dy: number; name: string; starType: string; distSq: number }> = [];
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const props = this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
         if (!props.exists || !props.name || !props.starType) continue;
         const distSq = dx * dx + dy * dy;
-        if (!best || distSq < best.distSq) {
-          best = { dx, dy, name: props.name, starType: props.starType, distSq };
-        }
+        contacts.push({ dx, dy, name: props.name, starType: props.starType, distSq });
       }
     }
-    return best;
+    return contacts.sort((a, b) => a.distSq - b.distSq || a.name.localeCompare(b.name));
+  }
+
+  private pickCycledPopupCandidate<T>(
+    stateKey: string,
+    positionKey: string,
+    candidates: Array<OverlayCycleCandidate<T>>
+  ): T | null {
+    if (candidates.length === 0) {
+      this.popupCycleSignature = '';
+      this.popupCycleIndex = 0;
+      return null;
+    }
+
+    const signature = `${stateKey}:${positionKey}:${candidates.map((candidate) => candidate.signature).join('|')}`;
+    if (signature !== this.popupCycleSignature) {
+      this.popupCycleSignature = signature;
+      this.popupCycleIndex = 0;
+    }
+
+    const selected = candidates[this.popupCycleIndex % candidates.length];
+    this.popupCycleIndex = (this.popupCycleIndex + 1) % candidates.length;
+    return selected.item;
   }
 
   private findHyperspaceStarbaseMarkers(player: Player, cols: number, rows: number): HyperspaceStarbaseMarker[] {
@@ -290,7 +333,11 @@ export class AstrometricOverlay {
         if (x <= 0 || x >= cols - 1) continue;
         const props = this.systemDataGenerator.getSystemProperties(startWorldX + x, startWorldY + y);
         if (props.exists && props.hasStarbase) {
-          markers.push({ x, y });
+          markers.push({
+            x,
+            y,
+            distanceCells: Math.hypot(x - viewCenterX, y - viewCenterY),
+          });
         }
       }
     }
@@ -314,13 +361,14 @@ export class AstrometricOverlay {
   ): void {
     if (this.hyperspaceStarbaseMarkers.length === 0) return;
     const phase = (now % 1900) / 1900;
-    const alpha = 0.13 + ((Math.sin(phase * Math.PI * 2) + 1) / 2) * 0.11;
+    const baseAlpha = 0.13 + ((Math.sin(phase * Math.PI * 2) + 1) / 2) * 0.11;
 
     ctx.save();
-    ctx.globalAlpha = alpha;
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#2EA6A0';
+    ctx.fillStyle = '#38BDB5';
     for (const marker of this.hyperspaceStarbaseMarkers) {
+      const nearLift = 1 - this.smoothstep(20, 42, marker.distanceCells);
+      ctx.globalAlpha = Math.min(0.42, baseAlpha + nearLift * 0.16);
       ctx.fillText('(', (marker.x - 1) * charWidth, marker.y * charHeight);
       ctx.fillText(')', (marker.x + 1) * charWidth, marker.y * charHeight);
     }
@@ -558,5 +606,11 @@ export class AstrometricOverlay {
 
   private formatSigned(value: number): string {
     return value >= 0 ? `+${value}` : `${value}`;
+  }
+
+  private smoothstep(edge0: number, edge1: number, value: number): number {
+    if (edge0 === edge1) return value < edge0 ? 0 : 1;
+    const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
   }
 }
