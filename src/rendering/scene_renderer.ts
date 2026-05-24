@@ -92,7 +92,7 @@ export class SceneRenderer {
       for (let viewX = 0; viewX < cols; viewX++) {
         const worldX = startWorldX + viewX;
         const worldY = startWorldY + viewY;
-        const tile = this.getHyperspaceTile(worldX, worldY);
+        const tile = this.getHyperspaceTile(worldX, worldY, Math.hypot(viewX - viewCenterX, viewY - viewCenterY));
         const index = viewY * cols + viewX;
 
         if (tile.starChar) {
@@ -122,8 +122,8 @@ export class SceneRenderer {
     };
   }
 
-  private getHyperspaceTile(worldX: number, worldY: number): HyperspaceTile {
-    const key = `${worldX},${worldY}`;
+  private getHyperspaceTile(worldX: number, worldY: number, rangeCells: number): HyperspaceTile {
+    const key = `${worldX},${worldY}|${Math.floor(rangeCells)}`;
     const cached = this.hyperspaceTileCache.get(key);
     if (cached) return cached;
 
@@ -133,14 +133,29 @@ export class SceneRenderer {
     if (systemProps.exists) {
       const starInfo = SPECTRAL_TYPES[systemProps.starType!];
       if (starInfo) {
-        const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
-        tile = { bg, starChar: star.char, starColor: star.color };
+        const isBrownDwarf = systemProps.objectKind === 'brown-dwarf';
+        if (isBrownDwarf && rangeCells > CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS) {
+          tile = { bg, starChar: null, starColor: null };
+        } else {
+          const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
+          tile = {
+            bg,
+            starChar: star.char,
+            starColor: isBrownDwarf ? this.dimHexColour(star.color, rangeCells <= 12 ? 0.75 : 0.42) : star.color,
+          };
+        }
       } else {
         logger.error(`[SceneRenderer.drawHyperspace] Could not find star info for final determined type "${systemProps.starType}" at [${worldX}, ${worldY}].`);
         tile = { bg, starChar: '?', starColor: '#FF00FF' };
       }
     } else {
-      tile = { bg, starChar: null, starColor: null };
+      const phenomenon = this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
+      if (phenomenon.exists && phenomenon.char && phenomenon.colour && rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) {
+        const dimFactor = phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
+        tile = { bg, starChar: phenomenon.char, starColor: this.dimHexColour(phenomenon.colour, dimFactor) };
+      } else {
+        tile = { bg, starChar: null, starColor: null };
+      }
     }
 
     if (this.hyperspaceTileCache.size >= this.maxHyperspaceTileCacheSize) {
@@ -149,6 +164,16 @@ export class SceneRenderer {
     }
     this.hyperspaceTileCache.set(key, tile);
     return tile;
+  }
+
+  private dimHexColour(hex: string, factor: number): string {
+    const normalized = hex.replace('#', '');
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return hex;
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value * factor)));
+    return `#${clamp(r).toString(16).padStart(2, '0')}${clamp(g).toString(16).padStart(2, '0')}${clamp(b).toString(16).padStart(2, '0')}`.toUpperCase();
   }
 
   private drawSystemTravelStarfield(player: Player): void {

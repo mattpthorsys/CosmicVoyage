@@ -79,6 +79,7 @@ interface HyperspaceNavigationContact {
   name: string;
   starType: string;
   hasStarbase: boolean;
+  objectKind: 'stellar' | 'brown-dwarf' | null;
 }
 
 /** Main game class - Coordinates components and manages the loop. */
@@ -1297,19 +1298,18 @@ export class Game {
   // --- State-specific update methods ---
   private _updateHyperspace(_deltaTime: number): string {
     // Check for nearby star system for status message
-    const baseSeedInt = this.gameSeedPRNG.seed;
-    const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-    const hash = fastHash(this.player.position.worldX, this.player.position.worldY, baseSeedInt);
-    const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
-    const contact = this.getNearestHyperspaceNavigationContact(18);
+    const currentProps = this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
+    const isNearStar = currentProps.exists;
+    const contact = this.getNearestHyperspaceNavigationContact(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS);
     const fuelReach = Math.floor(this.player.resources.fuel / Math.max(1, CONFIG.HYPERSPACE_FUEL_COST));
 
     let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY}`;
     if (contact) {
       baseStatus += ` | Contact: ${contact.name} ${contact.starType} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`;
+      if (contact.objectKind === 'brown-dwarf') baseStatus += ' faint';
       if (contact.hasStarbase) baseStatus += ' Starbase';
     } else {
-      baseStatus += ' | Contact: none within 18c';
+      baseStatus += ` | Contact: none within ${CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS}c`;
     }
     baseStatus += ` | Fuel reach: ${fuelReach} jump${fuelReach === 1 ? '' : 's'}`;
 
@@ -1374,7 +1374,9 @@ export class Game {
         if (!props.exists || !props.name || !props.starType) continue;
         const rangeCells = Math.sqrt(dx * dx + dy * dy);
         if (!best || rangeCells < best.rangeCells) {
-          best = { dx, dy, rangeCells, name: props.name, starType: props.starType, hasStarbase: props.hasStarbase };
+          const detectionRadius = props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18;
+          if (rangeCells > detectionRadius) continue;
+          best = { dx, dy, rangeCells, name: props.name, starType: props.starType, hasStarbase: props.hasStarbase, objectKind: props.objectKind };
         }
       }
     }

@@ -462,11 +462,14 @@ export class SolarSystem {
       A: 0.58,
       B: 0.22,
       O: 0.08,
+      L: 0.62,
+      T: 0.48,
+      Y: 0.32,
     };
     const effectiveTemp = this.getEffectiveTemperature(totalFlux_W_m2);
     const orbitAU = orbitDistance_m / AU_IN_METERS;
     const metallicityBoost = Math.max(-0.18, Math.min(0.12, this.metallicityFeH * 0.12));
-    const compactSystemBoost = starClass === 'M' && orbitAU < 2 ? 0.08 : 0;
+    const compactSystemBoost = (starClass === 'M' || starClass === 'L' || starClass === 'T' || starClass === 'Y') && orbitAU < 2 ? 0.08 : 0;
     const hotStarPenalty = ['A', 'B', 'O'].includes(starClass) && effectiveTemp > 420 ? -0.18 : 0;
     const lateSlotPenalty = slotIndex * (starClass === 'M' || starClass === 'K' ? 0.035 : 0.055);
     const architecturePenalty = this.architecture.kind === 'single' ? 0 : 0.08;
@@ -498,7 +501,7 @@ export class SolarSystem {
     );
 
     const starClass = this.getSpectralClass();
-    const giantBiasByClass: Record<string, number> = { M: 0.42, K: 0.85, G: 1.0, F: 1.2, A: 1.45, B: 0.7, O: 0.25 };
+    const giantBiasByClass: Record<string, number> = { M: 0.42, K: 0.85, G: 1.0, F: 1.2, A: 1.45, B: 0.7, O: 0.25, L: 0.18, T: 0.1, Y: 0.05 };
     const giantBias = (giantBiasByClass[starClass] ?? 1) * Math.pow(10, Math.max(-0.6, Math.min(0.5, this.metallicityFeH)) * 0.75);
     const iceBias = starClass === 'M' ? 1.15 : starClass === 'A' || starClass === 'F' ? 0.85 : 1;
 
@@ -755,7 +758,7 @@ export class SolarSystem {
   }
 
   private getSpectralClass(): string {
-    return (this.starType.match(/^[OBAFGKM]/)?.[0] ?? 'G') as string;
+    return (this.starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G') as string;
   }
 
   private weightedChoice<T>(prng: PRNG, choices: Array<{ item: T; weight: number }>): T {

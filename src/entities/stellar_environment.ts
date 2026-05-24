@@ -35,11 +35,21 @@ export function generateStellarAgeGyr(starType: string, prng: PRNG): number {
     G: 0.7,
     K: 1.0,
     M: 0.05,
+    L: 0.02,
+    T: 0.02,
+    Y: 0.02,
   };
   const minAge = Math.min(lowerBounds[spectralClass] ?? 0.5, maxAge * 0.7);
 
   // Long-lived cool stars may come from almost any epoch; short-lived hot stars must be young.
-  const ageBias = spectralClass === 'M' || spectralClass === 'K' ? 0.72 : spectralClass === 'G' ? 0.9 : 1.35;
+  const ageBias =
+    spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y'
+      ? 0.62
+      : spectralClass === 'M' || spectralClass === 'K'
+        ? 0.72
+        : spectralClass === 'G'
+          ? 0.9
+          : 1.35;
   const age = minAge + (maxAge - minAge) * Math.pow(prng.random(), ageBias);
   return age < 0.1 ? Math.round(age * 1000) / 1000 : Math.round(age * 100) / 100;
 }
@@ -47,7 +57,7 @@ export function generateStellarAgeGyr(starType: string, prng: PRNG): number {
 export function generateMilkyWayMetallicityFeH(ageGyr: number, starType: string, prng: PRNG): number {
   const ageFraction = clamp(ageGyr / MILKY_WAY_DISK_AGE_GYR, 0, 1);
   const spectralClass = getSpectralClass(starType);
-  const isOldCoolPopulation = (spectralClass === 'K' || spectralClass === 'M') && ageGyr > 8;
+  const isOldCoolPopulation = (spectralClass === 'K' || spectralClass === 'M' || spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y') && ageGyr > 8;
 
   // Disk stars cluster around solar metallicity, with older populations trending metal-poor.
   let meanFeH = 0.16 - ageFraction * 0.55;
@@ -83,6 +93,7 @@ export function estimateEvolutionaryLuminosityFactor(environment: StellarEnviron
   else if (spectralClass === 'A' || spectralClass === 'F') ageFactor = 1 + fractionalAge * 0.42;
   else if (spectralClass === 'G' || spectralClass === 'K') ageFactor = 0.72 + fractionalAge * 0.58;
   else if (spectralClass === 'M') ageFactor = 0.9 + fractionalAge * 0.16;
+  else if (spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y') ageFactor = 1.18 - fractionalAge * 0.58;
 
   return clamp(ageFactor * metalFactor, 0.55, 1.9);
 }
@@ -94,6 +105,7 @@ export function estimateStellarActivity(environment: StellarEnvironment, orbitAu
     spectralClass === 'O' || spectralClass === 'B' ? 2.2 :
     spectralClass === 'A' ? 1.65 :
     spectralClass === 'M' ? 1.45 :
+    spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y' ? 0.55 :
     spectralClass === 'F' ? 1.2 :
     1.0;
   const proximityBoost = orbitAu < 0.35 ? 1.7 : orbitAu < 0.8 ? 1.25 : 1.0;

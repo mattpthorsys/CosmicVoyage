@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import { AU_IN_METERS, PLANET_TYPES, SPECTRAL_TYPES } from '../constants';
 import { GameState } from '../core/game_state_manager';
 import { Player } from '../core/player';
-import { SystemDataGenerator } from '../generation/system_data_generator';
+import { DeepSpacePhenomenonProperties, SystemDataGenerator } from '../generation/system_data_generator';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
@@ -46,6 +46,10 @@ interface OverlayCycleCandidate<T> {
   item: T;
   signature: string;
 }
+
+type HyperspaceContact =
+  | { kind: 'system'; dx: number; dy: number; name: string; starType: string; distSq: number; objectKind: 'stellar' | 'brown-dwarf' | null }
+  | { kind: 'phenomenon'; dx: number; dy: number; phenomenon: DeepSpacePhenomenonProperties; distSq: number };
 
 export class AstrometricOverlay {
   private readonly systemDataGenerator: SystemDataGenerator;
@@ -147,20 +151,48 @@ export class AstrometricOverlay {
 
   private createHyperspaceItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
     const player = context.player;
-    const contacts = this.findHyperspaceContacts(player.position.worldX, player.position.worldY, 7);
+    const contacts = this.findHyperspaceContacts(player.position.worldX, player.position.worldY, CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS);
     const contact = this.pickCycledPopupCandidate(
       'hyperspace',
       `${player.position.worldX},${player.position.worldY}`,
       contacts.map((candidate) => ({
         item: candidate,
-        signature: `${candidate.name}:${candidate.dx},${candidate.dy}`,
+        signature: `${candidate.kind}:${candidate.kind === 'system' ? candidate.name : candidate.phenomenon.name}:${candidate.dx},${candidate.dy}`,
       }))
     );
     const x = Math.max(1, Math.floor(cols * 0.58));
     const y = Math.max(1, Math.floor(rows * 0.16));
 
     if (contact) {
+      if (contact.kind === 'phenomenon') {
+        const range = Math.sqrt(contact.distSq);
+        const bearing = `${this.formatSigned(contact.dx)},${this.formatSigned(contact.dy)}`;
+        const certainty = this.getCertaintyLabel(range, CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS);
+        return {
+          state: context.state,
+          x,
+          y,
+          targetX: Math.floor(cols / 2) + contact.dx,
+          targetY: Math.floor(rows / 2) + contact.dy,
+          color: contact.phenomenon.colour ?? '#3A8F83',
+          createdAt: now,
+          typedChars: 0,
+          durationMs: this.getDuration(context.state),
+          lines: [
+            'UNRESOLVED DEEP RETURN',
+            `${certainty} ${contact.phenomenon.classification ?? 'UNKNOWN SOURCE'}`,
+            `ID ${contact.phenomenon.name ?? 'UNNAMED'}`,
+            `VECTOR ${bearing} CELLS`,
+            `TRACE ${contact.phenomenon.signal ?? 'intermittent'}`,
+          ],
+        };
+      }
+
       const starInfo = SPECTRAL_TYPES[contact.starType] ?? SPECTRAL_TYPES.G;
+      const range = Math.sqrt(contact.distSq);
+      const isBrownDwarf = contact.objectKind === 'brown-dwarf';
+      const heading = isBrownDwarf || range > 9 ? 'PROBABLE MASS CONTACT' : 'HYPERSPATIAL CONTACT';
+      const typeLabel = isBrownDwarf && range > 12 ? `LOW-LUMINOSITY SOURCE  ${this.getCertaintyLabel(range, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}` : `TYPE ${contact.starType}  ${starInfo.temp.toFixed(0)}K`;
       return {
         state: context.state,
         x,
@@ -172,9 +204,9 @@ export class AstrometricOverlay {
         typedChars: 0,
         durationMs: this.getDuration(context.state),
         lines: [
-          'HYPERSPATIAL CONTACT',
+          heading,
           `ID ${contact.name}`,
-          `TYPE ${contact.starType}  ${starInfo.temp.toFixed(0)}K`,
+          typeLabel,
           `VECTOR ${this.formatSigned(contact.dx)},${this.formatSigned(contact.dy)} CELLS`,
         ],
       };
@@ -286,17 +318,34 @@ export class AstrometricOverlay {
     };
   }
 
-  private findHyperspaceContacts(worldX: number, worldY: number, radius: number): Array<{ dx: number; dy: number; name: string; starType: string; distSq: number }> {
-    const contacts: Array<{ dx: number; dy: number; name: string; starType: string; distSq: number }> = [];
+  private findHyperspaceContacts(worldX: number, worldY: number, radius: number): HyperspaceContact[] {
+    const contacts: HyperspaceContact[] = [];
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
-        const props = this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
-        if (!props.exists || !props.name || !props.starType) continue;
         const distSq = dx * dx + dy * dy;
-        contacts.push({ dx, dy, name: props.name, starType: props.starType, distSq });
+        const props = this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
+        if (props.exists && props.name && props.starType) {
+          const range = Math.sqrt(distSq);
+          const detectRadius = props.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9;
+          if (range <= detectRadius) contacts.push({ kind: 'system', dx, dy, name: props.name, starType: props.starType, distSq, objectKind: props.objectKind });
+          continue;
+        }
+        const phenomenon =
+          typeof this.systemDataGenerator.getDeepSpacePhenomenonProperties === 'function'
+            ? this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX + dx, worldY + dy)
+            : null;
+        if (phenomenon?.exists) {
+          contacts.push({ kind: 'phenomenon', dx, dy, phenomenon, distSq });
+        }
       }
     }
-    return contacts.sort((a, b) => a.distSq - b.distSq || a.name.localeCompare(b.name));
+    return contacts.sort((a, b) => {
+      const distDelta = a.distSq - b.distSq;
+      if (distDelta !== 0) return distDelta;
+      const aName = a.kind === 'system' ? a.name : a.phenomenon.name ?? '';
+      const bName = b.kind === 'system' ? b.name : b.phenomenon.name ?? '';
+      return aName.localeCompare(bName);
+    });
   }
 
   private pickCycledPopupCandidate<T>(
@@ -606,6 +655,13 @@ export class AstrometricOverlay {
 
   private formatSigned(value: number): string {
     return value >= 0 ? `+${value}` : `${value}`;
+  }
+
+  private getCertaintyLabel(rangeCells: number, detectionRadius: number): string {
+    const fraction = rangeCells / Math.max(1, detectionRadius);
+    if (fraction < 0.35) return 'CONFIRMED';
+    if (fraction < 0.68) return 'PROBABLE';
+    return 'TENTATIVE';
   }
 
   private smoothstep(edge0: number, edge1: number, value: number): number {

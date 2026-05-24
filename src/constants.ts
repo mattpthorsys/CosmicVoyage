@@ -88,6 +88,9 @@ const F_TYPE: Readonly<SpectralTypeInfo> = { temp: 6550,  colour: '#FFFFFF', cha
 const G_TYPE: Readonly<SpectralTypeInfo> = { temp: 5770,  colour: '#FFFACD', char: GLYPHS.STAR_MEDIUM, brightness: 0.9, mass: 1.00 * SOLAR_MASS_KG, radius: 1.00 * SOLAR_RADIUS_M }; // G2V values (Sun) [cite: 422]
 const K_TYPE: Readonly<SpectralTypeInfo> = { temp: 4440,  colour: '#FFC864', char: GLYPHS.STAR_DIM, brightness: 0.7, mass: 0.70 * SOLAR_MASS_KG, radius: 0.701 * SOLAR_RADIUS_M }; // K5V values [cite: 423]
 const M_TYPE: Readonly<SpectralTypeInfo> = { temp: 3560,  colour: '#FF9A5A', char: GLYPHS.STAR_DIM, brightness: 0.5, mass: 0.44 * SOLAR_MASS_KG, radius: 0.446 * SOLAR_RADIUS_M }; // M2V values [cite: 424]
+const L_TYPE: Readonly<SpectralTypeInfo> = { temp: 1800, colour: '#A8502A', char: GLYPHS.STAR_DIM, brightness: 0.12, mass: 0.055 * SOLAR_MASS_KG, radius: 0.095 * SOLAR_RADIUS_M };
+const T_TYPE: Readonly<SpectralTypeInfo> = { temp: 900, colour: '#7D5A44', char: GLYPHS.STAR_DIM, brightness: 0.07, mass: 0.035 * SOLAR_MASS_KG, radius: 0.09 * SOLAR_RADIUS_M };
+const Y_TYPE: Readonly<SpectralTypeInfo> = { temp: 420, colour: '#3E4D52', char: GLYPHS.STAR_DIM, brightness: 0.035, mass: 0.018 * SOLAR_MASS_KG, radius: 0.085 * SOLAR_RADIUS_M };
 
 // --- Generate Interpolated Star Types ---
 const generateSubTypes = (
@@ -113,6 +116,18 @@ const generateSubTypes = (
         types[`${baseTypeCode}${i}V`] = { temp, colour: colourHex, char, brightness, mass, radius };
     }
     return types;
+};
+
+const generateBrownDwarfSubTypes = (
+    startType: SpectralTypeInfo,
+    endType: SpectralTypeInfo,
+    count: number,
+    baseTypeCode: 'L' | 'T' | 'Y'
+): Record<string, SpectralTypeInfo> => {
+    const generated = generateSubTypes(startType, endType, count, baseTypeCode);
+    return Object.fromEntries(
+        Object.entries(generated).map(([key, value]) => [key.replace('V', ''), value])
+    );
 };
 
 // --- Main SPECTRAL_TYPES Object ---
@@ -152,6 +167,26 @@ export const SPECTRAL_TYPES: Record<string, SpectralTypeInfo> = {
         { temp: 3850, colour: '#FFB070', char: GLYPHS.STAR_DIM, brightness: 0.6, mass: 0.51 * SOLAR_MASS_KG, radius: 0.59 * SOLAR_RADIUS_M },    // M0V approx
         { temp: 2300, colour: '#FF8040', char: GLYPHS.STAR_DIM, brightness: 0.2, mass: 0.08 * SOLAR_MASS_KG, radius: 0.10 * SOLAR_RADIUS_M },    // M9V approx (extrapolated)
         10, 'M'
+    ),
+
+    // --- Brown dwarf sequence ---
+    'L': L_TYPE,
+    'T': T_TYPE,
+    'Y': Y_TYPE,
+    ...generateBrownDwarfSubTypes(
+        { temp: 2400, colour: '#C46A35', char: GLYPHS.STAR_DIM, brightness: 0.16, mass: 0.075 * SOLAR_MASS_KG, radius: 0.10 * SOLAR_RADIUS_M },
+        { temp: 1300, colour: '#8A4A30', char: GLYPHS.STAR_DIM, brightness: 0.09, mass: 0.045 * SOLAR_MASS_KG, radius: 0.09 * SOLAR_RADIUS_M },
+        10, 'L'
+    ),
+    ...generateBrownDwarfSubTypes(
+        { temp: 1300, colour: '#8A4A30', char: GLYPHS.STAR_DIM, brightness: 0.09, mass: 0.045 * SOLAR_MASS_KG, radius: 0.09 * SOLAR_RADIUS_M },
+        { temp: 500, colour: '#465A5F', char: GLYPHS.STAR_DIM, brightness: 0.04, mass: 0.018 * SOLAR_MASS_KG, radius: 0.085 * SOLAR_RADIUS_M },
+        10, 'T'
+    ),
+    ...generateBrownDwarfSubTypes(
+        { temp: 500, colour: '#465A5F', char: GLYPHS.STAR_DIM, brightness: 0.04, mass: 0.018 * SOLAR_MASS_KG, radius: 0.085 * SOLAR_RADIUS_M },
+        { temp: 280, colour: '#2A3236', char: GLYPHS.STAR_DIM, brightness: 0.02, mass: 0.012 * SOLAR_MASS_KG, radius: 0.08 * SOLAR_RADIUS_M },
+        10, 'Y'
     ),
 };
 

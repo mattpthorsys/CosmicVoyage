@@ -7,7 +7,6 @@ import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
 import { GLYPHS, STATUS_MESSAGES } from '../constants';
-import { fastHash } from '../utils/hash';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
 import { SystemDataGenerator } from '../generation/system_data_generator';
@@ -278,10 +277,7 @@ export class GameStateManager {
 
   /** Checks if a star system exists at the player's current world coordinates. */
   private _canEnterSystemAtCurrentLocation(): boolean {
-    const baseSeedInt = this.gameSeedPRNG.seed;
-    const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-    const hash = fastHash(this.player.position.worldX, this.player.position.worldY, baseSeedInt);
-    return hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
+    return this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY).exists;
   }
 
   /** Creates and initializes a new SolarSystem instance. */

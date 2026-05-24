@@ -79,6 +79,27 @@ describe('AstrometricOverlay starbase markers', () => {
     expect(afterMove.lines[1]).toBe('ID Near-1A');
   });
 
+  it('limits brown-dwarf overlay contacts to the short-range detection horizon', () => {
+    const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
+    Object.defineProperties(overlay, {
+      systemDataGenerator: {
+        value: {
+          getSystemProperties: (x: number, y: number) => {
+            if (y === 0 && x === 29) return { exists: true, name: 'Lurker-29', starType: 'T4', objectKind: 'brown-dwarf', hasStarbase: false };
+            if (y === 0 && x === 31) return { exists: true, name: 'Lurker-31', starType: 'T6', objectKind: 'brown-dwarf', hasStarbase: false };
+            return { exists: false };
+          },
+          getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+        },
+      },
+    });
+
+    const contacts = (overlay as any).findHyperspaceContacts(0, 0, 32);
+
+    expect(contacts.map((contact: any) => contact.name)).toContain('Lurker-29');
+    expect(contacts.map((contact: any) => contact.name)).not.toContain('Lurker-31');
+  });
+
   it('cycles system overlay body locks outward from a stationary ship', () => {
     const player = new Player();
     player.position.systemX = 0;

@@ -3,7 +3,7 @@
 import { PRNG } from '../utils/prng';
 import { fastHash } from '../utils/hash';
 import { CONFIG } from '../config';
-import { SPECTRAL_TYPES, SPECTRAL_DISTRIBUTION } from '../constants';
+import { GLYPHS, SPECTRAL_TYPES, SPECTRAL_DISTRIBUTION } from '../constants';
 import { logger } from '../utils/logger';
 import {
     estimateEvolutionaryLuminosityFactor,
@@ -25,6 +25,26 @@ export interface SystemBasicProperties {
     ageGyr: number | null;
     metallicityFeH: number | null;
     architecture: StellarArchitecture | null;
+    objectKind: 'stellar' | 'brown-dwarf' | null;
+}
+
+export type DeepSpacePhenomenonType =
+    | 'rogue-planet'
+    | 'dark-nebula'
+    | 'ancient-signal'
+    | 'debris-field'
+    | 'neutron-star'
+    | 'black-hole';
+
+export interface DeepSpacePhenomenonProperties {
+    exists: boolean;
+    type: DeepSpacePhenomenonType | null;
+    name: string | null;
+    classification: string | null;
+    signal: string | null;
+    char: string | null;
+    colour: string | null;
+    rarity: 'uncommon' | 'rare' | 'very-rare' | 'exceedingly-rare' | null;
 }
 
 const SYSTEM_NAME_PREFIXES = [
@@ -38,6 +58,7 @@ const SYSTEM_NAME_PREFIXES = [
 export class SystemDataGenerator {
     private gameSeedPRNG: PRNG;
     private systemPropertiesCache: Map<string, SystemBasicProperties> = new Map();
+    private phenomenonPropertiesCache: Map<string, DeepSpacePhenomenonProperties> = new Map();
     private readonly maxSystemPropertiesCacheSize = 50000;
 
     constructor(gameSeedPRNG: PRNG) {
@@ -62,12 +83,17 @@ export class SystemDataGenerator {
             ageGyr: null,
             metallicityFeH: null,
             architecture: null,
+            objectKind: null,
         };
 
         const existenceSeedInt = this.gameSeedPRNG.seed;
         const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
         const hash = fastHash(worldX, worldY, existenceSeedInt);
-        result.exists = (hash % CONFIG.STAR_CHECK_HASH_SCALE) < starPresenceThreshold;
+        const hasNormalStar = (hash % CONFIG.STAR_CHECK_HASH_SCALE) < starPresenceThreshold;
+        const brownDwarfPresenceThreshold = Math.floor(CONFIG.BROWN_DWARF_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
+        const brownDwarfHash = fastHash(worldX, worldY, existenceSeedInt + 32003);
+        const hasBrownDwarf = !hasNormalStar && (brownDwarfHash % CONFIG.STAR_CHECK_HASH_SCALE) < brownDwarfPresenceThreshold;
+        result.exists = hasNormalStar || hasBrownDwarf;
 
         if (!result.exists) {
             this.cacheSystemProperties(cacheKey, result);
@@ -75,7 +101,8 @@ export class SystemDataGenerator {
         }
 
         const typePRNG = this.gameSeedPRNG.seedNew(`star_type_${worldX},${worldY}`);
-        result.starType = this.generateStarType(typePRNG);
+        result.objectKind = hasBrownDwarf ? 'brown-dwarf' : 'stellar';
+        result.starType = hasBrownDwarf ? this.generateBrownDwarfType(typePRNG) : this.generateStarType(typePRNG);
         const agePRNG = this.gameSeedPRNG.seedNew(`star_age_${worldX},${worldY}`);
         result.ageGyr = generateStellarAgeGyr(result.starType, agePRNG);
         const metallicityPRNG = this.gameSeedPRNG.seedNew(`star_metallicity_${worldX},${worldY}`);
@@ -87,7 +114,7 @@ export class SystemDataGenerator {
 
         const starbaseSeed = `star_starbase_${worldX},${worldY}`;
         const starbasePRNG = this.gameSeedPRNG.seedNew(starbaseSeed);
-        result.hasStarbase = starbasePRNG.random() < CONFIG.STARBASE_PROBABILITY;
+        result.hasStarbase = result.objectKind === 'stellar' && starbasePRNG.random() < CONFIG.STARBASE_PROBABILITY;
         result.architecture = this.generateArchitecture(
             result.name,
             result.starType,
@@ -101,8 +128,43 @@ export class SystemDataGenerator {
         return result;
     }
 
+    getDeepSpacePhenomenonProperties(worldX: number, worldY: number): DeepSpacePhenomenonProperties {
+        const cacheKey = `${worldX},${worldY}`;
+        const cached = this.phenomenonPropertiesCache.get(cacheKey);
+        if (cached) return cached;
+
+        const empty: DeepSpacePhenomenonProperties = {
+            exists: false,
+            type: null,
+            name: null,
+            classification: null,
+            signal: null,
+            char: null,
+            colour: null,
+            rarity: null,
+        };
+
+        if (this.getSystemProperties(worldX, worldY).exists) {
+            this.cachePhenomenonProperties(cacheKey, empty);
+            return empty;
+        }
+
+        const roll = fastHash(worldX, worldY, this.gameSeedPRNG.seed + 99173) % CONFIG.DEEP_SPACE_PHENOMENA_SCALE;
+        const type = this.getPhenomenonTypeFromRoll(roll);
+        if (!type) {
+            this.cachePhenomenonProperties(cacheKey, empty);
+            return empty;
+        }
+
+        const prng = this.gameSeedPRNG.seedNew(`deep_space_${worldX},${worldY}`);
+        const result = this.createPhenomenon(type, prng);
+        this.cachePhenomenonProperties(cacheKey, result);
+        return result;
+    }
+
     clearCache(): void {
         this.systemPropertiesCache.clear();
+        this.phenomenonPropertiesCache.clear();
     }
 
     private cacheSystemProperties(cacheKey: string, properties: SystemBasicProperties): void {
@@ -113,12 +175,73 @@ export class SystemDataGenerator {
         this.systemPropertiesCache.set(cacheKey, properties);
     }
 
+    private cachePhenomenonProperties(cacheKey: string, properties: DeepSpacePhenomenonProperties): void {
+        if (this.phenomenonPropertiesCache.size >= this.maxSystemPropertiesCacheSize) {
+            const firstKey = this.phenomenonPropertiesCache.keys().next().value;
+            if (firstKey !== undefined) this.phenomenonPropertiesCache.delete(firstKey);
+        }
+        this.phenomenonPropertiesCache.set(cacheKey, properties);
+    }
+
     private generateStarType(prng: PRNG): string {
         const broadStarType = prng.choice(SPECTRAL_DISTRIBUTION)!;
         const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
             (key) => key.startsWith(broadStarType) && key.endsWith('V')
         );
         return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : broadStarType;
+    }
+
+    private generateBrownDwarfType(prng: PRNG): string {
+        const broadType = this.weightedChoice(prng, [
+            { item: 'L', weight: 5 },
+            { item: 'T', weight: 4 },
+            { item: 'Y', weight: 1.2 },
+        ]);
+        const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
+            (key) => key.startsWith(broadType) && /^\w\d$/.test(key)
+        );
+        return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : broadType;
+    }
+
+    private getPhenomenonTypeFromRoll(roll: number): DeepSpacePhenomenonType | null {
+        // About 4.6 per 10,000 empty cells. Artificial and extinct-civilisation traces stay rare.
+        if (roll < 180) return 'rogue-planet';
+        if (roll < 330) return 'dark-nebula';
+        if (roll < 385) return 'ancient-signal';
+        if (roll < 420) return 'neutron-star';
+        if (roll < 438) return 'black-hole';
+        if (roll < 448) return 'debris-field';
+        return null;
+    }
+
+    private createPhenomenon(type: DeepSpacePhenomenonType, prng: PRNG): DeepSpacePhenomenonProperties {
+        const number = prng.randomInt(100, 9999);
+        const fragment = prng.choice(['Acheron', 'Null', 'Kite', 'Mira', 'Ash', 'Vela', 'Cinder', 'Orison'])!;
+        const common = { exists: true as const, type };
+        switch (type) {
+            case 'rogue-planet':
+                return { ...common, name: `Rogue ${fragment}-${number}`, classification: 'FREE PLANETARY MASS', signal: 'thermal remnant only', char: 'o', colour: '#395052', rarity: 'uncommon' };
+            case 'dark-nebula':
+                return { ...common, name: `${fragment} Absorption Field`, classification: 'DARK MOLECULAR CLOUDLET', signal: 'background occlusion', char: GLYPHS.SHADE_LIGHT, colour: '#101812', rarity: 'uncommon' };
+            case 'ancient-signal':
+                return { ...common, name: `Signal ${fragment}-${number}`, classification: 'NON-NATURAL NARROWBAND SOURCE', signal: `${prng.random(8, 80).toFixed(1)} hour repeat; no local beacon registry`, char: '?', colour: '#3A8F83', rarity: 'rare' };
+            case 'neutron-star':
+                return { ...common, name: `PSR ${number}-${fragment.charAt(0)}`, classification: 'COMPACT STELLAR REMNANT', signal: `${prng.random(0.01, 3).toFixed(3)}s pulse train`, char: '*', colour: '#AFC8FF', rarity: 'very-rare' };
+            case 'black-hole':
+                return { ...common, name: `Collapsed Source ${number}`, classification: 'GRAVITATIONAL LENS CANDIDATE', signal: 'no optical primary; distorted background field', char: ' ', colour: '#050505', rarity: 'very-rare' };
+            case 'debris-field':
+                return { ...common, name: `${fragment} Silent Debris`, classification: 'ARTIFICIAL DEBRIS FIELD', signal: 'cold metal returns; no active transponders', char: ':', colour: '#5E6F68', rarity: 'exceedingly-rare' };
+        }
+    }
+
+    private weightedChoice<T>(prng: PRNG, choices: Array<{ item: T; weight: number }>): T {
+        const totalWeight = choices.reduce((sum, choice) => sum + Math.max(0, choice.weight), 0);
+        let roll = prng.random(0, totalWeight);
+        for (const choice of choices) {
+            roll -= Math.max(0, choice.weight);
+            if (roll <= 0) return choice.item;
+        }
+        return choices[choices.length - 1].item;
     }
 
     private generateArchitecture(
@@ -131,7 +254,10 @@ export class SystemDataGenerator {
     ): StellarArchitecture {
         const architecturePRNG = this.gameSeedPRNG.seedNew(`star_architecture_${worldX},${worldY}`);
         const multiplicityRoll = architecturePRNG.random();
-        const kind: StellarSystemKind = multiplicityRoll < 0.14 ? 'triple' : multiplicityRoll < 0.48 ? 'binary' : 'single';
+        const isBrownDwarf = /^[LTY]/.test(primaryStarType);
+        const kind: StellarSystemKind = isBrownDwarf
+            ? (multiplicityRoll < 0.18 ? 'binary' : 'single')
+            : multiplicityRoll < 0.14 ? 'triple' : multiplicityRoll < 0.48 ? 'binary' : 'single';
         const binarySeparation = architecturePRNG.random(0.08, 0.75) * 1.495978707e11;
         const outerSeparation = architecturePRNG.random(18, 70) * 1.495978707e11;
         const stars: StellarBody[] = [
@@ -182,10 +308,13 @@ export class SystemDataGenerator {
             G: ['K', 'M', 'M', 'G'],
             K: ['M', 'M', 'K'],
             M: ['M', 'M', 'K'],
+            L: ['L', 'T', 'M'],
+            T: ['T', 'Y', 'L'],
+            Y: ['Y', 'T'],
         };
         const broadType = prng.choice(coolBias[primaryClass] ?? ['M', 'K', 'G'])!;
         const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
-            (key) => key.startsWith(broadType) && key.endsWith('V')
+            (key) => key.startsWith(broadType) && (key.endsWith('V') || /^[LTY]\d$/.test(key))
         );
         return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : broadType;
     }

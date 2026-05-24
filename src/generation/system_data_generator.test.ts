@@ -118,7 +118,7 @@ describe('SystemDataGenerator', () => {
 
     expect(first).toEqual(second);
     expect(first.exists).toBe(true);
-    expect(first.starType).toMatch(/^[OBAFGKM](\dV)?$/);
+    expect(first.starType).toMatch(/^([OBAFGKM](\dV)?|[LTY]\d?)$/);
     expect(first.architecture).toBeTruthy();
     expect(first.architecture!.stars.length).toBeGreaterThanOrEqual(1);
     expect(first.architecture!.stars.length).toBeLessThanOrEqual(3);
@@ -231,6 +231,8 @@ describe('SystemDataGenerator', () => {
     const seed = new PRNG('haunting beauty');
     const generator = new SystemDataGenerator(seed);
     let systems = 0;
+    let ordinarySystems = 0;
+    let brownDwarfSystems = 0;
     let starbases = 0;
     let systemsWithPlanets = 0;
     let planets = 0;
@@ -242,6 +244,8 @@ describe('SystemDataGenerator', () => {
         const props = generator.getSystemProperties(x, y);
         if (!props.exists) continue;
         systems++;
+        if (props.objectKind === 'brown-dwarf') brownDwarfSystems++;
+        else ordinarySystems++;
         if (props.hasStarbase) starbases++;
         const system = new SolarSystem(props, x, y, seed);
         const systemPlanets = system.planets.filter((planet) => planet !== null);
@@ -251,13 +255,16 @@ describe('SystemDataGenerator', () => {
       }
     }
 
-    const starDensity = systems / sectorCells;
-    const starbaseRate = starbases / systems;
+    const ordinaryStarDensity = ordinarySystems / sectorCells;
+    const brownDwarfDensity = brownDwarfSystems / sectorCells;
+    const starbaseRate = starbases / ordinarySystems;
     const averagePlanets = planets / systems;
     const giantRate = giants / planets;
 
-    expect(starDensity).toBeGreaterThan(CONFIG.STAR_DENSITY * 0.65);
-    expect(starDensity).toBeLessThan(CONFIG.STAR_DENSITY * 1.35);
+    expect(ordinaryStarDensity).toBeGreaterThan(CONFIG.STAR_DENSITY * 0.65);
+    expect(ordinaryStarDensity).toBeLessThan(CONFIG.STAR_DENSITY * 1.35);
+    expect(brownDwarfDensity).toBeGreaterThan(CONFIG.BROWN_DWARF_DENSITY * 0.45);
+    expect(brownDwarfDensity).toBeLessThan(CONFIG.BROWN_DWARF_DENSITY * 1.55);
     expect(starbaseRate).toBeGreaterThan(0.005);
     expect(starbaseRate).toBeLessThan(0.075);
     expect(systemsWithPlanets).toBe(systems);
@@ -265,6 +272,56 @@ describe('SystemDataGenerator', () => {
     expect(averagePlanets).toBeLessThan(7.5);
     expect(giantRate).toBeGreaterThan(0.08);
     expect(giantRate).toBeLessThan(0.45);
+  });
+
+  it('generates deterministic faint brown-dwarf systems with controlled local frequency', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    let brownDwarfs = 0;
+    let ordinaryStars = 0;
+
+    for (let y = -60; y <= 60; y++) {
+      for (let x = -60; x <= 60; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        if (props.objectKind === 'brown-dwarf') {
+          brownDwarfs++;
+          expect(props.starType).toMatch(/^[LTY]\d?$/);
+          expect(props.hasStarbase).toBe(false);
+          const rebuilt = new SystemDataGenerator(new PRNG('haunting beauty')).getSystemProperties(x, y);
+          expect(rebuilt).toEqual(props);
+        } else {
+          ordinaryStars++;
+        }
+      }
+    }
+
+    expect(brownDwarfs).toBeGreaterThan(30);
+    expect(brownDwarfs).toBeLessThan(120);
+    expect(ordinaryStars).toBeGreaterThan(60);
+  });
+
+  it('keeps deep-space phenomena rare and visit-order deterministic', () => {
+    const seedLabel = 'haunting beauty';
+    const generator = new SystemDataGenerator(new PRNG(seedLabel));
+    const counts: Record<string, number> = {};
+    let total = 0;
+
+    for (let y = -120; y <= 120; y++) {
+      for (let x = -120; x <= 120; x++) {
+        const phenomenon = generator.getDeepSpacePhenomenonProperties(x, y);
+        if (!phenomenon.exists) continue;
+        total++;
+        counts[phenomenon.type!] = (counts[phenomenon.type!] ?? 0) + 1;
+        const rebuilt = new SystemDataGenerator(new PRNG(seedLabel)).getDeepSpacePhenomenonProperties(x, y);
+        expect(rebuilt).toEqual(phenomenon);
+      }
+    }
+
+    expect(total).toBeGreaterThan(10);
+    expect(total).toBeLessThan(45);
+    expect(counts['ancient-signal'] ?? 0).toBeLessThanOrEqual(8);
+    expect(counts['debris-field'] ?? 0).toBeLessThanOrEqual(3);
   });
 
   it('keeps moon systems plausible for parent type and stellar heating', () => {
