@@ -32,6 +32,13 @@ import {
   STARBASE_SECTIONS,
 } from './starbase_ui';
 import { clampIndex, moveSelection, TextModalTableModel, TextTableRow } from './text_ui';
+import {
+  adjustQuantitySelector,
+  createQuantitySelector,
+  createQuantitySelectorModel,
+  QuantitySelectorState,
+  setQuantitySelectorValue,
+} from './quantity_selector';
 import { createHelpReferenceLines } from './help_reference';
 import {
   createOrbitScreenModel,
@@ -59,13 +66,25 @@ import {
   getNextLevelExperience,
   trainCrewSkill,
 } from './crew';
+import { createShipDeckRows, createShipStationRows, getShipCompartment } from './ship_place';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
-type ShipMenuSection = 'main' | 'cargo' | 'crew' | 'status' | 'jettison';
+type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'jettison';
+type QuantityOperation =
+  | { type: 'buy'; itemKey: string }
+  | { type: 'sell'; itemKey: string }
+  | { type: 'jettison'; itemKey: string }
+  | { type: 'mine' };
+
+interface JettisonConfirmationState {
+  itemKey: string;
+  amount: number;
+  selectedIndex: number;
+}
 
 interface TradeDepotItem {
   itemKey: string;
@@ -138,6 +157,9 @@ export class Game {
   private shipMenuSelection: number = 0;
   private shipMenuOffset: number = 0;
   private shipMenuJettisonItemKey: string | null = null;
+  private currentShipCompartmentId: string = 'bridge';
+  private quantitySelector: QuantitySelectorState<QuantityOperation> | null = null;
+  private jettisonConfirmation: JettisonConfirmationState | null = null;
   private autoScannedSystemName: string | null = null;
   private tutorialHintsShown: Set<string> = new Set();
 
@@ -853,6 +875,10 @@ export class Game {
           this._startApproachAssist();
           return true;
         }
+        if (action === 'MINE') {
+          this.openMiningQuantitySelector();
+          return true;
+        }
         if (action === 'QUIT') {
           eventManager.publish(GameEvents.GAME_QUIT);
           this.stopGame();
@@ -940,6 +966,10 @@ export class Game {
   }
 
   private _executeActionByName(actionName: string): void {
+    if (actionName === 'MINE') {
+      this.openMiningQuantitySelector();
+      return;
+    }
     if (actionName === 'SCAN_SYSTEM_OBJECT') {
       const selectedTarget = this.getSelectedTarget();
       if (selectedTarget && this.isTargetWithinScanRange(selectedTarget)) {
@@ -1144,6 +1174,14 @@ export class Game {
 
   /** Processes all input for the current frame by calling helper methods. */
   private _processInput(): void {
+    if (this._handleJettisonConfirmationInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this._handleQuantitySelectorInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
     // 1. Check Popups (blocks other input if active or animating)
     if (this._handlePopupInput()) {
       return; // Input consumed by popup
@@ -1801,7 +1839,9 @@ export class Game {
       this.stateManager.state !== 'starbase' &&
       this.stateManager.state !== 'orbit' &&
       this.popupState === 'inactive' &&
-      !this.targetMenuOpen
+      !this.targetMenuOpen &&
+      !this.quantitySelector &&
+      !this.jettisonConfirmation
     );
   }
 
@@ -1830,24 +1870,210 @@ export class Game {
     this.forceFullRender = true;
   }
 
+  private _handleJettisonConfirmationInput(): boolean {
+    if (!this.jettisonConfirmation) return false;
+
+    if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+      this.cancelJettisonConfirmation();
+      return true;
+    }
+    if (
+      this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
+      this.inputManager.wasActionJustPressed('MOVE_RIGHT') ||
+      this.inputManager.wasActionJustPressed('MOVE_UP') ||
+      this.inputManager.wasActionJustPressed('MOVE_DOWN')
+    ) {
+      this.jettisonConfirmation.selectedIndex = this.jettisonConfirmation.selectedIndex === 0 ? 1 : 0;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
+      if (this.jettisonConfirmation.selectedIndex === 0) {
+        const { itemKey, amount } = this.jettisonConfirmation;
+        this.jettisonConfirmation = null;
+        this.statusMessage = this.jettisonCargoItem(itemKey, amount);
+      } else {
+        this.cancelJettisonConfirmation();
+      }
+      this.forceFullRender = true;
+      return true;
+    }
+
+    return true;
+  }
+
+  private cancelJettisonConfirmation(): void {
+    this.jettisonConfirmation = null;
+    this.statusMessage = 'Jettison cancelled.';
+    this.forceFullRender = true;
+  }
+
+  private _handleQuantitySelectorInput(): boolean {
+    if (!this.quantitySelector) return false;
+
+    if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+      this.cancelQuantitySelector();
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      this.quantitySelector = adjustQuantitySelector(this.quantitySelector, -1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
+      this.quantitySelector = adjustQuantitySelector(this.quantitySelector, 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      this.quantitySelector = adjustQuantitySelector(this.quantitySelector, this.quantitySelector.step);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      this.quantitySelector = adjustQuantitySelector(this.quantitySelector, -this.quantitySelector.step);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      this.quantitySelector = setQuantitySelectorValue(this.quantitySelector, this.quantitySelector.max);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      this.quantitySelector = setQuantitySelectorValue(this.quantitySelector, this.quantitySelector.min);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
+      this.confirmQuantitySelector();
+      return true;
+    }
+
+    return true;
+  }
+
+  private cancelQuantitySelector(): void {
+    const operation = this.quantitySelector?.context.type;
+    this.quantitySelector = null;
+    const message = operation === 'mine' ? 'Mining cancelled.' : 'Transfer cancelled.';
+    this.statusMessage = message;
+    if (this.stateManager.state === 'starbase') this.starbaseAlert = message;
+    this.forceFullRender = true;
+  }
+
+  private confirmQuantitySelector(): void {
+    if (!this.quantitySelector) return;
+    const { value, context } = this.quantitySelector;
+    this.quantitySelector = null;
+    switch (context.type) {
+      case 'buy':
+        this.statusMessage = this.buyDepotItem(context.itemKey, value);
+        this.starbaseAlert = this.statusMessage;
+        break;
+      case 'sell':
+        this.statusMessage = this.sellDepotItem(context.itemKey, value);
+        this.starbaseAlert = this.statusMessage;
+        break;
+      case 'jettison':
+        this.openJettisonConfirmation(context.itemKey, value);
+        break;
+      case 'mine':
+        this.miningSystem.mine(value);
+        break;
+    }
+    this.forceFullRender = true;
+  }
+
+  private openQuantitySelector(selector: QuantitySelectorState<QuantityOperation>): void {
+    this.quantitySelector = selector;
+    this.forceFullRender = true;
+  }
+
+  private openJettisonConfirmation(itemKey: string, amount: number): void {
+    this.jettisonConfirmation = { itemKey, amount, selectedIndex: 1 };
+    this.statusMessage = 'Confirm cargo jettison.';
+    this.forceFullRender = true;
+  }
+
+  private createJettisonConfirmationModel(): TextModalTableModel {
+    const confirmation = this.jettisonConfirmation;
+    const itemKey = confirmation?.itemKey ?? '';
+    const amount = confirmation?.amount ?? 0;
+    const name = this.getTradeItemInfo(itemKey)?.name ?? itemKey;
+    return {
+      title: 'Confirm Jettison',
+      subtitle: `${amount} m^3 ${name}`,
+      columns: ['CHOICE', 'ACTION', 'RESULT'],
+      widths: [8, 18, 46],
+      rows: [
+        {
+          id: 'yes',
+          cells: ['YES', 'Open bay doors', 'Cargo will be permanently ejected into local space.'],
+          detail: 'Final confirmation. There is no recovery beacon for jettisoned cargo.',
+        },
+        {
+          id: 'no',
+          cells: ['NO', 'Stand down', 'Return to the manifest with cargo intact.'],
+          detail: 'Cancel the purge sequence and keep the selected cargo aboard.',
+        },
+      ],
+      selectedIndex: confirmation?.selectedIndex ?? 1,
+      viewOffset: 0,
+      visibleRowCount: 2,
+      footer: ['Up/Down or Left/Right choose  Enter confirm  Esc cancel'],
+    };
+  }
+
+  private openMiningQuantitySelector(): void {
+    const estimate = this.miningSystem.getMiningEstimate();
+    if (!estimate.canMine || estimate.maxAmount <= 0) {
+      this.statusMessage = estimate.message ?? 'Nothing mineable at this location.';
+      return;
+    }
+    this.openQuantitySelector(createQuantitySelector({
+      title: 'Mine Deposit',
+      subject: `${estimate.elementName ?? estimate.elementKey ?? 'Deposit'} | surface extraction`,
+      detail: 'remaining local seam',
+      unitLabel: 'm^3',
+      max: estimate.maxAmount,
+      value: estimate.maxAmount,
+      context: { type: 'mine' },
+    }));
+  }
+
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
     if (this.shipMenuSection === 'main') {
-      if (row.id === 'cargo' || row.id === 'crew' || row.id === 'status') {
+      if (row.id === 'deck' || row.id === 'stations' || row.id === 'cargo' || row.id === 'crew' || row.id === 'status') {
         this.openShipMenuSection(row.id as ShipMenuSection);
       }
       return;
     }
+    if (this.shipMenuSection === 'deck' && row.id.startsWith('deck:')) {
+      this.focusShipCompartment(row.id.slice('deck:'.length));
+      return;
+    }
+    if (this.shipMenuSection === 'stations' && row.id.startsWith('station:')) {
+      this.focusShipCompartment(row.id.slice('station:'.length));
+      return;
+    }
     if (this.shipMenuSection === 'cargo') {
       if (row.id.startsWith('cargo:')) {
-        this.shipMenuJettisonItemKey = row.id.slice('cargo:'.length);
-        this.openShipMenuSection('jettison');
+        this.openJettisonQuantitySelector(row.id.slice('cargo:'.length));
       }
       return;
     }
     if (this.shipMenuSection === 'jettison') {
       this.activateJettisonSelection(row);
     }
+  }
+
+  private focusShipCompartment(compartmentId: string): void {
+    const compartment = getShipCompartment(compartmentId);
+    this.currentShipCompartmentId = compartment.id;
+    this.statusMessage = `Ship focus: ${compartment.label}.`;
+    this.forceFullRender = true;
   }
 
   private activateJettisonSelection(row: TextTableRow): void {
@@ -1869,11 +2095,34 @@ export class Game {
       return;
     }
     const amount = row.id === 'all' ? held : Number(row.id);
+    const message = this.jettisonCargoItem(itemKey, amount);
+    this.openShipMenuSection('cargo');
+    this.statusMessage = message;
+  }
+
+  private openJettisonQuantitySelector(itemKey: string): void {
+    const held = this.player.cargoHold.items[itemKey] || 0;
+    const name = this.getTradeItemInfo(itemKey)?.name ?? itemKey;
+    if (held <= 0) {
+      this.statusMessage = `No ${name} aboard.`;
+      return;
+    }
+    this.openQuantitySelector(createQuantitySelector({
+      title: 'Jettison Cargo',
+      subject: name,
+      detail: 'external bay purge',
+      unitLabel: 'm^3',
+      max: held,
+      value: held,
+      context: { type: 'jettison', itemKey },
+    }));
+  }
+
+  private jettisonCargoItem(itemKey: string, amount: number): string {
     const removed = this.cargoSystem.removeItem(this.player.cargoHold, itemKey, amount);
     const name = this.getTradeItemInfo(itemKey)?.name ?? itemKey;
-    this.openShipMenuSection('cargo');
-    this.statusMessage = removed > 0 ? `Jettisoned ${removed} ${name}.` : `No ${name} jettisoned.`;
     eventManager.publish(GameEvents.PLAYER_CARGO_REMOVED, { elementKey: itemKey, amountRemoved: removed });
+    return removed > 0 ? `Jettisoned ${removed} m^3 ${name}.` : `No ${name} jettisoned.`;
   }
 
   private getShipMenuVisibleRows(): number {
@@ -1903,6 +2152,10 @@ export class Game {
   private getShipMenuMeta(): { title: string; subtitle: string; columns: string[]; widths: number[]; footer: string[] } {
     const backHint = this.shipMenuSection === 'main' ? 'Esc/Left close' : 'Esc/Left back';
     switch (this.shipMenuSection) {
+      case 'deck':
+        return { title: 'Ship Deck Plan', subtitle: `${getShipCompartment(this.currentShipCompartmentId).label} is the current internal focus.`, columns: ['DECK', 'COMPARTMENT', 'WATCH', 'STATE', 'READOUT'], widths: [6, 20, 17, 10, 35], footer: [`Up/Down select  Enter focus compartment  ${backHint}`] };
+      case 'stations':
+        return { title: 'Ship Stations', subtitle: 'Crewed work points and instrument ownership.', columns: ['STATION', 'SKILL', 'BEST', 'STATE', 'READOUT'], widths: [20, 16, 6, 10, 36], footer: [`Up/Down select  Enter focus station  ${backHint}`] };
       case 'cargo':
         return { title: 'Ship Cargo', subtitle: 'Hold manifest, mass load, and external ejection controls.', columns: ['BAY / CARGO', 'QTY', 'VALUE', 'LOAD / ACTION'], widths: [26, 7, 10, 34], footer: [`Up/Down select  Enter jettison options  ${backHint}`] };
       case 'crew':
@@ -1913,12 +2166,16 @@ export class Game {
         return { title: 'Confirm Jettison', subtitle: 'External bay doors armed. Cargo ejection is permanent.', columns: ['VENT', 'CARGO', 'AFTER', 'CONFIRMATION'], widths: [10, 24, 14, 40], footer: [`Enter confirms selected amount  ${backHint}`] };
       case 'main':
       default:
-        return { title: 'Ship Operations', subtitle: 'Internal vessel systems, manifests, and crew records.', columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 18, 56], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
+        return { title: 'Ship Operations', subtitle: 'Internal vessel systems, manifests, crew, and compartment focus.', columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 18, 56], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
     }
   }
 
   private getShipMenuRows(): TextTableRow[] {
     switch (this.shipMenuSection) {
+      case 'deck':
+        return this.getShipDeckMenuRows();
+      case 'stations':
+        return this.getShipStationMenuRows();
       case 'cargo':
         return this.getShipCargoMenuRows();
       case 'crew':
@@ -1931,12 +2188,43 @@ export class Game {
       default:
         const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
+        const focus = getShipCompartment(this.currentShipCompartmentId);
         return [
-          { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity} units`, `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Hold manifest and ejection controls.`] },
+          { id: 'deck', cells: ['Deck Plan', focus.label, 'Internal compartments, watch stations, and current shipboard focus.'] },
+          { id: 'stations', cells: ['Stations', this.getShipStationCoverageLabel(), 'Crewed work points for navigation, survey, engineering, medical, and bay control.'] },
+          { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Hold manifest and ejection controls.`] },
           { id: 'crew', cells: ['Crew', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} ready`, `Roster, vitals, learning progress, and specialist coverage.`] },
           { id: 'status', cells: ['Ship Status', this.getShipOperatingState(), 'Fuel, cargo, finance, crew, location, and current flight mode.'] },
         ];
     }
+  }
+
+  private getShipDeckMenuRows(): TextTableRow[] {
+    return createShipDeckRows(this.getShipPlaceContext());
+  }
+
+  private getShipStationMenuRows(): TextTableRow[] {
+    return createShipStationRows(this.getShipPlaceContext());
+  }
+
+  private getShipPlaceContext() {
+    const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    return {
+      crew: this.player.crew,
+      cargoTotal,
+      cargoCapacity: this.player.cargoHold.capacity,
+      fuel: this.player.resources.fuel,
+      maxFuel: this.player.resources.maxFuel,
+      credits: this.player.resources.credits,
+      stateLabel: this.stateManager.state,
+      currentCompartmentId: this.currentShipCompartmentId,
+    };
+  }
+
+  private getShipStationCoverageLabel(): string {
+    const critical = ['navigation', 'astroscience', 'engineering', 'medicine', 'communication'] as CrewSkill[];
+    const covered = critical.filter((skill) => getBestCrewSkill(this.player.crew, skill) > 0).length;
+    return `${covered}/${critical.length} crewed`;
   }
 
   private getShipCargoMenuRows(): TextTableRow[] {
@@ -1950,7 +2238,7 @@ export class Game {
           `${this.player.cargoHold.capacity}`,
           `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 18)} ${this.getCargoLoadLabel(cargoTotal)}`,
         ],
-        detail: `${this.player.cargoHold.capacity - cargoTotal} units free. Jettisoned cargo is unrecoverable in the current build.`,
+        detail: `${this.player.cargoHold.capacity - cargoTotal} m^3 free. Jettisoned cargo is unrecoverable in the current build.`,
         disabled: true,
       },
     ];
@@ -2013,7 +2301,7 @@ export class Game {
     return [
       { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
       { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
-      { id: 'cargo', cells: ['Cargo hold', `${cargoTotal}/${this.player.cargoHold.capacity}`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
+      { id: 'cargo', cells: ['Cargo hold', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
       { id: 'credits', cells: ['Credit account', `${this.player.resources.credits.toLocaleString()} Cr`, 'Liquid', 'Station-authorised spend balance.'], disabled: true },
       { id: 'crew', cells: ['Crew company', `${this.player.crew.length} aboard`, this.getCrewHealthLabel(), `Training points ${this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0)} available.`], disabled: true },
       { id: 'navigation', cells: ['Navigation', `Nav ${getBestCrewSkill(this.player.crew, 'navigation')}`, 'Crewed', `Pilot ${getBestCrewSkill(this.player.crew, 'piloting')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}`], disabled: true },
@@ -2346,6 +2634,14 @@ export class Game {
         this.renderer.drawTextModalTable(this.createShipMenuModel());
       }
 
+      if (this.quantitySelector) {
+        this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
+      }
+
+      if (this.jettisonConfirmation) {
+        this.renderer.drawTextModalTable(this.createJettisonConfirmationModel());
+      }
+
       if (fullCanvasRepaint) {
         this.renderer.renderBufferFull();
       } else {
@@ -2381,7 +2677,7 @@ export class Game {
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
-    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen) return false;
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.quantitySelector || this.jettisonConfirmation) return false;
     if (state === 'starbase' && this.starbaseAlert) return false;
     if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
@@ -2724,14 +3020,12 @@ export class Game {
     }
     if (this.starbaseSectionId === 'buy') {
       this.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
-      this.starbaseAlert = this.buySelectedDepotItem(market);
-      this.statusMessage = this.starbaseAlert;
+      this.openBuyQuantitySelector(row.id);
       return;
     }
     if (this.starbaseSectionId === 'sell') {
       this.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
-      this.starbaseAlert = this.sellSelectedDepotItem(market);
-      this.statusMessage = this.starbaseAlert;
+      this.openSellQuantitySelector(row.id);
       return;
     }
     if (this.starbaseSectionId === 'services' && row.id === 'refuel') {
@@ -3164,6 +3458,98 @@ export class Game {
       .map((item) => `${item.name} ${item.buyPrice}Cr`)
       .join(', ');
     return `Trade depot offers: ${offers}. Need cargo space and credits to buy.`;
+  }
+
+  private openBuyQuantitySelector(itemKey: string): void {
+    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
+    if (!item) {
+      this.starbaseAlert = 'Depot item unavailable.';
+      return;
+    }
+    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
+    const max = Math.min(item.units, freeCargo, affordableUnits);
+    if (freeCargo <= 0) {
+      this.starbaseAlert = 'Trade depot: cargo hold is full.';
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    if (max <= 0) {
+      this.starbaseAlert = `Insufficient credits for ${item.name}.`;
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    this.openQuantitySelector(createQuantitySelector({
+      title: 'Buy Cargo',
+      subject: `${item.name} | ${item.buyPrice} Cr/m^3`,
+      detail: `${max * item.buyPrice} Cr max spend`,
+      unitLabel: 'm^3',
+      max,
+      value: max,
+      context: { type: 'buy', itemKey },
+    }));
+  }
+
+  private openSellQuantitySelector(itemKey: string): void {
+    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
+    const held = this.player.cargoHold.items[itemKey] || 0;
+    const name = item?.name ?? this.getTradeItemInfo(itemKey)?.name ?? itemKey;
+    if (held <= 0) {
+      this.starbaseAlert = `No ${name} in cargo.`;
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    this.openQuantitySelector(createQuantitySelector({
+      title: 'Sell Cargo',
+      subject: `${name} | ${item?.sellPrice ?? 1} Cr/m^3`,
+      detail: `${held * (item?.sellPrice ?? 1)} Cr max return`,
+      unitLabel: 'm^3',
+      max: held,
+      value: held,
+      context: { type: 'sell', itemKey },
+    }));
+  }
+
+  private buyDepotItem(itemKey: string, amount: number): string {
+    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
+    if (!item) return 'Depot item unavailable.';
+    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
+    const unitsToBuy = Math.min(item.units, freeCargo, affordableUnits, Math.max(1, Math.floor(amount)));
+    if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
+    if (unitsToBuy <= 0) return `Insufficient credits for ${item.name}.`;
+
+    const added = this.cargoSystem.addItem(this.player.cargoHold, item.itemKey, unitsToBuy);
+    const cost = added * item.buyPrice;
+    this.player.resources.credits -= cost;
+    eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.itemKey, amount: added });
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: -cost,
+    });
+    return `Bought ${added} m^3 ${item.name} for ${cost} Cr.`;
+  }
+
+  private sellDepotItem(itemKey: string, amount: number): string {
+    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
+    if (!item) return 'Depot item unavailable.';
+    const held = this.player.cargoHold.items[item.itemKey] || 0;
+    const unitsToSell = Math.min(held, Math.max(1, Math.floor(amount)));
+    if (unitsToSell <= 0) return `No ${item.name} in cargo.`;
+
+    const removed = this.cargoSystem.removeItem(this.player.cargoHold, item.itemKey, unitsToSell);
+    const creditsEarned = removed * item.sellPrice;
+    this.player.resources.credits += creditsEarned;
+    eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, {
+      itemsSold: { [item.itemKey]: removed },
+      creditsEarned,
+      newCredits: this.player.resources.credits,
+    });
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: creditsEarned,
+    });
+    return `Sold ${removed} m^3 ${item.name} for ${creditsEarned} Cr.`;
   }
 
   private buySelectedDepotItem(market: TradeDepotItem[]): string {

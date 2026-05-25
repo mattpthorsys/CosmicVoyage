@@ -21,6 +21,9 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     shipMenuSelection: 0,
     shipMenuOffset: 0,
     shipMenuJettisonItemKey: null,
+    currentShipCompartmentId: 'bridge',
+    quantitySelector: null,
+    jettisonConfirmation: null,
     statusMessage: '',
     forceFullRender: false,
   });
@@ -56,6 +59,22 @@ describe('ship menu', () => {
     expect(game.statusMessage).toContain('Jettisoned 7');
   });
 
+  it('requires a yes/no confirmation after selecting a jettison quantity', () => {
+    const game = createShipMenuHarness();
+    game.cargoSystem.addItem(game.player.cargoHold, 'IRON', 7);
+
+    game.openJettisonQuantitySelector('IRON');
+    expect(game.quantitySelector.unitLabel).toBe('m^3');
+    game.quantitySelector.value = 3;
+    game.confirmQuantitySelector();
+
+    expect(game.player.cargoHold.items.IRON).toBe(7);
+    expect(game.jettisonConfirmation).toMatchObject({ itemKey: 'IRON', amount: 3, selectedIndex: 1 });
+    const model = game.createJettisonConfirmationModel();
+    expect(model.subtitle).toContain('3 m^3');
+    expect(model.rows.map((row: any) => row.id)).toEqual(['yes', 'no']);
+  });
+
   it('formats cargo, crew, and ship status as readable instrument panels', () => {
     const game = createShipMenuHarness();
     game.cargoSystem.addItem(game.player.cargoHold, 'IRON', 25);
@@ -64,6 +83,7 @@ describe('ship menu', () => {
     const cargo = game.createShipMenuModel();
     expect(cargo.columns).toEqual(['BAY / CARGO', 'QTY', 'VALUE', 'LOAD / ACTION']);
     expect(cargo.rows[0].cells[3]).toContain('[');
+    expect(cargo.rows[0].detail).toContain('m^3 free');
     expect(cargo.rows.some((row: any) => row.cells[3].includes('Enter to arm ejector'))).toBe(true);
 
     game.shipMenuSection = 'crew';
@@ -73,8 +93,30 @@ describe('ship menu', () => {
 
     game.shipMenuSection = 'status';
     const status = game.createShipMenuModel();
+    expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
     expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+  });
+
+  it('treats the ship as compartments and crewed stations', () => {
+    const game = createShipMenuHarness();
+
+    const main = game.createShipMenuModel();
+    expect(main.rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status']));
+
+    game.shipMenuSection = 'deck';
+    const deck = game.createShipMenuModel();
+    expect(deck.columns).toEqual(['DECK', 'COMPARTMENT', 'WATCH', 'STATE', 'READOUT']);
+    expect(deck.rows.some((row: any) => row.id === 'deck:engineering')).toBe(true);
+
+    game.activateShipMenuSelection(deck.rows.find((row: any) => row.id === 'deck:engineering'));
+    expect(game.currentShipCompartmentId).toBe('engineering');
+    expect(game.statusMessage).toContain('Engineering Trunk');
+
+    game.shipMenuSection = 'stations';
+    const stations = game.createShipMenuModel();
+    expect(stations.columns).toEqual(['STATION', 'SKILL', 'BEST', 'STATE', 'READOUT']);
+    expect(stations.rows.some((row: any) => row.id === 'station:navigation')).toBe(true);
   });
 
   it('keeps ship menu out of the primary dock and orbit action path', () => {

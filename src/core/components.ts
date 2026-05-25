@@ -38,9 +38,9 @@ export interface ResourceComponent {
 
 /** Component managing the entity's inventory/cargo hold. */
 export interface CargoComponent {
-    /** Maximum number of units the cargo hold can contain. */
+    /** Maximum cargo volume the hold can contain, in cubic metres. */
     capacity: number;
-    /** Record storing the quantity of each element held (key: element string ID, value: quantity). */
+    /** Record storing cubic metres of each element held (key: element string ID, value: volume). */
     items: Record<string, number>;
 }
 

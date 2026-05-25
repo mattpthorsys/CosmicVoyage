@@ -160,12 +160,12 @@ exports[`SceneRenderer visual regressions > renders reusable modal tables for na
 {
   "bounds": {
     "maxX": 83,
-    "maxY": 27,
+    "maxY": 28,
     "minX": 26,
-    "minY": 15,
+    "minY": 14,
   },
   "chars": {
-    " ": 738,
+    " ": 850,
     "(": 2,
     ")": 2,
     "-": 52,
@@ -216,14 +216,14 @@ exports[`SceneRenderer visual regressions > renders reusable modal tables for na
     "y": 1,
     "|": 2,
     "─": 112,
-    "│": 25,
+    "│": 29,
     "┌": 1,
     "┐": 1,
     "└": 1,
     "┘": 1,
     "█": 3,
   },
-  "totalCalls": 1152,
+  "totalCalls": 1268,
 }
 `;
 

@@ -891,9 +891,9 @@ export class SceneRenderer {
 
     const tableWidth = Math.min(cols - 12, Math.max(34, model.widths.reduce((sum, width) => sum + width, 0) + model.widths.length - 1));
     const footerRows = model.footer?.length ?? 0;
-    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, rows - 12 - footerRows));
+    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, rows - 13 - footerRows));
     const panelWidth = Math.min(cols - 4, tableWidth + 8);
-    const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 9);
+    const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 11);
     const panelX = Math.floor((cols - panelWidth) / 2);
     const panelY = Math.floor((rows - panelHeight) / 2);
     const tableX = panelX + 4;

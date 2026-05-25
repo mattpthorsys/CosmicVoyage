@@ -582,8 +582,8 @@ export const STATUS_MESSAGES = {
     PLANET_SCAN_ALREADY: (planetName: string, richness: string) => `${planetName} has already been scanned. (${richness})`, // [cite: 484]
     PLANET_SCAN_REQUIRED: (richness: string) => `[-W-]Scan required before mining. Richness potential: ${richness}.</w>`, // [cite: 485]
     PLANET_MINE_INVALID_TYPE: (planetType: string) => `[-W-]Cannot mine surface of ${planetType}.</w>`,
-    PLANET_MINE_SUCCESS: (amount: number, unitName: string, current: number, capacity: number) => `Mined ${amount} units of ${unitName}. (${current}/${capacity})`, // [cite: 486]
-    PLANET_MINE_CARGO_FULL: (current: number, capacity: number) => `[-W-]Mining failed: Cargo hold full. (${current}/${capacity})</w>`, // [cite: 487]
+    PLANET_MINE_SUCCESS: (amount: number, unitName: string, current: number, capacity: number) => `Mined ${amount} m^3 of ${unitName}. (${current}/${capacity} m^3)`, // [cite: 486]
+    PLANET_MINE_CARGO_FULL: (current: number, capacity: number) => `[-W-]Mining failed: Cargo hold full. (${current}/${capacity} m^3)</w>`, // [cite: 487]
     PLANET_MINE_NO_ELEMENTS: "Found no mineable elements at this location.",
     PLANET_MINE_TRACE: (elementName: string) => `Trace amounts of ${elementName} found, but not enough to mine.`,
     PLANET_MINE_DEPLETED: "This location has already been mined.",

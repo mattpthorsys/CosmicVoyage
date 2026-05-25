@@ -75,6 +75,7 @@ export class Planet {
   public scanned: boolean = false; //
   public primaryResource: string | null = null; // Determined by scan()
   public minedLocations: Set<string> = new Set(); // Track depleted locations (key: "x,y")
+  public minedLocationAmounts: Record<string, number> = {}; // Track partially extracted deposit units.
 
   // Generation & State
   public readonly systemPRNG: PRNG; //
@@ -453,6 +454,20 @@ export class Planet {
   /** Checks if a specific surface coordinate has been mined. */
   isMined(x: number, y: number): boolean {
     return this.minedLocations.has(`${x},${y}`);
+  }
+
+  /** Returns how many units have been extracted from a specific surface coordinate. */
+  getMinedAmount(x: number, y: number): number {
+    return Math.max(0, this.minedLocationAmounts[`${x},${y}`] || 0);
+  }
+
+  /** Adds extracted units to a coordinate and marks the location depleted when its yield is exhausted. */
+  recordMinedAmount(x: number, y: number, amount: number, totalYield: number): void {
+    const key = `${x},${y}`;
+    this.minedLocationAmounts[key] = this.getMinedAmount(x, y) + Math.max(0, Math.floor(amount));
+    if (this.minedLocationAmounts[key] >= Math.max(1, Math.floor(totalYield))) {
+      this.markMined(x, y);
+    }
   }
 
   /** Marks a specific surface coordinate as mined. */
