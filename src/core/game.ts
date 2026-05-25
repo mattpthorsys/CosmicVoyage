@@ -56,6 +56,7 @@ import {
   generateRecruitCandidates,
   getBestCrewSkill,
   getCrewSkillTotal,
+  getNextLevelExperience,
   trainCrewSkill,
 } from './crew';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
@@ -1900,16 +1901,16 @@ export class Game {
     const backHint = this.shipMenuSection === 'main' ? 'Esc/Left close' : 'Esc/Left back';
     switch (this.shipMenuSection) {
       case 'cargo':
-        return { title: 'Ship Cargo', subtitle: 'Inspect cargo and select a lot to jettison.', columns: ['CARGO', 'QTY', 'VALUE', 'ACTION'], widths: [26, 7, 10, 28], footer: [`Up/Down select  Enter jettison options  ${backHint}`] };
+        return { title: 'Ship Cargo', subtitle: 'Hold manifest, mass load, and external ejection controls.', columns: ['BAY / CARGO', 'QTY', 'VALUE', 'LOAD / ACTION'], widths: [26, 7, 10, 34], footer: [`Up/Down select  Enter jettison options  ${backHint}`] };
       case 'crew':
-        return { title: 'Crew Records', subtitle: 'Ship company health, experience, and skill summary.', columns: ['NAME', 'ROLE', 'HEALTH', 'SKILLS'], widths: [20, 16, 12, 38], footer: [`Up/Down inspect  ${backHint}`] };
+        return { title: 'Crew Records', subtitle: 'Personnel vitals, readiness, and specialist coverage.', columns: ['CREW', 'DUTY', 'VITALS', 'READINESS / SKILLS'], widths: [20, 16, 13, 41], footer: [`Up/Down inspect  ${backHint}`] };
       case 'status':
-        return { title: 'Ship Status', subtitle: 'Current vessel operational summary.', columns: ['SYSTEM', 'READING', 'STATUS', 'NOTES'], widths: [18, 16, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
+        return { title: 'Ship Status', subtitle: 'Primary shipboard systems and operating posture.', columns: ['SYSTEM', 'READING', 'STATE', 'TELEMETRY'], widths: [18, 18, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
       case 'jettison':
-        return { title: 'Confirm Jettison', subtitle: 'Cargo ejection is permanent. Confirm amount to vent into space.', columns: ['AMOUNT', 'CARGO', 'RESULT', 'CONFIRMATION'], widths: [10, 24, 12, 38], footer: [`Enter confirms selected amount  ${backHint}`] };
+        return { title: 'Confirm Jettison', subtitle: 'External bay doors armed. Cargo ejection is permanent.', columns: ['VENT', 'CARGO', 'AFTER', 'CONFIRMATION'], widths: [10, 24, 14, 40], footer: [`Enter confirms selected amount  ${backHint}`] };
       case 'main':
       default:
-        return { title: 'Ship Operations', subtitle: 'Local shipboard menu.', columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 14, 54], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
+        return { title: 'Ship Operations', subtitle: 'Internal vessel systems, manifests, and crew records.', columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 18, 56], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
     }
   }
 
@@ -1925,46 +1926,95 @@ export class Game {
         return this.getJettisonMenuRows();
       case 'main':
       default:
+        const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+        const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         return [
-          { id: 'cargo', cells: ['Cargo', `${this.cargoSystem.getTotalUnits(this.player.cargoHold)}/${this.player.cargoHold.capacity}`, 'Inspect hold contents and jettison selected cargo.'] },
-          { id: 'crew', cells: ['Crew', `${this.player.crew.length} aboard`, 'Review crew health, level, experience, and skills.'] },
-          { id: 'status', cells: ['Ship Status', 'Online', 'Fuel, credits, cargo capacity, location, and local flight mode.'] },
+          { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity} units`, `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Hold manifest and ejection controls.`] },
+          { id: 'crew', cells: ['Crew', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} ready`, `Roster, vitals, learning progress, and specialist coverage.`] },
+          { id: 'status', cells: ['Ship Status', this.getShipOperatingState(), 'Fuel, cargo, finance, crew, location, and current flight mode.'] },
         ];
     }
   }
 
   private getShipCargoMenuRows(): TextTableRow[] {
-    return this.getCargoRows().map((row) => ({
-      id: row.disabled ? row.id : `cargo:${row.id}`,
-      cells: [row.cells[0], row.cells[1], row.cells[2], row.disabled ? 'No cargo aboard' : 'Enter to jettison'],
-      detail: row.disabled ? row.detail : `${row.detail ?? row.cells[0]} Select to choose jettison amount.`,
-      disabled: row.disabled,
-    }));
+    const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    const rows: TextTableRow[] = [
+      {
+        id: 'cargo-overview',
+        cells: [
+          'Hold capacity',
+          `${cargoTotal}`,
+          `${this.player.cargoHold.capacity}`,
+          `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 18)} ${this.getCargoLoadLabel(cargoTotal)}`,
+        ],
+        detail: `${this.player.cargoHold.capacity - cargoTotal} units free. Jettisoned cargo is unrecoverable in the current build.`,
+        disabled: true,
+      },
+    ];
+    return [
+      ...rows,
+      ...this.getCargoRows().map((row, index) => ({
+        id: row.disabled ? row.id : `cargo:${row.id}`,
+        cells: [
+          row.disabled ? row.cells[0] : `Bay ${String(index + 1).padStart(2, '0')} ${row.cells[0]}`,
+          row.cells[1],
+          row.cells[2],
+          row.disabled ? 'No cargo aboard' : `${this.formatGauge(Number(row.cells[1]), Math.max(1, cargoTotal), 12)} Enter to arm ejector`,
+        ],
+        detail: row.disabled ? row.detail : `${row.detail ?? row.cells[0]} Select to choose jettison amount.`,
+        disabled: row.disabled,
+      })),
+    ];
   }
 
   private getShipCrewMenuRows(): TextTableRow[] {
-    return this.player.crew.map((member) => ({
-      id: member.id,
-      cells: [
-        member.name,
-        `${member.role} L${member.level}`,
-        `${member.hitPoints}/${member.maxHitPoints} HP`,
-        `Dur ${member.durability} ${formatTopSkills(member, 4)}`,
-      ],
-      detail: `XP ${member.experience}; training points ${member.trainingPoints}; Human learning cap 10.`,
-      disabled: true,
-    }));
+    const crew = this.player.crew;
+    const rows: TextTableRow[] = [
+      {
+        id: 'crew-overview',
+        cells: [
+          `${crew.length} aboard`,
+          'Ship company',
+          this.getCrewHealthLabel(),
+          `Nav ${getBestCrewSkill(crew, 'navigation')}  Astro ${getBestCrewSkill(crew, 'astroscience')}  Eng ${getBestCrewSkill(crew, 'engineering')}  Med ${getBestCrewSkill(crew, 'medicine')}`,
+        ],
+        detail: `Coverage totals: Comms ${getCrewSkillTotal(crew, 'communication')}, Geo ${getCrewSkillTotal(crew, 'geology')}, Pilot ${getCrewSkillTotal(crew, 'piloting')}, Security ${getCrewSkillTotal(crew, 'spaceCombat')}.`,
+        disabled: true,
+      },
+    ];
+    return [
+      ...rows,
+      ...crew.map((member) => {
+        const nextXp = getNextLevelExperience(member.level);
+        const healthBar = this.formatGauge(member.hitPoints, member.maxHitPoints, 8);
+        const xpBar = this.formatGauge(member.experience, nextXp, 8);
+        return {
+          id: member.id,
+          cells: [
+            member.name,
+            `${member.role} L${member.level}`,
+            `${healthBar} ${member.hitPoints}/${member.maxHitPoints}`,
+            `XP ${xpBar} ${member.experience}/${nextXp}  TP ${member.trainingPoints}  ${formatTopSkills(member, 3)}`,
+          ],
+          detail: `Durability ${member.durability}. Human learning cap 10. Training can be assigned from a starbase crew office.`,
+          disabled: true,
+        };
+      }),
+    ];
   }
 
   private getShipStatusMenuRows(): TextTableRow[] {
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
     const stateLabel = this.stateManager.state === 'planet' ? `Surface: ${this.stateManager.currentPlanet?.name ?? 'unknown'}` : this.stateManager.state;
+    const fuel = Math.round(this.player.resources.fuel);
     return [
-      { id: 'fuel', cells: ['Fuel', `${this.player.resources.fuel.toFixed(0)}/${this.player.resources.maxFuel}`, this.player.resources.fuel > 0 ? 'Ready' : 'Empty', 'Reaction mass and drive reserve.'], disabled: true },
-      { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity}`, cargoTotal < this.player.cargoHold.capacity ? 'Space' : 'Full', 'Cargo capacity and current manifest load.'], disabled: true },
-      { id: 'credits', cells: ['Credits', this.player.resources.credits.toLocaleString(), 'Available', 'Spendable station credit balance.'], disabled: true },
-      { id: 'crew', cells: ['Crew', String(this.player.crew.length), this.player.crew.length > 0 ? 'Staffed' : 'Empty', 'Crew company currently aboard.'], disabled: true },
-      { id: 'location', cells: ['Location', stateLabel, 'Nominal', `World ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
+      { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
+      { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
+      { id: 'cargo', cells: ['Cargo hold', `${cargoTotal}/${this.player.cargoHold.capacity}`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
+      { id: 'credits', cells: ['Credit account', `${this.player.resources.credits.toLocaleString()} Cr`, 'Liquid', 'Station-authorised spend balance.'], disabled: true },
+      { id: 'crew', cells: ['Crew company', `${this.player.crew.length} aboard`, this.getCrewHealthLabel(), `Training points ${this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0)} available.`], disabled: true },
+      { id: 'navigation', cells: ['Navigation', `Nav ${getBestCrewSkill(this.player.crew, 'navigation')}`, 'Crewed', `Pilot ${getBestCrewSkill(this.player.crew, 'piloting')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}`], disabled: true },
+      { id: 'survey', cells: ['Survey suite', `Geo ${getBestCrewSkill(this.player.crew, 'geology')}`, 'Crewed', `Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}  Comms ${getBestCrewSkill(this.player.crew, 'communication')}`], disabled: true },
     ];
   }
 
@@ -1976,12 +2026,56 @@ export class Game {
       return [{ id: 'cancel', cells: ['Cancel', name, '--', 'Return to cargo manifest.'] }];
     }
     const rows: TextTableRow[] = [
-      { id: '1', cells: ['1', name, `${held - 1} left`, 'Confirm jettison of one unit.'] },
+      { id: '1', cells: ['1 unit', name, `${held - 1} left`, 'Vent one sealed unit through external bay.'] },
     ];
-    if (held >= 10) rows.push({ id: '10', cells: ['10', name, `${held - 10} left`, 'Confirm jettison of ten units.'] });
-    rows.push({ id: 'all', cells: ['ALL', name, '0 left', 'Confirm jettison of the full stack.'] });
-    rows.push({ id: 'cancel', cells: ['Cancel', name, `${held} held`, 'Do not jettison this cargo.'] });
+    if (held >= 10) rows.push({ id: '10', cells: ['10 units', name, `${held - 10} left`, 'Vent ten units. Confirm bay doors armed.'] });
+    rows.push({ id: 'all', cells: ['ALL', name, '0 left', 'Purge the full cargo stack. No recovery beacon.'] });
+    rows.push({ id: 'cancel', cells: ['Cancel', name, `${held} held`, 'Stand down ejector sequence.'] });
     return rows;
+  }
+
+  private formatGauge(value: number, max: number, width: number): string {
+    const safeMax = Math.max(1, max);
+    const ratio = Math.max(0, Math.min(1, value / safeMax));
+    const filled = Math.round(ratio * width);
+    return `[${'#'.repeat(filled)}${'.'.repeat(Math.max(0, width - filled))}]`;
+  }
+
+  private getFuelStateLabel(): string {
+    const ratio = this.player.resources.fuel / Math.max(1, this.player.resources.maxFuel);
+    if (ratio <= 0) return 'Empty';
+    if (ratio < 0.2) return 'Low';
+    if (ratio < 0.5) return 'Reserve';
+    return 'Ready';
+  }
+
+  private getCargoLoadLabel(cargoTotal: number): string {
+    const ratio = cargoTotal / Math.max(1, this.player.cargoHold.capacity);
+    if (cargoTotal <= 0) return 'Empty';
+    if (ratio >= 1) return 'Full';
+    if (ratio > 0.75) return 'Heavy';
+    if (ratio > 0.35) return 'Loaded';
+    return 'Light';
+  }
+
+  private getCrewHealthLabel(): string {
+    if (this.player.crew.length === 0) return 'Uncrewed';
+    const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
+    if (wounded === 0) return 'All green';
+    return `${wounded} wounded`;
+  }
+
+  private getShipOperatingState(): string {
+    switch (this.stateManager.state) {
+      case 'hyperspace':
+        return 'Drift';
+      case 'system':
+        return this.approachTargetSignature ? 'Approach' : 'Local';
+      case 'planet':
+        return 'Landed';
+      default:
+        return 'Online';
+    }
   }
 
   private getTargetClassLabel(target: NavigationTarget): string {

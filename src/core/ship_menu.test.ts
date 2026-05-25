@@ -54,4 +54,25 @@ describe('ship menu', () => {
     expect(game.shipMenuSection).toBe('cargo');
     expect(game.statusMessage).toContain('Jettisoned 7');
   });
+
+  it('formats cargo, crew, and ship status as readable instrument panels', () => {
+    const game = createShipMenuHarness();
+    game.cargoSystem.addItem(game.player.cargoHold, 'IRON', 25);
+
+    game.shipMenuSection = 'cargo';
+    const cargo = game.createShipMenuModel();
+    expect(cargo.columns).toEqual(['BAY / CARGO', 'QTY', 'VALUE', 'LOAD / ACTION']);
+    expect(cargo.rows[0].cells[3]).toContain('[');
+    expect(cargo.rows.some((row: any) => row.cells[3].includes('Enter to arm ejector'))).toBe(true);
+
+    game.shipMenuSection = 'crew';
+    const crew = game.createShipMenuModel();
+    expect(crew.rows[0].cells[2]).toMatch(/green|wounded|Uncrewed/);
+    expect(crew.rows[1].cells[3]).toContain('XP');
+
+    game.shipMenuSection = 'status';
+    const status = game.createShipMenuModel();
+    expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
+    expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+  });
 });
