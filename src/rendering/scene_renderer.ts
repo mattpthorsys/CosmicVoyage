@@ -13,7 +13,7 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
-import { TextMenuSection, TextTableModel } from '../core/text_ui';
+import { TextMenuSection, TextModalTableModel, TextTableModel } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 
@@ -882,6 +882,37 @@ export class SceneRenderer {
       this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#FFD66B' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
     });
     this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
+  }
+
+  drawTextModalTable(model: TextModalTableModel): void {
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    if (cols < 42 || rows < 16) return;
+
+    const tableWidth = Math.min(cols - 12, Math.max(34, model.widths.reduce((sum, width) => sum + width, 0) + model.widths.length - 1));
+    const footerRows = model.footer?.length ?? 0;
+    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, rows - 12 - footerRows));
+    const panelWidth = Math.min(cols - 4, tableWidth + 8);
+    const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 9);
+    const panelX = Math.floor((cols - panelWidth) / 2);
+    const panelY = Math.floor((rows - panelHeight) / 2);
+    const tableX = panelX + 4;
+    const tableY = panelY + 5;
+
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#3EA6A6', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(` ${model.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    if (model.subtitle) {
+      this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    }
+
+    this.drawTextTableHeader(model, tableX, tableY, tableWidth);
+    this.drawTextTableRows(model, tableX, tableY + 2, tableWidth, visibleRows);
+    this.drawTextScrollbar(panelX + panelWidth - 3, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
+
+    const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
+    (model.footer ?? []).forEach((line, index) => {
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, '#777777', CONFIG.DEFAULT_BG_COLOUR);
+    });
   }
 
   drawOrbitInterface(model: OrbitScreenModel): void {

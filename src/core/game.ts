@@ -31,7 +31,7 @@ import {
   StarbaseTableRow,
   STARBASE_SECTIONS,
 } from './starbase_ui';
-import { clampIndex, moveSelection } from './text_ui';
+import { clampIndex, moveSelection, TextModalTableModel, TextTableRow } from './text_ui';
 import { createHelpReferenceLines } from './help_reference';
 import {
   createOrbitScreenModel,
@@ -117,6 +117,9 @@ export class Game {
   private currentTargetIndex: number = 0;
   private currentTargetSignature: string = '';
   private approachTargetSignature: string | null = null;
+  private targetMenuOpen: boolean = false;
+  private targetMenuSelection: number = 0;
+  private targetMenuOffset: number = 0;
   private autoScannedSystemName: string | null = null;
   private tutorialHintsShown: Set<string> = new Set();
 
@@ -214,6 +217,7 @@ export class Game {
     this.currentTargetIndex = 0;
     this.currentTargetSignature = '';
     this.approachTargetSignature = null;
+    this.targetMenuOpen = false;
     if (newState === 'starbase') {
       this.starbaseSectionId = 'overview';
       this.starbaseAlert = '';
@@ -235,6 +239,7 @@ export class Game {
       this.popupContent = null;
       logger.debug('[Game] Closing active popup due to game state change.');
     }
+    this.targetMenuOpen = false;
     // Reflect status messages potentially set by GameStateManager during transition
     this.statusMessage = this.stateManager.statusMessage || ''; // Use status from stateManager
     this.stateManager.statusMessage = ''; // Clear it after reading
@@ -649,6 +654,68 @@ export class Game {
     return false;
   }
 
+  private _handleTargetMenuInput(): boolean {
+    if (!this.targetMenuOpen) return false;
+
+    const targets = this.getTargetMenuTargets();
+    const visibleRows = this.getTargetMenuVisibleRows();
+    if (
+      this.inputManager.wasActionJustPressed('QUIT') ||
+      this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') ||
+      this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
+      this.inputManager.wasActionJustPressed('MOVE_RIGHT')
+    ) {
+      this.closeTargetMenu('Target selection cancelled.');
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      const viewport = moveSelection(this.targetMenuSelection, -1, targets.length, visibleRows, this.targetMenuOffset);
+      this.targetMenuSelection = viewport.selectedIndex;
+      this.targetMenuOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      const viewport = moveSelection(this.targetMenuSelection, 1, targets.length, visibleRows, this.targetMenuOffset);
+      this.targetMenuSelection = viewport.selectedIndex;
+      this.targetMenuOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      const viewport = moveSelection(this.targetMenuSelection, -visibleRows, targets.length, visibleRows, this.targetMenuOffset);
+      this.targetMenuSelection = viewport.selectedIndex;
+      this.targetMenuOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      const viewport = moveSelection(this.targetMenuSelection, visibleRows, targets.length, visibleRows, this.targetMenuOffset);
+      this.targetMenuSelection = viewport.selectedIndex;
+      this.targetMenuOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM')) {
+      const selected = targets[this.targetMenuSelection];
+      if (!selected) {
+        this.closeTargetMenu('No target selected.');
+        return true;
+      }
+      this.selectNavigationTarget(selected, true);
+      this.targetMenuOpen = false;
+      this.forceFullRender = true;
+      return true;
+    }
+
+    return true;
+  }
+
   /** Processes discrete actions (scan, land, mine, etc.). Returns true if an action was processed. */
   private _handleDiscreteActions(): boolean {
     const currentState = this.stateManager.state;
@@ -666,6 +733,7 @@ export class Game {
       'INFO_TEST',
       'PRIMARY_ACTION',
       'CYCLE_TARGET',
+      'TARGET_MENU',
       'HELP',
       'TOGGLE_PROFILER',
       'APPROACH_TARGET',
@@ -692,6 +760,10 @@ export class Game {
         }
         if (action === 'CYCLE_TARGET') {
           this._cycleTarget();
+          return true;
+        }
+        if (action === 'TARGET_MENU') {
+          this.openTargetMenu();
           return true;
         }
         if (action === 'PRIMARY_ACTION') {
@@ -826,6 +898,7 @@ export class Game {
       'move',
       'help',
       'cycle-target',
+      'target-menu',
       'zoom-in',
       'zoom-out',
       'section-left',
@@ -845,10 +918,47 @@ export class Game {
       return;
     }
     this.currentTargetIndex = (this.currentTargetIndex + 1) % targets.length;
-    const target = targets[this.currentTargetIndex];
-    this.currentTargetSignature = this.getTargetSignature(target);
-    this.approachTargetSignature = null;
-    this.statusMessage = `Target selected: ${this.getTargetName(target)}.`;
+    this.selectNavigationTarget(targets[this.currentTargetIndex], false);
+  }
+
+  private openTargetMenu(): void {
+    if (this.stateManager.state !== 'system') {
+      this.statusMessage = 'Navigation target menu is only available in system view.';
+      return;
+    }
+    const targets = this.getTargetMenuTargets();
+    if (targets.length === 0) {
+      this.statusMessage = 'No stellar or planetary targets available.';
+      return;
+    }
+    const selected = this.getSelectedTarget();
+    const selectedSignature = selected ? this.getTargetSignature(selected) : '';
+    const selectedIndex = targets.findIndex((target) => this.getTargetSignature(target) === selectedSignature);
+    const visibleRows = this.getTargetMenuVisibleRows();
+    const viewport = moveSelection(selectedIndex >= 0 ? selectedIndex : 0, 0, targets.length, visibleRows, this.targetMenuOffset);
+    this.targetMenuSelection = viewport.selectedIndex;
+    this.targetMenuOffset = viewport.viewOffset;
+    this.targetMenuOpen = true;
+    this.forceFullRender = true;
+    this.statusMessage = 'Select navigation target.';
+  }
+
+  private closeTargetMenu(message: string = ''): void {
+    this.targetMenuOpen = false;
+    this.forceFullRender = true;
+    this.statusMessage = message;
+  }
+
+  private selectNavigationTarget(target: NavigationTarget, startApproach: boolean): void {
+    const targets = this.getNavigationTargets();
+    const signature = this.getTargetSignature(target);
+    const index = targets.findIndex((candidate) => this.getTargetSignature(candidate) === signature);
+    this.currentTargetIndex = index >= 0 ? index : 0;
+    this.currentTargetSignature = signature;
+    this.approachTargetSignature = startApproach ? signature : null;
+    this.statusMessage = startApproach
+      ? `Approach assist engaged: ${this.getTargetName(target)}.`
+      : `Target selected: ${this.getTargetName(target)}.`;
   }
 
   private _startApproachAssist(): void {
@@ -951,6 +1061,10 @@ export class Game {
     // 1. Check Popups (blocks other input if active or animating)
     if (this._handlePopupInput()) {
       return; // Input consumed by popup
+    }
+    if (this._handleTargetMenuInput()) {
+      this._publishStatusUpdate();
+      return;
     }
     // 2. Check starbase market controls before generic enter/backspace handling.
     if (this._handleStarbaseTradeInput()) {
@@ -1526,6 +1640,77 @@ export class Game {
     return targets;
   }
 
+  private getTargetMenuTargets(): NavigationTarget[] {
+    if (this.stateManager.state !== 'system' || !this.stateManager.currentSystem) return [];
+    const system = this.stateManager.currentSystem;
+    return [
+      ...system.stars,
+      ...system.planets.filter((planet): planet is Planet => planet !== null),
+    ];
+  }
+
+  private getTargetMenuVisibleRows(): number {
+    return 12;
+  }
+
+  private createTargetMenuModel(): TextModalTableModel {
+    const system = this.stateManager.currentSystem;
+    const targets = this.getTargetMenuTargets();
+    const visibleRows = this.getTargetMenuVisibleRows();
+    const viewport = moveSelection(this.targetMenuSelection, 0, targets.length, visibleRows, this.targetMenuOffset);
+    this.targetMenuSelection = viewport.selectedIndex;
+    this.targetMenuOffset = viewport.viewOffset;
+
+    return {
+      title: 'Navigation Targets',
+      subtitle: system ? `${system.name} local target index` : 'Local target index',
+      columns: ['TYPE', 'NAME', 'RANGE', 'BRG'],
+      widths: [8, 24, 10, 5],
+      rows: targets.map((target) => this.createTargetMenuRow(target, system)),
+      selectedIndex: this.targetMenuSelection,
+      viewOffset: this.targetMenuOffset,
+      visibleRowCount: visibleRows,
+      footer: ['Up/Down select  Enter approach  Esc/Left/Right cancel'],
+    };
+  }
+
+  private createTargetMenuRow(target: NavigationTarget, system: SolarSystem | null): TextTableRow {
+    const coords = this.getTargetCoords(target);
+    const distance = Math.sqrt(this.player.distanceSqToSystemCoords(coords.x, coords.y));
+    return {
+      id: this.getTargetSignature(target),
+      cells: [
+        this.getTargetClassLabel(target),
+        this.getTargetShortName(target, system),
+        formatDistanceAu(distance),
+        this.formatBearing(coords.x - this.player.position.systemX, coords.y - this.player.position.systemY),
+      ],
+      detail: `${this.getTargetName(target)} | ${this.getTargetClassLabel(target)} | one-way signal ${formatLightTimeFromMeters(distance)}`,
+    };
+  }
+
+  private getTargetClassLabel(target: NavigationTarget): string {
+    if (target instanceof Planet) return 'Planet';
+    if (target instanceof Starbase) return 'Starbase';
+    return `Star ${target.id}`;
+  }
+
+  private getTargetShortName(target: NavigationTarget, system: SolarSystem | null): string {
+    const baseName = system ? target.name.replace(`${system.name} `, '') : target.name;
+    if (!(target instanceof Planet)) return baseName;
+    const moonCount = target.moons?.length ?? 0;
+    const moonLabel = moonCount === 1 ? '1 moon' : `${moonCount} moons`;
+    const suffix = ` (${moonLabel})`;
+    return `${baseName.slice(0, Math.max(0, 24 - suffix.length))}${suffix}`;
+  }
+
+  private formatBearing(dx: number, dy: number): string {
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return 'HERE';
+    const horizontal = dx > 0 ? 'E' : dx < 0 ? 'W' : '';
+    const vertical = dy > 0 ? 'S' : dy < 0 ? 'N' : '';
+    return `${vertical}${horizontal}` || 'HERE';
+  }
+
   private ensureSelectedTarget(): NavigationTarget | null {
     const targets = this.getNavigationTargets();
     if (targets.length === 0) {
@@ -1759,6 +1944,10 @@ export class Game {
           this.popupOpenCloseProgress,
           this.popupTextProgress
         );
+      }
+
+      if (this.targetMenuOpen) {
+        this.renderer.drawTextModalTable(this.createTargetMenuModel());
       }
 
       if (fullCanvasRepaint) {

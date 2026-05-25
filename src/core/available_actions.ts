@@ -57,6 +57,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       break;
     case 'system':
       actions.push(action('cycle-target', 'Cycle Target', CONFIG.KEY_BINDINGS.CYCLE_TARGET, 'CYCLE_TARGET', 'target', 6, true, context.selectedTargetName ?? undefined));
+      actions.push(action('target-menu', 'Target Menu', CONFIG.KEY_BINDINGS.TARGET_MENU, 'TARGET_MENU', 'target', 7, true, context.selectedTargetName ?? undefined));
       if (context.hasSelectedTarget) {
         actions.push(action('approach-target', 'Approach Target', CONFIG.KEY_BINDINGS.APPROACH_TARGET, 'APPROACH_TARGET', 'navigation', 35, true, context.selectedTargetName ?? undefined));
       }

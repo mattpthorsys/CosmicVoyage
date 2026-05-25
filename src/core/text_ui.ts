@@ -19,6 +19,12 @@ export interface TextTableModel {
   visibleRowCount: number;
 }
 
+export interface TextModalTableModel extends TextTableModel {
+  title: string;
+  subtitle?: string;
+  footer?: string[];
+}
+
 export interface SelectionViewport {
   selectedIndex: number;
   viewOffset: number;

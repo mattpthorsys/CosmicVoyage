@@ -22,6 +22,7 @@ export function createHelpReferenceLines(state: GameState, actions: AvailableAct
     '',
     'SYSTEM',
     `${formatKey(CONFIG.KEY_BINDINGS.CYCLE_TARGET)}  Cycle navigation target`,
+    `${formatKey(CONFIG.KEY_BINDINGS.TARGET_MENU)}  Open navigation target menu`,
     `${formatKey(CONFIG.KEY_BINDINGS.APPROACH_TARGET)}  Approach selected target automatically`,
     `${formatKey(CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF)}  Orbit planet or dock at starbase when close`,
     `${formatKey(CONFIG.KEY_BINDINGS.ZOOM_IN)}/${formatKey(CONFIG.KEY_BINDINGS.ZOOM_OUT)}  Zoom system view`,

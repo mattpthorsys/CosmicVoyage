@@ -17,6 +17,7 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { HyperspaceSurveyService } from '../core/hyperspace_survey';
+import { TextModalTableModel } from '../core/text_ui';
 
 /**
  * Facade class for the rendering system.
@@ -218,6 +219,9 @@ export class RendererFacade {
   }
   drawOrbitInterface(model: OrbitScreenModel): void {
     this.sceneRenderer.drawOrbitInterface(model);
+  }
+  drawTextModalTable(model: TextModalTableModel): void {
+    this.sceneRenderer.drawTextModalTable(model);
   }
   // --- Popup Drawing Method ---
   /** Draws a popup window with animations and typing text effect. */

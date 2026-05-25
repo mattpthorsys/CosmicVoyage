@@ -59,6 +59,7 @@ export const CONFIG = {
     ENTER_SYSTEM: 'Enter',
     PRIMARY_ACTION: ' ',
     CYCLE_TARGET: 'Tab',
+    TARGET_MENU: 'n',
     HELP: '?',
     TOGGLE_PROFILER: 'F3',
     APPROACH_TARGET: 'a',
