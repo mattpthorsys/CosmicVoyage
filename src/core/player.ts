@@ -3,6 +3,7 @@
 
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
+import { CrewMember, CrewSkill, awardCrewExperience, createStartingCrew } from './crew';
 // *** ADD: Import Component interfaces and helper functions ***
 import {
   PositionComponent,
@@ -21,13 +22,15 @@ export class Player {
   public render: RenderComponent;
   public resources: ResourceComponent;
   public cargoHold: CargoComponent;
+  public crew: CrewMember[];
 
   // Constructor: Initializes components with default values
   constructor(
     // Optional: Keep startX/startY if needed for initial position setup, otherwise remove
     startX: number = CONFIG.PLAYER_START_X,
     startY: number = CONFIG.PLAYER_START_Y,
-    startChar: string = CONFIG.PLAYER_CHAR
+    startChar: string = CONFIG.PLAYER_CHAR,
+    crewSeed: string | number = CONFIG.SEED
   ) {
     // --- Initialize Components ---
     this.position = createDefaultPosition();
@@ -45,9 +48,10 @@ export class Player {
     this.resources = createDefaultResource(CONFIG.INITIAL_CREDITS, CONFIG.INITIAL_FUEL, CONFIG.MAX_FUEL);
 
     this.cargoHold = createDefaultCargo(CONFIG.INITIAL_CARGO_CAPACITY);
+    this.crew = createStartingCrew(crewSeed);
 
     logger.info(
-      `Player components initialized. Start World: [${this.position.worldX}, ${this.position.worldY}], Char: ${this.render.char}, Credits: ${this.resources.credits}, Fuel: ${this.resources.fuel}/${this.resources.maxFuel}, Cargo Cap: ${this.cargoHold.capacity}`
+      `Player components initialized. Start World: [${this.position.worldX}, ${this.position.worldY}], Char: ${this.render.char}, Credits: ${this.resources.credits}, Fuel: ${this.resources.fuel}/${this.resources.maxFuel}, Cargo Cap: ${this.cargoHold.capacity}, Crew: ${this.crew.length}`
     );
   }
 
@@ -81,5 +85,9 @@ export class Player {
         }).`
       );
     }
+  }
+
+  awardCrewExperience(skill: CrewSkill, amount: number): CrewMember[] {
+    return awardCrewExperience(this.crew, skill, amount);
   }
 } // End Player class

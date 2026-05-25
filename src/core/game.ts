@@ -47,6 +47,17 @@ import {
   isMissionCompletedByScan,
   StarbaseMission,
 } from './mission_board';
+import {
+  CREW_SKILL_LABELS,
+  CREW_SKILLS,
+  CrewMember,
+  CrewSkill,
+  formatTopSkills,
+  generateRecruitCandidates,
+  getBestCrewSkill,
+  getCrewSkillTotal,
+  trainCrewSkill,
+} from './crew';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 
@@ -173,7 +184,7 @@ export class Game {
     this.systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG);
     this.hyperspaceSurveyService = new HyperspaceSurveyService(this.systemDataGenerator);
     this.renderer = new RendererFacade(canvasId, statusBarId, this.systemDataGenerator, this.hyperspaceSurveyService);
-    this.player = new Player(); // Assumes Player constructor uses CONFIG defaults
+    this.player = new Player(CONFIG.PLAYER_START_X, CONFIG.PLAYER_START_Y, CONFIG.PLAYER_CHAR, initialSeed);
     this.inputManager = new InputManager();
     this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this.systemDataGenerator);
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
@@ -956,6 +967,10 @@ export class Game {
     this.currentTargetIndex = index >= 0 ? index : 0;
     this.currentTargetSignature = signature;
     this.approachTargetSignature = startApproach ? signature : null;
+    if (startApproach) {
+      this.player.awardCrewExperience('navigation', 4);
+      this.player.awardCrewExperience('piloting', 2);
+    }
     this.statusMessage = startApproach
       ? `Approach assist engaged: ${this.getTargetName(target)}.`
       : `Target selected: ${this.getTargetName(target)}.`;
@@ -972,6 +987,8 @@ export class Game {
       return;
     }
     this.approachTargetSignature = this.getTargetSignature(target);
+    this.player.awardCrewExperience('navigation', 4);
+    this.player.awardCrewExperience('piloting', 2);
     this.statusMessage = `Approach assist engaged: ${this.getTargetName(target)}.`;
   }
 
@@ -1200,6 +1217,8 @@ export class Game {
         // ** Use the new method to add all lines at once **
         this.terminalOverlay.addMessageLines(lines);
         if (target instanceof Planet || target instanceof SolarSystem || (typeof target === 'object' && target !== null && 'starType' in target && 'luminosityW' in target)) {
+          this.player.awardCrewExperience(target instanceof Planet ? 'geology' : 'astroscience', target instanceof Planet ? 8 : 10);
+          this.player.awardCrewExperience('communication', 3);
           this.completeMissionsForScan(target as Planet | SolarSystem | StellarBody);
         }
       } else {
@@ -1228,6 +1247,8 @@ export class Game {
       this.completedMissionIds.add(mission.id);
       delete this.activeMissions[mission.id];
       this.player.resources.credits += mission.rewardCredits;
+      this.player.awardCrewExperience('communication', 12);
+      this.player.awardCrewExperience('astroscience', 8);
       this.statusMessage = `Mission complete: ${mission.title}. Payment authorised: ${mission.rewardCredits} Cr.`;
       this.terminalOverlay.addMessage(`<h>${this.statusMessage}</h>`);
       eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
@@ -2347,7 +2368,56 @@ export class Game {
       this.activateMissionSelection(starbase, row);
       return;
     }
+    if (this.starbaseSectionId === 'crew') {
+      this.activateCrewSelection(starbase, row);
+      return;
+    }
     this.starbaseAlert = row.detail || `${row.cells[0]} selected.`;
+  }
+
+  private activateCrewSelection(starbase: Starbase, row: StarbaseTableRow): void {
+    if (row.disabled) {
+      this.starbaseAlert = row.detail || 'Crew record unavailable.';
+      return;
+    }
+    if (row.id.startsWith('hire:')) {
+      const recruitId = row.id.slice('hire:'.length);
+      const recruit = this.getRecruitCandidates(starbase).find((candidate) => candidate.id === recruitId);
+      if (!recruit) {
+        this.starbaseAlert = 'Recruit no longer available.';
+        return;
+      }
+      if (this.player.resources.credits < recruit.hireCost) {
+        this.starbaseAlert = `Insufficient credits to hire ${recruit.name}. Required ${recruit.hireCost} Cr.`;
+        return;
+      }
+      if (this.player.crew.some((member) => member.id === recruit.id)) {
+        this.starbaseAlert = `${recruit.name} is already aboard.`;
+        return;
+      }
+      this.player.resources.credits -= recruit.hireCost;
+      this.player.crew.push({ ...recruit, skills: { ...recruit.skills }, skillCaps: { ...recruit.skillCaps } });
+      this.starbaseAlert = `Hired ${recruit.name}, ${recruit.role}.`;
+      this.statusMessage = this.starbaseAlert;
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: -recruit.hireCost,
+      });
+      return;
+    }
+    if (row.id.startsWith('train:')) {
+      const [, memberId, skill] = row.id.split(':');
+      const member = this.player.crew.find((candidate) => candidate.id === memberId);
+      if (!member || !CREW_SKILLS.includes(skill as CrewSkill)) {
+        this.starbaseAlert = 'Training record unavailable.';
+        return;
+      }
+      const result = trainCrewSkill(member, skill as CrewSkill);
+      this.starbaseAlert = result.message;
+      this.statusMessage = result.message;
+      return;
+    }
+    this.starbaseAlert = row.detail || 'Crew record selected.';
   }
 
   private activateMissionSelection(starbase: Starbase, row: StarbaseTableRow): void {
@@ -2405,7 +2475,7 @@ export class Game {
       case 'shipyard':
         return { title: 'Shipyard', subtitle: 'Refit estimates and upgrade placeholders.', columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'], widths: [18, 10, 8, 42] };
       case 'crew':
-        return { title: 'Crew Roster', subtitle: 'Recruitment lounge and personnel records.', columns: ['NAME', 'ROLE', 'RATE', 'PROFILE'], widths: [18, 16, 8, 42] };
+        return { title: 'Crew Roster', subtitle: 'Recruitment, personnel records, and starbase training.', columns: ['NAME', 'ROLE', 'COST/PTS', 'PROFILE'], widths: [20, 16, 9, 39] };
     }
   }
 
@@ -2471,11 +2541,7 @@ export class Game {
           { id: 's3', cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'], detail: 'Stub: scanner upgrade path.' },
         ];
       case 'crew':
-        return [
-          { id: 'c1', cells: ['Mara Venn', 'Navigator', '12%', 'Former long-haul route analyst; excellent with binary ephemerides.'], detail: 'Stub: crew hiring and bonuses pending.' },
-          { id: 'c2', cells: ['Ilo Rusk', 'Engineer', '10%', 'Keeps old drives running with improvised thermal loops.'], detail: 'Stub: crew hiring and bonuses pending.' },
-          { id: 'c3', cells: ['Sev Anik', 'Broker', '15%', 'Knows which manifests get opened and which get waved through.'], detail: 'Stub: crew hiring and bonuses pending.' },
-        ];
+        return this.getCrewRows(starbase);
     }
   }
 
@@ -2504,7 +2570,11 @@ export class Game {
       const active = Object.keys(this.activeMissions).filter((id) => !this.completedMissionIds.has(id)).length;
       return active > 0 ? `${active} Active` : 'Available';
     }
-    if (sectionId === 'shipyard' || sectionId === 'crew') return 'Stub';
+    if (sectionId === 'crew') {
+      const points = this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0);
+      return points > 0 ? `${points} Training` : `${this.player.crew.length} Aboard`;
+    }
+    if (sectionId === 'shipyard') return 'Stub';
     return 'Online';
   }
 
@@ -2518,9 +2588,75 @@ export class Game {
       notices: 'Read local port bulletins.',
       missions: 'Accept local scan and charting contracts.',
       shipyard: 'Browse future upgrades and refits.',
-      crew: 'Review recruitable crew stubs.',
+      crew: 'Hire crew and assign training points.',
     };
     return summaries[sectionId];
+  }
+
+  private getCrewRows(starbase: Starbase): StarbaseTableRow[] {
+    const rows: StarbaseTableRow[] = [];
+    rows.push({
+      id: 'crew-summary',
+      cells: [
+        `${this.player.crew.length} aboard`,
+        'Ship Company',
+        `${this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0)} pts`,
+        `Best Nav ${getBestCrewSkill(this.player.crew, 'navigation')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}  Med ${getBestCrewSkill(this.player.crew, 'medicine')}`,
+      ],
+      detail: `Crew totals: Nav ${getCrewSkillTotal(this.player.crew, 'navigation')}, Astro ${getCrewSkillTotal(this.player.crew, 'astroscience')}, Comms ${getCrewSkillTotal(this.player.crew, 'communication')}, Med ${getCrewSkillTotal(this.player.crew, 'medicine')}.`,
+      disabled: true,
+    });
+
+    this.player.crew.forEach((member) => {
+      rows.push({
+        id: `member:${member.id}`,
+        cells: [
+          member.name,
+          `${member.role} L${member.level}`,
+          `${member.trainingPoints} pts`,
+          `HP ${member.hitPoints}/${member.maxHitPoints} Dur ${member.durability} ${formatTopSkills(member)}`,
+        ],
+        detail: `Human learning caps currently 10. XP ${member.experience}. Select training rows below to spend points.`,
+        disabled: true,
+      });
+      CREW_SKILLS.filter((skill) => member.trainingPoints > 0 && member.skills[skill] < member.skillCaps[skill])
+        .slice(0, 4)
+        .forEach((skill) => {
+          rows.push({
+            id: `train:${member.id}:${skill}`,
+            cells: [
+              `  Train ${CREW_SKILL_LABELS[skill]}`,
+              member.name.slice(0, 16),
+              '1 pt',
+              `${CREW_SKILL_LABELS[skill]} ${member.skills[skill]} -> ${member.skills[skill] + 1}`,
+            ],
+            detail: `Spend one training point for ${member.name}. Training is only assigned while docked.`,
+          });
+        });
+    });
+
+    this.getRecruitCandidates(starbase).forEach((candidate) => {
+      const hired = this.player.crew.some((member) => member.id === candidate.id);
+      rows.push({
+        id: `hire:${candidate.id}`,
+        cells: [
+          candidate.name,
+          `${candidate.role} L${candidate.level}`,
+          `${candidate.hireCost} Cr`,
+          `HP ${candidate.hitPoints}/${candidate.maxHitPoints} Dur ${candidate.durability} ${formatTopSkills(candidate)}`,
+        ],
+        detail: hired
+          ? `${candidate.name} is already aboard.`
+          : `Hire ${candidate.name}. Salary estimate ${candidate.salary} Cr per port cycle when upkeep is implemented.`,
+        disabled: hired,
+      });
+    });
+
+    return rows;
+  }
+
+  private getRecruitCandidates(starbase: Starbase): CrewMember[] {
+    return generateRecruitCandidates(starbase.name, this.gameSeedPRNG.getInitialSeed());
   }
 
   // --- Starbase Action Handlers ---
@@ -2738,6 +2874,7 @@ export class Game {
       const oldFuel = this.player.resources.fuel;
       this.player.resources.credits -= cost;
       this.player.addFuel(fuelToBuy); // Use player method for clamping and logging
+      this.player.awardCrewExperience('engineering', Math.max(2, Math.floor(fuelToBuy / 50)));
       this.statusMessage = STATUS_MESSAGES.STARBASE_REFUEL_SUCCESS(fuelToBuy, cost);
       if (this.player.resources.fuel >= this.player.resources.maxFuel) {
         this.statusMessage += ` Tank full!`;

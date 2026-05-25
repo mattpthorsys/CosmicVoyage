@@ -123,6 +123,7 @@ export class MiningSystem {
                   logger.debug(`[MiningSystem] CargoSystem.addItem returned: ${actuallyAdded}`);
 
                   if (actuallyAdded > 0) {
+                    this.player.awardCrewExperience('geology', 8 + actuallyAdded);
                     planet.markMined(currentX, currentY); // Mark as mined *after* successful yield
                     const currentTotalCargo = this.cargoSystem.getTotalUnits(this.player.cargoHold);
                     statusMessage = STATUS_MESSAGES.PLANET_MINE_SUCCESS(
