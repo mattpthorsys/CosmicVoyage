@@ -101,6 +101,10 @@ export class MovementSystem {
         const oldY = position.worldY;
         position.worldX += dx; // Simple integer addition
         position.worldY += dy;
+        if (dx !== 0 || dy !== 0) {
+            position.lastWorldMoveDx = dx;
+            position.lastWorldMoveDy = dy;
+        }
         this.lastHyperspaceMoveAt = now;
         render.char = CONFIG.PLAYER_CHAR; // Ensure player char is used
         logger.debug(`[MovementSystem] Player moved HYPERSPACE: [${oldX},${oldY}] -> [${position.worldX},${position.worldY}] (Delta: ${dx},${dy})`);

@@ -7,6 +7,9 @@ import { GLYPHS } from "../constants"; // Import needed constants if defaults ar
 export interface PositionComponent {
     worldX: number;
     worldY: number;
+    /** Last successful movement vector in hyperspace, used to preserve approach direction on system entry. */
+    lastWorldMoveDx: number;
+    lastWorldMoveDy: number;
     systemX: number;
     systemY: number;
     surfaceX: number;
@@ -45,7 +48,7 @@ export interface CargoComponent {
 // These functions can help create default component states when creating new entities.
 
 export function createDefaultPosition(): PositionComponent {
-    return { worldX: 0, worldY: 0, systemX: 0, systemY: 0, surfaceX: 0, surfaceY: 0 };
+    return { worldX: 0, worldY: 0, lastWorldMoveDx: 0, lastWorldMoveDy: 0, systemX: 0, systemY: 0, surfaceX: 0, surfaceY: 0 };
 }
 
 export function createDefaultRender(char: string, color: string, direction: string = GLYPHS.SHIP_NORTH): RenderComponent {

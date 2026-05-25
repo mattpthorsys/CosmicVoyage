@@ -299,17 +299,38 @@ export class GameStateManager {
 
   /** Sets the player's position and rendering state upon entering a system. */
   private _setPlayerStateForSystemEntry(system: SolarSystem): void {
-    const entryAngle = Math.atan2(this.player.position.worldY, this.player.position.worldX);
     const entryDist = system.edgeRadius * 0.85; // Enter near the edge
-    this.player.position.systemX = Math.cos(entryAngle) * entryDist;
-    this.player.position.systemY = Math.sin(entryAngle) * entryDist;
-    this.player.render.directionGlyph = GLYPHS.SHIP_NORTH; // Default facing
+    const travelDx = this.player.position.lastWorldMoveDx;
+    const travelDy = this.player.position.lastWorldMoveDy;
+    const travelLength = Math.hypot(travelDx, travelDy);
+
+    if (travelLength > 0 && Number.isFinite(travelLength)) {
+      this.player.position.systemX = -(travelDx / travelLength) * entryDist;
+      this.player.position.systemY = -(travelDy / travelLength) * entryDist;
+      this.player.render.directionGlyph = this._getShipGlyphForVector(travelDx, travelDy);
+    } else {
+      const entryAngle = Math.atan2(this.player.position.worldY, this.player.position.worldX);
+      this.player.position.systemX = Math.cos(entryAngle) * entryDist;
+      this.player.position.systemY = Math.sin(entryAngle) * entryDist;
+      this.player.render.directionGlyph = GLYPHS.SHIP_NORTH; // Default facing
+    }
+
     this.player.render.char = this.player.render.directionGlyph;
     logger.debug(
       `[GameStateManager] Player position set for system entry: [${this.player.position.systemX.toExponential(
         1
       )}, ${this.player.position.systemY.toExponential(1)}]m`
     );
+  }
+
+  private _getShipGlyphForVector(dx: number, dy: number): string {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return dx > 0 ? GLYPHS.SHIP_EAST : GLYPHS.SHIP_WEST;
+    }
+    if (dy !== 0) {
+      return dy > 0 ? GLYPHS.SHIP_SOUTH : GLYPHS.SHIP_NORTH;
+    }
+    return GLYPHS.SHIP_NORTH;
   }
 
   /** Checks if the player is close enough to the system edge to leave. */

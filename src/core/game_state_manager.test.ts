@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MineralRichness } from '../constants';
+import { GLYPHS, MineralRichness } from '../constants';
 import { Planet } from '../entities/planet';
 import { PlanetCharacteristics } from '../entities/planet/planet_characteristics_generator';
 import { SystemDataGenerator } from '../generation/system_data_generator';
@@ -82,5 +82,47 @@ describe('GameStateManager orbital exits', () => {
     expect(manager.liftOff()).toBe(true);
     expect(player.position.systemX).toBe(planet.systemX);
     expect(player.position.systemY).toBe(planet.systemY);
+  });
+});
+
+describe('GameStateManager system entry', () => {
+  it('enters from the bottom of a system after upward hyperspace travel', () => {
+    const { player, manager } = createManager();
+    const system = { edgeRadius: 1000 };
+    player.position.lastWorldMoveDx = 0;
+    player.position.lastWorldMoveDy = -1;
+
+    (manager as any)._setPlayerStateForSystemEntry(system);
+
+    expect(player.position.systemX).toBeCloseTo(0);
+    expect(player.position.systemY).toBeCloseTo(850);
+    expect(player.render.directionGlyph).toBe(GLYPHS.SHIP_NORTH);
+  });
+
+  it('enters from the right of a system after leftward hyperspace travel', () => {
+    const { player, manager } = createManager();
+    const system = { edgeRadius: 1000 };
+    player.position.lastWorldMoveDx = -1;
+    player.position.lastWorldMoveDy = 0;
+
+    (manager as any)._setPlayerStateForSystemEntry(system);
+
+    expect(player.position.systemX).toBeCloseTo(850);
+    expect(player.position.systemY).toBeCloseTo(0);
+    expect(player.render.directionGlyph).toBe(GLYPHS.SHIP_WEST);
+  });
+
+  it('normalizes diagonal hyperspace travel to the same entry distance', () => {
+    const { player, manager } = createManager();
+    const system = { edgeRadius: 1000 };
+    const expectedAxis = -850 / Math.SQRT2;
+    player.position.lastWorldMoveDx = 1;
+    player.position.lastWorldMoveDy = 1;
+
+    (manager as any)._setPlayerStateForSystemEntry(system);
+
+    expect(player.position.systemX).toBeCloseTo(expectedAxis);
+    expect(player.position.systemY).toBeCloseTo(expectedAxis);
+    expect(Math.hypot(player.position.systemX, player.position.systemY)).toBeCloseTo(850);
   });
 });
