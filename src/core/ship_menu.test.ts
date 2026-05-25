@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Starbase } from '../entities/starbase';
 import { CargoSystem } from '../systems/cargo_systems';
 import { Game } from './game';
 import { Player } from './player';
@@ -74,5 +75,37 @@ describe('ship menu', () => {
     const status = game.createShipMenuModel();
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
     expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+  });
+
+  it('keeps ship menu out of the primary dock and orbit action path', () => {
+    const game = createShipMenuHarness();
+
+    const selected = game.choosePrimaryAction([
+      { id: 'primary', enabled: true },
+      { id: 'ship-menu', enabled: true },
+      { id: 'land-dock', enabled: true, action: 'ACTIVATE_LAND_LIFTOFF' },
+    ]);
+
+    expect(selected?.id).toBe('land-dock');
+  });
+
+  it('includes starbases in the system target menu without adding moons', () => {
+    const game = createShipMenuHarness('system');
+    const planet = { name: 'Aster', systemX: 100, systemY: 0, moons: [{ name: 'Aster I', systemX: 120, systemY: 0 }] };
+    const starbase = Object.create(Starbase.prototype) as Starbase;
+    Object.defineProperties(starbase, {
+      name: { value: 'Aster Relay' },
+      systemX: { value: 200 },
+      systemY: { value: 0 },
+    });
+    game.stateManager.currentSystem = {
+      stars: [{ name: 'Aster Primary', systemX: 0, systemY: 0 }],
+      planets: [planet],
+      starbase,
+    };
+
+    const targets = game.getTargetMenuTargets();
+
+    expect(targets.map((target: any) => target.name)).toEqual(['Aster Primary', 'Aster', 'Aster Relay']);
   });
 });

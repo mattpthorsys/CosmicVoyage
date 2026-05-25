@@ -978,6 +978,7 @@ export class Game {
       'help',
       'cycle-target',
       'target-menu',
+      'ship-menu',
       'zoom-in',
       'zoom-out',
       'section-left',
@@ -1736,10 +1737,12 @@ export class Game {
   private getTargetMenuTargets(): NavigationTarget[] {
     if (this.stateManager.state !== 'system' || !this.stateManager.currentSystem) return [];
     const system = this.stateManager.currentSystem;
-    return [
+    const targets: NavigationTarget[] = [
       ...system.stars,
       ...system.planets.filter((planet): planet is Planet => planet !== null),
     ];
+    if (system.starbase) targets.push(system.starbase);
+    return targets;
   }
 
   private getTargetMenuVisibleRows(): number {
