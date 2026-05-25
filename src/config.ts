@@ -60,6 +60,7 @@ export const CONFIG = {
     PRIMARY_ACTION: ' ',
     CYCLE_TARGET: 'Tab',
     TARGET_MENU: 'n',
+    SHIP_MENU: 'o',
     HELP: '?',
     TOGGLE_PROFILER: 'F3',
     APPROACH_TARGET: 'a',

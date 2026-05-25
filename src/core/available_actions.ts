@@ -43,6 +43,9 @@ export function createAvailableActions(context: AvailableActionContext): Availab
     action('primary', 'Do Best Action', CONFIG.KEY_BINDINGS.PRIMARY_ACTION, 'PRIMARY_ACTION', 'utility', 0, true),
     moveAction(context.state),
   ];
+  if (context.state !== 'starbase' && context.state !== 'orbit') {
+    actions.push(action('ship-menu', 'Ship Menu', CONFIG.KEY_BINDINGS.SHIP_MENU, 'SHIP_MENU', 'utility', 8, true));
+  }
 
   switch (context.state) {
     case 'hyperspace':

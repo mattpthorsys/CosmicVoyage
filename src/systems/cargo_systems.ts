@@ -57,6 +57,21 @@ export class CargoSystem {
         return 0;
     }
 
+    /** Removes up to a specific amount of one cargo type. Returns the amount removed. */
+    removeItem(cargoHold: CargoComponent, elementKey: string, amount: number): number {
+        if (amount <= 0) {
+            logger.warn(`[CargoSystem] Attempted to remove non-positive cargo amount: ${amount} of ${elementKey}`);
+            return 0;
+        }
+        const currentAmount = cargoHold.items[elementKey] || 0;
+        if (currentAmount <= 0) return 0;
+        const removed = Math.min(currentAmount, Math.floor(amount));
+        const remaining = currentAmount - removed;
+        if (remaining > 0) cargoHold.items[elementKey] = remaining;
+        else delete cargoHold.items[elementKey];
+        return removed;
+    }
+
     /** Removes all cargo from the component. Returns a record of the cargo removed. */
     clearAllItems(cargoHold: CargoComponent): Record<string, number> {
         const removedCargo = { ...cargoHold.items }; // Copy before clearing

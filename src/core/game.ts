@@ -64,6 +64,7 @@ import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_s
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
+type ShipMenuSection = 'main' | 'cargo' | 'crew' | 'status' | 'jettison';
 
 interface TradeDepotItem {
   itemKey: string;
@@ -131,6 +132,11 @@ export class Game {
   private targetMenuOpen: boolean = false;
   private targetMenuSelection: number = 0;
   private targetMenuOffset: number = 0;
+  private shipMenuOpen: boolean = false;
+  private shipMenuSection: ShipMenuSection = 'main';
+  private shipMenuSelection: number = 0;
+  private shipMenuOffset: number = 0;
+  private shipMenuJettisonItemKey: string | null = null;
   private autoScannedSystemName: string | null = null;
   private tutorialHintsShown: Set<string> = new Set();
 
@@ -229,6 +235,7 @@ export class Game {
     this.currentTargetSignature = '';
     this.approachTargetSignature = null;
     this.targetMenuOpen = false;
+    this.shipMenuOpen = false;
     if (newState === 'starbase') {
       this.starbaseSectionId = 'overview';
       this.starbaseAlert = '';
@@ -251,6 +258,7 @@ export class Game {
       logger.debug('[Game] Closing active popup due to game state change.');
     }
     this.targetMenuOpen = false;
+    this.shipMenuOpen = false;
     // Reflect status messages potentially set by GameStateManager during transition
     this.statusMessage = this.stateManager.statusMessage || ''; // Use status from stateManager
     this.stateManager.statusMessage = ''; // Clear it after reading
@@ -727,6 +735,60 @@ export class Game {
     return true;
   }
 
+  private _handleShipMenuInput(): boolean {
+    if (!this.shipMenuOpen) return false;
+
+    const rows = this.getShipMenuRows();
+    const visibleRows = this.getShipMenuVisibleRows();
+    if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+      const inMainSection = this.shipMenuSection === 'main';
+      if (inMainSection) {
+        this.closeShipMenu('Ship menu closed.');
+      } else {
+        this.openShipMenuSection('main');
+      }
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      if (this.shipMenuSection === 'main') this.closeShipMenu('Ship menu closed.');
+      else this.openShipMenuSection('main');
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') && this.shipMenuSection === 'main') {
+      this.activateShipMenuSelection(rows[this.shipMenuSelection]);
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      this.moveShipMenuSelection(-1, rows.length, visibleRows);
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      this.moveShipMenuSelection(1, rows.length, visibleRows);
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      this.moveShipMenuSelection(-visibleRows, rows.length, visibleRows);
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      this.moveShipMenuSelection(visibleRows, rows.length, visibleRows);
+      return true;
+    }
+
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
+      this.activateShipMenuSelection(rows[this.shipMenuSelection]);
+      return true;
+    }
+
+    return true;
+  }
+
   /** Processes discrete actions (scan, land, mine, etc.). Returns true if an action was processed. */
   private _handleDiscreteActions(): boolean {
     const currentState = this.stateManager.state;
@@ -745,6 +807,7 @@ export class Game {
       'PRIMARY_ACTION',
       'CYCLE_TARGET',
       'TARGET_MENU',
+      'SHIP_MENU',
       'HELP',
       'TOGGLE_PROFILER',
       'APPROACH_TARGET',
@@ -775,6 +838,10 @@ export class Game {
         }
         if (action === 'TARGET_MENU') {
           this.openTargetMenu();
+          return true;
+        }
+        if (action === 'SHIP_MENU') {
+          this.openShipMenu();
           return true;
         }
         if (action === 'PRIMARY_ACTION') {
@@ -1078,6 +1145,10 @@ export class Game {
     // 1. Check Popups (blocks other input if active or animating)
     if (this._handlePopupInput()) {
       return; // Input consumed by popup
+    }
+    if (this._handleShipMenuInput()) {
+      this._publishStatusUpdate();
+      return;
     }
     if (this._handleTargetMenuInput()) {
       this._publishStatusUpdate();
@@ -1710,6 +1781,209 @@ export class Game {
     };
   }
 
+  private openShipMenu(): void {
+    if (!this.canOpenShipMenu()) {
+      this.statusMessage = 'Ship menu unavailable while another interface is active.';
+      return;
+    }
+    this.shipMenuOpen = true;
+    this.openShipMenuSection('main');
+    this.statusMessage = 'Ship operations menu opened.';
+    this.forceFullRender = true;
+  }
+
+  private canOpenShipMenu(): boolean {
+    return (
+      this.stateManager.state !== 'starbase' &&
+      this.stateManager.state !== 'orbit' &&
+      this.popupState === 'inactive' &&
+      !this.targetMenuOpen
+    );
+  }
+
+  private closeShipMenu(message: string = ''): void {
+    this.shipMenuOpen = false;
+    this.shipMenuSection = 'main';
+    this.shipMenuSelection = 0;
+    this.shipMenuOffset = 0;
+    this.shipMenuJettisonItemKey = null;
+    this.statusMessage = message;
+    this.forceFullRender = true;
+  }
+
+  private openShipMenuSection(section: ShipMenuSection): void {
+    this.shipMenuSection = section;
+    this.shipMenuSelection = 0;
+    this.shipMenuOffset = 0;
+    if (section !== 'jettison') this.shipMenuJettisonItemKey = null;
+    this.forceFullRender = true;
+  }
+
+  private moveShipMenuSelection(delta: number, rowCount: number, visibleRows: number): void {
+    const viewport = moveSelection(this.shipMenuSelection, delta, rowCount, visibleRows, this.shipMenuOffset);
+    this.shipMenuSelection = viewport.selectedIndex;
+    this.shipMenuOffset = viewport.viewOffset;
+    this.forceFullRender = true;
+  }
+
+  private activateShipMenuSelection(row: TextTableRow | undefined): void {
+    if (!row || row.disabled) return;
+    if (this.shipMenuSection === 'main') {
+      if (row.id === 'cargo' || row.id === 'crew' || row.id === 'status') {
+        this.openShipMenuSection(row.id as ShipMenuSection);
+      }
+      return;
+    }
+    if (this.shipMenuSection === 'cargo') {
+      if (row.id.startsWith('cargo:')) {
+        this.shipMenuJettisonItemKey = row.id.slice('cargo:'.length);
+        this.openShipMenuSection('jettison');
+      }
+      return;
+    }
+    if (this.shipMenuSection === 'jettison') {
+      this.activateJettisonSelection(row);
+    }
+  }
+
+  private activateJettisonSelection(row: TextTableRow): void {
+    if (row.id === 'cancel') {
+      this.openShipMenuSection('cargo');
+      this.statusMessage = 'Jettison cancelled.';
+      return;
+    }
+    const itemKey = this.shipMenuJettisonItemKey;
+    if (!itemKey) {
+      this.openShipMenuSection('cargo');
+      this.statusMessage = 'No cargo selected.';
+      return;
+    }
+    const held = this.player.cargoHold.items[itemKey] || 0;
+    if (held <= 0) {
+      this.openShipMenuSection('cargo');
+      this.statusMessage = 'Selected cargo is no longer aboard.';
+      return;
+    }
+    const amount = row.id === 'all' ? held : Number(row.id);
+    const removed = this.cargoSystem.removeItem(this.player.cargoHold, itemKey, amount);
+    const name = this.getTradeItemInfo(itemKey)?.name ?? itemKey;
+    this.openShipMenuSection('cargo');
+    this.statusMessage = removed > 0 ? `Jettisoned ${removed} ${name}.` : `No ${name} jettisoned.`;
+    eventManager.publish(GameEvents.PLAYER_CARGO_REMOVED, { elementKey: itemKey, amountRemoved: removed });
+  }
+
+  private getShipMenuVisibleRows(): number {
+    return 12;
+  }
+
+  private createShipMenuModel(): TextModalTableModel {
+    const rows = this.getShipMenuRows();
+    const visibleRows = this.getShipMenuVisibleRows();
+    const viewport = moveSelection(this.shipMenuSelection, 0, rows.length, visibleRows, this.shipMenuOffset);
+    this.shipMenuSelection = viewport.selectedIndex;
+    this.shipMenuOffset = viewport.viewOffset;
+    const meta = this.getShipMenuMeta();
+    return {
+      title: meta.title,
+      subtitle: meta.subtitle,
+      columns: meta.columns,
+      widths: meta.widths,
+      rows,
+      selectedIndex: this.shipMenuSelection,
+      viewOffset: this.shipMenuOffset,
+      visibleRowCount: visibleRows,
+      footer: meta.footer,
+    };
+  }
+
+  private getShipMenuMeta(): { title: string; subtitle: string; columns: string[]; widths: number[]; footer: string[] } {
+    const backHint = this.shipMenuSection === 'main' ? 'Esc/Left close' : 'Esc/Left back';
+    switch (this.shipMenuSection) {
+      case 'cargo':
+        return { title: 'Ship Cargo', subtitle: 'Inspect cargo and select a lot to jettison.', columns: ['CARGO', 'QTY', 'VALUE', 'ACTION'], widths: [26, 7, 10, 28], footer: [`Up/Down select  Enter jettison options  ${backHint}`] };
+      case 'crew':
+        return { title: 'Crew Records', subtitle: 'Ship company health, experience, and skill summary.', columns: ['NAME', 'ROLE', 'HEALTH', 'SKILLS'], widths: [20, 16, 12, 38], footer: [`Up/Down inspect  ${backHint}`] };
+      case 'status':
+        return { title: 'Ship Status', subtitle: 'Current vessel operational summary.', columns: ['SYSTEM', 'READING', 'STATUS', 'NOTES'], widths: [18, 16, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
+      case 'jettison':
+        return { title: 'Confirm Jettison', subtitle: 'Cargo ejection is permanent. Confirm amount to vent into space.', columns: ['AMOUNT', 'CARGO', 'RESULT', 'CONFIRMATION'], widths: [10, 24, 12, 38], footer: [`Enter confirms selected amount  ${backHint}`] };
+      case 'main':
+      default:
+        return { title: 'Ship Operations', subtitle: 'Local shipboard menu.', columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 14, 54], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
+    }
+  }
+
+  private getShipMenuRows(): TextTableRow[] {
+    switch (this.shipMenuSection) {
+      case 'cargo':
+        return this.getShipCargoMenuRows();
+      case 'crew':
+        return this.getShipCrewMenuRows();
+      case 'status':
+        return this.getShipStatusMenuRows();
+      case 'jettison':
+        return this.getJettisonMenuRows();
+      case 'main':
+      default:
+        return [
+          { id: 'cargo', cells: ['Cargo', `${this.cargoSystem.getTotalUnits(this.player.cargoHold)}/${this.player.cargoHold.capacity}`, 'Inspect hold contents and jettison selected cargo.'] },
+          { id: 'crew', cells: ['Crew', `${this.player.crew.length} aboard`, 'Review crew health, level, experience, and skills.'] },
+          { id: 'status', cells: ['Ship Status', 'Online', 'Fuel, credits, cargo capacity, location, and local flight mode.'] },
+        ];
+    }
+  }
+
+  private getShipCargoMenuRows(): TextTableRow[] {
+    return this.getCargoRows().map((row) => ({
+      id: row.disabled ? row.id : `cargo:${row.id}`,
+      cells: [row.cells[0], row.cells[1], row.cells[2], row.disabled ? 'No cargo aboard' : 'Enter to jettison'],
+      detail: row.disabled ? row.detail : `${row.detail ?? row.cells[0]} Select to choose jettison amount.`,
+      disabled: row.disabled,
+    }));
+  }
+
+  private getShipCrewMenuRows(): TextTableRow[] {
+    return this.player.crew.map((member) => ({
+      id: member.id,
+      cells: [
+        member.name,
+        `${member.role} L${member.level}`,
+        `${member.hitPoints}/${member.maxHitPoints} HP`,
+        `Dur ${member.durability} ${formatTopSkills(member, 4)}`,
+      ],
+      detail: `XP ${member.experience}; training points ${member.trainingPoints}; Human learning cap 10.`,
+      disabled: true,
+    }));
+  }
+
+  private getShipStatusMenuRows(): TextTableRow[] {
+    const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    const stateLabel = this.stateManager.state === 'planet' ? `Surface: ${this.stateManager.currentPlanet?.name ?? 'unknown'}` : this.stateManager.state;
+    return [
+      { id: 'fuel', cells: ['Fuel', `${this.player.resources.fuel.toFixed(0)}/${this.player.resources.maxFuel}`, this.player.resources.fuel > 0 ? 'Ready' : 'Empty', 'Reaction mass and drive reserve.'], disabled: true },
+      { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity}`, cargoTotal < this.player.cargoHold.capacity ? 'Space' : 'Full', 'Cargo capacity and current manifest load.'], disabled: true },
+      { id: 'credits', cells: ['Credits', this.player.resources.credits.toLocaleString(), 'Available', 'Spendable station credit balance.'], disabled: true },
+      { id: 'crew', cells: ['Crew', String(this.player.crew.length), this.player.crew.length > 0 ? 'Staffed' : 'Empty', 'Crew company currently aboard.'], disabled: true },
+      { id: 'location', cells: ['Location', stateLabel, 'Nominal', `World ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
+    ];
+  }
+
+  private getJettisonMenuRows(): TextTableRow[] {
+    const itemKey = this.shipMenuJettisonItemKey;
+    const held = itemKey ? this.player.cargoHold.items[itemKey] || 0 : 0;
+    const name = itemKey ? this.getTradeItemInfo(itemKey)?.name ?? itemKey : 'No cargo';
+    if (!itemKey || held <= 0) {
+      return [{ id: 'cancel', cells: ['Cancel', name, '--', 'Return to cargo manifest.'] }];
+    }
+    const rows: TextTableRow[] = [
+      { id: '1', cells: ['1', name, `${held - 1} left`, 'Confirm jettison of one unit.'] },
+    ];
+    if (held >= 10) rows.push({ id: '10', cells: ['10', name, `${held - 10} left`, 'Confirm jettison of ten units.'] });
+    rows.push({ id: 'all', cells: ['ALL', name, '0 left', 'Confirm jettison of the full stack.'] });
+    rows.push({ id: 'cancel', cells: ['Cancel', name, `${held} held`, 'Do not jettison this cargo.'] });
+    return rows;
+  }
+
   private getTargetClassLabel(target: NavigationTarget): string {
     if (target instanceof Planet) return 'Planet';
     if (target instanceof Starbase) return 'Starbase';
@@ -1971,6 +2245,10 @@ export class Game {
         this.renderer.drawTextModalTable(this.createTargetMenuModel());
       }
 
+      if (this.shipMenuOpen) {
+        this.renderer.drawTextModalTable(this.createShipMenuModel());
+      }
+
       if (fullCanvasRepaint) {
         this.renderer.renderBufferFull();
       } else {
@@ -2006,7 +2284,7 @@ export class Game {
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
-    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive') return false;
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen) return false;
     if (state === 'starbase' && this.starbaseAlert) return false;
     if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
