@@ -48,6 +48,10 @@ export interface CargoComponent {
 export interface TerrainVehicleComponent {
     deployed: boolean;
     moving: boolean;
+    available: boolean;
+    onFoot: boolean;
+    shipSurfaceX: number;
+    shipSurfaceY: number;
     fuel: number;
     maxFuel: number;
     cargoHold: CargoComponent;
@@ -76,6 +80,10 @@ export function createDefaultTerrainVehicle(capacity: number, maxFuel: number): 
     return {
         deployed: false,
         moving: false,
+        available: true,
+        onFoot: false,
+        shipSurfaceX: 0,
+        shipSurfaceY: 0,
         fuel: maxFuel,
         maxFuel,
         cargoHold: createDefaultCargo(capacity),

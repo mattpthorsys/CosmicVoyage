@@ -74,6 +74,7 @@ describe('available actions', () => {
       planet,
     });
 
-    expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining(['liftoff', 'mine']));
+    expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining(['ship-menu', 'mine']));
+    expect(actions.map((action) => action.id)).not.toContain('liftoff');
   });
 });

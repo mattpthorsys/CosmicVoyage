@@ -74,7 +74,7 @@ import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_s
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
 type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'log' | 'rover' | 'jettison';
-type RoverActionId = 'move' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'dock';
+type RoverActionId = 'move' | 'cargo' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'embark';
 type QuantityOperation =
   | { type: 'buy'; itemKey: string }
   | { type: 'sell'; itemKey: string }
@@ -168,6 +168,9 @@ export class Game {
   private quantitySelector: QuantitySelectorState<QuantityOperation> | null = null;
   private jettisonConfirmation: JettisonConfirmationState | null = null;
   private roverMenuSelection: number = 0;
+  private roverCargoOpen: boolean = false;
+  private roverCargoSelection: number = 0;
+  private roverCargoOffset: number = 0;
   private surfaceScanCursor: { dx: number; dy: number } | null = null;
   private surfaceNotifications: string[] = [];
   private autoScannedSystemName: string | null = null;
@@ -269,6 +272,8 @@ export class Game {
     this.approachTargetSignature = null;
     this.targetMenuOpen = false;
     this.shipMenuOpen = false;
+    this.roverCargoOpen = false;
+    this.surfaceScanCursor = null;
     if (newState === 'starbase') {
       this.starbaseSectionId = 'overview';
       this.starbaseAlert = '';
@@ -284,6 +289,9 @@ export class Game {
         this.orbitLandingY = Math.floor(mapSize / 2);
       }
     }
+    if (newState !== 'planet') {
+      this.surfaceNotifications = [];
+    }
     // Close popups on state change
     if (this.popupState !== 'inactive') {
       this.popupState = 'inactive';
@@ -292,6 +300,7 @@ export class Game {
     }
     this.targetMenuOpen = false;
     this.shipMenuOpen = false;
+    this.roverCargoOpen = false;
     // Reflect status messages potentially set by GameStateManager during transition
     this.statusMessage = this.stateManager.statusMessage || ''; // Use status from stateManager
     this.stateManager.statusMessage = ''; // Clear it after reading
@@ -768,6 +777,51 @@ export class Game {
     return true;
   }
 
+  private _handleRoverCargoInput(): boolean {
+    if (!this.roverCargoOpen) return false;
+    const rows = this.getRoverCargoRows();
+    const visibleRows = 8;
+    if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') || this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      this.roverCargoOpen = false;
+      this.statusMessage = 'Terrain vehicle cargo closed.';
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      const viewport = moveSelection(this.roverCargoSelection, -1, rows.length, visibleRows, this.roverCargoOffset);
+      this.roverCargoSelection = viewport.selectedIndex;
+      this.roverCargoOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      const viewport = moveSelection(this.roverCargoSelection, 1, rows.length, visibleRows, this.roverCargoOffset);
+      this.roverCargoSelection = viewport.selectedIndex;
+      this.roverCargoOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      const viewport = moveSelection(this.roverCargoSelection, -visibleRows, rows.length, visibleRows, this.roverCargoOffset);
+      this.roverCargoSelection = viewport.selectedIndex;
+      this.roverCargoOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      const viewport = moveSelection(this.roverCargoSelection, visibleRows, rows.length, visibleRows, this.roverCargoOffset);
+      this.roverCargoSelection = viewport.selectedIndex;
+      this.roverCargoOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
+      this.dropSelectedRoverCargo(rows[this.roverCargoSelection]);
+      return true;
+    }
+    return true;
+  }
+
   private _handleShipMenuInput(): boolean {
     if (!this.shipMenuOpen) return false;
 
@@ -823,7 +877,7 @@ export class Game {
   }
 
   private _handleSurfaceVehicleInput(): boolean {
-    if (this.stateManager.state !== 'planet' || !this.player.terrainVehicle.deployed) return false;
+    if (this.stateManager.state !== 'planet' || (!this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot)) return false;
 
     if (this.surfaceScanCursor) {
       const bounds = this.getSurfaceScanCursorBounds();
@@ -861,6 +915,7 @@ export class Game {
     }
 
     const rover = this.player.terrainVehicle;
+    if (rover.onFoot) return false;
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
       if (rover.moving) {
         rover.moving = false;
@@ -970,8 +1025,8 @@ export class Game {
           this.statusMessage = 'Nothing to cancel.';
           return true;
         }
-        if (action === 'ACTIVATE_LAND_LIFTOFF' && currentState === 'planet' && this.player.terrainVehicle.deployed) {
-          this.statusMessage = 'Dock the terrain vehicle before liftoff.';
+        if (action === 'ACTIVATE_LAND_LIFTOFF' && currentState === 'planet') {
+          this.statusMessage = 'Launch from the landed ship through ship operations.';
           return true;
         }
 
@@ -1056,8 +1111,8 @@ export class Game {
   }
 
   private _executeActionByName(actionName: string): void {
-    if (actionName === 'ACTIVATE_LAND_LIFTOFF' && this.stateManager.state === 'planet' && this.player.terrainVehicle.deployed) {
-      this.statusMessage = 'Dock the terrain vehicle before liftoff.';
+    if (actionName === 'ACTIVATE_LAND_LIFTOFF' && this.stateManager.state === 'planet') {
+      this.statusMessage = 'Launch from the landed ship through ship operations.';
       return;
     }
     if (actionName === 'MINE') {
@@ -1200,10 +1255,14 @@ export class Game {
   private _handleMovementInput(): void {
     let dx = 0,
       dy = 0;
-    if (this.inputManager.isActionActive('MOVE_UP')) dy -= 1;
-    if (this.inputManager.isActionActive('MOVE_DOWN')) dy += 1;
-    if (this.inputManager.isActionActive('MOVE_LEFT')) dx -= 1;
-    if (this.inputManager.isActionActive('MOVE_RIGHT')) dx += 1;
+    const planetStepMode = this.stateManager.state === 'planet';
+    const isMovePressed = (action: string) => planetStepMode
+      ? this.inputManager.wasActionJustPressed(action)
+      : this.inputManager.isActionActive(action);
+    if (isMovePressed('MOVE_UP')) dy -= 1;
+    if (isMovePressed('MOVE_DOWN')) dy += 1;
+    if (isMovePressed('MOVE_LEFT')) dx -= 1;
+    if (isMovePressed('MOVE_RIGHT')) dx += 1;
     if (this.stateManager.state === 'hyperspace') {
       if (this.inputManager.isActionActive('MOVE_UP_LEFT')) {
         dx -= 1;
@@ -1256,20 +1315,21 @@ export class Game {
 
         if (currentState === 'planet') {
           const planet = this.stateManager.currentPlanet;
-          if (!this.player.terrainVehicle.deployed) {
+          if (!this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot) {
             this.statusMessage = 'Disembark the terrain vehicle from ship operations before travelling overland.';
             return;
           }
-          if (!this.player.terrainVehicle.moving) {
+          if (this.player.terrainVehicle.deployed && !this.player.terrainVehicle.moving) {
             return;
           }
           if (planet) {
             try {
               planet.ensureSurfaceReady(); // Ensure map exists for size
               const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
-              if (!this.consumeTerrainVehicleFuelForMove(planet)) {
+              if (this.player.terrainVehicle.deployed && !this.consumeTerrainVehicleFuelForMove(planet)) {
                 return;
               }
+              if (this.player.terrainVehicle.onFoot) this.applyFootTravelRisk();
               moveData.surfaceContext = { mapSize };
             } catch (surfaceError) {
               logger.error(`[Game:_handleMovementInput] Error ensuring surface ready for move: ${surfaceError}`);
@@ -1310,6 +1370,10 @@ export class Game {
       return; // Input consumed by popup
     }
     if (this._handleShipMenuInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this._handleRoverCargoInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -1964,6 +2028,7 @@ export class Game {
       this.stateManager.state !== 'orbit' &&
       this.popupState === 'inactive' &&
       !this.targetMenuOpen &&
+      !this.roverCargoOpen &&
       !this.quantitySelector &&
       !this.jettisonConfirmation
     );
@@ -2175,12 +2240,13 @@ export class Game {
     const fuel = Math.max(0, this.player.terrainVehicle.fuel);
     return [
       { id: 'move', label: 'Move', status: fuel > 0 ? 'ready' : 'no fuel' },
+      { id: 'cargo', label: 'Cargo', status: `${cargoTotal}/${this.player.terrainVehicle.cargoHold.capacity} m^3` },
       { id: 'pickup', label: 'Pick up', status: 'no local items' },
       { id: 'mine', label: 'Mine', status: `${cargoTotal}/${this.player.terrainVehicle.cargoHold.capacity} m^3` },
       { id: 'scan', label: 'Scan', status: 'local sweep' },
       { id: 'stun', label: 'Stun', status: 'safe' },
       { id: 'shoot', label: 'Shoot', status: 'safe' },
-      { id: 'dock', label: 'Dock', status: 'return to ship' },
+      { id: 'embark', label: 'Embark', status: this.isAtParkedShip() ? 'board ship' : 'return to ship' },
     ];
   }
 
@@ -2192,6 +2258,8 @@ export class Game {
       notifications: this.surfaceNotifications.length > 0 ? this.surfaceNotifications : [this.statusMessage].filter(Boolean),
       deployed: this.player.terrainVehicle.deployed,
       moving: this.player.terrainVehicle.moving,
+      available: this.player.terrainVehicle.available,
+      onFoot: this.player.terrainVehicle.onFoot,
       fuel: this.player.terrainVehicle.fuel,
       maxFuel: this.player.terrainVehicle.maxFuel,
       cargo,
@@ -2200,7 +2268,70 @@ export class Game {
       items: items.map((item) => ({ label: item.label, status: item.status })),
       scanCursor: this.surfaceScanCursor ?? undefined,
       crew: this.player.crew.map((member) => ({ name: member.name, hitPoints: member.hitPoints, maxHitPoints: member.maxHitPoints })),
+      ship: {
+        x: this.player.terrainVehicle.shipSurfaceX - this.player.position.surfaceX,
+        y: this.player.terrainVehicle.shipSurfaceY - this.player.position.surfaceY,
+      },
     };
+  }
+
+  private openRoverCargo(): void {
+    this.roverCargoOpen = true;
+    this.roverCargoSelection = 0;
+    this.roverCargoOffset = 0;
+    this.player.terrainVehicle.moving = false;
+    this.statusMessage = 'Terrain vehicle cargo opened.';
+    this.forceFullRender = true;
+  }
+
+  private createRoverCargoModel(): TextModalTableModel {
+    const rows = this.getRoverCargoRows();
+    const visibleRows = 8;
+    const viewport = moveSelection(this.roverCargoSelection, 0, rows.length, visibleRows, this.roverCargoOffset);
+    this.roverCargoSelection = viewport.selectedIndex;
+    this.roverCargoOffset = viewport.viewOffset;
+    return {
+      title: 'Terrain Vehicle Cargo',
+      subtitle: 'Rover hold only. Enter drops selected cargo onto the planet surface.',
+      columns: ['CARGO', 'QTY', 'VALUE', 'ACTION'],
+      widths: [26, 7, 10, 36],
+      rows,
+      selectedIndex: this.roverCargoSelection,
+      viewOffset: this.roverCargoOffset,
+      visibleRowCount: visibleRows,
+      footer: ['Up/Down select  Enter drop stack  Esc/Left close'],
+    };
+  }
+
+  private getRoverCargoRows(): TextTableRow[] {
+    const entries = Object.entries(this.player.terrainVehicle.cargoHold.items).filter(([, amount]) => amount > 0);
+    if (entries.length === 0) {
+      return [{ id: 'empty', cells: ['Rover hold empty', '0', '0', 'No cargo to drop.'], disabled: true }];
+    }
+    return entries.map(([itemKey, amount]) => {
+      const info = this.getTradeItemInfo(itemKey);
+      const value = (info?.baseValue ?? 1) * amount;
+      return {
+        id: itemKey,
+        cells: [info?.name ?? itemKey, String(amount), String(value), 'Drop on local surface'],
+        detail: `Drops ${amount} m^3 here. Surface item persistence is pending future salvage work.`,
+      };
+    });
+  }
+
+  private dropSelectedRoverCargo(row: TextTableRow | undefined): void {
+    if (!row || row.disabled) return;
+    const amount = this.player.terrainVehicle.cargoHold.items[row.id] || 0;
+    if (amount <= 0) return;
+    const removed = this.cargoSystem.removeItem(this.player.terrainVehicle.cargoHold, row.id, amount);
+    const name = this.getTradeItemInfo(row.id)?.name ?? row.id;
+    this.addSurfaceNotification(`Dropped ${removed} m^3 ${name} on the surface.`);
+    this.statusMessage = `Dropped ${removed} m^3 ${name}.`;
+    if (this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold) <= 0) {
+      this.roverCargoSelection = 0;
+      this.roverCargoOffset = 0;
+    }
+    this.forceFullRender = true;
   }
 
   private startSurfaceCursorScan(): void {
@@ -2215,9 +2346,10 @@ export class Game {
   }
 
   private getSurfaceScanCursorBounds(): { x: number; y: number } {
+    const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
     return {
-      x: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, 92) / 2) - 1),
-      y: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, 34) / 2) - 1),
+      x: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, 92) / (2 * scale)) - 1),
+      y: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, 34) / (2 * scale)) - 1),
     };
   }
 
@@ -2290,13 +2422,16 @@ export class Game {
           this.statusMessage = 'Terrain vehicle moving. Arrow keys drive; Enter/Space stops.';
         }
         break;
+      case 'cargo':
+        this.openRoverCargo();
+        break;
       case 'mine':
         this.openMiningQuantitySelector();
         break;
       case 'scan':
         this.startSurfaceCursorScan();
         break;
-      case 'dock':
+      case 'embark':
         this.dockTerrainVehicle();
         break;
       case 'pickup':
@@ -2316,26 +2451,62 @@ export class Game {
       this.statusMessage = 'Terrain vehicle deployment requires landing on a planet.';
       return;
     }
+    if (!this.player.terrainVehicle.available) {
+      this.statusMessage = 'No terrain vehicle aboard. Purchase a replacement at a starport shipyard.';
+      return;
+    }
     this.player.terrainVehicle.deployed = true;
     this.player.terrainVehicle.moving = false;
+    this.player.terrainVehicle.onFoot = false;
     this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
     this.roverMenuSelection = 0;
     this.surfaceNotifications = this.describePlanetSurfaceForDisembark(this.stateManager.currentPlanet);
-    this.statusMessage = 'Terrain vehicle disembarked. Surface operations online.';
+    this.statusMessage = 'Disembarked. Surface operations online.';
     this.addSurfaceNotification(this.statusMessage);
+    this.closeShipMenu('');
     this.forceFullRender = true;
   }
 
   private dockTerrainVehicle(): void {
+    if (!this.isAtParkedShip()) {
+      this.statusMessage = 'Embark requires returning to the parked ship.';
+      this.addSurfaceNotification(this.statusMessage);
+      this.forceFullRender = true;
+      return;
+    }
     const transferred = this.transferRoverCargoToShip();
     this.player.terrainVehicle.deployed = false;
     this.player.terrainVehicle.moving = false;
+    this.player.terrainVehicle.onFoot = false;
     this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
     const remaining = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
     this.statusMessage = remaining > 0
-      ? `Terrain vehicle docked. Transferred ${transferred} m^3; ${remaining} m^3 remains aboard rover.`
-      : `Terrain vehicle docked. Transferred ${transferred} m^3 to ship hold.`;
+      ? `Embarked. Transferred ${transferred} m^3; ${remaining} m^3 remains aboard rover.`
+      : `Embarked. Transferred ${transferred} m^3 to ship hold.`;
+    this.addSurfaceNotification(this.statusMessage);
     this.forceFullRender = true;
+  }
+
+  private launchFromParkedShip(): void {
+    if (!this.isAtParkedShip() || this.player.terrainVehicle.deployed || this.player.terrainVehicle.onFoot) {
+      this.statusMessage = 'Launch requires being aboard the parked ship.';
+      return;
+    }
+    this.shipMenuOpen = false;
+    this.shipMenuSection = 'main';
+    this.stateManager.launchFromSurfaceToOrbit();
+    if (this.stateManager.statusMessage) {
+      this.statusMessage = this.stateManager.statusMessage;
+      this.stateManager.statusMessage = '';
+    }
+    this.forceFullRender = true;
+  }
+
+  private isAtParkedShip(): boolean {
+    return (
+      Math.floor(this.player.position.surfaceX) === Math.floor(this.player.terrainVehicle.shipSurfaceX) &&
+      Math.floor(this.player.position.surfaceY) === Math.floor(this.player.terrainVehicle.shipSurfaceY)
+    );
   }
 
   private transferRoverCargoToShip(): number {
@@ -2362,12 +2533,26 @@ export class Game {
     if (this.player.terrainVehicle.fuel < cost) {
       this.player.terrainVehicle.fuel = 0;
       this.player.terrainVehicle.moving = false;
-      this.statusMessage = 'Terrain vehicle fuel exhausted. Dock with the ship to refuel.';
+      this.player.terrainVehicle.deployed = false;
+      this.player.terrainVehicle.available = false;
+      this.player.terrainVehicle.onFoot = true;
+      this.statusMessage = 'Terrain vehicle fuel exhausted. Vehicle abandoned; return to the ship on foot.';
+      this.addSurfaceNotification(this.statusMessage);
       this.forceFullRender = true;
       return false;
     }
     this.player.terrainVehicle.fuel = Math.max(0, this.player.terrainVehicle.fuel - cost);
     return true;
+  }
+
+  private applyFootTravelRisk(): void {
+    if (this.gameSeedPRNG.random() >= CONFIG.FOOT_TRAVEL_DAMAGE_CHANCE) return;
+    const living = this.player.crew.filter((member) => member.hitPoints > 0);
+    if (living.length === 0) return;
+    const victim = living[this.gameSeedPRNG.randomInt(0, living.length - 1)];
+    const damage = this.gameSeedPRNG.randomInt(1, 3);
+    victim.hitPoints = Math.max(0, victim.hitPoints - damage);
+    this.addSurfaceNotification(`${victim.name} takes ${damage} damage crossing exposed ground on foot.`);
   }
 
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
@@ -2380,7 +2565,8 @@ export class Game {
     }
     if (this.shipMenuSection === 'rover') {
       if (row.id === 'rover:deploy') this.disembarkTerrainVehicle();
-      if (row.id === 'rover:dock') this.dockTerrainVehicle();
+      if (row.id === 'rover:embark') this.dockTerrainVehicle();
+      if (row.id === 'rover:launch') this.launchFromParkedShip();
       return;
     }
     if (this.shipMenuSection === 'deck' && row.id.startsWith('deck:')) {
@@ -2498,7 +2684,7 @@ export class Game {
       case 'log':
         return { title: 'Ship Log', subtitle: 'Chronicle, fixes, anomalies, and watch notes recorded by ship systems.', columns: ['LOG', 'CHANNEL', 'STATE', 'ENTRY'], widths: [8, 12, 13, 55], footer: [`Up/Down inspect  PageUp/PageDown scroll  ${backHint}`] };
       case 'rover':
-        return { title: 'Terrain Vehicle', subtitle: 'Planetside rover deployment, fuel, cargo, and surface sortie state.', columns: ['SYSTEM', 'READING', 'STATE', 'ACTION'], widths: [18, 18, 13, 42], footer: [`Up/Down select  Enter use  ${backHint}`] };
+        return { title: 'Terrain Vehicle', subtitle: 'Planetside disembark, embark, fuel, cargo, and surface sortie state.', columns: ['SYSTEM', 'READING', 'STATE', 'ACTION'], widths: [18, 18, 13, 42], footer: [`Up/Down select  Enter use  ${backHint}`] };
       case 'jettison':
         return { title: 'Confirm Jettison', subtitle: 'External bay doors armed. Cargo ejection is permanent.', columns: ['VENT', 'CARGO', 'AFTER', 'CONFIRMATION'], widths: [10, 24, 14, 40], footer: [`Enter confirms selected amount  ${backHint}`] };
       case 'main':
@@ -2540,7 +2726,7 @@ export class Game {
           { id: 'log', cells: ['Ship Log', this.getShipLogSummary(), 'Persistent watch notes, discoveries, mission state, and navigation fixes.'] },
         ];
         if (this.stateManager.state === 'planet') {
-          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.deployed ? 'deployed' : `${roverTotal}/50 m^3`, 'Deploy, dock, refuel, and review the surface vehicle.'] });
+          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'disembarked' : `${roverTotal}/50 m^3`) : 'lost', 'Disembark, embark, refuel, and review the surface vehicle.'] });
         }
         return rows;
     }
@@ -2620,16 +2806,22 @@ export class Game {
     const rover = this.player.terrainVehicle;
     const cargoTotal = this.cargoSystem.getTotalUnits(rover.cargoHold);
     const onSurface = this.stateManager.state === 'planet';
+    const atShip = this.isAtParkedShip();
     return [
       {
-        id: rover.deployed ? 'rover:dock' : 'rover:deploy',
+        id: rover.deployed || rover.onFoot ? 'rover:embark' : 'rover:deploy',
         cells: [
           'Sortie state',
-          rover.deployed ? 'deployed' : 'docked',
-          onSurface ? 'available' : 'locked',
-          rover.deployed ? 'Enter docks the vehicle and transfers cargo.' : 'Enter disembarks with full rover fuel.',
+          rover.onFoot ? 'on foot' : rover.deployed ? 'disembarked' : 'embarked',
+          rover.available ? (onSurface ? 'available' : 'locked') : 'vehicle lost',
+          rover.deployed || rover.onFoot ? 'Enter embarks at parked ship and transfers cargo.' : 'Enter disembarks with full rover fuel.',
         ],
-        disabled: !onSurface,
+        disabled: !onSurface || (!rover.available && !rover.onFoot),
+      },
+      {
+        id: 'rover:launch',
+        cells: ['Launch', atShip && !rover.deployed && !rover.onFoot ? 'ready' : 'parked ship req.', onSurface ? 'orbit' : 'locked', 'Launch from landed ship to orbital view.'],
+        disabled: !onSurface || !atShip || rover.deployed || rover.onFoot,
       },
       {
         id: 'rover-fuel',
@@ -3098,6 +3290,10 @@ export class Game {
         this.renderer.drawTextModalTable(this.createShipMenuModel());
       }
 
+      if (this.roverCargoOpen) {
+        this.renderer.drawTextModalTable(this.createRoverCargoModel());
+      }
+
       if (this.quantitySelector) {
         this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
       }
@@ -3141,7 +3337,7 @@ export class Game {
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
-    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.quantitySelector || this.jettisonConfirmation) return false;
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.roverCargoOpen || this.quantitySelector || this.jettisonConfirmation) return false;
     if (state === 'starbase' && this.starbaseAlert) return false;
     if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
@@ -3166,8 +3362,13 @@ export class Game {
           this.player.render.char,
           this.stateManager.currentPlanet?.scanned ? 'scanned' : 'unscanned',
           this.player.terrainVehicle.deployed ? 'rover' : 'ship',
+          this.player.terrainVehicle.available ? 'available' : 'lost',
+          this.player.terrainVehicle.onFoot ? 'foot' : 'notfoot',
           this.player.terrainVehicle.moving ? 'moving' : 'stopped',
+          this.player.terrainVehicle.shipSurfaceX,
+          this.player.terrainVehicle.shipSurfaceY,
           this.roverMenuSelection,
+          this.roverCargoOpen ? 'cargo' : 'nocargo',
           this.player.terrainVehicle.fuel.toFixed(1),
           this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold),
           this.statusMessage,
@@ -3274,8 +3475,15 @@ export class Game {
       zoomLabel = ` | Zoom: ${zoomFactor.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`;
     }
 
+    const roverState = !this.player.terrainVehicle.available
+      ? 'lost'
+      : this.player.terrainVehicle.onFoot
+        ? 'on foot'
+        : this.player.terrainVehicle.deployed
+          ? 'disembarked'
+          : 'embarked';
     const roverStatus = this.stateManager.state === 'planet'
-      ? ` | Rover: ${this.player.terrainVehicle.deployed ? 'out' : 'docked'} ${this.player.terrainVehicle.fuel.toFixed(0)}/${this.player.terrainVehicle.maxFuel} fuel ${this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold)}/${this.player.terrainVehicle.cargoHold.capacity} m^3`
+      ? ` | Rover: ${roverState} ${this.player.terrainVehicle.fuel.toFixed(0)}/${this.player.terrainVehicle.maxFuel} fuel ${this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold)}/${this.player.terrainVehicle.cargoHold.capacity} m^3`
       : '';
 
     const commonStatus =
@@ -3515,7 +3723,37 @@ export class Game {
       this.activateCrewSelection(starbase, row);
       return;
     }
+    if (this.starbaseSectionId === 'shipyard' && row.id === 'terrain-vehicle') {
+      this.purchaseTerrainVehicle();
+      return;
+    }
     this.starbaseAlert = row.detail || `${row.cells[0]} selected.`;
+  }
+
+  private purchaseTerrainVehicle(): void {
+    if (this.player.terrainVehicle.available) {
+      this.starbaseAlert = 'Terrain vehicle already aboard.';
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    const cost = CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST;
+    if (this.player.resources.credits < cost) {
+      this.starbaseAlert = `Insufficient credits for terrain vehicle replacement. Required ${cost.toLocaleString()} Cr.`;
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    this.player.resources.credits -= cost;
+    this.player.terrainVehicle.available = true;
+    this.player.terrainVehicle.deployed = false;
+    this.player.terrainVehicle.moving = false;
+    this.player.terrainVehicle.onFoot = false;
+    this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
+    this.starbaseAlert = `Purchased replacement terrain vehicle for ${cost.toLocaleString()} Cr.`;
+    this.statusMessage = this.starbaseAlert;
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: -cost,
+    });
   }
 
   private activateCrewSelection(starbase: Starbase, row: StarbaseTableRow): void {
@@ -3679,6 +3917,7 @@ export class Game {
         });
       case 'shipyard':
         return [
+          { id: 'terrain-vehicle', cells: ['Terrain vehicle', `${CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST.toLocaleString()} Cr`, 'Now', this.player.terrainVehicle.available ? 'Replacement bay occupied.' : 'Purchase replacement rover and surface kit.'], detail: 'Replacement includes fuel cell, cargo bay, scanner mast, and recovery transponder.', disabled: this.player.terrainVehicle.available },
           { id: 's1', cells: ['Cargo rack tuning', '620 Cr', '2h', '+10 cargo capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
           { id: 's2', cells: ['Fuel bladder relining', '780 Cr', '3h', '+75 fuel capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
           { id: 's3', cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'], detail: 'Stub: scanner upgrade path.' },

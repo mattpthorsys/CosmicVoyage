@@ -92,11 +92,14 @@ export const CONFIG = {
   PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colours
   PLANET_SURFACE_VIEW_WIDTH: 92,
   PLANET_SURFACE_VIEW_HEIGHT: 34,
+  PLANET_SURFACE_CELL_VIEW_SCALE: 3,
   MINING_RATE_FACTOR: 5, // Base number of minerals mined per action (scales with richness)
   TERRAIN_VEHICLE_CARGO_CAPACITY: 50,
   TERRAIN_VEHICLE_MAX_FUEL: 120,
   TERRAIN_VEHICLE_MOVE_FUEL_BASE: 0.18,
   TERRAIN_VEHICLE_ALTITUDE_FUEL_FACTOR: 0.42,
+  TERRAIN_VEHICLE_REPLACEMENT_COST: 4200,
+  FOOT_TRAVEL_DAMAGE_CHANCE: 0.18,
 
   // --- Hyperspace Generation ---
   STAR_DENSITY: 0.008, // Approximate fraction of cells containing a star check

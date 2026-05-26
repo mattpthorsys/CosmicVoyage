@@ -26,6 +26,10 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     quantitySelector: null,
     jettisonConfirmation: null,
     roverMenuSelection: 0,
+    roverCargoOpen: false,
+    roverCargoSelection: 0,
+    roverCargoOffset: 0,
+    surfaceNotifications: [],
     activeMissions: {},
     currentTargetIndex: 0,
     currentTargetSignature: '',
@@ -107,6 +111,8 @@ describe('ship menu', () => {
   it('shows rover cargo under its own manifest heading and transfers what fits when docking', () => {
     const game = createShipMenuHarness('planet');
     game.player.cargoHold.capacity = 5;
+    game.player.terrainVehicle.shipSurfaceX = 0;
+    game.player.terrainVehicle.shipSurfaceY = 0;
     game.cargoSystem.addItem(game.player.cargoHold, 'COPPER', 4);
     game.cargoSystem.addItem(game.player.terrainVehicle.cargoHold, 'IRON', 4);
     game.player.terrainVehicle.deployed = true;
@@ -138,6 +144,40 @@ describe('ship menu', () => {
     game.activateShipMenuSelection(rover.rows[0]);
     expect(game.player.terrainVehicle.deployed).toBe(true);
     expect(game.player.terrainVehicle.fuel).toBe(game.player.terrainVehicle.maxFuel);
+    expect(game.shipMenuOpen).toBe(false);
+  });
+
+  it('requires returning to the parked ship before embarking', () => {
+    const game = createShipMenuHarness('planet');
+    game.player.terrainVehicle.deployed = true;
+    game.player.terrainVehicle.shipSurfaceX = 4;
+    game.player.terrainVehicle.shipSurfaceY = 4;
+    game.player.position.surfaceX = 8;
+    game.player.position.surfaceY = 4;
+
+    game.dockTerrainVehicle();
+    expect(game.player.terrainVehicle.deployed).toBe(true);
+    expect(game.statusMessage).toContain('parked ship');
+
+    game.player.position.surfaceX = 4;
+    game.dockTerrainVehicle();
+    expect(game.player.terrainVehicle.deployed).toBe(false);
+    expect(game.statusMessage).toContain('Embarked');
+  });
+
+  it('opens rover-only cargo and drops selected cargo on the surface', () => {
+    const game = createShipMenuHarness('planet');
+    game.cargoSystem.addItem(game.player.cargoHold, 'COPPER', 4);
+    game.cargoSystem.addItem(game.player.terrainVehicle.cargoHold, 'IRON', 3);
+
+    game.openRoverCargo();
+    const model = game.createRoverCargoModel();
+    expect(model.rows.map((row: any) => row.id)).toEqual(['IRON']);
+
+    game.dropSelectedRoverCargo(model.rows[0]);
+    expect(game.player.terrainVehicle.cargoHold.items.IRON).toBeUndefined();
+    expect(game.player.cargoHold.items.COPPER).toBe(4);
+    expect(game.statusMessage).toContain('Dropped 3');
   });
 
   it('treats the ship as compartments and crewed stations', () => {

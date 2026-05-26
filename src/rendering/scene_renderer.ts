@@ -50,6 +50,8 @@ export interface SurfaceVehicleOverlayModel {
   notifications: string[];
   deployed: boolean;
   moving: boolean;
+  available: boolean;
+  onFoot: boolean;
   fuel: number;
   maxFuel: number;
   cargo: number;
@@ -57,6 +59,7 @@ export interface SurfaceVehicleOverlayModel {
   selectedIndex: number;
   items: Array<{ label: string; status: string }>;
   scanCursor?: { dx: number; dy: number };
+  ship?: { x: number; y: number };
   crew: Array<{ name: string; hitPoints: number; maxHitPoints: number }>;
 }
 
@@ -631,12 +634,15 @@ export class SceneRenderer {
       CONFIG.DEFAULT_BG_COLOUR,
       null
     );
-    const startMapX = Math.floor(player.position.surfaceX - Math.floor(viewport.width / 2));
-    const startMapY = Math.floor(player.position.surfaceY - Math.floor(viewport.height / 2));
+    const cellScale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
+    const centerX = Math.floor(viewport.width / 2);
+    const centerY = Math.floor(viewport.height / 2);
+    const startMapX = Math.floor(player.position.surfaceX - Math.floor(centerX / cellScale));
+    const startMapY = Math.floor(player.position.surfaceY - Math.floor(centerY / cellScale));
     for (let y = 0; y < viewport.height; y++) {
       for (let x = 0; x < viewport.width; x++) {
-        const mapX = startMapX + x;
-        const mapY = startMapY + y;
+        const mapX = startMapX + Math.floor(x / cellScale);
+        const mapY = startMapY + Math.floor(y / cellScale);
         const wrappedMapX = ((mapX % mapSize) + mapSize) % mapSize;
         const wrappedMapY = ((mapY % mapSize) + mapSize) % mapSize;
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
@@ -646,9 +652,11 @@ export class SceneRenderer {
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
         const elementKey = elementMap[wrappedMapY]?.[wrappedMapX];
-        this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
+        const isCellCenter = x % cellScale === Math.floor(cellScale / 2) && y % cellScale === Math.floor(cellScale / 2);
+        if (isCellCenter) this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
       }
     }
+    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport);
     this.screenBuffer.drawChar(
       player.render.char,
       viewport.x + Math.floor(viewport.width / 2),
@@ -713,6 +721,7 @@ export class SceneRenderer {
         this.screenBuffer.drawChar(char, viewport.x + x, viewport.y + y, sample.colour, sample.colour);
       }
     }
+    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport);
     this.screenBuffer.drawChar(
       player.render.char,
       viewport.x + Math.floor(viewport.width / 2),
@@ -1268,7 +1277,12 @@ export class SceneRenderer {
     }
 
     if (!model.deployed) {
-      this.screenBuffer.drawString('Terrain vehicle docked. Open ship operations to disembark.', panelX + 2, panelY + 5, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+      const line = model.onFoot
+        ? 'On foot. Return to the parked ship to embark.'
+        : model.available
+          ? 'Terrain vehicle embarked. Open ship operations to disembark.'
+          : 'Terrain vehicle lost. Replacement required at a starport shipyard.';
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 4), panelX + 2, panelY + 5, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
       this.drawSurfaceCrewSidebar(model, viewport);
       return;
     }
@@ -1300,12 +1314,21 @@ export class SceneRenderer {
   }
 
   private drawSurfaceScanCursor(cursor: { dx: number; dy: number }, viewport: { x: number; y: number; width: number; height: number }): void {
-    const x = viewport.x + Math.floor(viewport.width / 2) + cursor.dx;
-    const y = viewport.y + Math.floor(viewport.height / 2) + cursor.dy;
+    const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
+    const x = viewport.x + Math.floor(viewport.width / 2) + cursor.dx * scale;
+    const y = viewport.y + Math.floor(viewport.height / 2) + cursor.dy * scale;
     if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
     this.screenBuffer.drawChar('+', x, y, '#001010', '#FFD66B');
     if (x > viewport.x) this.screenBuffer.drawChar('[', x - 1, y, '#FFD66B', null);
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar(']', x + 1, y, '#FFD66B', null);
+  }
+
+  private drawParkedShipMarker(ship: { x: number; y: number }, viewport: { x: number; y: number; width: number; height: number }): void {
+    const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
+    const x = viewport.x + Math.floor(viewport.width / 2) + Math.round(ship.x * scale);
+    const y = viewport.y + Math.floor(viewport.height / 2) + Math.round(ship.y * scale);
+    if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
+    this.screenBuffer.drawChar('S', x, y, '#001010', '#8CFFFF');
   }
 
   private drawSurfaceCrewSidebar(model: SurfaceVehicleOverlayModel, viewport: { x: number; y: number; width: number; height: number }): void {

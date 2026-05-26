@@ -85,7 +85,6 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       actions.push(action('break-orbit', 'Break Orbit', CONFIG.KEY_BINDINGS.QUIT, 'QUIT', 'navigation', 20, true, context.planet?.name));
       break;
     case 'planet':
-      actions.push(action('liftoff', 'Liftoff', CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF, 'ACTIVATE_LAND_LIFTOFF', 'navigation', 10, true, context.planet?.name));
       if (context.planet && context.planet.type !== 'GasGiant' && context.planet.type !== 'IceGiant') {
         if (!context.planet.scanned) {
           actions.push(action('scan-surface', 'Scan Surface', CONFIG.KEY_BINDINGS.SCAN, 'SCAN', 'surface', 20, true, context.planet.name));

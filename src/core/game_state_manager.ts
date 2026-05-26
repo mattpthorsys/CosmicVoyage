@@ -221,6 +221,20 @@ export class GameStateManager {
     return null;
   }
 
+  launchFromSurfaceToOrbit(): boolean {
+    if (this._state !== 'planet' || !this._currentPlanet || !this._currentSystem) {
+      this.statusMessage = 'Launch requires a landed ship on a planet surface.';
+      return false;
+    }
+    const planet = this._currentPlanet;
+    this._setPlayerStateAtSystemObject(planet);
+    this._changeState('orbit', this._currentSystem, planet, null);
+    this.player.render.char = CONFIG.PLAYER_CHAR;
+    this.statusMessage = `Launched to orbit of ${planet.name}.`;
+    eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, planet);
+    return true;
+  }
+
   leaveOrbit(): boolean {
     if (this._state !== 'orbit') {
       logger.warn(`[GameStateManager.leaveOrbit] Attempted to leave orbit from state ${this._state}.`);
@@ -369,6 +383,11 @@ export class GameStateManager {
       const mapSize = targetObject.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
       this.player.position.surfaceX = ((Math.floor(surfaceX ?? mapSize / 2) % mapSize) + mapSize) % mapSize;
       this.player.position.surfaceY = Math.max(0, Math.min(mapSize - 1, Math.floor(surfaceY ?? mapSize / 2)));
+      this.player.terrainVehicle.shipSurfaceX = this.player.position.surfaceX;
+      this.player.terrainVehicle.shipSurfaceY = this.player.position.surfaceY;
+      this.player.terrainVehicle.deployed = false;
+      this.player.terrainVehicle.moving = false;
+      this.player.terrainVehicle.onFoot = false;
       eventToPublish = GameEvents.PLANET_LANDED;
       eventData = targetObject;
     } else if (targetObject instanceof Starbase) {
