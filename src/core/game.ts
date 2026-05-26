@@ -880,9 +880,8 @@ export class Game {
           return true;
         }
         if (action === 'QUIT') {
-          eventManager.publish(GameEvents.GAME_QUIT);
-          this.stopGame();
-          return true; // Consume input & stop game
+          this.statusMessage = 'Nothing to cancel.';
+          return true;
         }
 
         // Process standard actions via ActionProcessor
