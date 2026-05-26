@@ -44,6 +44,15 @@ export interface CargoComponent {
     items: Record<string, number>;
 }
 
+/** Component for the small surface vehicle carried by the ship. */
+export interface TerrainVehicleComponent {
+    deployed: boolean;
+    moving: boolean;
+    fuel: number;
+    maxFuel: number;
+    cargoHold: CargoComponent;
+}
+
 // --- Optional: Default Initializers ---
 // These functions can help create default component states when creating new entities.
 
@@ -61,4 +70,14 @@ export function createDefaultResource(credits: number, fuel: number, maxFuel: nu
 
 export function createDefaultCargo(capacity: number): CargoComponent {
     return { capacity: capacity, items: {} };
+}
+
+export function createDefaultTerrainVehicle(capacity: number, maxFuel: number): TerrainVehicleComponent {
+    return {
+        deployed: false,
+        moving: false,
+        fuel: maxFuel,
+        maxFuel,
+        cargoHold: createDefaultCargo(capacity),
+    };
 }

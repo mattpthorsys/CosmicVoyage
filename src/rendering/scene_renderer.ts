@@ -46,6 +46,20 @@ type GiantAtmosphereSample = {
   edge: number;
 };
 
+export interface SurfaceVehicleOverlayModel {
+  notifications: string[];
+  deployed: boolean;
+  moving: boolean;
+  fuel: number;
+  maxFuel: number;
+  cargo: number;
+  cargoCapacity: number;
+  selectedIndex: number;
+  items: Array<{ label: string; status: string }>;
+  scanCursor?: { dx: number; dy: number };
+  crew: Array<{ name: string; hitPoints: number; maxHitPoints: number }>;
+}
+
 /** Contains methods for rendering specific game scenes/states. */
 export class SceneRenderer {
   private screenBuffer: ScreenBuffer; // Main buffer for primary content
@@ -572,13 +586,13 @@ export class SceneRenderer {
   }
 
   /** Draws the surface view for planets or starbases. */
-  drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
+  drawPlanetSurface(player: Player, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
     this.screenBuffer.clear(false);
     if (landedObject instanceof Planet) {
       if (landedObject.type === 'GasGiant' || landedObject.type === 'IceGiant') {
-        this.drawGasGiantSurface(player, landedObject);
+        this.drawGasGiantSurface(player, landedObject, surfaceOverlay);
       } else {
-        this.drawSolidPlanetSurface(player, landedObject);
+        this.drawSolidPlanetSurface(player, landedObject, surfaceOverlay);
       }
     } else if (landedObject instanceof Starbase) {
       this.drawStarbaseInterior(player, landedObject);
@@ -589,7 +603,7 @@ export class SceneRenderer {
   }
 
   /** Draws the surface of a solid planet. */
-  private drawSolidPlanetSurface(player: Player, planet: Planet): void {
+  private drawSolidPlanetSurface(player: Player, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
     logger.debug(`[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`);
     const map = planet.heightmap;
     const heightColors = planet.heightLevelColors;
@@ -642,16 +656,19 @@ export class SceneRenderer {
       player.render.fgColor,
       null
     );
+    if (surfaceOverlay?.scanCursor) this.drawSurfaceScanCursor(surfaceOverlay.scanCursor, viewport);
     this.drawSurfaceHud(player, planet, viewport);
+    if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
     this.drawHeightmapLegend(planet);
   }
 
   private getSurfaceViewport(cols: number, rows: number): { x: number; y: number; width: number; height: number } {
-    const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - 4)));
-    const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 4)));
+    const sidebarWidth = cols >= 96 ? 24 : 0;
+    const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5)));
+    const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 11)));
     return {
-      x: Math.max(1, Math.floor((cols - width) / 2)),
-      y: Math.max(1, Math.floor((rows - height) / 2)),
+      x: Math.max(1, Math.floor((cols - sidebarWidth - width) / 2)),
+      y: 2,
       width,
       height,
     };
@@ -665,7 +682,7 @@ export class SceneRenderer {
   }
 
   /** Draws the "surface" view for a gas giant. */
-  private drawGasGiantSurface(player: Player, planet: Planet): void {
+  private drawGasGiantSurface(player: Player, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
     logger.debug(`[SceneRenderer.drawGasGiantSurface] Drawing atmospheric view: ${planet.name}`);
     const palette = planet.rgbPaletteCache;
     if (!palette || palette.length < 1) {
@@ -703,7 +720,9 @@ export class SceneRenderer {
       player.render.fgColor,
       null
     );
+    if (surfaceOverlay?.scanCursor) this.drawSurfaceScanCursor(surfaceOverlay.scanCursor, viewport);
     this.drawSurfaceHud(player, planet, viewport);
+    if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
   }
 
   private getGasGiantTurbulenceFactor(planet: Planet): number {
@@ -1206,7 +1225,10 @@ export class SceneRenderer {
     planet: Planet,
     viewport: { x: number; y: number; width: number; height: number }
   ): void {
-    const label = ` ${planet.name}  X:${Math.floor(player.position.surfaceX)} Y:${Math.floor(player.position.surfaceY)} `;
+    const mapSize = Math.max(1, planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE);
+    const lat = 90 - (Math.max(0, Math.min(mapSize - 1, player.position.surfaceY)) / Math.max(1, mapSize - 1)) * 180;
+    const lon = (Math.floor(player.position.surfaceX) / mapSize) * 360 - 180;
+    const label = ` ${planet.name}  ${this.formatSurfaceCoordinate(lat, 'NS')} x ${this.formatSurfaceCoordinate(lon, 'EW')}  GRID ${Math.floor(player.position.surfaceX)},${Math.floor(player.position.surfaceY)} `;
     const clippedLabel = label.slice(0, Math.max(0, viewport.width - 2));
     this.screenBuffer.drawString(clippedLabel, viewport.x + 1, viewport.y - 1, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
 
@@ -1220,6 +1242,87 @@ export class SceneRenderer {
     this.screenBuffer.drawChar('+', crossX + 1, crossY, '#001010', '#00FFFF');
     this.screenBuffer.drawChar('+', crossX, crossY - 1, '#001010', '#00FFFF');
     this.screenBuffer.drawChar('+', crossX, crossY + 1, '#001010', '#00FFFF');
+  }
+
+  private formatSurfaceCoordinate(value: number, axis: 'NS' | 'EW'): string {
+    const direction = axis === 'NS'
+      ? value < 0 ? 'S' : 'N'
+      : value < 0 ? 'W' : 'E';
+    return `${Math.round(Math.abs(value))}${direction}`;
+  }
+
+  private drawSurfaceVehicleOverlay(
+    model: SurfaceVehicleOverlayModel,
+    viewport: { x: number; y: number; width: number; height: number }
+  ): void {
+    const panelX = viewport.x;
+    const panelY = viewport.y + viewport.height + 2;
+    const panelWidth = viewport.width;
+    if (panelY >= this.screenBuffer.getRows() - 1) return;
+    const notifications = model.notifications.length > 0 ? model.notifications : ['Surface systems nominal.'];
+    this.drawingContext.drawBox(panelX - 1, panelY - 1, panelWidth + 2, 6, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString('NOTIFICATIONS', panelX + 2, panelY - 1, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    for (let index = 0; index < 4; index++) {
+      const line = (notifications[index] ?? '').slice(0, panelWidth - 4);
+      this.screenBuffer.drawString(line, panelX + 2, panelY + index, index === 0 ? '#FFD66B' : '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    }
+
+    if (!model.deployed) {
+      this.screenBuffer.drawString('Terrain vehicle docked. Open ship operations to disembark.', panelX + 2, panelY + 5, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+      this.drawSurfaceCrewSidebar(model, viewport);
+      return;
+    }
+
+    const menuY = panelY + 6;
+    if (menuY >= this.screenBuffer.getRows()) return;
+    const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel}`;
+    const cargo = `CARGO ${model.cargo}/${model.cargoCapacity} m^3`;
+    const mode = model.moving ? 'MOVING' : 'STOPPED';
+    this.screenBuffer.drawString(`${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth), panelX + 1, menuY, model.moving ? '#9FFFE0' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+
+    let cursorX = panelX + 1;
+    const rowY = menuY + 1;
+    for (let index = 0; index < model.items.length; index++) {
+      const item = model.items[index];
+      const selected = index === model.selectedIndex && !model.moving;
+      const label = ` ${item.label.toUpperCase()} `;
+      const fg = selected ? '#001010' : '#9FFFE0';
+      const bg = selected ? '#00C8AA' : CONFIG.DEFAULT_BG_COLOUR;
+      if (cursorX + label.length >= panelX + panelWidth) break;
+      this.screenBuffer.drawString(label, cursorX, rowY, fg, bg);
+      cursorX += label.length + 1;
+    }
+    const selected = model.items[model.selectedIndex];
+    if (selected && rowY + 1 < this.screenBuffer.getRows()) {
+      this.screenBuffer.drawString(`${selected.label}: ${selected.status}`.slice(0, panelWidth), panelX + 1, rowY + 1, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    }
+    this.drawSurfaceCrewSidebar(model, viewport);
+  }
+
+  private drawSurfaceScanCursor(cursor: { dx: number; dy: number }, viewport: { x: number; y: number; width: number; height: number }): void {
+    const x = viewport.x + Math.floor(viewport.width / 2) + cursor.dx;
+    const y = viewport.y + Math.floor(viewport.height / 2) + cursor.dy;
+    if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
+    this.screenBuffer.drawChar('+', x, y, '#001010', '#FFD66B');
+    if (x > viewport.x) this.screenBuffer.drawChar('[', x - 1, y, '#FFD66B', null);
+    if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar(']', x + 1, y, '#FFD66B', null);
+  }
+
+  private drawSurfaceCrewSidebar(model: SurfaceVehicleOverlayModel, viewport: { x: number; y: number; width: number; height: number }): void {
+    const x = viewport.x + viewport.width + 3;
+    const rows = this.screenBuffer.getRows();
+    const width = Math.max(0, this.screenBuffer.getCols() - x - 2);
+    if (width < 16) return;
+    const height = Math.min(rows - 4, viewport.height + 8);
+    this.drawingContext.drawBox(x - 1, viewport.y - 1, width + 2, height, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString('CREW VITALS', x + 1, viewport.y - 1, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    model.crew.slice(0, Math.max(0, height - 3)).forEach((member, index) => {
+      const dead = member.hitPoints <= 0;
+      const hp = dead ? 'DEAD' : `${member.hitPoints}/${member.maxHitPoints}`;
+      const fg = dead ? '#FF6060' : member.hitPoints < member.maxHitPoints * 0.4 ? '#FFD66B' : '#9FFFE0';
+      const nameWidth = Math.max(5, width - hp.length - 3);
+      this.screenBuffer.drawString(`${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width), x, viewport.y + 1 + index, fg, CONFIG.DEFAULT_BG_COLOUR);
+    });
   }
 
   /** Draws a legend for the heightmap colours on the planet surface view. */

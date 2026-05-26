@@ -87,12 +87,16 @@ export const CONFIG = {
   },
 
   // --- Planet Surface ---
-  PLANET_MAP_BASE_SIZE: 256, // Target size for heightmap generation (actual will be power of 2 + 1)
+  PLANET_MAP_BASE_SIZE: 512, // Target size for heightmap generation (actual will be power of 2 + 1)
   PLANET_SURFACE_ROUGHNESS: 0.7, // Diamond-Square roughness factor
   PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colours
-  PLANET_SURFACE_VIEW_WIDTH: 72,
-  PLANET_SURFACE_VIEW_HEIGHT: 38,
+  PLANET_SURFACE_VIEW_WIDTH: 92,
+  PLANET_SURFACE_VIEW_HEIGHT: 34,
   MINING_RATE_FACTOR: 5, // Base number of minerals mined per action (scales with richness)
+  TERRAIN_VEHICLE_CARGO_CAPACITY: 50,
+  TERRAIN_VEHICLE_MAX_FUEL: 120,
+  TERRAIN_VEHICLE_MOVE_FUEL_BASE: 0.18,
+  TERRAIN_VEHICLE_ALTITUDE_FUEL_FACTOR: 0.42,
 
   // --- Hyperspace Generation ---
   STAR_DENSITY: 0.008, // Approximate fraction of cells containing a star check

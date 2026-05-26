@@ -10,10 +10,12 @@ import {
   RenderComponent,
   ResourceComponent,
   CargoComponent,
+  TerrainVehicleComponent,
   createDefaultPosition,
   createDefaultRender,
   createDefaultResource,
   createDefaultCargo,
+  createDefaultTerrainVehicle,
 } from './components'; // Assuming components.ts is in the same directory
 
 export class Player {
@@ -22,6 +24,7 @@ export class Player {
   public render: RenderComponent;
   public resources: ResourceComponent;
   public cargoHold: CargoComponent;
+  public terrainVehicle: TerrainVehicleComponent;
   public crew: CrewMember[];
 
   // Constructor: Initializes components with default values
@@ -48,6 +51,7 @@ export class Player {
     this.resources = createDefaultResource(CONFIG.INITIAL_CREDITS, CONFIG.INITIAL_FUEL, CONFIG.MAX_FUEL);
 
     this.cargoHold = createDefaultCargo(CONFIG.INITIAL_CARGO_CAPACITY);
+    this.terrainVehicle = createDefaultTerrainVehicle(CONFIG.TERRAIN_VEHICLE_CARGO_CAPACITY, CONFIG.TERRAIN_VEHICLE_MAX_FUEL);
     this.crew = createStartingCrew(crewSeed);
 
     logger.info(
@@ -89,5 +93,9 @@ export class Player {
 
   awardCrewExperience(skill: CrewSkill, amount: number): CrewMember[] {
     return awardCrewExperience(this.crew, skill, amount);
+  }
+
+  getActiveSurfaceCargoHold(): CargoComponent {
+    return this.terrainVehicle.deployed ? this.terrainVehicle.cargoHold : this.cargoHold;
   }
 } // End Player class

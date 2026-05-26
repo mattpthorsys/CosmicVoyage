@@ -3,7 +3,7 @@
 import { RenderStats, ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
-import { SceneRenderer } from './scene_renderer';
+import { SceneRenderer, SurfaceVehicleOverlayModel } from './scene_renderer';
 import { StatusBarUpdater as ImportedStatusBarUpdater } from './status_bar_updater'; // Keep alias
 import { CommandStripUpdater } from './command_strip_updater';
 import { Player } from '../core/player';
@@ -211,8 +211,8 @@ export class RendererFacade {
     //const currentViewScale = CONFIG.DEFAULT_VIEW_SCALE; // Use the newly added property
     this.sceneRenderer.drawSolarSystem(player, system, currentViewScale);
   }
-  drawPlanetSurface(player: Player, landedObject: Planet | Starbase): void {
-    this.sceneRenderer.drawPlanetSurface(player, landedObject);
+  drawPlanetSurface(player: Player, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+    this.sceneRenderer.drawPlanetSurface(player, landedObject, surfaceOverlay);
   }
   drawStarbaseInterface(player: Player, starbase: Starbase, model: StarbaseScreenModel): void {
     this.sceneRenderer.drawStarbaseInterface(player, starbase, model);

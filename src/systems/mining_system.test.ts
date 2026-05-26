@@ -48,4 +48,14 @@ describe('MiningSystem quantity extraction', () => {
     expect(planet.minedAmount).toBe(2);
     expect(planet.depleted).toBe(false);
   });
+
+  it('loads mined material into the deployed terrain vehicle hold', () => {
+    const { mining, player } = createMiningHarness();
+    player.terrainVehicle.deployed = true;
+
+    mining.mine(3);
+
+    expect(player.cargoHold.items.IRON).toBeUndefined();
+    expect(player.terrainVehicle.cargoHold.items.IRON).toBe(3);
+  });
 });

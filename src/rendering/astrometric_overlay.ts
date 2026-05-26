@@ -610,11 +610,12 @@ export class AstrometricOverlay {
   }
 
   private getSurfaceViewport(cols: number, rows: number): { x: number; y: number; width: number; height: number } {
-    const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - 4)));
-    const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 4)));
+    const sidebarWidth = cols >= 96 ? 24 : 0;
+    const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5)));
+    const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 11)));
     return {
-      x: Math.max(1, Math.floor((cols - width) / 2)),
-      y: Math.max(1, Math.floor((rows - height) / 2)),
+      x: Math.max(1, Math.floor((cols - sidebarWidth - width) / 2)),
+      y: 2,
       width,
       height,
     };

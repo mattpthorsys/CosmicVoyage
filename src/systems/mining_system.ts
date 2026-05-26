@@ -53,7 +53,8 @@ export class MiningSystem {
     try {
       const site = this.getMiningSite(planet);
       if (!site.canMine) return site;
-      const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
+      const cargoHold = this.player.getActiveSurfaceCargoHold();
+      const freeCargo = cargoHold.capacity - this.cargoSystem.getTotalUnits(cargoHold);
       if (freeCargo <= 0) {
         return {
           canMine: false,
@@ -61,8 +62,8 @@ export class MiningSystem {
           elementKey: site.elementKey,
           elementName: site.elementName,
           message: STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
-            this.cargoSystem.getTotalUnits(this.player.cargoHold),
-            this.player.cargoHold.capacity
+            this.cargoSystem.getTotalUnits(cargoHold),
+            cargoHold.capacity
           ),
         };
       }
@@ -113,43 +114,44 @@ export class MiningSystem {
             statusMessage = site.message || '';
             actionFailedReason = site.message || 'Cannot mine';
           } else {
-            const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
+            const cargoHold = this.player.getActiveSurfaceCargoHold();
+            const freeCargo = cargoHold.capacity - this.cargoSystem.getTotalUnits(cargoHold);
             const desiredAmount = requestedAmount === undefined ? site.maxAmount : Math.max(1, Math.floor(requestedAmount));
             const amountToMine = Math.min(site.maxAmount, desiredAmount, freeCargo);
             if (amountToMine <= 0) {
               statusMessage = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
-                this.cargoSystem.getTotalUnits(this.player.cargoHold),
-                this.player.cargoHold.capacity
+                this.cargoSystem.getTotalUnits(cargoHold),
+                cargoHold.capacity
               );
               actionFailedReason = 'Cargo full';
             } else {
-              const actuallyAdded = this.cargoSystem.addItem(this.player.cargoHold, site.elementKey, amountToMine);
+              const actuallyAdded = this.cargoSystem.addItem(cargoHold, site.elementKey, amountToMine);
               logger.debug(`[MiningSystem] CargoSystem.addItem returned: ${actuallyAdded}`);
 
               if (actuallyAdded > 0) {
                 this.player.awardCrewExperience('geology', 8 + actuallyAdded);
                 planet.recordMinedAmount(this.player.position.surfaceX, this.player.position.surfaceY, actuallyAdded, site.totalYield ?? site.maxAmount);
-                const currentTotalCargo = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+                const currentTotalCargo = this.cargoSystem.getTotalUnits(cargoHold);
                 statusMessage = STATUS_MESSAGES.PLANET_MINE_SUCCESS(
                   actuallyAdded,
                   site.elementName || site.elementKey,
                   currentTotalCargo,
-                  this.player.cargoHold.capacity
+                  cargoHold.capacity
                 );
                 logger.debug(`[MiningSystem] Result: Success - Mined ${actuallyAdded} ${site.elementKey}`);
-                if (currentTotalCargo >= this.player.cargoHold.capacity) {
+                if (currentTotalCargo >= cargoHold.capacity) {
                   statusMessage += ` Cargo hold full!`;
                 }
                 eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, {
                   elementKey: site.elementKey,
                   amountAdded: actuallyAdded,
-                  newAmount: this.player.cargoHold.items[site.elementKey] || 0,
+                  newAmount: cargoHold.items[site.elementKey] || 0,
                   newTotalCargo: currentTotalCargo,
                 });
               } else {
                 statusMessage = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
-                  this.cargoSystem.getTotalUnits(this.player.cargoHold),
-                  this.player.cargoHold.capacity
+                  this.cargoSystem.getTotalUnits(cargoHold),
+                  cargoHold.capacity
                 );
                 actionFailedReason = 'Cargo full';
                 logger.debug('[MiningSystem] Result: Cargo full');

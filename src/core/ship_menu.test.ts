@@ -25,6 +25,7 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     currentShipCompartmentId: 'bridge',
     quantitySelector: null,
     jettisonConfirmation: null,
+    roverMenuSelection: 0,
     activeMissions: {},
     currentTargetIndex: 0,
     currentTargetSignature: '',
@@ -101,6 +102,42 @@ describe('ship menu', () => {
     expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
     expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+  });
+
+  it('shows rover cargo under its own manifest heading and transfers what fits when docking', () => {
+    const game = createShipMenuHarness('planet');
+    game.player.cargoHold.capacity = 5;
+    game.cargoSystem.addItem(game.player.cargoHold, 'COPPER', 4);
+    game.cargoSystem.addItem(game.player.terrainVehicle.cargoHold, 'IRON', 4);
+    game.player.terrainVehicle.deployed = true;
+
+    game.shipMenuSection = 'cargo';
+    const cargo = game.createShipMenuModel();
+    expect(cargo.rows.some((row: any) => row.id === 'rover-heading')).toBe(true);
+    expect(cargo.rows.some((row: any) => String(row.cells[0]).includes('Rover Iron'))).toBe(true);
+
+    game.dockTerrainVehicle();
+
+    expect(game.player.cargoHold.items.IRON).toBe(1);
+    expect(game.player.terrainVehicle.cargoHold.items.IRON).toBe(3);
+    expect(game.player.terrainVehicle.deployed).toBe(false);
+    expect(game.statusMessage).toContain('remains aboard rover');
+  });
+
+  it('offers terrain vehicle deployment from ship operations only while planetside', () => {
+    const game = createShipMenuHarness('planet');
+
+    const main = game.createShipMenuModel();
+    expect(main.rows.some((row: any) => row.id === 'rover')).toBe(true);
+
+    game.shipMenuSection = 'rover';
+    const rover = game.createShipMenuModel();
+    expect(rover.title).toBe('Terrain Vehicle');
+    expect(rover.rows[0].id).toBe('rover:deploy');
+
+    game.activateShipMenuSelection(rover.rows[0]);
+    expect(game.player.terrainVehicle.deployed).toBe(true);
+    expect(game.player.terrainVehicle.fuel).toBe(game.player.terrainVehicle.maxFuel);
   });
 
   it('treats the ship as compartments and crewed stations', () => {
