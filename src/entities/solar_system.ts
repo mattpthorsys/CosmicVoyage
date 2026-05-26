@@ -16,6 +16,7 @@ import { Starbase } from './starbase';
 import { logger } from '../utils/logger';
 import { calculateGravity } from '../entities/planet/physical_generator';
 import {
+  generateRotationPeriodHours,
   generatePlanetCharacteristics,
   PlanetCharacteristics,
 } from '../entities/planet/planet_characteristics_generator';
@@ -296,6 +297,37 @@ export class SolarSystem {
     return 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius_m, 3) / (GRAVITATIONAL_CONSTANT_G * centralMass_kg));
   }
 
+  private calculatePlanetTidalRotation(
+    planetType: string,
+    orbitDistance_m: number,
+    hostMass_kg: number,
+    ageGyr: number,
+    prng: PRNG
+  ): { tidallyLocked: boolean; rotationPeriodHours?: number } {
+    if (!Number.isFinite(orbitDistance_m) || orbitDistance_m <= 0 || !Number.isFinite(hostMass_kg) || hostMass_kg <= 0) {
+      return { tidallyLocked: false };
+    }
+
+    const orbitAU = orbitDistance_m / AU_IN_METERS;
+    const hostMassSolar = hostMass_kg / SOLAR_MASS_KG;
+    const bodyCoupling =
+      planetType === 'GasGiant' || planetType === 'IceGiant' ? 0.35 :
+      planetType === 'Lunar' || planetType === 'Molten' ? 1.35 :
+      planetType === 'Oceanic' ? 1.15 :
+      1;
+    const ageFactor = Math.max(0.08, ageGyr) / 4.6;
+    const tidalScore = ageFactor * Math.pow(hostMassSolar, 2) * Math.pow(0.12 / Math.max(0.015, orbitAU), 6) * bodyCoupling;
+    const lockProbability = this.clamp((Math.log10(Math.max(1e-5, tidalScore)) + 1.0) / 2.4, 0, 0.98);
+    const tidallyLocked = prng.random() < lockProbability;
+    if (!tidallyLocked) return { tidallyLocked: false };
+
+    const periodHours = this.calculateKeplerPeriodSeconds(orbitDistance_m, hostMass_kg) / 3600;
+    return {
+      tidallyLocked: true,
+      rotationPeriodHours: Math.round(periodHours * 10) / 10,
+    };
+  }
+
   /** Populates the planets array for the system using meter-based distances and generates moons. */
   private generatePlanets(): void {
     logger.info(`[System:${this.name}] Generating planets (using meters)...`);
@@ -366,6 +398,13 @@ export class SolarSystem {
         const planetName = `${this.name} ${this.getRomanNumeral(i + 1)}`;
         const parentStar = this.getPlanetEnvironmentStar(orbitHost);
         const parentStarType = parentStar.starType; // Pass star type to planet constructor
+        const tidalRotation = this.calculatePlanetTidalRotation(
+          planetType,
+          currentOrbitDistance,
+          this.getOrbitHostMassKg(orbitHost),
+          parentStar.environment.ageGyr,
+          this.systemPRNG.seedNew(`tidal_lock_${planetName}`)
+        );
 
         // Create the planet (ensure constructor accepts meters)
         const planet = new Planet(
@@ -380,7 +419,8 @@ export class SolarSystem {
           orbitHost,
           orbitCenter.x,
           orbitCenter.y,
-          totalFlux
+          totalFlux,
+          tidalRotation
         );
         this.planets[i] = planet;
         planetsGenerated++;
@@ -422,6 +462,13 @@ export class SolarSystem {
       const planetType = this.determinePlanetType(fallbackOrbit, totalFlux);
       const planetName = `${this.name} ${this.getRomanNumeral(1)}`;
       const parentStar = this.getPlanetEnvironmentStar(orbitHost);
+      const tidalRotation = this.calculatePlanetTidalRotation(
+        planetType,
+        fallbackOrbit,
+        this.getOrbitHostMassKg(orbitHost),
+        parentStar.environment.ageGyr,
+        this.systemPRNG.seedNew(`tidal_lock_${planetName}`)
+      );
       const planet = new Planet(
         planetName,
         planetType,
@@ -434,7 +481,8 @@ export class SolarSystem {
         orbitHost,
         orbitCenter.x,
         orbitCenter.y,
-        totalFlux
+        totalFlux,
+        tidalRotation
       );
       this.planets[0] = planet;
       planetsGenerated = 1;
@@ -529,6 +577,7 @@ export class SolarSystem {
       magneticFieldStrength: planetType === 'GasGiant' ? prng.random(120, 1800) : planetType === 'IceGiant' ? prng.random(60, 900) : prng.random(0, 3),
       axialTilt,
       tidallyLocked: false,
+      rotationPeriodHours: generateRotationPeriodHours(prng, planetType, physical.diameter, physical.density, 0, false),
       orbitalInclination: 0,
     };
   }
@@ -609,6 +658,9 @@ export class SolarSystem {
       composition: { Nitrogen: 0.45, Methane: 0.35, Argon: 0.2 },
     };
     const axialTilt = tidallyLocked ? prng.random(0, Math.PI / 60) : prng.random(0, Math.PI / 3);
+    const rotationPeriodHours = tidallyLocked
+      ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass) / 3600
+      : generateRotationPeriodHours(prng, moonType, diameter, density, moonOrbit_m, false);
     const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, moonType, atmosphere, {
       diameterKm: diameter,
       densityGcm3: density,
@@ -637,6 +689,7 @@ export class SolarSystem {
       magneticFieldStrength: prng.random(0, 4) * (tidalHeat > 0.2 ? 1.4 : 0.45),
       axialTilt,
       tidallyLocked,
+      rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
       orbitalInclination: orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 2.8),
     };
   }
@@ -992,6 +1045,9 @@ export class SolarSystem {
       : isGiantParent
         ? prng.random(Math.PI / 36, Math.PI / 2.5)
         : prng.random(0, Math.PI / 18);
+    const rotationPeriodHours = tidallyLocked
+      ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass) / 3600
+      : generateRotationPeriodHours(prng, moonType, diameter, density, moonOrbit_m, false);
     const tidalTemperatureBoost = isGiantParent ? Math.round(tidalHeat * prng.random(20, 95)) : Math.round(tidalHeat * prng.random(8, 35));
     const boostedAverageTemp = characteristics.surfaceTemp + tidalTemperatureBoost;
     const temperatureProfile = createTemperatureProfileFromAverage(boostedAverageTemp, moonType, characteristics.atmosphere, {
@@ -1015,6 +1071,7 @@ export class SolarSystem {
       magneticFieldStrength: characteristics.magneticFieldStrength * (isRegularGiantMoon ? 0.35 : 0.18),
       axialTilt,
       tidallyLocked,
+      rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
       orbitalInclination,
     };
   }

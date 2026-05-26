@@ -2518,7 +2518,7 @@ export class Game {
 
     let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.position.surfaceX},${
       this.player.position.surfaceY
-    } | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${currentTemp}K avg ${planet.surfaceTemp}K ${planet.surfaceTempMin}-${planet.surfaceTempMax}K`; // Show current temp
+    } | Grav: ${planet.gravity.toFixed(2)}g | Rot: ${planet.getRotationPeriodLabel()} | Temp: ${currentTemp}K avg ${planet.surfaceTemp}K ${planet.surfaceTempMin}-${planet.surfaceTempMax}K`; // Show current temp
     if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
       if (planet.scanned) {
         status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;

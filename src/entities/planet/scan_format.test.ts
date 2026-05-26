@@ -27,6 +27,7 @@ function createCharacteristics(): PlanetCharacteristics {
     magneticFieldStrength: 600,
     axialTilt: 0.2,
     tidallyLocked: false,
+    rotationPeriodHours: 13.8,
     orbitalInclination: 0,
   };
 }
@@ -48,6 +49,7 @@ describe('Planet scan formatting', () => {
 
     expect(scan).toContain('Type: <hl>gas giant</hl>');
     expect(scan).toContain('Orbit: <hl>none</hl>');
+    expect(scan.join('\n')).toContain('Period: <hl>13.8 hours</hl>');
     expect(scan.join('\n')).not.toContain('GasGiant');
     expect(scan.join('\n')).not.toContain('0.000 AU');
   });

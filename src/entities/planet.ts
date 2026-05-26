@@ -5,7 +5,7 @@ import { PRNG } from '../utils/prng';
 import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';
 // Import the specific interface from the generator file
-import { generatePlanetCharacteristics, PlanetCharacteristics } from './planet/planet_characteristics_generator';
+import { generatePlanetCharacteristics, PlanetCharacteristics, PlanetGenerationOptions } from './planet/planet_characteristics_generator';
 import { StellarEnvironment } from './stellar_environment';
 import { OrbitHost } from './stellar_body';
 // Import the generator and data interface
@@ -68,6 +68,7 @@ export class Planet {
   public readonly escapeVelocity: number;
   public readonly axialTilt: number; // in radians
   public readonly tidallyLocked: boolean;
+  public readonly rotationPeriodHours: number;
   public readonly orbitalInclination: number; // in radians
 
   // Resources & Gameplay (Generated + State)
@@ -103,7 +104,8 @@ export class Planet {
     orbitHost?: OrbitHost,
     orbitCenterX: number = 0,
     orbitCenterY: number = 0,
-    totalFlux_W_m2?: number
+    totalFlux_W_m2?: number,
+    generationOptions?: PlanetGenerationOptions
   ) {
     this.name = name; //
     this.type = type; //
@@ -122,7 +124,8 @@ export class Planet {
         this.systemPRNG,
         parentStarType,
         stellarEnvironment,
-        totalFlux_W_m2
+        totalFlux_W_m2,
+        generationOptions
     );
 
     // Assign properties from finalCharacteristics
@@ -140,6 +143,7 @@ export class Planet {
     this.magneticFieldStrength = finalCharacteristics.magneticFieldStrength;
     this.axialTilt = finalCharacteristics.axialTilt;
     this.tidallyLocked = finalCharacteristics.tidallyLocked;
+    this.rotationPeriodHours = finalCharacteristics.rotationPeriodHours;
     this.orbitalInclination = finalCharacteristics.orbitalInclination;
     this.mineralRichness = finalCharacteristics.mineralRichness;
     this.baseMinerals = finalCharacteristics.baseMinerals;
@@ -384,7 +388,7 @@ export class Planet {
       `Rotation: <hl>${this.tidallyLocked ? 'Tidally locked' : 'Free'}</hl> | Axial Tilt: <hl>${(
         (this.axialTilt * 180) /
         Math.PI
-      ).toFixed(1)} deg</hl> | Inclination: <hl>${((this.orbitalInclination * 180) / Math.PI).toFixed(1)} deg</hl>`
+      ).toFixed(1)} deg</hl> | Period: <hl>${this.getRotationPeriodLabel()}</hl> | Inclination: <hl>${((this.orbitalInclination * 180) / Math.PI).toFixed(1)} deg</hl>`
     );
 
     // --- Atmosphere Details ---
@@ -503,5 +507,13 @@ export class Planet {
     const adjusted = min + (this.surfaceTemp + seasonalOffset - min) * latitudeBias;
 
     return Math.max(2, Math.round(Math.max(min, Math.min(max, adjusted))));
+  }
+
+  public getRotationPeriodLabel(): string {
+    if (this.tidallyLocked) return 'synchronous';
+    const hours = this.rotationPeriodHours;
+    if (!Number.isFinite(hours) || hours <= 0) return 'unknown';
+    if (hours >= 48) return `${(hours / 24).toFixed(1)} days`;
+    return `${hours.toFixed(1)} hours`;
   }
 } // End Planet class //

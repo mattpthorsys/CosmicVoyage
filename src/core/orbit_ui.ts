@@ -88,7 +88,8 @@ export function createOrbitScreenModel(args: {
       selected.orbitDistance <= 0
         ? 'Orbit none | Light time none'
         : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
-      `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
+      `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Rot ${selected.getRotationPeriodLabel()} | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
+      `Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg`,
       `Temp now ${selected.getCurrentTemperature()}K | Avg ${selected.surfaceTemp}K | Range ${selected.surfaceTempMin}-${selected.surfaceTempMax}K`,
       `Moons ${selected.moons.length}`,
     ],

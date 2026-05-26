@@ -29,7 +29,13 @@ export interface PlanetCharacteristics {
     magneticFieldStrength: number;
     axialTilt: number; // in radians
     tidallyLocked: boolean;
+    rotationPeriodHours: number;
     orbitalInclination: number; // in radians
+}
+
+export interface PlanetGenerationOptions {
+    tidallyLocked?: boolean;
+    rotationPeriodHours?: number;
 }
 
 /** Main function to generate all characteristics. */
@@ -39,7 +45,8 @@ export function generatePlanetCharacteristics(
     planetPRNG: PRNG,
     parentStarType: string,
     stellarEnvironment?: StellarEnvironment,
-    totalFlux_W_m2?: number
+    totalFlux_W_m2?: number,
+    options: PlanetGenerationOptions = {}
 ): PlanetCharacteristics {
     const environment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
     logger.info(`[CharGen] Generating characteristics for Type: ${planetType}, Orbit: ${orbitDistance.toExponential(2)}m, Star: ${parentStarType}, Age: ${environment.ageGyr} Gyr, [Fe/H]: ${environment.metallicityFeH}...`);
@@ -63,7 +70,7 @@ export function generatePlanetCharacteristics(
     const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance, environment);
 
     const axialTilt = planetPRNG.random(0, Math.PI / 4);
-    const tidallyLocked = false;
+    const tidallyLocked = options.tidallyLocked ?? false;
     const orbitalInclination = planetPRNG.random(0, Math.PI / 18);
 
     // 5. Calculate Final Surface Temperature (uses atmosphere and physical state)
@@ -122,6 +129,8 @@ export function generatePlanetCharacteristics(
     magneticFieldStrength = Math.max(0, magneticFieldStrength);
     logger.debug(`[CharGen:${planetType}] Magnetic Field Generated: ${magneticFieldStrength.toFixed(1)} µT`);
 
+    const rotationPeriodHours = options.rotationPeriodHours ?? generateRotationPeriodHours(planetPRNG, planetType, diameter, density, orbitDistance, tidallyLocked);
+
     logger.info(`[CharGen] Characteristics generated for ${planetType}. Gravity: ${gravity.toFixed(2)}g, EscapeVel: ${escapeVelocity.toFixed(0)} m/s, Richness: ${mineralRichness}.`);
 
     // Return the complete characteristics object
@@ -143,6 +152,53 @@ export function generatePlanetCharacteristics(
         magneticFieldStrength,
         axialTilt,
         tidallyLocked,
+        rotationPeriodHours,
         orbitalInclination
     };
+}
+
+export function generateRotationPeriodHours(
+    prng: PRNG,
+    planetType: string,
+    diameterKm: number,
+    densityGcm3: number,
+    orbitDistance_m: number,
+    tidallyLocked: boolean
+): number {
+    if (tidallyLocked) return 0;
+
+    let baseHours: number;
+    switch (planetType) {
+        case 'GasGiant':
+            baseHours = prng.random(8, 18);
+            break;
+        case 'IceGiant':
+            baseHours = prng.random(11, 24);
+            break;
+        case 'Molten':
+            baseHours = prng.random(28, 240);
+            break;
+        case 'Lunar':
+            baseHours = prng.random(60, 900);
+            break;
+        case 'Frozen':
+            baseHours = prng.random(18, 160);
+            break;
+        case 'Oceanic':
+            baseHours = prng.random(14, 54);
+            break;
+        case 'Rock':
+        default:
+            baseHours = prng.random(12, 72);
+            break;
+    }
+
+    const sizeFactor = Math.max(0.65, Math.min(1.8, Math.sqrt(diameterKm / 12742)));
+    const densityFactor = Math.max(0.75, Math.min(1.25, Math.sqrt(5.51 / Math.max(0.4, densityGcm3))));
+    const closeOrbitSlowdown =
+        orbitDistance_m > 0 && orbitDistance_m < 0.18 * 1.495978707e11
+            ? 1 + Math.pow((0.18 * 1.495978707e11 - orbitDistance_m) / (0.18 * 1.495978707e11), 1.6) * 5
+            : 1;
+
+    return Math.round(baseHours * sizeFactor * densityFactor * closeOrbitSlowdown * 10) / 10;
 }

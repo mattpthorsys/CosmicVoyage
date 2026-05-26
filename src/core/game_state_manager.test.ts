@@ -30,6 +30,7 @@ function createCharacteristics(): PlanetCharacteristics {
     magneticFieldStrength: 1.1,
     axialTilt: 0.18,
     tidallyLocked: false,
+    rotationPeriodHours: 24.6,
     orbitalInclination: 0.02,
   };
 }

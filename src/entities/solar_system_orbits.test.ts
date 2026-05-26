@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GRAVITATIONAL_CONSTANT_G } from '../constants';
+import { AU_IN_METERS, GRAVITATIONAL_CONSTANT_G, SOLAR_MASS_KG } from '../constants';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { PRNG } from '../utils/prng';
 import { Planet } from './planet';
@@ -83,5 +83,39 @@ describe('SolarSystem orbital velocities', () => {
       expectedDelta(1, moon.orbitDistance, parent.mass),
       8
     );
+  });
+
+  it('reports synchronous rotation periods for tidally locked moons', () => {
+    const system = findSystem((candidate) =>
+      candidate.planets.some((planet) => planet && planet.moons.some((moon) => moon.tidallyLocked))
+    );
+    const parent = system.planets.find((planet) => planet && planet.moons.some((moon) => moon.tidallyLocked))!;
+    const moon = parent.moons.find((candidate) => candidate.tidallyLocked)!;
+    const orbitalPeriodHours = keplerPeriodSeconds(moon.orbitDistance, parent.mass) / 3600;
+
+    expect(moon.rotationPeriodHours).toBeCloseTo(orbitalPeriodHours, 0);
+    expect(moon.getRotationPeriodLabel()).not.toBe('unknown');
+  });
+
+  it('locks close-in planets to their stellar orbital period while leaving distant planets free', () => {
+    const system = findSystem((candidate) => candidate.stars.length > 0);
+    const close = (system as any).calculatePlanetTidalRotation(
+      'Rock',
+      0.03 * AU_IN_METERS,
+      SOLAR_MASS_KG,
+      6,
+      new PRNG('close-lock')
+    );
+    const distant = (system as any).calculatePlanetTidalRotation(
+      'Rock',
+      1.0 * AU_IN_METERS,
+      SOLAR_MASS_KG,
+      6,
+      new PRNG('distant-lock')
+    );
+
+    expect(close.tidallyLocked).toBe(true);
+    expect(close.rotationPeriodHours).toBeCloseTo(keplerPeriodSeconds(0.03 * AU_IN_METERS, SOLAR_MASS_KG) / 3600, 0);
+    expect(distant.tidallyLocked).toBe(false);
   });
 });

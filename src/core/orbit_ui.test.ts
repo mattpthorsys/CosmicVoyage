@@ -28,6 +28,7 @@ function createCharacteristics(): PlanetCharacteristics {
     magneticFieldStrength: 300,
     axialTilt: 0.1,
     tidallyLocked: false,
+    rotationPeriodHours: 17.2,
     orbitalInclination: 0,
   };
 }
@@ -58,6 +59,7 @@ describe('Orbit UI formatting', () => {
     expect(model.description[0]).toContain('ice giant');
     expect(model.description[1]).toBe('Orbit none; free planetary-mass object in interstellar space.');
     expect(model.telemetry).toContain('Orbit none | Light time none');
+    expect(model.telemetry).toContain('Tilt 5.7 deg | Rot 17.2 hours | Free rotation');
     expect(model.telemetry.join('\n')).not.toContain('IceGiant');
     expect(model.telemetry.join('\n')).not.toContain('0.000 AU');
   });
