@@ -58,6 +58,8 @@ export class Planet {
   public readonly density: number; // *** NEW: Store density ***
   public readonly gravity: number; // Now calculated by generator
   public readonly surfaceTemp: number; //
+  public readonly surfaceTempMin: number;
+  public readonly surfaceTempMax: number;
   public readonly atmosphere: Atmosphere; //
   public readonly hydrosphere: string; //
   public readonly lithosphere: string; //
@@ -131,6 +133,8 @@ export class Planet {
     this.escapeVelocity = finalCharacteristics.escapeVelocity;
     this.atmosphere = finalCharacteristics.atmosphere;
     this.surfaceTemp = finalCharacteristics.surfaceTemp;
+    this.surfaceTempMin = finalCharacteristics.surfaceTempMin;
+    this.surfaceTempMax = finalCharacteristics.surfaceTempMax;
     this.hydrosphere = finalCharacteristics.hydrosphere;
     this.lithosphere = finalCharacteristics.lithosphere;
     this.magneticFieldStrength = finalCharacteristics.magneticFieldStrength;
@@ -159,7 +163,7 @@ export class Planet {
     logger.info(
       `[Planet:${this.name}] Constructed. Type=${this.type}, Orbit=${this.orbitDistance.toFixed(0)}, Temp=${
         this.surfaceTemp
-      }K, Gravity=${this.gravity.toFixed(2)}g, Density=${this.density.toFixed(2)}g/cm³, Minerals=${
+      }K (${this.surfaceTempMin}-${this.surfaceTempMax}K), Gravity=${this.gravity.toFixed(2)}g, Density=${this.density.toFixed(2)}g/cm³, Minerals=${
         this.mineralRichness
       }. Top Elements: [${topElements || 'None'}]`
     ); // Updated log
@@ -373,7 +377,9 @@ export class Planet {
     );
     // Add Mass and Escape Velocity if desired
     // infoLines.push(`Mass: <hl>${this.mass.toExponential(2)} kg</hl> | Escape Vel: <hl>${this.escapeVelocity.toFixed(0)} m/s</hl>`);
-    infoLines.push(`Avg Surface Temp: <hl>${this.surfaceTemp} K</hl>`); // This is the average temp
+    infoLines.push(
+      `Surface Temp: <hl>avg ${this.surfaceTemp} K</hl> | <hl>min ${this.surfaceTempMin} K</hl> | <hl>max ${this.surfaceTempMax} K</hl>`
+    );
     infoLines.push(
       `Rotation: <hl>${this.tidallyLocked ? 'Tidally locked' : 'Free'}</hl> | Axial Tilt: <hl>${(
         (this.axialTilt * 180) /
@@ -480,36 +486,22 @@ export class Planet {
   }
 
   /**
-   * Calculates the approximate current surface temperature considering axial tilt and orbital position (season).
-   * Uses a simplified model - assumes orbitAngle 0 is "spring equinox" for the northern hemisphere.
-   * @param latitude Optional latitude (in radians, -PI/2 to PI/2) for more detailed calculations (default 0 - equator). Not fully implemented in effect yet.
+   * Calculates the approximate current surface temperature within the generated min/max range.
+   * Assumes orbitAngle 0 is an equinox and uses axial tilt for seasonal bias.
+   * @param latitude Optional latitude (in radians, -PI/2 to PI/2).
    * @returns The estimated current temperature in Kelvin.
    */
   public getCurrentTemperature(latitude: number = 0): number {
-    // Max temperature variation percentage due to seasons (e.g., 15%) - ADJUSTABLE
-    const MAX_SEASONAL_VARIATION = 0.15;
+    const min = Math.min(this.surfaceTempMin, this.surfaceTempMax, this.surfaceTemp);
+    const max = Math.max(this.surfaceTempMin, this.surfaceTempMax, this.surfaceTemp);
+    if (max <= min) return Math.max(2, Math.round(this.surfaceTemp));
 
-    // Calculate seasonal factor based on orbit angle and axial tilt.
-    // sin(orbitAngle) is max at "summer solstice" (PI/2), min at "winter solstice" (3PI/2).
-    // sin(axialTilt) scales the effect based on tilt amount.
-    // This is a simplification; real seasons depend on latitude and insulation angle.
     const seasonalSine = Math.sin(this.orbitAngle) * Math.sin(this.axialTilt);
+    const seasonalOffset = seasonalSine * (max - min) * 0.35;
+    const latitudeFactor = Math.max(0, Math.min(1, Math.cos(latitude)));
+    const latitudeBias = 0.72 + latitudeFactor * 0.28;
+    const adjusted = min + (this.surfaceTemp + seasonalOffset - min) * latitudeBias;
 
-    // Apply the variation to the average temperature
-    const seasonalMultiplier = 1 + seasonalSine * MAX_SEASONAL_VARIATION;
-
-    // Calculate current temperature by applying seasonal multiplier to the stored average
-    let currentTemp = this.surfaceTemp * seasonalMultiplier;
-
-    // Basic latitude effect (optional refinement): poles are generally colder
-    // This is very simplified - doesn't account for day/night or proper insulation
-    const latitudeFactor = Math.cos(latitude); // Closer to 1 at equator, 0 at poles
-    currentTemp *= 0.8 + latitudeFactor * 0.2; // Make poles up to 20% colder on average
-
-    // Ensure temperature doesn't drop below absolute zero (or a practical minimum like 2K)
-    currentTemp = Math.max(2, currentTemp);
-
-    // Return the rounded current temperature
-    return Math.round(currentTemp);
+    return Math.max(2, Math.round(Math.max(min, Math.min(max, adjusted))));
   }
 } // End Planet class //

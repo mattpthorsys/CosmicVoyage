@@ -52,7 +52,7 @@ export function createOrbitScreenModel(args: {
   const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(parentSeparation);
   const classText = describePlanetType(selected.type);
   const description = [
-    `${selected.name} is a ${classText} with ${selected.gravity.toFixed(2)}g gravity and a mean surface temperature of ${selected.surfaceTemp}K.`,
+    `${selected.name} is a ${classText} with ${selected.gravity.toFixed(2)}g gravity and a surface temperature of ${selected.surfaceTemp}K avg (${selected.surfaceTempMin}-${selected.surfaceTempMax}K).`,
     selected.orbitDistance <= 0
       ? 'Orbit none; free planetary-mass object in interstellar space.'
       : `Orbital scale ${orbitText} from the system primary; one-way signal delay ${signalText}.`,
@@ -89,7 +89,8 @@ export function createOrbitScreenModel(args: {
         ? 'Orbit none | Light time none'
         : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
       `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
-      `Temp now ${selected.getCurrentTemperature()}K | Moons ${selected.moons.length}`,
+      `Temp now ${selected.getCurrentTemperature()}K | Avg ${selected.surfaceTemp}K | Range ${selected.surfaceTempMin}-${selected.surfaceTempMax}K`,
+      `Moons ${selected.moons.length}`,
     ],
     footer: [
       args.mode === 'landing'

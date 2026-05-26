@@ -17,6 +17,8 @@ function createCharacteristics(): PlanetCharacteristics {
       composition: { Hydrogen: 82, Helium: 16, Methane: 2 },
     },
     surfaceTemp: 54,
+    surfaceTempMin: 51,
+    surfaceTempMax: 57,
     hydrosphere: 'Deep volatile atmosphere',
     lithosphere: 'No solid surface',
     mineralRichness: MineralRichness.NONE,

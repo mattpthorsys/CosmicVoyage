@@ -5,7 +5,7 @@ import { generatePhysicalBase, calculateGravity } from './physical_generator';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet';
 import { generateAtmosphere } from './atmosphere_generator';
-import { calculateSurfaceTemp } from './temperature_calculator';
+import { calculateTemperatureProfile } from './temperature_calculator';
 import { generateHydrosphere, generateLithosphere } from './surface_descriptor';
 import { calculateElementAbundance, determineMineralRichness, getBaseMinerals } from './resource_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from '../stellar_environment';
@@ -19,6 +19,8 @@ export interface PlanetCharacteristics {
     escapeVelocity: number;
     atmosphere: Atmosphere;
     surfaceTemp: number;
+    surfaceTempMin: number;
+    surfaceTempMax: number;
     hydrosphere: string;
     lithosphere: string;
     mineralRichness: MineralRichness;
@@ -60,8 +62,28 @@ export function generatePlanetCharacteristics(
     // 4. Generate Atmosphere (NOW pass escape velocity)
     const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance, environment);
 
-    // 5. Calculate Final Surface Temperature (uses atmosphere)
-    const surfaceTemp = calculateSurfaceTemp(planetType, orbitDistance, parentStarType, atmosphere, environment, totalFlux_W_m2);
+    const axialTilt = planetPRNG.random(0, Math.PI / 4);
+    const tidallyLocked = false;
+    const orbitalInclination = planetPRNG.random(0, Math.PI / 18);
+
+    // 5. Calculate Final Surface Temperature (uses atmosphere and physical state)
+    const temperatureProfile = calculateTemperatureProfile(
+        planetType,
+        orbitDistance,
+        parentStarType,
+        atmosphere,
+        environment,
+        totalFlux_W_m2,
+        {
+            diameterKm: diameter,
+            densityGcm3: density,
+            ageGyr: environment.ageGyr,
+            axialTiltRad: axialTilt,
+            tidallyLocked,
+            tidalHeatingFactor: 0,
+        }
+    );
+    const surfaceTemp = temperatureProfile.average;
 
     // 6. Generate Surface Descriptors (use final temp)
     const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere);
@@ -100,12 +122,6 @@ export function generatePlanetCharacteristics(
     magneticFieldStrength = Math.max(0, magneticFieldStrength);
     logger.debug(`[CharGen:${planetType}] Magnetic Field Generated: ${magneticFieldStrength.toFixed(1)} µT`);
 
-    // 8. Generate Axial Tilt (in radians)
-    const axialTilt = planetPRNG.random(0, Math.PI / 4)
-    const tidallyLocked = false;
-    const orbitalInclination = planetPRNG.random(0, Math.PI / 18);
-
-
     logger.info(`[CharGen] Characteristics generated for ${planetType}. Gravity: ${gravity.toFixed(2)}g, EscapeVel: ${escapeVelocity.toFixed(0)} m/s, Richness: ${mineralRichness}.`);
 
     // Return the complete characteristics object
@@ -117,6 +133,8 @@ export function generatePlanetCharacteristics(
         escapeVelocity, // <<< Include escape velocity
         atmosphere,
         surfaceTemp,
+        surfaceTempMin: temperatureProfile.min,
+        surfaceTempMax: temperatureProfile.max,
         hydrosphere,
         lithosphere,
         mineralRichness,

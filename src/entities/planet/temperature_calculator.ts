@@ -22,6 +22,21 @@ const PLANET_ALBEDOS: Record<string, number> = {
     'Default':  0.30  // Fallback
 };
 
+export interface TemperatureProfile {
+    average: number;
+    min: number;
+    max: number;
+}
+
+export interface TemperatureProfileOptions {
+    diameterKm?: number;
+    densityGcm3?: number;
+    ageGyr?: number;
+    axialTiltRad?: number;
+    tidallyLocked?: boolean;
+    tidalHeatingFactor?: number;
+}
+
 
 /**
  * Calculates surface temperature based on stellar radiation, distance, albedo, and greenhouse effect.
@@ -40,6 +55,18 @@ export function calculateSurfaceTemp(
     stellarEnvironment?: StellarEnvironment,
     totalFlux_W_m2?: number
 ): number {
+    return calculateTemperatureProfile(planetType, orbitDistance_m, parentStarType, atmosphere, stellarEnvironment, totalFlux_W_m2).average;
+}
+
+export function calculateTemperatureProfile(
+    planetType: string,
+    orbitDistance_m: number,
+    parentStarType: string,
+    atmosphere: Atmosphere,
+    stellarEnvironment?: StellarEnvironment,
+    totalFlux_W_m2?: number,
+    options: TemperatureProfileOptions = {}
+): TemperatureProfile {
     // Use a slightly different logger prefix for clarity
     const logPrefix = `[TempCalc:${planetType}]`;
     logger.debug(`${logPrefix} Calculating surface temp (Orbit: ${orbitDistance_m.toExponential(2)}m)...`);
@@ -48,7 +75,7 @@ export function calculateSurfaceTemp(
     // Ensure starInfo and necessary properties (temp, radius) exist and are valid numbers
     if (!starInfo || typeof starInfo.temp !== 'number' || typeof starInfo.radius !== 'number' || starInfo.radius <= 0 || !Number.isFinite(starInfo.temp) || !Number.isFinite(starInfo.radius)) {
         logger.error(`${logPrefix} Missing or invalid star data (Temp/Radius) for type ${parentStarType}. Using fallback temp.`);
-        return PLANET_TYPES[planetType]?.baseTemp ?? 280; // Fallback to old base temp
+        return fallbackProfile(planetType, options);
     }
 
     const starTemp_K = starInfo.temp;
@@ -61,23 +88,23 @@ export function calculateSurfaceTemp(
 
     if (!Number.isFinite(starLuminosity_W) || starLuminosity_W <= 0) {
          logger.error(`${logPrefix} Calculated invalid star luminosity (${starLuminosity_W} W). Using fallback temp.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+         return fallbackProfile(planetType, options);
     }
     logger.debug(`${logPrefix} Star Luminosity: ${starLuminosity_W.toExponential(3)} W (Evolution factor ${evolutionFactor.toFixed(2)})`);
 
     // --- 2. Calculate Energy Flux at Planet's Orbit (W/m^2) ---
-    if (!Number.isFinite(orbitDistance_m) || orbitDistance_m <= 0) {
+    if ((!Number.isFinite(orbitDistance_m) || orbitDistance_m <= 0) && totalFlux_W_m2 === undefined) {
         logger.error(`${logPrefix} Invalid orbit distance (${orbitDistance_m}m). Using fallback temp.`);
-        return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+        return fallbackProfile(planetType, options);
     }
-    const orbitalSphereArea_m2 = 4 * Math.PI * Math.pow(orbitDistance_m, 2);
+    const orbitalSphereArea_m2 = orbitDistance_m > 0 ? 4 * Math.PI * Math.pow(orbitDistance_m, 2) : 1;
 
     // Check for potential division by zero or invalid area
     if (!Number.isFinite(orbitalSphereArea_m2) || orbitalSphereArea_m2 <= 0) {
          logger.error(`${logPrefix} Calculated invalid orbital sphere area for distance ${orbitDistance_m.toExponential(2)}m. Using fallback temp.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+         return fallbackProfile(planetType, options);
     }
-    const flux_W_m2 = totalFlux_W_m2 ?? (starLuminosity_W / orbitalSphereArea_m2);
+    const flux_W_m2 = Math.max(0.0001, totalFlux_W_m2 ?? (starLuminosity_W / orbitalSphereArea_m2));
     logger.debug(`${logPrefix} Flux at orbit: ${flux_W_m2.toExponential(3)} W/m^2`);
 
     // --- 3. Estimate Planetary Albedo ---
@@ -89,25 +116,25 @@ export function calculateSurfaceTemp(
     const absorbedFluxFactor = flux_W_m2 * (1 - albedo);
     if (!Number.isFinite(absorbedFluxFactor) || absorbedFluxFactor < 0) {
          logger.error(`${logPrefix} Calculated invalid absorbed flux factor (${absorbedFluxFactor}). Using fallback temp.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+         return fallbackProfile(planetType, options);
     }
     // Ensure denominator is positive before division and taking the root
     const denominator = 4 * STEFAN_BOLTZMANN_SIGMA;
     if (denominator <= 0) {
          logger.error(`${logPrefix} Invalid Stefan-Boltzmann constant calculation. Using fallback temp.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+         return fallbackProfile(planetType, options);
     }
     const equilibriumBase = absorbedFluxFactor / denominator;
     if (equilibriumBase < 0) {
          logger.error(`${logPrefix} Calculated negative base for equilibrium temperature (${equilibriumBase}). Using fallback temp.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280; // Cannot take root of negative number
+         return fallbackProfile(planetType, options); // Cannot take root of negative number
     }
 
     const equilibriumTemp_K = Math.pow(equilibriumBase, 0.25);
 
     if (!Number.isFinite(equilibriumTemp_K)) {
          logger.error(`${logPrefix} Calculated non-finite equilibrium temperature (${equilibriumTemp_K}). Flux: ${flux_W_m2.toExponential(3)}, Albedo: ${albedo}. Using fallback temp.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280;
+         return fallbackProfile(planetType, options);
     }
     logger.debug(`${logPrefix} Equilibrium Temp (no greenhouse): ${equilibriumTemp_K.toFixed(1)}K`);
 
@@ -119,12 +146,18 @@ export function calculateSurfaceTemp(
         if (atmosphere.density === 'Thin') {
             greenhouseFactor = 1.0 + (pressureFactor / 0.5) * 0.05; // Reduced base effect
             greenhouseDesc = "Slight";
+        } else if (atmosphere.density === 'Trace') {
+            greenhouseFactor = 1.0 + Math.min(0.03, pressureFactor * 0.12);
+            greenhouseDesc = "Trace";
         } else if (atmosphere.density === 'Earth-like') {
             greenhouseFactor = 1.05 + (pressureFactor / 1.0) * 0.15; // Reduced base effect
             greenhouseDesc = "Moderate";
         } else if (atmosphere.density === 'Thick') {
             greenhouseFactor = 1.1 + (pressureFactor / 2.0) * 0.30; // Reduced base effect, adjusted scaling
             greenhouseDesc = "Significant";
+        } else if (atmosphere.density === 'Superdense') {
+            greenhouseFactor = 1.2 + Math.log10(pressureFactor + 1) * 0.55;
+            greenhouseDesc = "Extreme";
         }
 
         // Bonus for specific gases
@@ -150,16 +183,101 @@ export function calculateSurfaceTemp(
     }
     logger.debug(`${logPrefix} Greenhouse Details: Density=${atmosphere?.density ?? 'N/A'}, Pressure=${atmosphere?.pressure?.toFixed(3) ?? 'N/A'} -> Factor=${greenhouseFactor.toFixed(2)} (${greenhouseDesc})`);
 
-    const surfaceTemp_K = equilibriumTemp_K * greenhouseFactor;
+    const radiativeSurfaceTemp_K = equilibriumTemp_K * greenhouseFactor;
+    const internalHeat_K = calculateInternalHeatContribution(planetType, options.diameterKm, options.densityGcm3, stellarEnvironment?.ageGyr ?? options.ageGyr);
+    const tidalHeat_K = calculateTidalHeatContribution(planetType, options.tidalHeatingFactor ?? 0);
+    const surfaceTemp_K = Math.pow(Math.pow(Math.max(2, radiativeSurfaceTemp_K), 4) + Math.pow(internalHeat_K, 4) + Math.pow(tidalHeat_K, 4), 0.25);
 
     // --- Final clamping and rounding ---
     const finalTemp = Math.max(2, Math.round(surfaceTemp_K)); // Ensure minimum temp above absolute zero (2K is background temp)
 
     if (!Number.isFinite(finalTemp)) {
          logger.error(`${logPrefix} Calculated final temperature is non-finite (${finalTemp}). Equilibrium: ${equilibriumTemp_K.toFixed(1)}K, Factor: ${greenhouseFactor.toFixed(2)}. Using fallback.`);
-         return PLANET_TYPES[planetType]?.baseTemp ?? 280; // Fallback
+         return fallbackProfile(planetType, options); // Fallback
     }
 
-    logger.debug(`${logPrefix} Final Surface Temp: ${finalTemp}K`);
-    return finalTemp;
+    const range = calculateTemperatureRange(finalTemp, planetType, atmosphere, options);
+    logger.debug(`${logPrefix} Final Surface Temp: ${finalTemp}K (min ${range.min}K, max ${range.max}K, internal ${internalHeat_K.toFixed(1)}K, tidal ${tidalHeat_K.toFixed(1)}K)`);
+    return range;
+}
+
+export function createTemperatureProfileFromAverage(
+    averageTemp_K: number,
+    planetType: string,
+    atmosphere: Atmosphere,
+    options: TemperatureProfileOptions = {}
+): TemperatureProfile {
+    return calculateTemperatureRange(Math.max(2, Math.round(averageTemp_K)), planetType, atmosphere, options);
+}
+
+function calculateTemperatureRange(
+    averageTemp_K: number,
+    planetType: string,
+    atmosphere: Atmosphere,
+    options: TemperatureProfileOptions
+): TemperatureProfile {
+    const atmosphereBuffer = getAtmosphereBuffer(atmosphere);
+    const tilt = Math.max(0, Math.min(Math.PI / 2, options.axialTiltRad ?? 0));
+    const tiltFactor = Math.sin(tilt);
+    const lockedFactor = options.tidallyLocked ? 1 : 0;
+    const thinSurfaceBoost = planetType === 'Lunar' || atmosphere.density === 'None' || atmosphere.density === 'Trace' ? 1.35 : 1;
+    const giantDamping = planetType === 'GasGiant' || planetType === 'IceGiant' ? 0.35 : 1;
+    const variationFraction = Math.max(
+        0.035,
+        (0.09 + tiltFactor * 0.22 + lockedFactor * 0.42) * atmosphereBuffer * thinSurfaceBoost * giantDamping
+    );
+    const geothermalFloor = calculateInternalHeatContribution(planetType, options.diameterKm, options.densityGcm3, options.ageGyr) * 0.35;
+    const tidalFloor = calculateTidalHeatContribution(planetType, options.tidalHeatingFactor ?? 0) * 0.4;
+    const min = Math.max(2, Math.round(Math.max(geothermalFloor + tidalFloor, averageTemp_K * (1 - variationFraction))));
+    const max = Math.max(min, Math.round(averageTemp_K * (1 + variationFraction * 1.15)));
+    return { average: averageTemp_K, min, max };
+}
+
+function getAtmosphereBuffer(atmosphere: Atmosphere): number {
+    switch (atmosphere.density) {
+        case 'Superdense':
+            return 0.18;
+        case 'Thick':
+            return 0.38;
+        case 'Earth-like':
+            return 0.58;
+        case 'Thin':
+            return 0.82;
+        case 'Trace':
+            return 1.05;
+        case 'None':
+        default:
+            return 1.18;
+    }
+}
+
+function calculateInternalHeatContribution(
+    planetType: string,
+    diameterKm?: number,
+    densityGcm3?: number,
+    ageGyr?: number
+): number {
+    const diameterFactor = Math.sqrt(Math.max(0.08, (diameterKm ?? 6500) / 12742));
+    const densityFactor = Math.max(0.25, Math.min(1.8, (densityGcm3 ?? 3.2) / 5.51));
+    const ageFactor = Math.max(0.22, Math.pow(4.6 / Math.max(0.08, ageGyr ?? 4.6), 0.32));
+    const typeBase =
+        planetType === 'GasGiant' ? 34 :
+        planetType === 'IceGiant' ? 22 :
+        planetType === 'Molten' ? 18 :
+        planetType === 'Rock' || planetType === 'Oceanic' ? 8 :
+        planetType === 'Frozen' ? 5 :
+        3;
+    return Math.max(0, typeBase * diameterFactor * densityFactor * ageFactor);
+}
+
+function calculateTidalHeatContribution(planetType: string, tidalHeatingFactor: number): number {
+    const clamped = Math.max(0, Math.min(1, tidalHeatingFactor));
+    if (clamped <= 0) return 0;
+    const typeScale = planetType === 'Lunar' ? 120 : planetType === 'Frozen' ? 95 : planetType === 'Rock' ? 80 : planetType === 'Oceanic' ? 65 : 35;
+    return typeScale * Math.pow(clamped, 0.9);
+}
+
+function fallbackProfile(planetType: string, options: TemperatureProfileOptions): TemperatureProfile {
+    const average = PLANET_TYPES[planetType]?.baseTemp ?? 280;
+    return calculateTemperatureRange(average, planetType, { density: 'None', pressure: 0, composition: { None: 100 } }, options);
 }

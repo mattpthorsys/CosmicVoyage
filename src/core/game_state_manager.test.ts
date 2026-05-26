@@ -20,6 +20,8 @@ function createCharacteristics(): PlanetCharacteristics {
       composition: { Nitrogen: 74, Oxygen: 21, Argon: 5 },
     },
     surfaceTemp: 286,
+    surfaceTempMin: 252,
+    surfaceTempMax: 318,
     hydrosphere: 'Partial oceans',
     lithosphere: 'Silicate crust',
     mineralRichness: MineralRichness.AVERAGE,

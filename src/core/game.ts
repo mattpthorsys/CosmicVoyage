@@ -1386,7 +1386,9 @@ export class Game {
       if (primaryBody) {
         lines.push(`Primary Body: <hl>${primaryBody.name}</hl> (${primaryBody.type})`);
         lines.push(`Mass: <hl>${primaryBody.mass.toExponential(2)} kg</hl> | Gravity: <hl>${primaryBody.gravity.toFixed(2)}g</hl>`);
-        lines.push(`Temperature: <hl>${primaryBody.surfaceTemp} K</hl>`);
+        lines.push(
+          `Temperature: <hl>avg ${primaryBody.surfaceTemp} K</hl> | <hl>min ${primaryBody.surfaceTempMin} K</hl> | <hl>max ${primaryBody.surfaceTempMax} K</hl>`
+        );
       }
       lines.push(`Facilities: <hl>None Detected</hl>`);
       lines.push('<h>--- SCAN COMPLETE---</h>');
@@ -2516,7 +2518,7 @@ export class Game {
 
     let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.position.surfaceX},${
       this.player.position.surfaceY
-    } | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${currentTemp}K`; // Show current temp
+    } | Grav: ${planet.gravity.toFixed(2)}g | Temp: ${currentTemp}K avg ${planet.surfaceTemp}K ${planet.surfaceTempMin}-${planet.surfaceTempMax}K`; // Show current temp
     if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
       if (planet.scanned) {
         status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;

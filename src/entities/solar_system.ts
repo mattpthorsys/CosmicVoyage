@@ -19,6 +19,7 @@ import {
   generatePlanetCharacteristics,
   PlanetCharacteristics,
 } from '../entities/planet/planet_characteristics_generator';
+import { createTemperatureProfileFromAverage } from '../entities/planet/temperature_calculator';
 import { SystemBasicProperties } from '@/generation/system_data_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import {
@@ -494,6 +495,15 @@ export class SolarSystem {
         : planetType === 'IceGiant'
           ? { density: 'Superdense', pressure: prng.random(80, 700), composition: { Hydrogen: 0.52, Helium: 0.18, Methane: 0.18, Ammonia: 0.12 } }
           : { density: 'Trace', pressure: prng.random(0.001, 0.08), composition: { Nitrogen: 0.35, Methane: 0.28, 'Carbon Dioxide': 0.22, Argon: 0.15 } };
+    const axialTilt = prng.random(0, Math.PI / 3);
+    const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, planetType, atmosphere, {
+      diameterKm: physical.diameter,
+      densityGcm3: physical.density,
+      ageGyr: this.stellarEnvironment.ageGyr,
+      axialTiltRad: axialTilt,
+      tidallyLocked: false,
+      tidalHeatingFactor: 0,
+    });
     const volatileAbundance: Record<string, number> =
       planetType === 'GasGiant'
         ? { Hydrogen: 0.62, Helium: 0.2, 'Methane Ice': 0.08, 'Ammonia Ice': 0.06, 'Water Ice': 0.04 }
@@ -508,14 +518,16 @@ export class SolarSystem {
       mass,
       escapeVelocity,
       atmosphere,
-      surfaceTemp,
+      surfaceTemp: temperatureProfile.average,
+      surfaceTempMin: temperatureProfile.min,
+      surfaceTempMax: temperatureProfile.max,
       hydrosphere: planetType === 'Frozen' ? 'Cryogenic surface volatiles' : 'Deep volatile atmosphere',
       lithosphere: planetType === 'Frozen' ? 'Ice-rock crust' : 'No solid surface',
       mineralRichness: planetType === 'Frozen' ? MineralRichness.POOR : MineralRichness.NONE,
       baseMinerals: planetType === 'Frozen' ? prng.randomInt(4, 16) : 0,
       elementAbundance: volatileAbundance,
       magneticFieldStrength: planetType === 'GasGiant' ? prng.random(120, 1800) : planetType === 'IceGiant' ? prng.random(60, 900) : prng.random(0, 3),
-      axialTilt: prng.random(0, Math.PI / 3),
+      axialTilt,
       tidallyLocked: false,
       orbitalInclination: 0,
     };
@@ -591,14 +603,30 @@ export class SolarSystem {
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
     const surfaceTemp = Math.round((moonType === 'Frozen' ? prng.random(9, 34) : prng.random(12, 52)) + tidalHeat * prng.random(12, 95));
     const tidallyLocked = orbitFraction < 0.82 || tidalHeat > 0.12;
+    const atmosphere: PlanetCharacteristics['atmosphere'] = {
+      density: surfaceTemp > 35 && diameter > 2400 ? 'Trace' : 'None',
+      pressure: surfaceTemp > 35 ? prng.random(0.001, 0.03) : 0,
+      composition: { Nitrogen: 0.45, Methane: 0.35, Argon: 0.2 },
+    };
+    const axialTilt = tidallyLocked ? prng.random(0, Math.PI / 60) : prng.random(0, Math.PI / 3);
+    const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, moonType, atmosphere, {
+      diameterKm: diameter,
+      densityGcm3: density,
+      ageGyr: this.stellarEnvironment.ageGyr,
+      axialTiltRad: axialTilt,
+      tidallyLocked,
+      tidalHeatingFactor: tidalHeat,
+    });
     return {
       diameter,
       density,
       gravity: calculateGravity(diameter, density),
       mass,
       escapeVelocity: Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m),
-      atmosphere: { density: surfaceTemp > 35 && diameter > 2400 ? 'Trace' : 'None', pressure: surfaceTemp > 35 ? prng.random(0.001, 0.03) : 0, composition: { Nitrogen: 0.45, Methane: 0.35, Argon: 0.2 } },
-      surfaceTemp,
+      atmosphere,
+      surfaceTemp: temperatureProfile.average,
+      surfaceTempMin: temperatureProfile.min,
+      surfaceTempMax: temperatureProfile.max,
       hydrosphere: 'Cryogenic ice deposits',
       lithosphere: moonType === 'Frozen' ? 'Ice-rock crust' : 'Cratered silicate crust',
       mineralRichness: prng.random() < 0.14 ? MineralRichness.AVERAGE : MineralRichness.POOR,
@@ -607,7 +635,7 @@ export class SolarSystem {
         ? { 'Water Ice': 0.34, 'Methane Ice': 0.2, 'Ammonia Ice': 0.14, Silicon: 0.18, Iron: 0.14 }
         : { Silicon: 0.34, Iron: 0.24, Aluminium: 0.12, Magnesium: 0.12, 'Water Ice': 0.18 },
       magneticFieldStrength: prng.random(0, 4) * (tidalHeat > 0.2 ? 1.4 : 0.45),
-      axialTilt: tidallyLocked ? prng.random(0, Math.PI / 60) : prng.random(0, Math.PI / 3),
+      axialTilt,
       tidallyLocked,
       orbitalInclination: orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 2.8),
     };
@@ -965,6 +993,15 @@ export class SolarSystem {
         ? prng.random(Math.PI / 36, Math.PI / 2.5)
         : prng.random(0, Math.PI / 18);
     const tidalTemperatureBoost = isGiantParent ? Math.round(tidalHeat * prng.random(20, 95)) : Math.round(tidalHeat * prng.random(8, 35));
+    const boostedAverageTemp = characteristics.surfaceTemp + tidalTemperatureBoost;
+    const temperatureProfile = createTemperatureProfileFromAverage(boostedAverageTemp, moonType, characteristics.atmosphere, {
+      diameterKm: diameter,
+      densityGcm3: density,
+      ageGyr: environment.ageGyr,
+      axialTiltRad: axialTilt,
+      tidallyLocked,
+      tidalHeatingFactor: tidalHeat,
+    });
     return {
       ...characteristics,
       diameter,
@@ -972,7 +1009,9 @@ export class SolarSystem {
       mass,
       gravity,
       escapeVelocity,
-      surfaceTemp: characteristics.surfaceTemp + tidalTemperatureBoost,
+      surfaceTemp: temperatureProfile.average,
+      surfaceTempMin: temperatureProfile.min,
+      surfaceTempMax: temperatureProfile.max,
       magneticFieldStrength: characteristics.magneticFieldStrength * (isRegularGiantMoon ? 0.35 : 0.18),
       axialTilt,
       tidallyLocked,
