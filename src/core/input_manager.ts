@@ -140,7 +140,9 @@ export class InputManager {
     if (!this.isListening) return;
 
     const key = e.key; // e.g., "ArrowUp", "Shift", "=", "+", "NumpadAdd"
+    const code = e.code; // e.g., "Numpad7" even when NumLock reports key as "Home"
     const lowerKey = key.toLowerCase(); // e.g., "arrowup", "shift", "=", "+", "numpadadd"
+    const lowerCode = code.toLowerCase();
 
     // Ignore repeats for already held keys
     if (this.keysPressed.has(key)) {
@@ -172,6 +174,9 @@ export class InputManager {
     if (!action) {
         action = this.keyToActionMap.get(lowerKey);
     }
+    if (!action) {
+        action = this.keyToActionMap.get(lowerCode);
+    }
 
     // If an action is found and it's not just a modifier key itself being pressed
     if (action && key !== 'Shift' && key !== 'Control') {
@@ -198,7 +203,9 @@ export class InputManager {
     if (!this.isListening) return;
 
     const key = e.key;
+    const code = e.code;
     const lowerKey = key.toLowerCase();
+    const lowerCode = code.toLowerCase();
 
     logger.debug(`[InputManager] Keyup: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`);
     this.keysPressed.delete(key);
@@ -223,6 +230,9 @@ export class InputManager {
     }
     if (!action) {
         action = this.keyToActionMap.get(lowerKey);
+    }
+    if (!action) {
+        action = this.keyToActionMap.get(lowerCode);
     }
 
     // If an action is found and it's not a modifier action itself

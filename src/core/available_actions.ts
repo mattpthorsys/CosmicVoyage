@@ -57,6 +57,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       }
       actions.push(action('boost', 'Boost Drift', CONFIG.KEY_BINDINGS.BOOST, 'BOOST', 'movement', 82, true));
       actions.push(action('fine-control', 'Fine Drift', CONFIG.KEY_BINDINGS.FINE_CONTROL, 'FINE_CONTROL', 'movement', 83, true));
+      actions.push(action('diagonal-drift', 'Diagonal Drift', 'Numpad 1/3/7/9', 'MOVE_DIAGONAL', 'movement', 84, true));
       break;
     case 'system':
       actions.push(action('cycle-target', 'Cycle Target', CONFIG.KEY_BINDINGS.CYCLE_TARGET, 'CYCLE_TARGET', 'target', 6, true, context.selectedTargetName ?? undefined));

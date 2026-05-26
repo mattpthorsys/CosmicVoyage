@@ -13,6 +13,7 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     stateManager: {
       state,
       currentPlanet: null,
+      currentSystem: null,
     },
     popupState: 'inactive',
     targetMenuOpen: false,
@@ -24,6 +25,10 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     currentShipCompartmentId: 'bridge',
     quantitySelector: null,
     jettisonConfirmation: null,
+    activeMissions: {},
+    currentTargetIndex: 0,
+    currentTargetSignature: '',
+    approachTargetSignature: null,
     statusMessage: '',
     forceFullRender: false,
   });
@@ -102,7 +107,7 @@ describe('ship menu', () => {
     const game = createShipMenuHarness();
 
     const main = game.createShipMenuModel();
-    expect(main.rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status']));
+    expect(main.rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status', 'log']));
 
     game.shipMenuSection = 'deck';
     const deck = game.createShipMenuModel();
@@ -117,6 +122,20 @@ describe('ship menu', () => {
     const stations = game.createShipMenuModel();
     expect(stations.columns).toEqual(['STATION', 'SKILL', 'BEST', 'STATE', 'READOUT']);
     expect(stations.rows.some((row: any) => row.id === 'station:navigation')).toBe(true);
+  });
+
+  it('presents the ship log as a polished watch record', () => {
+    const game = createShipMenuHarness('hyperspace');
+    game.statusMessage = 'Approach complete.';
+    game.shipMenuSection = 'log';
+
+    const log = game.createShipMenuModel();
+
+    expect(log.title).toBe('Ship Log');
+    expect(log.columns).toEqual(['LOG', 'CHANNEL', 'STATE', 'ENTRY']);
+    expect(log.rows.map((row: any) => row.cells[1])).toEqual(expect.arrayContaining(['NAV', 'SHIP', 'CREW', 'SURVEY', 'ALERT']));
+    expect(log.rows[0].cells[3]).toContain('Interstellar grid');
+    expect(log.footer[0]).toContain('PageUp/PageDown');
   });
 
   it('keeps ship menu out of the primary dock and orbit action path', () => {

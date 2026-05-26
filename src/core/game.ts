@@ -73,7 +73,7 @@ import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_s
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
-type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'jettison';
+type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'log' | 'jettison';
 type QuantityOperation =
   | { type: 'buy'; itemKey: string }
   | { type: 'sell'; itemKey: string }
@@ -1110,6 +1110,24 @@ export class Game {
     if (this.inputManager.isActionActive('MOVE_DOWN')) dy += 1;
     if (this.inputManager.isActionActive('MOVE_LEFT')) dx -= 1;
     if (this.inputManager.isActionActive('MOVE_RIGHT')) dx += 1;
+    if (this.stateManager.state === 'hyperspace') {
+      if (this.inputManager.isActionActive('MOVE_UP_LEFT')) {
+        dx -= 1;
+        dy -= 1;
+      }
+      if (this.inputManager.isActionActive('MOVE_UP_RIGHT')) {
+        dx += 1;
+        dy -= 1;
+      }
+      if (this.inputManager.isActionActive('MOVE_DOWN_LEFT')) {
+        dx -= 1;
+        dy += 1;
+      }
+      if (this.inputManager.isActionActive('MOVE_DOWN_RIGHT')) {
+        dx += 1;
+        dy += 1;
+      }
+    }
 
     if (dx !== 0 || dy !== 0) {
       this.approachTargetSignature = null;
@@ -2047,7 +2065,7 @@ export class Game {
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
     if (this.shipMenuSection === 'main') {
-      if (row.id === 'deck' || row.id === 'stations' || row.id === 'cargo' || row.id === 'crew' || row.id === 'status') {
+      if (row.id === 'deck' || row.id === 'stations' || row.id === 'cargo' || row.id === 'crew' || row.id === 'status' || row.id === 'log') {
         this.openShipMenuSection(row.id as ShipMenuSection);
       }
       return;
@@ -2164,6 +2182,8 @@ export class Game {
         return { title: 'Crew Records', subtitle: 'Personnel vitals, readiness, and specialist coverage.', columns: ['CREW', 'DUTY', 'VITALS', 'READINESS / SKILLS'], widths: [20, 16, 13, 41], footer: [`Up/Down inspect  ${backHint}`] };
       case 'status':
         return { title: 'Ship Status', subtitle: 'Primary shipboard systems and operating posture.', columns: ['SYSTEM', 'READING', 'STATE', 'TELEMETRY'], widths: [18, 18, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
+      case 'log':
+        return { title: 'Ship Log', subtitle: 'Chronicle, fixes, anomalies, and watch notes recorded by ship systems.', columns: ['LOG', 'CHANNEL', 'STATE', 'ENTRY'], widths: [8, 12, 13, 55], footer: [`Up/Down inspect  PageUp/PageDown scroll  ${backHint}`] };
       case 'jettison':
         return { title: 'Confirm Jettison', subtitle: 'External bay doors armed. Cargo ejection is permanent.', columns: ['VENT', 'CARGO', 'AFTER', 'CONFIRMATION'], widths: [10, 24, 14, 40], footer: [`Enter confirms selected amount  ${backHint}`] };
       case 'main':
@@ -2184,6 +2204,8 @@ export class Game {
         return this.getShipCrewMenuRows();
       case 'status':
         return this.getShipStatusMenuRows();
+      case 'log':
+        return this.getShipLogMenuRows();
       case 'jettison':
         return this.getJettisonMenuRows();
       case 'main':
@@ -2197,6 +2219,7 @@ export class Game {
           { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Hold manifest and ejection controls.`] },
           { id: 'crew', cells: ['Crew', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} ready`, `Roster, vitals, learning progress, and specialist coverage.`] },
           { id: 'status', cells: ['Ship Status', this.getShipOperatingState(), 'Fuel, cargo, finance, crew, location, and current flight mode.'] },
+          { id: 'log', cells: ['Ship Log', this.getShipLogSummary(), 'Persistent watch notes, discoveries, mission state, and navigation fixes.'] },
         ];
     }
   }
@@ -2309,6 +2332,74 @@ export class Game {
       { id: 'navigation', cells: ['Navigation', `Nav ${getBestCrewSkill(this.player.crew, 'navigation')}`, 'Crewed', `Pilot ${getBestCrewSkill(this.player.crew, 'piloting')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}`], disabled: true },
       { id: 'survey', cells: ['Survey suite', `Geo ${getBestCrewSkill(this.player.crew, 'geology')}`, 'Crewed', `Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}  Comms ${getBestCrewSkill(this.player.crew, 'communication')}`], disabled: true },
     ];
+  }
+
+  private getShipLogMenuRows(): TextTableRow[] {
+    const rows: TextTableRow[] = [];
+    const state = this.stateManager.state;
+    const system = this.stateManager.currentSystem;
+    const planet = this.stateManager.currentPlanet;
+    const target = this.getSelectedTarget();
+    const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    const activeMissionCount = Object.keys(this.activeMissions).length;
+
+    rows.push(this.createShipLogRow('001', 'NAV', 'FIX', this.getShipPositionLogEntry(), 'Current navigational fix and vessel state at the time the log panel was opened.'));
+    rows.push(this.createShipLogRow('002', 'SHIP', this.getShipOperatingState().toUpperCase(), `Fuel ${Math.round(this.player.resources.fuel)}/${this.player.resources.maxFuel} | Cargo ${cargoTotal}/${this.player.cargoHold.capacity} m^3 | ${this.player.crew.length} crew aboard.`, 'Core shipboard resources and current watch posture.'));
+    rows.push(this.createShipLogRow('003', 'CREW', this.getCrewHealthLabel().toUpperCase(), `Best skills: Nav ${getBestCrewSkill(this.player.crew, 'navigation')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}  Eng ${getBestCrewSkill(this.player.crew, 'engineering')}  Med ${getBestCrewSkill(this.player.crew, 'medicine')}.`, 'Crew readiness, specialist coverage, and available shipboard judgement.'));
+
+    if (system) {
+      rows.push(this.createShipLogRow('004', 'SURVEY', state.toUpperCase(), `${system.name} | ${system.architecture.kind} architecture | ${system.planets.filter(Boolean).length} indexed planetary bodies.`, 'System summary compiled from the current navigation database.'));
+    } else {
+      rows.push(this.createShipLogRow('004', 'SURVEY', 'VOID', 'No local system locked. Long-range survey suite is reading interstellar background only.', 'Deep-space cruise state. Local records are limited to contacts and medium readings.'));
+    }
+
+    if (target) {
+      rows.push(this.createShipLogRow('005', 'TARGET', 'SELECTED', `${this.getTargetName(target)} | ${this.getTargetClassLabel(target)} | ${this.getTargetRangeLabel(target)}.`, 'Selected navigation target, suitable for approach assist where available.'));
+    } else {
+      rows.push(this.createShipLogRow('005', 'TARGET', 'NONE', 'No navigation target selected.', 'Use target cycling or the navigation menu to designate a local object.'));
+    }
+
+    if (planet) {
+      rows.push(this.createShipLogRow('006', 'PLANET', planet.scanned ? 'SCANNED' : 'UNSCANNED', `${planet.name} | ${planet.getRotationPeriodLabel()} rotation | ${planet.surfaceTempMin}-${planet.surfaceTempMax} K surface range.`, 'Current landed body record. Full mineral details require a surface scan.'));
+    }
+
+    rows.push(this.createShipLogRow('007', 'MISSION', activeMissionCount > 0 ? 'ACTIVE' : 'QUIET', activeMissionCount > 0 ? `${activeMissionCount} accepted mission${activeMissionCount === 1 ? '' : 's'} in ship memory.` : 'No active contracts. Notice boards may hold new work at starbases.', 'Mission/notices integration point for the shipboard memory system.'));
+
+    if (this.statusMessage) {
+      rows.push(this.createShipLogRow('008', 'ALERT', /error|fail|cannot/i.test(this.statusMessage) ? 'CAUTION' : 'NOTE', this.statusMessage, 'Most recent bridge status line preserved for context.'));
+    } else {
+      rows.push(this.createShipLogRow('008', 'ALERT', 'CLEAR', 'No unresolved bridge alert.', 'Normal operations.'));
+    }
+
+    return rows;
+  }
+
+  private createShipLogRow(id: string, channel: string, state: string, entry: string, detail: string): TextTableRow {
+    return {
+      id: `log:${id}`,
+      cells: [id, channel, state, entry],
+      detail,
+      disabled: true,
+    };
+  }
+
+  private getShipPositionLogEntry(): string {
+    switch (this.stateManager.state) {
+      case 'hyperspace':
+        return `Interstellar grid ${this.player.position.worldX},${this.player.position.worldY}; drift reference ${this.player.position.lastWorldMoveDx},${this.player.position.lastWorldMoveDy}.`;
+      case 'system':
+        return `System ${this.stateManager.currentSystem?.name ?? 'unknown'}; local ${formatDistanceAu(Math.hypot(this.player.position.systemX, this.player.position.systemY))} from barycentric datum.`;
+      case 'planet':
+        return `Landed ${this.stateManager.currentPlanet?.name ?? 'unknown'}; surface ${this.player.position.surfaceX},${this.player.position.surfaceY}.`;
+      default:
+        return `Mode ${this.stateManager.state}; position record held by local interface.`;
+    }
+  }
+
+  private getShipLogSummary(): string {
+    const alerts = this.statusMessage ? 'watch note' : 'nominal';
+    const missionCount = Object.keys(this.activeMissions).length;
+    return missionCount > 0 ? `${missionCount} mission${missionCount === 1 ? '' : 's'} | ${alerts}` : alerts;
   }
 
   private getJettisonMenuRows(): TextTableRow[] {
@@ -2443,6 +2534,11 @@ export class Game {
 
   private getTargetCoords(target: NavigationTarget): { x: number; y: number } {
     return { x: target.systemX, y: target.systemY };
+  }
+
+  private getTargetRangeLabel(target: NavigationTarget): string {
+    const coords = this.getTargetCoords(target);
+    return formatDistanceAu(Math.hypot(coords.x - this.player.position.systemX, coords.y - this.player.position.systemY));
   }
 
   private getScannableNavigationTarget(target: NavigationTarget): ScanTarget {
