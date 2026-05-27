@@ -3,6 +3,7 @@ import { Starbase } from '../../../entities/starbase';
 import { CargoSystem } from '../../../systems/cargo_systems';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
+import { PRNG } from '../../../utils/prng';
 
 function createShipMenuHarness(state: string = 'hyperspace'): any {
   const player = new Player();
@@ -40,6 +41,8 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     approachTargetSignature: null,
     statusMessage: '',
     forceFullRender: false,
+    gameSeedPRNG: new PRNG('ship-menu-test'),
+    _publishStatusUpdate: () => undefined,
   });
 }
 
@@ -211,6 +214,37 @@ describe('ship menu', () => {
     expect(game.player.terrainVehicle.cargoHold.items.IRON).toBeUndefined();
     expect(game.player.cargoHold.items.COPPER).toBe(4);
     expect(game.statusMessage).toContain('Dropped 3');
+  });
+
+  it('buys D/He3 fuel mix as separate cargo canisters', () => {
+    const game = createShipMenuHarness('starbase');
+    game.stateManager.currentStarbase = { name: 'Fuel Dock' };
+    game.player.resources.credits = 1000;
+
+    const message = game.buyDepotItem('FUSION_FUEL_MIX', 10);
+
+    expect(message).toContain('Helium-3');
+    expect(game.player.cargoHold.items.HELIUM_3).toBe(5);
+    expect(game.player.cargoHold.items.DEUTERIUM_PELLETS).toBe(5);
+    expect(game.player.cargoHold.items.FUSION_FUEL_MIX).toBeUndefined();
+  });
+
+  it('loads carried helium-3 and deuterium into the reactor when refuelling', () => {
+    const game = createShipMenuHarness('starbase');
+    game.stateManager.currentStarbase = { name: 'Fuel Dock' };
+    game.player.resources.fuel = game.player.resources.maxFuel - 80;
+    game.player.resources.credits = 0;
+    game.cargoSystem.addItem(game.player.cargoHold, 'HELIUM_3', 2);
+    game.cargoSystem.addItem(game.player.cargoHold, 'DEUTERIUM', 1);
+    game.cargoSystem.addItem(game.player.cargoHold, 'DEUTERIUM_PELLETS', 1);
+
+    game._handleRefuelRequest();
+
+    expect(game.player.resources.fuel).toBe(game.player.resources.maxFuel);
+    expect(game.player.cargoHold.items.HELIUM_3).toBeUndefined();
+    expect(game.player.cargoHold.items.DEUTERIUM).toBeUndefined();
+    expect(game.player.cargoHold.items.DEUTERIUM_PELLETS).toBeUndefined();
+    expect(game.statusMessage).toContain('Tank full');
   });
 
   it('treats the ship as compartments and crewed stations', () => {

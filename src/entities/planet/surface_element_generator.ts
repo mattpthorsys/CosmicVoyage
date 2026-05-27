@@ -99,6 +99,10 @@ export function generateSurfaceElementMap(
         // Example: Precious metals strongly cluster where noise is high
         if (['GOLD', 'PLATINUM', 'RHODIUM', 'PALLADIUM', 'URANIUM'].includes(key)) {
             noiseAffinityFactor = Math.pow(elementClusterNoise, 3); // Sharp peak at high noise
+        } else if (key === 'DEUTERIUM') {
+            noiseAffinityFactor = planetType === 'Frozen'
+              ? 0.35 + Math.pow(elementClusterNoise, 2.2) * 1.65
+              : 0.25 + Math.pow(elementClusterNoise, 3.0) * 1.35;
         } else if (['IRON', 'SILICON', 'CARBON'].includes(key)) {
             noiseAffinityFactor = 0.8 + elementClusterNoise * 0.4; // More uniform, slight cluster preference
         } // Add more rules as needed...
@@ -115,6 +119,11 @@ export function generateSurfaceElementMap(
              altitudeFactor = (0.7 + heightVal * 0.6); // Increase weight by up to 30% at max height (from base 0.7)
         }
         // Ices much more common higher up (colder)
+        else if (key === 'DEUTERIUM') {
+             altitudeFactor = planetType === 'Oceanic'
+               ? 0.55 + (1.0 - heightVal) * 1.1
+               : 0.45 + Math.pow(heightVal, 1.7) * 1.8;
+        }
         else if (elementInfo.group === 'Ice') {
              altitudeFactor = Math.pow(heightVal, 2) * 2.0; // Strong preference for high altitude
         }

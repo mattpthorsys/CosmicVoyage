@@ -58,4 +58,14 @@ describe('MiningSystem quantity extraction', () => {
     expect(player.cargoHold.items.IRON).toBeUndefined();
     expect(player.terrainVehicle.cargoHold.items.IRON).toBe(3);
   });
+
+  it('mines sparse deuterium deposits as fuel feedstock', () => {
+    const { mining, player, planet } = createMiningHarness();
+    planet.surfaceElementMap = [['DEUTERIUM']];
+    planet.elementAbundance = { DEUTERIUM: 100 };
+
+    mining.mine(2);
+
+    expect(player.cargoHold.items.DEUTERIUM).toBe(2);
+  });
 });

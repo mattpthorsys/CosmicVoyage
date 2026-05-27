@@ -407,6 +407,10 @@ export const ELEMENTS: Record<string, ElementInfo> = {
         name: 'Hydrogen', symbol: 'H', description: 'Lightest element, primary component of stars and gas giants.', baseValue: 1, baseFrequency: 0.9,
         typeHints: ['GasGiant'], isGas: true, meltingPoint: 14, group: 'Gas', atomicWeight: 1.0
     },
+    'DEUTERIUM': {
+        name: 'Deuterium', symbol: 'D', description: 'Stable hydrogen isotope concentrated in water ice, cold traps, and ancient ocean reservoirs.', baseValue: 6, baseFrequency: 0.055,
+        typeHints: ['Frozen', 'Oceanic', 'Lunar', 'Rock'], isGas: false, meltingPoint: 19, group: 'Isotope', atomicWeight: 2.014
+    },
     'HELIUM': { // [cite: 461]
         name: 'Helium', symbol: 'He', description: 'Inert gas, found with Hydrogen, used in cryogenics.', baseValue: 12, baseFrequency: 0.7,
         typeHints: ['GasGiant', 'IceGiant', 'Lunar'], isGas: true, meltingPoint: 1, group: 'Noble', atomicWeight: 4.0 // Approx MP near 0K
@@ -539,8 +543,9 @@ export interface TradeCommodityInfo {
 export const TRADE_COMMODITIES: Record<string, TradeCommodityInfo> = {
     WATER_ICE: { name: 'Water Ice', symbol: 'H2O', description: 'Shielded volatile blocks for life support and fuel cracking.', baseValue: 2, rarity: 0.9, category: 'Volatile' },
     HYDROGEN_SLUSH: { name: 'Hydrogen Slush', symbol: 'H2', description: 'Cryogenic reaction mass for torch drives and station tenders.', baseValue: 3, rarity: 0.85, category: 'Propellant' },
-    HELIUM_3: { name: 'Helium-3', symbol: 'He3', description: 'Clean fusion feedstock skimmed from gas giant upper atmospheres.', baseValue: 42, rarity: 0.22, category: 'Fuel' },
-    DEUTERIUM_PELLETS: { name: 'Deuterium Pellets', symbol: 'D2', description: 'Dense fusion pellets for civilian reactors and survey craft.', baseValue: 18, rarity: 0.45, category: 'Fuel' },
+    HELIUM_3: { name: 'Helium-3', symbol: 'He3', description: 'Clean fusion feedstock skimmed from gas giant upper atmospheres and sold through licensed stations.', baseValue: 16, rarity: 0.42, category: 'Fuel' },
+    DEUTERIUM_PELLETS: { name: 'Deuterium Pellets', symbol: 'D2', description: 'Dense fusion pellets refined from heavy-water ice and oceanic reservoirs.', baseValue: 6, rarity: 0.68, category: 'Fuel' },
+    FUSION_FUEL_MIX: { name: 'D/He3 Fuel Mix', symbol: 'D-He3', description: 'Convenience purchase: station loaders split the lot into separate helium-3 and deuterium cargo canisters.', baseValue: 11, rarity: 0.76, category: 'Fuel' },
     TITANIUM_TRUSS: { name: 'Titanium Truss', symbol: 'Ti+', description: 'Vacuum-rated structural members for hull patches and habitats.', baseValue: 16, rarity: 0.55, category: 'Industrial' },
     SILICON_WAFERS: { name: 'Silicon Wafers', symbol: 'SiW', description: 'Radiation-binned substrates for navigation and sensor boards.', baseValue: 14, rarity: 0.5, category: 'Electronics' },
     RARE_EARTH_MAGNETS: { name: 'Rare-Earth Magnets', symbol: 'Nd', description: 'Drive gimbal and field-coil components with tight coercivity tolerances.', baseValue: 38, rarity: 0.28, category: 'Electronics' },

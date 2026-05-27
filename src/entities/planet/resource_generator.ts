@@ -168,6 +168,18 @@ export function calculateElementAbundance(
     weight *= _getTemperatureSuitabilityFactor(element, planetType, surfaceTemp);
     weight *= _getLithosphereFactor(element, lithosphere);
     weight *= _getGravityFactor(element, gravity);
+    if (key === 'DEUTERIUM') {
+      if (planetType === 'Frozen') weight *= 4.6;
+      else if (planetType === 'Oceanic') weight *= 2.4;
+      else if (planetType === 'Lunar') weight *= 1.8;
+      else if (planetType === 'Rock') weight *= 0.75;
+      else if (planetType === 'Molten') weight *= 0.04;
+
+      if (surfaceTemp <= 140) weight *= 2.2;
+      else if (surfaceTemp <= 230) weight *= 1.55;
+      else if (surfaceTemp <= 310) weight *= 0.85;
+      else weight *= 0.18;
+    }
     if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide' || element.group === 'Metalloid') {
       weight *= Math.max(0.25, Math.min(2.25, Math.pow(10, metallicityFeH * 0.32)));
     }
