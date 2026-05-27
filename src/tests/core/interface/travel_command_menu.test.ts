@@ -147,4 +147,26 @@ describe('travel command menu', () => {
     expect(game._dumpScanToTerminal).toHaveBeenCalledWith(planet);
     expect(game.travelObserveCursor).toBeNull();
   });
+
+  it('makes interstellar observe reports less certain for distant small contacts', () => {
+    const brightTarget = { name: 'Brightfall', starType: 'G2V', starbase: null };
+    const faintTarget = { name: 'Dimfall', starType: 'T8V', starbase: null };
+    const game = createTravelHarness('hyperspace', 'NONE');
+    game.completeMissionsForScan = vi.fn();
+
+    game.stateManager.peekAtSystem = () => brightTarget;
+    game.systemDataGenerator.getSystemMapProperties = () => ({ exists: true, starType: 'G2V', objectKind: 'stellar' });
+    game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: 1, dy: 0 });
+    const brightLines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
+
+    game.stateManager.peekAtSystem = () => faintTarget;
+    game.systemDataGenerator.getSystemMapProperties = () => ({ exists: true, starType: 'T8V', objectKind: 'brown-dwarf' });
+    game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: 24, dy: 0 });
+    const faintLines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
+
+    expect(brightLines).toContain('Brightfall');
+    expect(brightLines).toContain('CONFIDENCE: <hl>9');
+    expect(faintLines).not.toContain('Dimfall');
+    expect(faintLines).toMatch(/poorly constrained|near background|barely above background/);
+  });
 });

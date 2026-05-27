@@ -1887,8 +1887,87 @@ export class Game {
       this.statusMessage = 'Observation contact unresolved.';
       return;
     }
-    this._dumpScanToTerminal(target);
-    this.statusMessage = `Observed ${target.name}.`;
+    const quality = this.getInterstellarObservationQuality(cursor, props.starType, props.objectKind);
+    const lines = this.formatInterstellarObserveReport(target, worldX, worldY, quality, props.starType, props.objectKind);
+    this.terminalOverlay.addMessageLines(lines);
+    this.player.awardCrewExperience('astroscience', quality.confidence >= 60 ? 6 : 3);
+    this.player.awardCrewExperience('communication', 2);
+    if (quality.confidence >= 70) this.completeMissionsForScan(target);
+    this.statusMessage = `Observed ${quality.label}.`;
+  }
+
+  private getInterstellarObservationQuality(
+    cursor: TravelObserveCursor,
+    starType: string | null,
+    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null
+  ): { confidence: number; rangeCells: number; label: string; signature: string; rangeLabel: string } {
+    const rangeCells = Math.hypot(cursor.dx, cursor.dy);
+    const starInfo = starType ? SPECTRAL_TYPES[starType] : null;
+    const solarRadius = SPECTRAL_TYPES.G.radius || 1;
+    const brightnessSignal = Math.sqrt(Math.max(0.02, starInfo?.brightness ?? (objectKind === 'rogue-planet' ? 0.025 : 0.12)));
+    const radiusSignal = Math.sqrt(Math.max(0.05, (starInfo?.radius ?? solarRadius * 0.08) / solarRadius));
+    const sourceStrength = objectKind === 'rogue-planet'
+      ? 0.18
+      : Math.max(0.12, Math.min(1.35, brightnessSignal * 0.66 + radiusSignal * 0.34));
+    const confidence = Math.max(8, Math.min(98, Math.round((104 - rangeCells * 2.55) * sourceStrength)));
+    const label = confidence >= 72
+      ? 'resolved interstellar contact'
+      : confidence >= 48
+        ? 'probable stellar contact'
+        : confidence >= 26
+          ? objectKind === 'brown-dwarf' ? 'possible substellar source' : 'faint point-source'
+          : 'weak unresolved return';
+    const signature = confidence >= 72
+      ? 'stable'
+      : confidence >= 48
+        ? 'usable but incomplete'
+        : confidence >= 26
+          ? 'noisy'
+          : 'near background';
+    const rangeLabel = confidence >= 60
+      ? `${rangeCells.toFixed(1)} cells / ${formatHyperspaceSpan(rangeCells)}`
+      : confidence >= 32
+        ? `about ${Math.max(1, Math.round(rangeCells))} cells`
+        : 'poorly constrained';
+    return { confidence, rangeCells, label, signature, rangeLabel };
+  }
+
+  private formatInterstellarObserveReport(
+    target: SolarSystem,
+    worldX: number,
+    worldY: number,
+    quality: { confidence: number; rangeCells: number; label: string; signature: string; rangeLabel: string },
+    starType: string | null,
+    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null
+  ): string[] {
+    const classLabel = objectKind === 'rogue-planet'
+      ? 'planetary-mass object'
+      : objectKind === 'brown-dwarf'
+        ? 'substellar infrared source'
+        : 'stellar source';
+    const identity = quality.confidence >= 72
+      ? `${target.name} ${starType ?? target.starType}`
+      : quality.confidence >= 48
+        ? `${starType ? `${starType.slice(0, 1)}-class ` : ''}${classLabel}`
+        : quality.label;
+    const facilityTrace = quality.confidence >= 72 && target.starbase ? 'confirmed' : quality.confidence >= 50 && target.starbase ? 'possible' : 'none';
+    const lines = [
+      '<h>LONG-RANGE OBSERVATION</h>',
+      `RETICLE: <hl>${identity}</hl>`,
+      `GRID: <hl>${worldX},${worldY}</hl>  RANGE: <hl>${quality.rangeLabel}</hl>`,
+      `CONFIDENCE: <hl>${quality.confidence}%</hl>  SIGNATURE: <hl>${quality.signature}</hl>`,
+      `FACILITY TRACE: <hl>${facilityTrace}</hl>`,
+    ];
+    if (quality.confidence < 32) {
+      lines.push('Return is barely above background; classification and distance are not reliable.');
+    } else if (quality.confidence < 60) {
+      lines.push('Small angular size and low flux smear the contact. Approach for a firmer classification.');
+    } else if (quality.confidence < 78) {
+      lines.push('Major class is plausible, but fine stellar data remains uncertain at this range.');
+    } else {
+      lines.push('Contact is stable enough for confident navigation, though full astrophysical detail requires system entry.');
+    }
+    return lines;
   }
 
   private scanSystemObserveCursor(cursor: TravelObserveCursor): void {
