@@ -91,7 +91,7 @@ export const CONFIG = {
   PLANET_SURFACE_ROUGHNESS: 0.7, // Diamond-Square roughness factor
   PLANET_HEIGHT_LEVELS: 256, // Number of distinct altitude levels/colours
   PLANET_SURFACE_VIEW_WIDTH: 92,
-  PLANET_SURFACE_VIEW_HEIGHT: 34,
+  PLANET_SURFACE_VIEW_HEIGHT: 68,
   PLANET_SURFACE_CELL_VIEW_SCALE: 3,
   MINING_RATE_FACTOR: 5, // Base number of minerals mined per action (scales with richness)
   TERRAIN_VEHICLE_CARGO_CAPACITY: 50,

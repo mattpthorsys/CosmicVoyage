@@ -19,6 +19,8 @@ function createSurfaceTravelHarness(justPressed: boolean): any {
       wasActionJustPressed: (action: string) => justPressed && action === 'MOVE_RIGHT',
     },
     approachTargetSignature: null,
+    surfaceMapExpanded: false,
+    surfaceLegendOpen: false,
     statusMessage: '',
     forceFullRender: false,
     _publishStatusUpdate: () => undefined,
@@ -37,6 +39,20 @@ describe('surface travel input', () => {
         GameEvents.MOVE_REQUESTED,
         expect.objectContaining({ dx: 1, dy: 0, context: 'planet' })
       );
+    } finally {
+      publish.mockRestore();
+    }
+  });
+
+  it('blocks terrain movement while the expanded surface map is open', () => {
+    const publish = vi.spyOn(eventManager, 'publish').mockImplementation(() => undefined);
+    try {
+      const game = createSurfaceTravelHarness(true);
+      game.surfaceMapExpanded = true;
+
+      game._handleMovementInput();
+
+      expect(publish).not.toHaveBeenCalledWith(GameEvents.MOVE_REQUESTED, expect.anything());
     } finally {
       publish.mockRestore();
     }

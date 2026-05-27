@@ -74,7 +74,7 @@ import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_s
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
 type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'log' | 'rover' | 'jettison';
-type RoverActionId = 'move' | 'cargo' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'embark';
+type RoverActionId = 'map' | 'move' | 'cargo' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'embark' | 'icon';
 type QuantityOperation =
   | { type: 'buy'; itemKey: string }
   | { type: 'sell'; itemKey: string }
@@ -171,6 +171,10 @@ export class Game {
   private roverCargoOpen: boolean = false;
   private roverCargoSelection: number = 0;
   private roverCargoOffset: number = 0;
+  private surfaceMapExpanded: boolean = false;
+  private surfaceLegendOpen: boolean = false;
+  private surfaceLegendSelection: number = 0;
+  private surfaceLegendOffset: number = 0;
   private surfaceScanCursor: { dx: number; dy: number } | null = null;
   private surfaceNotifications: string[] = [];
   private autoScannedSystemName: string | null = null;
@@ -273,6 +277,8 @@ export class Game {
     this.targetMenuOpen = false;
     this.shipMenuOpen = false;
     this.roverCargoOpen = false;
+    this.surfaceMapExpanded = false;
+    this.surfaceLegendOpen = false;
     this.surfaceScanCursor = null;
     if (newState === 'starbase') {
       this.starbaseSectionId = 'overview';
@@ -301,6 +307,9 @@ export class Game {
     this.targetMenuOpen = false;
     this.shipMenuOpen = false;
     this.roverCargoOpen = false;
+    if (newState === 'planet') {
+      this.openSurfaceLandingOperationsMenu();
+    }
     // Reflect status messages potentially set by GameStateManager during transition
     this.statusMessage = this.stateManager.statusMessage || ''; // Use status from stateManager
     this.stateManager.statusMessage = ''; // Clear it after reading
@@ -822,11 +831,61 @@ export class Game {
     return true;
   }
 
+  private _handleSurfaceLegendInput(): boolean {
+    if (!this.surfaceLegendOpen) return false;
+    const rows = this.getSurfaceLegendRows();
+    const visibleRows = this.getSurfaceLegendVisibleRows();
+    if (
+      this.inputManager.wasActionJustPressed('QUIT') ||
+      this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') ||
+      this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
+      this.inputManager.wasActionJustPressed('MOVE_RIGHT')
+    ) {
+      this.surfaceLegendOpen = false;
+      this.statusMessage = 'Surface icon legend closed.';
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      const viewport = moveSelection(this.surfaceLegendSelection, -1, rows.length, visibleRows, this.surfaceLegendOffset);
+      this.surfaceLegendSelection = viewport.selectedIndex;
+      this.surfaceLegendOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      const viewport = moveSelection(this.surfaceLegendSelection, 1, rows.length, visibleRows, this.surfaceLegendOffset);
+      this.surfaceLegendSelection = viewport.selectedIndex;
+      this.surfaceLegendOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      const viewport = moveSelection(this.surfaceLegendSelection, -visibleRows, rows.length, visibleRows, this.surfaceLegendOffset);
+      this.surfaceLegendSelection = viewport.selectedIndex;
+      this.surfaceLegendOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      const viewport = moveSelection(this.surfaceLegendSelection, visibleRows, rows.length, visibleRows, this.surfaceLegendOffset);
+      this.surfaceLegendSelection = viewport.selectedIndex;
+      this.surfaceLegendOffset = viewport.viewOffset;
+      this.forceFullRender = true;
+      return true;
+    }
+    return true;
+  }
+
   private _handleShipMenuInput(): boolean {
     if (!this.shipMenuOpen) return false;
 
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
+    if (this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF') && this.stateManager.state === 'planet') {
+      this.launchFromParkedShip();
+      return true;
+    }
     if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
       const inMainSection = this.shipMenuSection === 'main';
       if (inMainSection) {
@@ -878,6 +937,20 @@ export class Game {
 
   private _handleSurfaceVehicleInput(): boolean {
     if (this.stateManager.state !== 'planet' || (!this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot)) return false;
+
+    if (this.surfaceMapExpanded) {
+      if (
+        this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
+        this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
+        this.inputManager.wasActionJustPressed('QUIT') ||
+        this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')
+      ) {
+        this.surfaceMapExpanded = false;
+        this.statusMessage = 'Surface map closed.';
+        this.forceFullRender = true;
+      }
+      return true;
+    }
 
     if (this.surfaceScanCursor) {
       const bounds = this.getSurfaceScanCursorBounds();
@@ -1026,7 +1099,7 @@ export class Game {
           return true;
         }
         if (action === 'ACTIVATE_LAND_LIFTOFF' && currentState === 'planet') {
-          this.statusMessage = 'Launch from the landed ship through ship operations.';
+          this.launchFromParkedShip();
           return true;
         }
 
@@ -1112,7 +1185,7 @@ export class Game {
 
   private _executeActionByName(actionName: string): void {
     if (actionName === 'ACTIVATE_LAND_LIFTOFF' && this.stateManager.state === 'planet') {
-      this.statusMessage = 'Launch from the landed ship through ship operations.';
+      this.launchFromParkedShip();
       return;
     }
     if (actionName === 'MINE') {
@@ -1293,6 +1366,9 @@ export class Game {
       const isBoost = this.inputManager.isActionActive('BOOST');
       const useFine = isFine && !isBoost;
       const currentState = this.stateManager.state;
+      if (currentState === 'planet' && (this.surfaceMapExpanded || this.surfaceLegendOpen)) {
+        return;
+      }
 
       // Calculate Speed Multiplier based on Zoom
       let speedMultiplier = 1.0;
@@ -1374,6 +1450,10 @@ export class Game {
       return;
     }
     if (this._handleRoverCargoInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this._handleSurfaceLegendInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -2029,6 +2109,7 @@ export class Game {
       this.popupState === 'inactive' &&
       !this.targetMenuOpen &&
       !this.roverCargoOpen &&
+      !this.surfaceLegendOpen &&
       !this.quantitySelector &&
       !this.jettisonConfirmation
     );
@@ -2239,6 +2320,7 @@ export class Game {
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
     const fuel = Math.max(0, this.player.terrainVehicle.fuel);
     return [
+      { id: 'map', label: 'Map', status: this.surfaceMapExpanded ? 'expanded' : 'local' },
       { id: 'move', label: 'Move', status: fuel > 0 ? 'ready' : 'no fuel' },
       { id: 'cargo', label: 'Cargo', status: `${cargoTotal}/${this.player.terrainVehicle.cargoHold.capacity} m^3` },
       { id: 'pickup', label: 'Pick up', status: 'no local items' },
@@ -2247,6 +2329,7 @@ export class Game {
       { id: 'stun', label: 'Stun', status: 'safe' },
       { id: 'shoot', label: 'Shoot', status: 'safe' },
       { id: 'embark', label: 'Embark', status: this.isAtParkedShip() ? 'board ship' : 'return to ship' },
+      { id: 'icon', label: 'Icon', status: 'legend' },
     ];
   }
 
@@ -2266,12 +2349,17 @@ export class Game {
       cargoCapacity: this.player.terrainVehicle.cargoHold.capacity,
       selectedIndex: this.roverMenuSelection,
       items: items.map((item) => ({ label: item.label, status: item.status })),
+      mapExpanded: this.surfaceMapExpanded,
+      surfaceCellScale: this.surfaceMapExpanded ? 1 : CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE,
       scanCursor: this.surfaceScanCursor ?? undefined,
       crew: this.player.crew.map((member) => ({ name: member.name, hitPoints: member.hitPoints, maxHitPoints: member.maxHitPoints })),
       ship: {
         x: this.player.terrainVehicle.shipSurfaceX - this.player.position.surfaceX,
         y: this.player.terrainVehicle.shipSurfaceY - this.player.position.surfaceY,
       },
+      shipDistance: this.getParkedShipRangeAndBearing(),
+      atShip: this.isAtParkedShip(),
+      altitudeBand: this.getCurrentSurfaceAltitudeBand(),
     };
   }
 
@@ -2334,6 +2422,42 @@ export class Game {
     this.forceFullRender = true;
   }
 
+  private getSurfaceLegendVisibleRows(): number {
+    return 10;
+  }
+
+  private createSurfaceLegendModel(): TextModalTableModel {
+    const rows = this.getSurfaceLegendRows();
+    const visibleRows = this.getSurfaceLegendVisibleRows();
+    const viewport = moveSelection(this.surfaceLegendSelection, 0, rows.length, visibleRows, this.surfaceLegendOffset);
+    this.surfaceLegendSelection = viewport.selectedIndex;
+    this.surfaceLegendOffset = viewport.viewOffset;
+    return {
+      title: 'Surface Icon Legend',
+      subtitle: 'Planetary surface symbols and instrument marks.',
+      columns: ['ICON', 'SIGNATURE', 'MEANING'],
+      widths: [8, 18, 56],
+      rows,
+      selectedIndex: this.surfaceLegendSelection,
+      viewOffset: this.surfaceLegendOffset,
+      visibleRowCount: visibleRows,
+      footer: ['Up/Down inspect  PageUp/PageDown scroll  Esc/Left/Right close'],
+    };
+  }
+
+  private getSurfaceLegendRows(): TextTableRow[] {
+    return [
+      { id: 'player', cells: [this.player.render.char, 'Crew position', 'Current location of the active surface party or terrain vehicle.'] },
+      { id: 'ship', cells: ['S', 'Parked ship', 'Landed starship. Return here to embark or launch back to orbit.'] },
+      { id: 'resource', cells: ['%', 'Mineral return', 'Concentrated local resource that can be mined if the vehicle is deployed.'] },
+      { id: 'scanner', cells: ['< >', 'Scan reticle', 'Flashing cursor around the selected local terrain cell.'] },
+      { id: 'crosshair', cells: ['+', 'Local fix', 'Central surface navigation reference around the current position.'] },
+      { id: 'high', cells: ['High', 'Relief scale', 'Upper terrain colours indicate ridges, uplands, or exposed high ground.'] },
+      { id: 'low', cells: ['Low', 'Relief scale', 'Lower terrain colours indicate basins, plains, or local depressions.'] },
+      { id: 'terrain', cells: [GLYPHS.BLOCK, 'Terrain colour', 'Surface colour is generated from planet type, height, atmosphere, and local conditions.'] },
+    ];
+  }
+
   private startSurfaceCursorScan(): void {
     if (this.stateManager.state !== 'planet' || !this.stateManager.currentPlanet) {
       this.statusMessage = 'Surface scan requires a landed planet.';
@@ -2349,7 +2473,7 @@ export class Game {
     const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
     return {
       x: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, 92) / (2 * scale)) - 1),
-      y: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, 34) / (2 * scale)) - 1),
+      y: Math.max(1, Math.floor(CONFIG.PLANET_SURFACE_VIEW_HEIGHT / (2 * scale)) - 1),
     };
   }
 
@@ -2414,6 +2538,12 @@ export class Game {
   private activateSurfaceVehicleAction(item: SurfaceVehicleMenuItem | undefined): void {
     if (!item) return;
     switch (item.id) {
+      case 'map':
+        this.surfaceMapExpanded = true;
+        this.player.terrainVehicle.moving = false;
+        this.statusMessage = 'Surface map expanded. Enter/Space returns to local view.';
+        this.forceFullRender = true;
+        break;
       case 'move':
         if (this.player.terrainVehicle.fuel <= 0) {
           this.statusMessage = 'Terrain vehicle fuel exhausted. Dock with the ship to refuel.';
@@ -2433,6 +2563,14 @@ export class Game {
         break;
       case 'embark':
         this.dockTerrainVehicle();
+        break;
+      case 'icon':
+        this.surfaceLegendOpen = true;
+        this.surfaceLegendSelection = 0;
+        this.surfaceLegendOffset = 0;
+        this.player.terrainVehicle.moving = false;
+        this.statusMessage = 'Surface icon legend opened.';
+        this.forceFullRender = true;
         break;
       case 'pickup':
         this.statusMessage = 'No recoverable surface items detected.';
@@ -2459,7 +2597,9 @@ export class Game {
     this.player.terrainVehicle.moving = false;
     this.player.terrainVehicle.onFoot = false;
     this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
-    this.roverMenuSelection = 0;
+    this.roverMenuSelection = 1;
+    this.surfaceMapExpanded = false;
+    this.surfaceLegendOpen = false;
     this.surfaceNotifications = this.describePlanetSurfaceForDisembark(this.stateManager.currentPlanet);
     this.statusMessage = 'Disembarked. Surface operations online.';
     this.addSurfaceNotification(this.statusMessage);
@@ -2484,6 +2624,7 @@ export class Game {
       ? `Embarked. Transferred ${transferred} m^3; ${remaining} m^3 remains aboard rover.`
       : `Embarked. Transferred ${transferred} m^3 to ship hold.`;
     this.addSurfaceNotification(this.statusMessage);
+    this.openSurfaceLandingOperationsMenu();
     this.forceFullRender = true;
   }
 
@@ -2502,11 +2643,58 @@ export class Game {
     this.forceFullRender = true;
   }
 
+  private openSurfaceLandingOperationsMenu(): void {
+    if (this.stateManager.state !== 'planet') return;
+    this.shipMenuOpen = true;
+    this.shipMenuSection = 'main';
+    this.shipMenuSelection = this.getShipMenuRows().findIndex((row) => row.id === 'rover');
+    if (this.shipMenuSelection < 0) this.shipMenuSelection = 0;
+    this.shipMenuOffset = 0;
+    this.shipMenuJettisonItemKey = null;
+    this.forceFullRender = true;
+  }
+
   private isAtParkedShip(): boolean {
     return (
       Math.floor(this.player.position.surfaceX) === Math.floor(this.player.terrainVehicle.shipSurfaceX) &&
       Math.floor(this.player.position.surfaceY) === Math.floor(this.player.terrainVehicle.shipSurfaceY)
     );
+  }
+
+  private getParkedShipRangeAndBearing(): { distanceKm: number; direction: string } {
+    const dx = this.player.terrainVehicle.shipSurfaceX - this.player.position.surfaceX;
+    const dy = this.player.terrainVehicle.shipSurfaceY - this.player.position.surfaceY;
+    return {
+      distanceKm: Math.sqrt(dx * dx + dy * dy) * this.getSurfaceCellKilometers(),
+      direction: this.formatSurfaceDirection(dx, dy),
+    };
+  }
+
+  private getSurfaceCellKilometers(): number {
+    const planet = this.stateManager.currentPlanet;
+    if (!planet) return 1;
+    const mapSize = Math.max(1, planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE);
+    const radiusKm = Math.max(1, planet.diameter / 2);
+    return (2 * Math.PI * radiusKm) / mapSize;
+  }
+
+  private formatSurfaceDirection(dx: number, dy: number): string {
+    if (Math.round(dx) === 0 && Math.round(dy) === 0) return 'Here';
+    const vertical = dy < 0 ? 'North' : dy > 0 ? 'South' : '';
+    const horizontal = dx > 0 ? 'East' : dx < 0 ? 'West' : '';
+    return vertical && horizontal ? `${vertical}-${horizontal}` : vertical || horizontal;
+  }
+
+  private getCurrentSurfaceAltitudeBand(): { low: string; high: string; current: string } {
+    const planet = this.stateManager.currentPlanet;
+    const map = planet?.heightmap;
+    const size = map?.length ?? 0;
+    if (!planet || !map || size <= 0) return { low: 'Low', high: 'High', current: 'unknown' };
+    const x = ((Math.floor(this.player.position.surfaceX) % size) + size) % size;
+    const y = Math.max(0, Math.min(size - 1, Math.floor(this.player.position.surfaceY)));
+    const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, map[y]?.[x] ?? 0));
+    const altitude = height / Math.max(1, CONFIG.PLANET_HEIGHT_LEVELS - 1);
+    return { low: 'Low', high: 'High', current: this.getSurfaceAltitudeLabel(altitude) };
   }
 
   private transferRoverCargoToShip(): number {
@@ -2558,6 +2746,10 @@ export class Game {
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
     if (this.shipMenuSection === 'main') {
+      if (row.id === 'launch') {
+        this.launchFromParkedShip();
+        return;
+      }
       if (row.id === 'deck' || row.id === 'stations' || row.id === 'cargo' || row.id === 'crew' || row.id === 'status' || row.id === 'log' || row.id === 'rover') {
         this.openShipMenuSection(row.id as ShipMenuSection);
       }
@@ -2727,6 +2919,15 @@ export class Game {
         ];
         if (this.stateManager.state === 'planet') {
           rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'disembarked' : `${roverTotal}/50 m^3`) : 'lost', 'Disembark, embark, refuel, and review the surface vehicle.'] });
+          rows.splice(4, 0, {
+            id: 'launch',
+            cells: [
+              'Launch',
+              this.isAtParkedShip() && !this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot ? 'ready' : 'parked ship req.',
+              'Lift from the landed ship to orbital view.',
+            ],
+            disabled: !this.isAtParkedShip() || this.player.terrainVehicle.deployed || this.player.terrainVehicle.onFoot,
+          });
         }
         return rows;
     }
@@ -3294,6 +3495,10 @@ export class Game {
         this.renderer.drawTextModalTable(this.createRoverCargoModel());
       }
 
+      if (this.surfaceLegendOpen) {
+        this.renderer.drawTextModalTable(this.createSurfaceLegendModel());
+      }
+
       if (this.quantitySelector) {
         this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
       }
@@ -3337,7 +3542,7 @@ export class Game {
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
-    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.roverCargoOpen || this.quantitySelector || this.jettisonConfirmation) return false;
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.jettisonConfirmation) return false;
     if (state === 'starbase' && this.starbaseAlert) return false;
     if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
@@ -3369,6 +3574,10 @@ export class Game {
           this.player.terrainVehicle.shipSurfaceY,
           this.roverMenuSelection,
           this.roverCargoOpen ? 'cargo' : 'nocargo',
+          this.surfaceMapExpanded ? 'map' : 'local',
+          this.surfaceLegendOpen ? 'legend' : 'nolegend',
+          this.surfaceScanCursor ? `${this.surfaceScanCursor.dx},${this.surfaceScanCursor.dy}` : 'noscan',
+          Math.floor(performance.now() / 450),
           this.player.terrainVehicle.fuel.toFixed(1),
           this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold),
           this.statusMessage,

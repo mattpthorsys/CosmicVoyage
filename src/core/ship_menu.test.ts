@@ -29,6 +29,10 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     roverCargoOpen: false,
     roverCargoSelection: 0,
     roverCargoOffset: 0,
+    surfaceMapExpanded: false,
+    surfaceLegendOpen: false,
+    surfaceLegendSelection: 0,
+    surfaceLegendOffset: 0,
     surfaceNotifications: [],
     activeMissions: {},
     currentTargetIndex: 0,
@@ -145,6 +149,7 @@ describe('ship menu', () => {
     expect(game.player.terrainVehicle.deployed).toBe(true);
     expect(game.player.terrainVehicle.fuel).toBe(game.player.terrainVehicle.maxFuel);
     expect(game.shipMenuOpen).toBe(false);
+    expect(game.roverMenuSelection).toBe(1);
   });
 
   it('requires returning to the parked ship before embarking', () => {
@@ -162,7 +167,35 @@ describe('ship menu', () => {
     game.player.position.surfaceX = 4;
     game.dockTerrainVehicle();
     expect(game.player.terrainVehicle.deployed).toBe(false);
+    expect(game.shipMenuOpen).toBe(true);
+    expect(game.shipMenuSection).toBe('main');
+    expect(game.createShipMenuModel().rows[game.shipMenuSelection].id).toBe('rover');
     expect(game.statusMessage).toContain('Embarked');
+  });
+
+  it('opens planet landing operations at Terrain Vehicle and exposes root launch', () => {
+    const game = createShipMenuHarness('planet');
+    game.player.terrainVehicle.shipSurfaceX = 0;
+    game.player.terrainVehicle.shipSurfaceY = 0;
+    game.player.position.surfaceX = 0;
+    game.player.position.surfaceY = 0;
+
+    game.openSurfaceLandingOperationsMenu();
+    const main = game.createShipMenuModel();
+
+    expect(game.shipMenuOpen).toBe(true);
+    expect(main.rows[game.shipMenuSelection].id).toBe('rover');
+    expect(main.rows.find((row: any) => row.id === 'launch')).toMatchObject({ disabled: false });
+  });
+
+  it('creates a scrollable surface icon legend model', () => {
+    const game = createShipMenuHarness('planet');
+
+    const model = game.createSurfaceLegendModel();
+
+    expect(model.title).toBe('Surface Icon Legend');
+    expect(model.rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['ship', 'resource', 'scanner']));
+    expect(model.footer[0]).toContain('PageUp/PageDown');
   });
 
   it('opens rover-only cargo and drops selected cargo on the surface', () => {

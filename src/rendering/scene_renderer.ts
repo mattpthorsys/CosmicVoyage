@@ -58,8 +58,13 @@ export interface SurfaceVehicleOverlayModel {
   cargoCapacity: number;
   selectedIndex: number;
   items: Array<{ label: string; status: string }>;
+  mapExpanded?: boolean;
+  surfaceCellScale?: number;
   scanCursor?: { dx: number; dy: number };
   ship?: { x: number; y: number };
+  shipDistance?: { distanceKm: number; direction: string };
+  atShip?: boolean;
+  altitudeBand?: { low: string; high: string; current: string };
   crew: Array<{ name: string; hitPoints: number; maxHitPoints: number }>;
 }
 
@@ -634,7 +639,7 @@ export class SceneRenderer {
       CONFIG.DEFAULT_BG_COLOUR,
       null
     );
-    const cellScale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
+    const cellScale = Math.max(1, surfaceOverlay?.surfaceCellScale ?? CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
     const centerX = Math.floor(viewport.width / 2);
     const centerY = Math.floor(viewport.height / 2);
     const startMapX = Math.floor(player.position.surfaceX - Math.floor(centerX / cellScale));
@@ -656,7 +661,7 @@ export class SceneRenderer {
         if (isCellCenter) this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
       }
     }
-    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport);
+    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
     this.screenBuffer.drawChar(
       player.render.char,
       viewport.x + Math.floor(viewport.width / 2),
@@ -667,7 +672,7 @@ export class SceneRenderer {
     if (surfaceOverlay?.scanCursor) this.drawSurfaceScanCursor(surfaceOverlay.scanCursor, viewport);
     this.drawSurfaceHud(player, planet, viewport);
     if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
-    this.drawHeightmapLegend(planet);
+    if (this.screenBuffer.getCols() < 96) this.drawHeightmapLegend(planet);
   }
 
   private getSurfaceViewport(cols: number, rows: number): { x: number; y: number; width: number; height: number } {
@@ -721,7 +726,7 @@ export class SceneRenderer {
         this.screenBuffer.drawChar(char, viewport.x + x, viewport.y + y, sample.colour, sample.colour);
       }
     }
-    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport);
+    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
     this.screenBuffer.drawChar(
       player.render.char,
       viewport.x + Math.floor(viewport.width / 2),
@@ -1236,7 +1241,7 @@ export class SceneRenderer {
   ): void {
     const mapSize = Math.max(1, planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE);
     const lat = 90 - (Math.max(0, Math.min(mapSize - 1, player.position.surfaceY)) / Math.max(1, mapSize - 1)) * 180;
-    const lon = (Math.floor(player.position.surfaceX) / mapSize) * 360 - 180;
+    const lon = (player.position.surfaceX / mapSize) * 360 - 180;
     const label = ` ${planet.name}  ${this.formatSurfaceCoordinate(lat, 'NS')} x ${this.formatSurfaceCoordinate(lon, 'EW')}  GRID ${Math.floor(player.position.surfaceX)},${Math.floor(player.position.surfaceY)} `;
     const clippedLabel = label.slice(0, Math.max(0, viewport.width - 2));
     this.screenBuffer.drawString(clippedLabel, viewport.x + 1, viewport.y - 1, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
@@ -1257,7 +1262,7 @@ export class SceneRenderer {
     const direction = axis === 'NS'
       ? value < 0 ? 'S' : 'N'
       : value < 0 ? 'W' : 'E';
-    return `${Math.round(Math.abs(value))}${direction}`;
+    return `${Math.abs(value).toFixed(1)}${direction}`;
   }
 
   private drawSurfaceVehicleOverlay(
@@ -1289,9 +1294,10 @@ export class SceneRenderer {
 
     const menuY = panelY + 6;
     if (menuY >= this.screenBuffer.getRows()) return;
-    const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel}`;
+    const fuelPct = model.maxFuel > 0 ? Math.round((Math.max(0, model.fuel) / model.maxFuel) * 100) : 0;
+    const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel} ${fuelPct}%`;
     const cargo = `CARGO ${model.cargo}/${model.cargoCapacity} m^3`;
-    const mode = model.moving ? 'MOVING' : 'STOPPED';
+    const mode = model.mapExpanded ? 'MAP' : model.moving ? 'MOVING' : 'STOPPED';
     this.screenBuffer.drawString(`${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth), panelX + 1, menuY, model.moving ? '#9FFFE0' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
 
     let cursorX = panelX + 1;
@@ -1308,7 +1314,10 @@ export class SceneRenderer {
     }
     const selected = model.items[model.selectedIndex];
     if (selected && rowY + 1 < this.screenBuffer.getRows()) {
-      this.screenBuffer.drawString(`${selected.label}: ${selected.status}`.slice(0, panelWidth), panelX + 1, rowY + 1, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+      const hint = model.atShip && selected.label.toLowerCase() !== 'embark'
+        ? `${selected.label}: ${selected.status} | At ship: select EMBARK to board.`
+        : `${selected.label}: ${selected.status}`;
+      this.screenBuffer.drawString(hint.slice(0, panelWidth), panelX + 1, rowY + 1, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
     }
     this.drawSurfaceCrewSidebar(model, viewport);
   }
@@ -1318,17 +1327,25 @@ export class SceneRenderer {
     const x = viewport.x + Math.floor(viewport.width / 2) + cursor.dx * scale;
     const y = viewport.y + Math.floor(viewport.height / 2) + cursor.dy * scale;
     if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
-    this.screenBuffer.drawChar('+', x, y, '#001010', '#FFD66B');
-    if (x > viewport.x) this.screenBuffer.drawChar('[', x - 1, y, '#FFD66B', null);
-    if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar(']', x + 1, y, '#FFD66B', null);
+    const lit = Math.floor(performance.now() / 350) % 2 === 0;
+    const fg = lit ? '#FFD66B' : '#806A30';
+    const bg = lit ? null : CONFIG.DEFAULT_BG_COLOUR;
+    if (y > viewport.y) this.screenBuffer.drawChar('^', x, y - 1, fg, bg);
+    if (y < viewport.y + viewport.height - 1) this.screenBuffer.drawChar('v', x, y + 1, fg, bg);
+    if (x > viewport.x) this.screenBuffer.drawChar('<', x - 1, y, fg, bg);
+    if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, fg, bg);
   }
 
-  private drawParkedShipMarker(ship: { x: number; y: number }, viewport: { x: number; y: number; width: number; height: number }): void {
-    const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
+  private drawParkedShipMarker(ship: { x: number; y: number }, viewport: { x: number; y: number; width: number; height: number }, surfaceCellScale?: number): void {
+    const scale = Math.max(1, surfaceCellScale ?? CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
     const x = viewport.x + Math.floor(viewport.width / 2) + Math.round(ship.x * scale);
     const y = viewport.y + Math.floor(viewport.height / 2) + Math.round(ship.y * scale);
     if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
-    this.screenBuffer.drawChar('S', x, y, '#001010', '#8CFFFF');
+    const phase = (Math.sin((performance.now() / 1000) * Math.PI * 2) + 1) / 2;
+    const colour = phase > 0.66 ? '#8CFFFF' : phase > 0.33 ? '#50C8C8' : '#2A807C';
+    this.screenBuffer.drawChar('S', x, y, '#001010', colour);
+    if (x > viewport.x) this.screenBuffer.drawChar('<', x - 1, y, colour, null);
+    if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, colour, null);
   }
 
   private drawSurfaceCrewSidebar(model: SurfaceVehicleOverlayModel, viewport: { x: number; y: number; width: number; height: number }): void {
@@ -1338,13 +1355,24 @@ export class SceneRenderer {
     if (width < 16) return;
     const height = Math.min(rows - 4, viewport.height + 8);
     this.drawingContext.drawBox(x - 1, viewport.y - 1, width + 2, height, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString('CREW VITALS', x + 1, viewport.y - 1, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
-    model.crew.slice(0, Math.max(0, height - 3)).forEach((member, index) => {
+    this.screenBuffer.drawString('SURFACE TELEMETRY', x + 1, viewport.y - 1, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    let row = viewport.y + 1;
+    if (model.shipDistance) {
+      const km = model.shipDistance.distanceKm >= 100 ? model.shipDistance.distanceKm.toFixed(0) : model.shipDistance.distanceKm.toFixed(1);
+      this.screenBuffer.drawString(`SHIP ${km} km`.slice(0, width), x, row++, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`BRG  ${model.shipDistance.direction}`.slice(0, width), x, row++, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    }
+    if (model.altitudeBand) {
+      this.screenBuffer.drawString(`RELIEF ${model.altitudeBand.current}`.slice(0, width), x, row++, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`${model.altitudeBand.low} / ${model.altitudeBand.high}`.slice(0, width), x, row++, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    }
+    row++;
+    model.crew.slice(0, Math.max(0, viewport.y + height - row - 1)).forEach((member, index) => {
       const dead = member.hitPoints <= 0;
       const hp = dead ? 'DEAD' : `${member.hitPoints}/${member.maxHitPoints}`;
       const fg = dead ? '#FF6060' : member.hitPoints < member.maxHitPoints * 0.4 ? '#FFD66B' : '#9FFFE0';
       const nameWidth = Math.max(5, width - hp.length - 3);
-      this.screenBuffer.drawString(`${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width), x, viewport.y + 1 + index, fg, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width), x, row + index, fg, CONFIG.DEFAULT_BG_COLOUR);
     });
   }
 
