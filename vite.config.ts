@@ -30,5 +30,6 @@ export default defineConfig({
   test: {
     environment: 'happy-dom', // Use happy-dom for simulating DOM
     globals: true, // Use Vitest globals (describe, it, expect, etc.)
+    setupFiles: ['./src/tests/setup.ts'],
   },
 });
