@@ -24,6 +24,7 @@ import { AstrometricOverlay } from '../rendering/astrometric_overlay';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
 import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
+import { commandButton, CommandBarButton, CommandBarModel } from './command_bar';
 import {
   createStarbaseScreenModel,
   StarbaseScreenModel,
@@ -73,6 +74,7 @@ import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_s
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
+type TravelObserveCursor = { mode: 'hyperspace' | 'system'; dx: number; dy: number };
 type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'log' | 'rover' | 'jettison';
 type RoverActionId = 'map' | 'move' | 'cargo' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'embark' | 'icon';
 type QuantityOperation =
@@ -156,6 +158,9 @@ export class Game {
   private currentTargetIndex: number = 0;
   private currentTargetSignature: string = '';
   private approachTargetSignature: string | null = null;
+  private travelCommandMoving: boolean = true;
+  private travelCommandSelection: number = 0;
+  private travelObserveCursor: TravelObserveCursor | null = null;
   private targetMenuOpen: boolean = false;
   private targetMenuSelection: number = 0;
   private targetMenuOffset: number = 0;
@@ -250,6 +255,7 @@ export class Game {
     eventManager.subscribe(GameEvents.PLAYER_CARGO_SOLD, this._handleCargoUpdate.bind(this)); // Also trigger render on sell
     eventManager.subscribe(GameEvents.PLAYER_FUEL_CHANGED, this._handleFuelUpdate.bind(this)); // Trigger render on fuel change
     eventManager.subscribe(GameEvents.PLAYER_CREDITS_CHANGED, this._handleCreditsUpdate.bind(this)); // Trigger render on credit change
+    eventManager.subscribe(GameEvents.COMMAND_BAR_ACTION_SELECTED, this._handleCommandBarAction.bind(this));
 
     // Add resize listener
     window.addEventListener('resize', this._handleResize.bind(this));
@@ -274,6 +280,11 @@ export class Game {
     this.currentTargetIndex = 0;
     this.currentTargetSignature = '';
     this.approachTargetSignature = null;
+    this.travelObserveCursor = null;
+    if (newState === 'hyperspace' || newState === 'system') {
+      this.travelCommandMoving = true;
+      this.travelCommandSelection = 0;
+    }
     this.targetMenuOpen = false;
     this.shipMenuOpen = false;
     this.roverCargoOpen = false;
@@ -325,6 +336,20 @@ export class Game {
     this._publishStatusUpdate();
   }
   private _handleCreditsUpdate(): void {
+    this._publishStatusUpdate();
+  }
+
+  private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
+    if (!data?.action) return;
+    if (this.popupState !== 'inactive' || this.targetMenuOpen || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.jettisonConfirmation) {
+      this.statusMessage = 'Command bar unavailable while another interface is active.';
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
+
+    this.executeCommandBarAction(data.action);
+    this.forceFullRender = true;
     this._publishStatusUpdate();
   }
 
@@ -1027,6 +1052,111 @@ export class Game {
     return false;
   }
 
+  private _handleTravelCommandInput(): boolean {
+    const state = this.stateManager.state;
+    if (state !== 'hyperspace' && state !== 'system') return false;
+
+    if (this.travelCommandMoving) {
+      if (
+        this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
+        this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
+        this.inputManager.wasActionJustPressed('QUIT')
+      ) {
+        this.travelCommandMoving = false;
+        this.travelCommandSelection = this.getTravelMoveCommandIndex();
+        this.statusMessage = `${state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement paused. Arrows select commands.`;
+        this.forceFullRender = true;
+        return true;
+      }
+      if (this.inputManager.wasActionJustPressed('CYCLE_TARGET')) {
+        this.activateRecommendedTravelCommand();
+        return true;
+      }
+      return false;
+    }
+
+    const commands = this.getSelectableTravelCommandButtons();
+    this.travelCommandSelection = clampIndex(this.travelCommandSelection, commands.length);
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      this.travelCommandSelection = Math.max(0, this.travelCommandSelection - 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
+      this.travelCommandSelection = Math.min(commands.length - 1, this.travelCommandSelection + 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      this.travelCommandSelection = (this.travelCommandSelection - 1 + commands.length) % commands.length;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      this.travelCommandSelection = (this.travelCommandSelection + 1) % commands.length;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('QUIT')) {
+      this.travelCommandMoving = true;
+      this.statusMessage = `${state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement engaged.`;
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('CYCLE_TARGET')) {
+      this.activateRecommendedTravelCommand();
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
+      const selected = commands[this.travelCommandSelection];
+      if (selected) this.executeCommandBarAction(selected.action);
+      return true;
+    }
+    return true;
+  }
+
+  private _handleTravelObserveCursorInput(): boolean {
+    if (!this.travelObserveCursor) return false;
+    const state = this.stateManager.state;
+    if (state !== this.travelObserveCursor.mode) {
+      this.travelObserveCursor = null;
+      return false;
+    }
+
+    const bounds = this.getTravelObserveCursorBounds();
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      this.travelObserveCursor.dy = Math.max(-bounds.y, this.travelObserveCursor.dy - 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      this.travelObserveCursor.dy = Math.min(bounds.y, this.travelObserveCursor.dy + 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      this.travelObserveCursor.dx = Math.max(-bounds.x, this.travelObserveCursor.dx - 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
+      this.travelObserveCursor.dx = Math.min(bounds.x, this.travelObserveCursor.dx + 1);
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
+      this.travelObserveCursor = null;
+      this.statusMessage = 'Observation reticle cancelled.';
+      this.forceFullRender = true;
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
+      this.confirmTravelObserveCursor();
+      return true;
+    }
+    return true;
+  }
+
   /** Processes discrete actions (scan, land, mine, etc.). Returns true if an action was processed. */
   private _handleDiscreteActions(): boolean {
     const currentState = this.stateManager.state;
@@ -1088,6 +1218,9 @@ export class Game {
         }
         if (action === 'APPROACH_TARGET') {
           this._startApproachAssist();
+          return true;
+        }
+        if (action === 'SCAN_SYSTEM_OBJECT' && this.scanSelectedSystemTargetIfAvailable()) {
           return true;
         }
         if (action === 'MINE') {
@@ -1183,6 +1316,66 @@ export class Game {
     }
   }
 
+  private executeCommandBarAction(action: string): void {
+    switch (action) {
+      case 'TRAVEL_MOVE':
+        this.travelCommandMoving = true;
+        this.statusMessage = `${this.stateManager.state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement engaged.`;
+        return;
+      case 'OPEN_SHIP_MENU':
+        this.openShipMenu();
+        return;
+      case 'TARGET_MENU':
+        this.openTargetMenu();
+        return;
+      case 'OBSERVE_HYPERSPACE':
+        this.startTravelObserveCursor('hyperspace');
+        return;
+      case 'OBSERVE_SYSTEM_TARGET':
+        this.startTravelObserveCursor('system');
+        return;
+      case 'ROVER_MAP':
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems().find((item) => item.id === 'map'));
+        return;
+      case 'ROVER_CARGO':
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems().find((item) => item.id === 'cargo'));
+        return;
+      case 'ROVER_MOVE':
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems().find((item) => item.id === 'move'));
+        return;
+      case 'ROVER_SCAN':
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems().find((item) => item.id === 'scan'));
+        return;
+      case 'ROVER_MINE':
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems().find((item) => item.id === 'mine'));
+        return;
+      case 'ROVER_ICON':
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems().find((item) => item.id === 'icon'));
+        return;
+      case 'ROVER_EMBARK':
+        this.dockTerrainVehicle();
+        return;
+      case 'RED_RESERVED':
+        this.statusMessage = 'No emergency command is armed.';
+        return;
+      default:
+        this._executeActionByName(action);
+    }
+  }
+
+  private scanSelectedSystemTargetIfAvailable(): boolean {
+    if (this.stateManager.state !== 'system') return false;
+    const selectedTarget = this.getSelectedTarget();
+    if (!selectedTarget) return false;
+    const canRemoteScan = selectedTarget instanceof Planet;
+    if (!canRemoteScan && !this.isTargetWithinScanRange(selectedTarget)) return false;
+    this.terminalOverlay.clear();
+    this._dumpScanToTerminal(this.getScannableNavigationTarget(selectedTarget));
+    this.statusMessage = '';
+    this.forceFullRender = true;
+    return true;
+  }
+
   private _executeActionByName(actionName: string): void {
     if (actionName === 'ACTIVATE_LAND_LIFTOFF' && this.stateManager.state === 'planet') {
       this.launchFromParkedShip();
@@ -1193,11 +1386,7 @@ export class Game {
       return;
     }
     if (actionName === 'SCAN_SYSTEM_OBJECT') {
-      const selectedTarget = this.getSelectedTarget();
-      if (selectedTarget && this.isTargetWithinScanRange(selectedTarget)) {
-        this.terminalOverlay.clear();
-        this._dumpScanToTerminal(this.getScannableNavigationTarget(selectedTarget));
-        this.statusMessage = '';
+      if (this.scanSelectedSystemTargetIfAvailable()) {
         return;
       }
     }
@@ -1366,6 +1555,9 @@ export class Game {
       const isBoost = this.inputManager.isActionActive('BOOST');
       const useFine = isFine && !isBoost;
       const currentState = this.stateManager.state;
+      if ((currentState === 'hyperspace' || currentState === 'system') && !this.travelCommandMoving) {
+        return;
+      }
       if (currentState === 'planet' && (this.surfaceMapExpanded || this.surfaceLegendOpen)) {
         return;
       }
@@ -1471,6 +1663,14 @@ export class Game {
       return;
     }
     if (this._handleSurfaceVehicleInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this._handleTravelObserveCursorInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this._handleTravelCommandInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -1607,6 +1807,200 @@ export class Game {
       const errorMsg = `<e>Scan Error: ${error instanceof Error ? error.message : 'Failed to get info'}</e>`;
       this.terminalOverlay.addMessage(errorMsg);
     }
+  }
+
+  private startTravelObserveCursor(mode: 'hyperspace' | 'system'): void {
+    const cursor: TravelObserveCursor = { mode, dx: 0, dy: 0 };
+    if (mode === 'system') {
+      const selected = this.getSelectedTarget();
+      if (selected) {
+        const view = this.getSystemTargetViewPosition(selected);
+        if (view) {
+          const center = this.getTravelViewCenter();
+          cursor.dx = Math.max(-center.x, Math.min(center.x, view.x - center.x));
+          cursor.dy = Math.max(-center.y, Math.min(center.y, view.y - center.y));
+        }
+      }
+    } else {
+      const contact = this.toNavigationContact(this.getCurrentHyperspaceSurvey().nearestSystemContact);
+      if (contact) {
+        const bounds = this.getTravelObserveCursorBounds();
+        cursor.dx = Math.max(-bounds.x, Math.min(bounds.x, contact.dx));
+        cursor.dy = Math.max(-bounds.y, Math.min(bounds.y, contact.dy));
+      }
+    }
+    this.travelObserveCursor = cursor;
+    this.travelCommandMoving = false;
+    this.statusMessage = `${mode === 'hyperspace' ? 'Interstellar' : 'Planetary'} observation reticle active. Arrows aim; Enter scans; Esc cancels.`;
+    this.forceFullRender = true;
+  }
+
+  private getTravelViewCenter(): { x: number; y: number } {
+    return {
+      x: Math.floor(this.renderer.getGridCols() / 2),
+      y: Math.floor(this.renderer.getGridRows() / 2),
+    };
+  }
+
+  private getTravelObserveCursorBounds(): { x: number; y: number } {
+    const center = this.getTravelViewCenter();
+    return {
+      x: Math.max(0, center.x - 1),
+      y: Math.max(0, center.y - 1),
+    };
+  }
+
+  private confirmTravelObserveCursor(): void {
+    const cursor = this.travelObserveCursor;
+    if (!cursor) return;
+    this.terminalOverlay.clear();
+    if (cursor.mode === 'hyperspace') {
+      this.scanHyperspaceObserveCursor(cursor);
+    } else {
+      this.scanSystemObserveCursor(cursor);
+    }
+    this.travelObserveCursor = null;
+    this.forceFullRender = true;
+  }
+
+  private scanHyperspaceObserveCursor(cursor: TravelObserveCursor): void {
+    const worldX = this.player.position.worldX + cursor.dx;
+    const worldY = this.player.position.worldY + cursor.dy;
+    const props = this.systemDataGenerator.getSystemMapProperties(worldX, worldY);
+    const phenomenon = props.exists ? null : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
+    const isNavigable = props.exists || Boolean(phenomenon?.exists && phenomenon.type === 'rogue-planet');
+    if (!isNavigable) {
+      this.terminalOverlay.addMessageLines([
+        '<h>LONG-RANGE OBSERVATION</h>',
+        'Reticle return: no stable stellar or planetary-mass body at this bearing.',
+        `Grid: <hl>${worldX},${worldY}</hl>`,
+      ]);
+      this.statusMessage = 'Observation reticle found empty deep space.';
+      return;
+    }
+    const target = this.stateManager.peekAtSystem(worldX, worldY);
+    if (!target) {
+      this.terminalOverlay.addMessageLines([
+        '<h>LONG-RANGE OBSERVATION</h>',
+        'Contact geometry is unstable; no navigational record could be resolved.',
+      ]);
+      this.statusMessage = 'Observation contact unresolved.';
+      return;
+    }
+    this._dumpScanToTerminal(target);
+    this.statusMessage = `Observed ${target.name}.`;
+  }
+
+  private scanSystemObserveCursor(cursor: TravelObserveCursor): void {
+    const target = this.getNavigationTargetAtReticle(cursor.dx, cursor.dy);
+    if (!target) {
+      this.terminalOverlay.addMessageLines([
+        '<h>LOCAL OBSERVATION</h>',
+        'Reticle return: no resolved local body under cursor.',
+        'Move the reticle over a star, planet, moon, or starbase marker.',
+      ]);
+      this.statusMessage = 'Observation reticle found no local target.';
+      return;
+    }
+    this.selectNavigationTarget(target, false);
+    this._dumpScanToTerminal(this.getScannableNavigationTarget(target));
+    this.statusMessage = `Observed ${this.getTargetName(target)}.`;
+  }
+
+  private getNavigationTargetAtReticle(dx: number, dy: number): NavigationTarget | null {
+    const center = this.getTravelViewCenter();
+    const cursorX = center.x + dx;
+    const cursorY = center.y + dy;
+    let bestTarget: NavigationTarget | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const target of this.getNavigationTargets()) {
+      const view = this.getSystemTargetViewPosition(target);
+      if (!view) continue;
+      const distance = Math.hypot(view.x - cursorX, view.y - cursorY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestTarget = target;
+      }
+    }
+    return bestDistance <= 1.5 ? bestTarget : null;
+  }
+
+  private getSystemTargetViewPosition(target: NavigationTarget): { x: number; y: number } | null {
+    if (this.stateManager.state !== 'system') return null;
+    const center = this.getTravelViewCenter();
+    const viewScale = this.getCurrentViewScale();
+    const viewWorldStartX = this.player.position.systemX - center.x * viewScale;
+    const viewWorldStartY = this.player.position.systemY - center.y * viewScale;
+    const coords = this.getTargetCoords(target);
+    return {
+      x: Math.floor((coords.x - viewWorldStartX) / viewScale),
+      y: Math.floor((coords.y - viewWorldStartY) / viewScale),
+    };
+  }
+
+  private observeHyperspaceContact(): void {
+    const survey = this.getCurrentHyperspaceSurvey();
+    const contact = this.toNavigationContact(survey.nearestSystemContact);
+    this.terminalOverlay.clear();
+    if (!contact) {
+      this.terminalOverlay.addMessageLines([
+        '<h>LONG-RANGE OBSERVATION</h>',
+        'No stable stellar or planetary-mass contact inside the reticle field.',
+        `Interstellar medium: ${survey.medium.label}; sensor efficiency ${(survey.medium.sensorRangeMultiplier * 100).toFixed(0)}%.`,
+      ]);
+      this.statusMessage = 'Observation found no stable contact.';
+      return;
+    }
+
+    const range = Math.max(0, contact.rangeCells);
+    const confidence = Math.max(12, Math.min(98, Math.round(96 - range * 2.3)));
+    const rangeLabel = confidence > 65 ? `${range.toFixed(1)} cells / ${formatHyperspaceSpan(range)}` : `~${Math.round(range)} cells`;
+    const bearing = this.formatHyperspaceBearing(contact);
+    const classification = confidence > 55
+      ? `${contact.name} ${contact.starType}`
+      : contact.objectKind === 'brown-dwarf'
+        ? 'faint substellar contact'
+        : 'stellar contact';
+    this.terminalOverlay.addMessageLines([
+      '<h>LONG-RANGE OBSERVATION</h>',
+      `CONTACT: <hl>${classification}</hl>`,
+      `BEARING: <hl>${bearing}</hl>  RANGE: <hl>${rangeLabel}</hl>`,
+      `CONFIDENCE: <hl>${confidence}%</hl>  FACILITY TRACE: <hl>${contact.hasStarbase && confidence > 45 ? 'possible' : 'none'}</hl>`,
+      range > 18 ? 'Reading is smeared by distance and medium scattering.' : 'Reading is stable enough for approach decisions.',
+    ]);
+    this.statusMessage = `Observed ${classification}.`;
+  }
+
+  private observeSystemTarget(): void {
+    const system = this.stateManager.currentSystem;
+    const target = this.getSelectedTarget();
+    this.terminalOverlay.clear();
+    if (!system || !target) {
+      this.terminalOverlay.addMessageLines(['<h>LOCAL OBSERVATION</h>', 'No selected local target. Use the target menu or Tab first.']);
+      this.statusMessage = 'No local target selected.';
+      return;
+    }
+    const coords = this.getTargetCoords(target);
+    const range = Math.sqrt(this.player.distanceSqToSystemCoords(coords.x, coords.y));
+    const rangeAu = range / AU_IN_METERS;
+    const confidence = Math.max(10, Math.min(99, Math.round(99 - rangeAu * 7)));
+    const classLabel = confidence > 45 ? this.getTargetClassLabel(target) : 'distant body';
+    const nameLabel = confidence > 35 ? this.getTargetName(target) : 'unresolved target';
+    const lines = [
+      '<h>LOCAL OBSERVATION</h>',
+      `TARGET: <hl>${nameLabel}</hl>  CLASS: <hl>${classLabel}</hl>`,
+      `RANGE: <hl>${formatDistanceAu(range)}</hl>  BEARING: <hl>${this.formatBearing(coords.x - this.player.position.systemX, coords.y - this.player.position.systemY)}</hl>`,
+      `SIGNAL CONFIDENCE: <hl>${confidence}%</hl>  LIGHT TIME: <hl>${formatLightTimeFromMeters(range)}</hl>`,
+    ];
+    if (target instanceof Planet && confidence > 55) {
+      lines.push(`DISC: <hl>${target.diameter.toLocaleString()} km</hl>  GRAVITY: <hl>${target.gravity.toFixed(2)}g</hl>`);
+    } else if (!(target instanceof Planet) && confidence > 55) {
+      lines.push(`SPECTRAL RETURN: <hl>${this.getTargetClassLabel(target)}</hl>`);
+    } else {
+      lines.push('Fine detail is below reliable passive resolution at this range.');
+    }
+    this.terminalOverlay.addMessageLines(lines);
+    this.statusMessage = `Observed ${nameLabel}.`;
   }
 
   private completeMissionsForScan(target: Planet | SolarSystem | StellarBody): void {
@@ -2319,7 +2713,7 @@ export class Game {
   private getSurfaceVehicleMenuItems(): SurfaceVehicleMenuItem[] {
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
     const fuel = Math.max(0, this.player.terrainVehicle.fuel);
-    return [
+    const items: SurfaceVehicleMenuItem[] = [
       { id: 'map', label: 'Map', status: this.surfaceMapExpanded ? 'expanded' : 'local' },
       { id: 'move', label: 'Move', status: fuel > 0 ? 'ready' : 'no fuel' },
       { id: 'cargo', label: 'Cargo', status: `${cargoTotal}/${this.player.terrainVehicle.cargoHold.capacity} m^3` },
@@ -2328,9 +2722,12 @@ export class Game {
       { id: 'scan', label: 'Scan', status: 'local sweep' },
       { id: 'stun', label: 'Stun', status: 'safe' },
       { id: 'shoot', label: 'Shoot', status: 'safe' },
-      { id: 'embark', label: 'Embark', status: this.isAtParkedShip() ? 'board ship' : 'return to ship' },
       { id: 'icon', label: 'Icon', status: 'legend' },
     ];
+    if (this.isAtParkedShip()) {
+      items.splice(0, 0, { id: 'embark', label: 'Embark', status: 'board ship' });
+    }
+    return items;
   }
 
   private createSurfaceVehicleOverlayModel() {
@@ -3403,6 +3800,24 @@ export class Game {
     return `Docked: ${starbase.name} | Panel: ${section} | Enter use, Esc cancel, L depart.`;
   }
 
+  private drawTravelObserveCursor(): void {
+    const cursor = this.travelObserveCursor;
+    if (!cursor || cursor.mode !== this.stateManager.state) return;
+    const center = this.getTravelViewCenter();
+    const x = center.x + cursor.dx;
+    const y = center.y + cursor.dy;
+    const cols = this.renderer.getGridCols();
+    const rows = this.renderer.getGridRows();
+    if (x < 0 || x >= cols || y < 0 || y >= rows) return;
+    const lit = Math.floor(performance.now() / 420) % 2 === 0;
+    const fg = lit ? '#8CFFF0' : '#2F6F68';
+    const bg = lit ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR;
+    if (y > 0) this.renderer.drawChar('^', x, y - 1, fg, bg);
+    if (y < rows - 1) this.renderer.drawChar('v', x, y + 1, fg, bg);
+    if (x > 0) this.renderer.drawChar('<', x - 1, y, fg, bg);
+    if (x < cols - 1) this.renderer.drawChar('>', x + 1, y, fg, bg);
+  }
+
   // --- Rendering ---
   private _render(): void {
     const currentState = this.stateManager.state;
@@ -3421,12 +3836,14 @@ export class Game {
       switch (currentState) {
         case 'hyperspace':
           this.renderer.drawHyperspace(this.player);
+          this.drawTravelObserveCursor();
           break;
         case 'system':
           const system = this.stateManager.currentSystem;
           if (system) {
             const currentViewScale = this.getCurrentViewScale();
             this.renderer.drawSolarSystem(this.player, system, currentViewScale);
+            this.drawTravelObserveCursor();
           } else {
             this._renderError('System data missing for render!');
           }
@@ -3715,7 +4132,130 @@ export class Game {
       actions,
       primaryActionId: this.choosePrimaryAction(actions)?.id,
       targetName: this.getCommandStripTargetName(),
+      commandBar: this.createCommandBarModel(actions),
     });
+  }
+
+  private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    const state = this.stateManager.state;
+    if (state === 'hyperspace') return this.createHyperspaceCommandBar(actions);
+    if (state === 'system') return this.createSystemCommandBar(actions);
+    if (state === 'planet') return this.createSurfaceCommandBar();
+    return {
+      context: state,
+      targetName: this.getCommandStripTargetName(),
+      primaryButtonId: this.choosePrimaryAction(actions)?.id,
+      buttons: actions
+        .filter((action) => action.enabled)
+        .slice(0, 7)
+        .map((action) => commandButton(action.id, action.label, action.action, { key: action.key })),
+    };
+  }
+
+  private getSelectableTravelCommandButtons(): CommandBarButton[] {
+    const model = this.stateManager.state === 'system'
+      ? this.createSystemCommandBar(this.getCurrentAvailableActions(), false)
+      : this.createHyperspaceCommandBar(this.getCurrentAvailableActions(), false);
+    return [...(model.leftButtons ?? []), ...(model.buttons ?? []), ...(model.rightButtons ?? [])].filter((button) => button.enabled !== false);
+  }
+
+  private getTravelMoveCommandIndex(): number {
+    const commands = this.getSelectableTravelCommandButtons();
+    const moveIndex = commands.findIndex((button) => button.id === 'move');
+    return moveIndex >= 0 ? moveIndex : 0;
+  }
+
+  private getSelectedTravelCommandId(): string {
+    const commands = this.getSelectableTravelCommandButtons();
+    this.travelCommandSelection = clampIndex(this.travelCommandSelection, commands.length);
+    return commands[this.travelCommandSelection]?.id ?? 'move';
+  }
+
+  private activateRecommendedTravelCommand(): void {
+    const model = this.stateManager.state === 'system'
+      ? this.createSystemCommandBar(this.getCurrentAvailableActions(), false)
+      : this.createHyperspaceCommandBar(this.getCurrentAvailableActions(), false);
+    const commands = [...(model.leftButtons ?? []), ...model.buttons, ...(model.rightButtons ?? [])].filter((button) => button.enabled !== false);
+    const recommended = commands.find((button) => button.id === model.primaryButtonId) ?? commands[this.travelCommandSelection];
+    if (recommended) this.executeCommandBarAction(recommended.action);
+    this.forceFullRender = true;
+  }
+
+  private createHyperspaceCommandBar(actions: AvailableAction[], includeSelection: boolean = true): CommandBarModel {
+    const enter = actions.find((action) => action.id === 'enter-system');
+    return {
+      context: 'interstellar',
+      targetName: this.getCommandStripTargetName(),
+      primaryButtonId: enter?.id,
+      selectedButtonId: includeSelection ? (this.travelCommandMoving ? 'move' : this.getSelectedTravelCommandId()) : undefined,
+      leftButtons: enter
+        ? [commandButton(enter.id, enter.label, enter.action, { key: enter.key, tone: 'green', detail: enter.targetName ? `Enter ${enter.targetName}` : 'Enter navigable contact' })]
+        : [],
+      buttons: [
+        commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows', detail: this.travelCommandMoving ? 'Movement engaged. Enter, Space, or Esc pauses command movement.' : 'Resume interstellar movement.' }),
+        commandButton('scan-local', 'Scan', 'SCAN_SYSTEM_OBJECT', { key: CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT, detail: 'Scan the stellar or planemo contact at current coordinates.' }),
+        commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', { key: CONFIG.KEY_BINDINGS.SHIP_MENU, detail: 'Open ship operations.' }),
+        commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', { detail: 'Open a reticle for long-range contact observation.' }),
+      ],
+      rightButtons: [commandButton('red-reserved', 'Alert', 'RED_RESERVED', { tone: 'red', enabled: false, detail: 'Reserved for future emergency commands.' })],
+    };
+  }
+
+  private createSystemCommandBar(actions: AvailableAction[], includeSelection: boolean = true): CommandBarModel {
+    const primaryTravel =
+      actions.find((action) => action.id === 'land-dock') ??
+      actions.find((action) => action.id === 'leave-system');
+    return {
+      context: 'planetary',
+      targetName: this.getCommandStripTargetName(),
+      primaryButtonId: primaryTravel?.id,
+      selectedButtonId: includeSelection ? (this.travelCommandMoving ? 'move' : this.getSelectedTravelCommandId()) : undefined,
+      leftButtons: primaryTravel
+        ? [commandButton(primaryTravel.id, primaryTravel.label, primaryTravel.action, { key: primaryTravel.key, tone: 'green', detail: primaryTravel.targetName ? `${primaryTravel.label} ${primaryTravel.targetName}` : primaryTravel.label })]
+        : [],
+      buttons: [
+        commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows', detail: this.travelCommandMoving ? 'Movement engaged. Enter, Space, or Esc pauses command movement.' : 'Resume planetary movement.' }),
+        commandButton('scan-object', 'Scan', 'SCAN_SYSTEM_OBJECT', { key: CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT, detail: 'Scan a nearby star, planet, starbase, or selected close target.' }),
+        commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', { key: CONFIG.KEY_BINDINGS.SHIP_MENU, detail: 'Open ship operations.' }),
+        commandButton('observe', 'Observe', 'OBSERVE_SYSTEM_TARGET', { detail: 'Open a reticle and scan the selected local body.' }),
+        commandButton('target-menu', 'Targets', 'TARGET_MENU', { key: CONFIG.KEY_BINDINGS.TARGET_MENU, detail: 'Open local navigation target list.' }),
+      ],
+      rightButtons: [commandButton('red-reserved', 'Alert', 'RED_RESERVED', { tone: 'red', enabled: false, detail: 'Reserved for future emergency commands.' })],
+    };
+  }
+
+  private createSurfaceCommandBar(): CommandBarModel {
+    const rover = this.player.terrainVehicle;
+    if (!rover.deployed && !rover.onFoot) {
+      return {
+        context: 'landed ship',
+        targetName: this.stateManager.currentPlanet?.name,
+        buttons: [
+          commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', { key: CONFIG.KEY_BINDINGS.SHIP_MENU, detail: 'Open landed ship operations.' }),
+          commandButton('scan-surface', 'Scan', 'SCAN', { key: CONFIG.KEY_BINDINGS.SCAN, detail: 'Begin a local surface scan.' }),
+        ],
+        rightButtons: [commandButton('red-reserved', 'Alert', 'RED_RESERVED', { tone: 'red', enabled: false, detail: 'Reserved for future emergency commands.' })],
+      };
+    }
+
+    const cargo = this.cargoSystem.getTotalUnits(rover.cargoHold);
+    return {
+      context: 'terrain',
+      targetName: this.stateManager.currentPlanet?.name,
+      primaryButtonId: this.isAtParkedShip() ? 'embark' : undefined,
+      leftButtons: this.isAtParkedShip()
+        ? [commandButton('embark', 'Embark', 'ROVER_EMBARK', { tone: 'green', detail: 'Board the parked ship.' })]
+        : [],
+      buttons: [
+        commandButton('map', 'Map', 'ROVER_MAP', { detail: 'Toggle expanded terrain map.' }),
+        commandButton('move', 'Move', 'ROVER_MOVE', { detail: rover.fuel > 0 ? 'Start terrain vehicle movement.' : 'Terrain vehicle fuel exhausted.', enabled: rover.fuel > 0 }),
+        commandButton('cargo', 'Cargo', 'ROVER_CARGO', { detail: `Terrain vehicle cargo ${cargo}/${rover.cargoHold.capacity} m^3.` }),
+        commandButton('mine', 'Mine', 'ROVER_MINE', { key: CONFIG.KEY_BINDINGS.MINE, detail: 'Mine the local deposit if present.' }),
+        commandButton('scan', 'Scan', 'ROVER_SCAN', { key: CONFIG.KEY_BINDINGS.SCAN, detail: 'Move the surface scan cursor.' }),
+        commandButton('icon', 'Icon', 'ROVER_ICON', { detail: 'Open the surface icon legend.' }),
+      ],
+      rightButtons: [commandButton('red-reserved', 'Alert', 'RED_RESERVED', { tone: 'red', enabled: false, detail: 'Reserved for future emergency commands.' })],
+    };
   }
 
   private getCommandStripTargetName(): string | undefined {
@@ -3730,11 +4270,10 @@ export class Game {
   private getCurrentAvailableActions(): AvailableAction[] {
     const state = this.stateManager.state;
     if (state === 'hyperspace') {
-      const baseSeedInt = this.gameSeedPRNG.seed;
-      const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-      const hash = fastHash(this.player.position.worldX, this.player.position.worldY, baseSeedInt);
-      const isNearStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
-      const peekedSystem = isNearStar
+      const currentProps = this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY);
+      const currentPhenomenon = this.systemDataGenerator.getDeepSpacePhenomenonProperties(this.player.position.worldX, this.player.position.worldY);
+      const isNavigableContact = currentProps.exists || Boolean(currentPhenomenon?.exists && currentPhenomenon.type === 'rogue-planet');
+      const peekedSystem = isNavigableContact
         ? this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY)
         : null;
       return createAvailableActions({
@@ -3743,7 +4282,7 @@ export class Game {
         system: null,
         planet: null,
         starbase: null,
-        isNearHyperspaceSystem: isNearStar,
+        isNearHyperspaceSystem: isNavigableContact,
         nearbySystemName: peekedSystem?.name,
       });
     }

@@ -50,4 +50,16 @@ describe('surface scan cursor', () => {
     expect(game.surfaceNotifications.join('\n')).toContain('Iron');
     expect(game.surfaceNotifications.join('\n')).toContain('281 K');
   });
+
+  it('only offers embark in the terrain menu when parked at the ship', () => {
+    const game = createSurfaceScanHarness();
+    game.player.terrainVehicle.shipSurfaceX = 10;
+    game.player.terrainVehicle.shipSurfaceY = 10;
+
+    expect(game.getSurfaceVehicleMenuItems().map((item: { id: string }) => item.id)[0]).toBe('embark');
+
+    game.player.position.surfaceX = 11;
+
+    expect(game.getSurfaceVehicleMenuItems().map((item: { id: string }) => item.id)).not.toContain('embark');
+  });
 });

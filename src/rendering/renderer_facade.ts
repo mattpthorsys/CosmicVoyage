@@ -105,6 +105,14 @@ export class RendererFacade {
     return this.screenBuffer.getCharHeightPx();
   }
 
+  public getGridCols(): number {
+    return this.screenBuffer.getCols();
+  }
+
+  public getGridRows(): number {
+    return this.screenBuffer.getRows();
+  }
+
   /** Handler for the statusUpdateNeeded event. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _handleStatusUpdate(data: any): void {
@@ -120,7 +128,9 @@ export class RendererFacade {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _handleCommandStripUpdate(data: any): void {
     if (!this.commandStripUpdater) return;
-    if (data && Array.isArray(data.actions)) {
+    if (data?.commandBar) {
+      this.commandStripUpdater.update(data.commandBar);
+    } else if (data && Array.isArray(data.actions)) {
       this.commandStripUpdater.update(data.actions, data.primaryActionId, data.targetName);
     }
   }
@@ -201,6 +211,10 @@ export class RendererFacade {
   drawString(text: string, x: number, y: number, fgColor?: string | null, bgColor?: string | null): void {
     // Delegate directly to screenBuffer for basic string drawing
     this.screenBuffer.drawString(text, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
+  }
+
+  drawChar(char: string | null, x: number, y: number, fgColor?: string | null, bgColor?: string | null): void {
+    this.screenBuffer.drawChar(char, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
   }
 
   // --- Scene Drawing Method Delegation (Remains the same) ---
