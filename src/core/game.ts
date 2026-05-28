@@ -169,6 +169,8 @@ export class Game {
   private shipMenuSection: ShipMenuSection = 'main';
   private shipMenuSelection: number = 0;
   private shipMenuOffset: number = 0;
+  private shipMenuSelectionBySection: Partial<Record<ShipMenuSection, number>> = {};
+  private shipMenuOffsetBySection: Partial<Record<ShipMenuSection, number>> = {};
   private shipMenuJettisonItemKey: string | null = null;
   private currentShipCompartmentId: string = 'bridge';
   private quantitySelector: QuantitySelectorState<QuantityOperation> | null = null;
@@ -629,9 +631,7 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('QUIT')) {
-      this.starbaseSectionId = 'overview';
-      this.starbaseAlert = 'Cancelled current panel.';
-      this.forceFullRender = true;
+      this.departStarbase();
       this._publishStatusUpdate();
       return true;
     }
@@ -650,6 +650,17 @@ export class Game {
     }
 
     return false;
+  }
+
+  private departStarbase(): void {
+    if (this.stateManager.state !== 'starbase') return;
+    const departed = this.stateManager.liftOff();
+    if (departed) {
+      this.starbaseAlert = '';
+      this.statusMessage = this.stateManager.statusMessage || 'Departed starbase.';
+      this.stateManager.statusMessage = '';
+    }
+    this.forceFullRender = true;
   }
 
   private _handleOrbitInput(): boolean {
@@ -2575,6 +2586,8 @@ export class Game {
       return;
     }
     this.shipMenuOpen = true;
+    this.shipMenuSelectionBySection = {};
+    this.shipMenuOffsetBySection = {};
     this.openShipMenuSection('main');
     this.statusMessage = 'Ship operations menu opened.';
     this.forceFullRender = true;
@@ -2598,15 +2611,28 @@ export class Game {
     this.shipMenuSection = 'main';
     this.shipMenuSelection = 0;
     this.shipMenuOffset = 0;
+    this.shipMenuSelectionBySection = {};
+    this.shipMenuOffsetBySection = {};
     this.shipMenuJettisonItemKey = null;
     this.statusMessage = message;
     this.forceFullRender = true;
   }
 
   private openShipMenuSection(section: ShipMenuSection): void {
+    this.shipMenuSelectionBySection[this.shipMenuSection] = this.shipMenuSelection;
+    this.shipMenuOffsetBySection[this.shipMenuSection] = this.shipMenuOffset;
     this.shipMenuSection = section;
-    this.shipMenuSelection = 0;
-    this.shipMenuOffset = 0;
+    const rows = this.getShipMenuRows();
+    const visibleRows = this.getShipMenuVisibleRows();
+    const viewport = moveSelection(
+      this.shipMenuSelectionBySection[section] ?? 0,
+      0,
+      rows.length,
+      visibleRows,
+      this.shipMenuOffsetBySection[section] ?? 0
+    );
+    this.shipMenuSelection = viewport.selectedIndex;
+    this.shipMenuOffset = viewport.viewOffset;
     if (section !== 'jettison') this.shipMenuJettisonItemKey = null;
     this.forceFullRender = true;
   }

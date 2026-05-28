@@ -8,6 +8,7 @@ import { PRNG } from '../../../utils/prng';
 function createShipMenuHarness(state: string = 'hyperspace'): any {
   const player = new Player();
   const cargoSystem = new CargoSystem();
+  const inputState = { pressed: '' };
   return Object.assign(Object.create(Game.prototype), {
     player,
     cargoSystem,
@@ -16,7 +17,17 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
       currentPlanet: null,
       currentSystem: null,
       currentStarbase: null,
+      statusMessage: '',
+      liftOff() {
+        this.state = 'system';
+        this.statusMessage = 'Lifted off from test starbase.';
+        return true;
+      },
     },
+    inputManager: {
+      wasActionJustPressed: (action: string) => action === inputState.pressed,
+    },
+    inputState,
     renderer: {
       getCanvas: () => ({ height: 600 }),
       getCharHeightPx: () => 12,
@@ -27,6 +38,8 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     shipMenuSection: 'main',
     shipMenuSelection: 0,
     shipMenuOffset: 0,
+    shipMenuSelectionBySection: {},
+    shipMenuOffsetBySection: {},
     shipMenuJettisonItemKey: null,
     currentShipCompartmentId: 'bridge',
     quantitySelector: null,
@@ -140,6 +153,39 @@ describe('ship menu', () => {
     expect(starbase.detailLineCount).toBe(2);
     expect(starbase.rows.every((row: any) => row.cells.length === 2)).toBe(true);
     expect(starbase.rows.find((row: any) => row.id === 'buy')?.detail).toContain('Enter opens Buy');
+  });
+
+  it('returns from ship operation child menus to the parent row that opened them', () => {
+    const game = createShipMenuHarness();
+    game.shipMenuOpen = true;
+    const main = game.createShipMenuModel();
+    const cargoIndex = main.rows.findIndex((row: any) => row.id === 'cargo');
+    game.shipMenuSelection = cargoIndex;
+
+    game.activateShipMenuSelection(main.rows[cargoIndex]);
+    expect(game.shipMenuSection).toBe('cargo');
+
+    game.inputState.pressed = 'QUIT';
+    game._handleShipMenuInput();
+    const restored = game.createShipMenuModel();
+
+    expect(game.shipMenuSection).toBe('main');
+    expect(restored.rows[game.shipMenuSelection].id).toBe('cargo');
+  });
+
+  it('lets Escape depart the starbase without advertising it in the footer', () => {
+    const game = createShipMenuHarness('starbase');
+    game.stateManager.currentStarbase = { name: 'Quiet Dock' };
+    game.starbaseSectionId = 'buy';
+    game.inputState.pressed = 'QUIT';
+
+    const handled = game._handleStarbaseTradeInput();
+    const model = game.createCurrentStarbaseScreen();
+
+    expect(handled).toBe(true);
+    expect(game.stateManager.state).toBe('system');
+    expect(game.statusMessage).toContain('Lifted off');
+    expect(model.footer.join(' ')).not.toContain('Esc');
   });
 
   it('shows rover cargo under its own manifest heading and transfers what fits when docking', () => {
