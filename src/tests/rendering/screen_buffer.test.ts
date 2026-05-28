@@ -7,6 +7,10 @@ function createBuffer(cols: number, rows: number): {
     clearRect: ReturnType<typeof vi.fn>;
     fillRect: ReturnType<typeof vi.fn>;
     fillText: ReturnType<typeof vi.fn>;
+    save: ReturnType<typeof vi.fn>;
+    restore: ReturnType<typeof vi.fn>;
+    translate: ReturnType<typeof vi.fn>;
+    scale: ReturnType<typeof vi.fn>;
   };
 } {
   const ctx = {
@@ -16,6 +20,10 @@ function createBuffer(cols: number, rows: number): {
     clearRect: vi.fn(),
     fillRect: vi.fn(),
     fillText: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
   };
   const canvas = { width: cols * 8, height: rows * 8 };
   const buffer = new ScreenBuffer(canvas as HTMLCanvasElement, ctx as unknown as CanvasRenderingContext2D, false);
@@ -73,5 +81,18 @@ describe('ScreenBuffer rendering', () => {
 
     expect(ctx.fillRect).toHaveBeenCalledWith(8, 0, 8, 8);
     expect(ctx.fillText).toHaveBeenCalledWith('A', 0, 0);
+  });
+
+  it('renders scaled glyphs at sub-cell size after the normal buffer pass', () => {
+    const { buffer, ctx } = createBuffer(2, 1);
+
+    buffer.clear(true);
+    buffer.drawScaledChar('@', 0.5, 0, '#00FFFF', '#001010', 0.5, 0.5);
+    buffer.renderFull();
+
+    expect(ctx.fillRect).toHaveBeenCalledWith(4, 0, 4, 4);
+    expect(ctx.translate).toHaveBeenCalledWith(4, 0);
+    expect(ctx.scale).toHaveBeenCalledWith(0.5, 1);
+    expect(ctx.fillText).toHaveBeenCalledWith('@', 0, 0);
   });
 });

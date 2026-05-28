@@ -20,6 +20,16 @@ export interface RenderStats {
   durationMs: number;
 }
 
+interface ScaledGlyphState {
+  char: string | null;
+  x: number;
+  y: number;
+  fg: string | null;
+  bg: string | null;
+  scaleX: number;
+  scaleY: number;
+}
+
 /** Manages the character grid buffers and physical drawing to the canvas. */
 export class ScreenBuffer {
 
@@ -35,6 +45,8 @@ export class ScreenBuffer {
   // Screen buffers: Double buffer strategy for efficient rendering
   private screenBuffer: CellState[] = []; // Represents what's currently drawn on the canvas
   private newBuffer: CellState[] = []; // Represents the desired state for the next frame
+  private scaledGlyphs: ScaledGlyphState[] = [];
+  private hadScaledGlyphsLastFrame = false;
 
   private readonly defaultCellState: Readonly<CellState>; // Template for empty/default cells
   private readonly defaultBgColor: string;
@@ -155,7 +167,9 @@ export class ScreenBuffer {
       // Clear the entire physical canvas area this buffer controls
       logger.debug(`[ScreenBuffer.clear] Physically clearing canvas area ${this.canvas.width}x${this.canvas.height}`);
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      this.hadScaledGlyphsLastFrame = false;
     }
+    this.scaledGlyphs = [];
 
     // Reset the staging buffer every frame. Only reset the rendered-state buffer
     // when the physical canvas is also cleared, otherwise diff rendering loses its baseline.
@@ -229,6 +243,34 @@ export class ScreenBuffer {
     for (let i = 0; i < text.length; i++) {
       this.drawChar(text[i], x + i, y, fgColor, bgColor);
     }
+  }
+
+  /**
+   * Queues a smaller glyph in grid-relative co-ordinates. Fractional x/y values
+   * place the glyph inside a normal character cell, allowing high-density panels
+   * without changing the global terminal grid.
+   */
+  drawScaledChar(
+    char: string | null,
+    x: number,
+    y: number,
+    fgColor: string | null = this.defaultFgColor,
+    bgColor: string | null = null,
+    scaleX: number = 0.5,
+    scaleY: number = 0.5
+  ): void {
+    if (x < -1 || x >= this.cols || y < -1 || y >= this.rows) return;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || scaleX <= 0 || scaleY <= 0) return;
+
+    this.scaledGlyphs.push({
+      char: char || ' ',
+      x,
+      y,
+      fg: fgColor || this.defaultFgColor,
+      bg: bgColor,
+      scaleX,
+      scaleY,
+    });
   }
 
   /** Replaces the staged drawing buffer with a complete precomputed frame. */
@@ -306,6 +348,7 @@ export class ScreenBuffer {
           this.newBuffer[i] = this.defaultCellState;
       }
 
+      this.renderScaledGlyphs();
       const endTime = performance.now();
       this.lastRenderStats = { mode: 'full', cellsDrawn, backgroundsDrawn, glyphsDrawn, durationMs: endTime - startTime };
       // Reduce logging frequency if needed
@@ -330,6 +373,11 @@ export class ScreenBuffer {
       logger.error(
         `[ScreenBuffer.renderDiff] Buffer size mismatch or zero size! Grid: ${this.cols}x${this.rows} (${size}), ScreenBuffer: ${this.screenBuffer.length}, NewBuffer: ${this.newBuffer.length}. Cannot render diff.`
       );
+      return;
+    }
+
+    if (this.scaledGlyphs.length > 0 || this.hadScaledGlyphsLastFrame) {
+      this.renderFull();
       return;
     }
 
@@ -465,6 +513,37 @@ export class ScreenBuffer {
     if (charToDraw === ' ') return;
     this.ctx.fillStyle = fgColor || this.defaultFgColor;
     this.ctx.fillText(charToDraw, x * this.charWidthPx, y * this.charHeightPx);
+  }
+
+  private renderScaledGlyphs(): void {
+    const glyphs = this.scaledGlyphs;
+    this.hadScaledGlyphsLastFrame = glyphs.length > 0;
+    if (glyphs.length === 0) return;
+
+    this.ctx.save();
+    this.ctx.textBaseline = 'top';
+    for (const glyph of glyphs) {
+      const charToDraw = glyph.char || ' ';
+      const width = this.charWidthPx * glyph.scaleX;
+      const height = this.charHeightPx * glyph.scaleY;
+      const px = glyph.x * this.charWidthPx;
+      const py = glyph.y * this.charHeightPx;
+      if (glyph.bg !== null && glyph.bg !== CONFIG.TRANSPARENT_COLOUR) {
+        this.ctx.fillStyle = glyph.bg || this.defaultBgColor;
+        this.ctx.fillRect(px, py, width, height);
+      }
+      if (charToDraw === ' ') continue;
+      this.ctx.save();
+      this.ctx.translate(px, py);
+      this.ctx.scale(glyph.scaleX, 1);
+      this.ctx.font = `${this.charHeightPx * glyph.scaleY}px ${CONFIG.FONT_FAMILY}`;
+      this.ctx.fillStyle = glyph.fg || this.defaultFgColor;
+      this.ctx.fillText(charToDraw, 0, 0);
+      this.ctx.restore();
+    }
+    this.ctx.font = `${this.charHeightPx}px ${CONFIG.FONT_FAMILY}`;
+    this.ctx.restore();
+    this.scaledGlyphs = [];
   }
 
 }

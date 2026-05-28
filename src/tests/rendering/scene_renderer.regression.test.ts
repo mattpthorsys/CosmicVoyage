@@ -31,6 +31,9 @@ function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuf
     drawChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
       drawCalls.push({ char, x, y, fg, bg });
     }),
+    drawScaledChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
+      drawCalls.push({ char, x, y, fg, bg });
+    }),
     drawString: vi.fn((text: string, x: number, y: number, fg?: string | null, bg?: string | null) => {
       for (let index = 0; index < text.length; index++) {
         drawCalls.push({ char: text[index], x: x + index, y, fg, bg });

@@ -1040,10 +1040,12 @@ export class SceneRenderer {
     const phase = model.rotationPhase * Math.PI * 2;
     const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
     const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightLevelColors;
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const nx = dx / radius;
-        const ny = dy / radius;
+    const detailScale = 0.5;
+    const detailRadius = radius / detailScale;
+    for (let dy = -detailRadius; dy <= detailRadius; dy++) {
+      for (let dx = -detailRadius; dx <= detailRadius; dx++) {
+        const nx = dx / detailRadius;
+        const ny = dy / detailRadius;
         const d = nx * nx + ny * ny;
         if (d > 1) continue;
         const z = Math.sqrt(Math.max(0, 1 - d));
@@ -1058,7 +1060,15 @@ export class SceneRenderer {
         const limbShade = Math.max(0.45, 0.78 + z * 0.22);
         const finalColour = adjustBrightness(this.hexToRgbFallback(colour), (0.32 + light * 0.82) * limbShade);
         const char = light < 0.22 ? GLYPHS.SHADE_DARK : light < 0.48 ? GLYPHS.SHADE_MEDIUM : light < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
-        this.screenBuffer.drawChar(char, cx + dx, cy + dy, rgbToHex(finalColour.r, finalColour.g, finalColour.b), CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawScaledChar(
+          char,
+          cx + dx * detailScale,
+          cy + dy * detailScale,
+          rgbToHex(finalColour.r, finalColour.g, finalColour.b),
+          CONFIG.DEFAULT_BG_COLOUR,
+          detailScale,
+          detailScale
+        );
       }
     }
   }
@@ -1112,21 +1122,40 @@ export class SceneRenderer {
     const map = isGiant ? null : planet.heightmap;
     const colours = planet.heightLevelColors;
     const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#4A7777', '#6A9999', '#9FCCCC'];
-    for (let row = 0; row < height; row++) {
-      for (let col = 0; col < width; col++) {
-        const mapX = Math.floor((col / Math.max(1, width - 1)) * (model.mapSize - 1));
-        const mapY = Math.floor((row / Math.max(1, height - 1)) * (model.mapSize - 1));
-        let colour = this.sampleGiantMapBand(planet, palette, col, row, width, height, model.rotationPhase);
+    const detailScale = 0.5;
+    const detailWidth = Math.max(1, Math.floor(width / detailScale));
+    const detailHeight = Math.max(1, Math.floor(height / detailScale));
+    const cursorX = Math.round((model.landingCursorX / Math.max(1, model.mapSize - 1)) * (detailWidth - 1));
+    const cursorY = Math.round((model.landingCursorY / Math.max(1, model.mapSize - 1)) * (detailHeight - 1));
+    for (let row = 0; row < detailHeight; row++) {
+      for (let col = 0; col < detailWidth; col++) {
+        const mapX = Math.floor((col / Math.max(1, detailWidth - 1)) * (model.mapSize - 1));
+        const mapY = Math.floor((row / Math.max(1, detailHeight - 1)) * (model.mapSize - 1));
+        let colour = this.sampleGiantMapBand(planet, palette, col, row, detailWidth, detailHeight, model.rotationPhase);
         if (map && colours) {
           const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(map[mapY]?.[mapX] ?? 0)));
           colour = colours[heightValue] ?? colour;
         }
-        const cursorX = Math.round((model.landingCursorX / Math.max(1, model.mapSize - 1)) * (width - 1));
-        const cursorY = Math.round((model.landingCursorY / Math.max(1, model.mapSize - 1)) * (height - 1));
         if (col === cursorX && row === cursorY) {
-          this.screenBuffer.drawChar('+', x + col, y + row, '#001010', model.mode === 'landing' ? '#00FFFF' : '#00AA66');
+          this.screenBuffer.drawScaledChar(
+            '+',
+            x + col * detailScale,
+            y + row * detailScale,
+            '#001010',
+            model.mode === 'landing' ? '#00FFFF' : '#00AA66',
+            detailScale,
+            detailScale
+          );
         } else {
-          this.screenBuffer.drawChar(GLYPHS.BLOCK, x + col, y + row, colour, colour);
+          this.screenBuffer.drawScaledChar(
+            GLYPHS.BLOCK,
+            x + col * detailScale,
+            y + row * detailScale,
+            colour,
+            colour,
+            detailScale,
+            detailScale
+          );
         }
       }
     }
