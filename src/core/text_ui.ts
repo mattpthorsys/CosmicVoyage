@@ -17,6 +17,7 @@ export interface TextTableModel {
   selectedIndex: number;
   viewOffset: number;
   visibleRowCount: number;
+  detailLineCount?: number;
 }
 
 export interface TextModalTableModel extends TextTableModel {

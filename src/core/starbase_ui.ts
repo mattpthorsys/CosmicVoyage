@@ -50,6 +50,7 @@ export function createStarbaseScreenModel(args: {
   widths: number[];
   title: string;
   subtitle: string;
+  detailLineCount?: number;
   alert?: string;
 }): StarbaseScreenModel {
   const cargoTotal = Object.values(args.player.cargoHold.items).reduce((sum, quantity) => sum + quantity, 0);
@@ -71,6 +72,7 @@ export function createStarbaseScreenModel(args: {
     selectedIndex: clampIndex(args.selectedIndex, args.rows.length),
     viewOffset: Math.max(0, Math.min(args.viewOffset, maxOffset)),
     visibleRowCount: args.visibleRowCount,
+    detailLineCount: args.detailLineCount,
     footer,
     alert: args.alert,
   };

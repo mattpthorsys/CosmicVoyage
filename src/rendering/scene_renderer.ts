@@ -901,7 +901,8 @@ export class SceneRenderer {
     const tableX = panelX + 4;
     const tableY = panelY + 8;
     const tableWidth = panelWidth - 9;
-    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelY + panelHeight - 6 - tableY));
+    const detailRows = this.getTextTableDetailLineCount(model);
+    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelHeight - 17 - detailRows));
     this.drawTextTableHeader(model, tableX, tableY, tableWidth);
     this.drawTextTableRows(model, tableX, tableY + 2, tableWidth, visibleRows);
     this.drawTextScrollbar(tableX + tableWidth + 1, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
@@ -922,11 +923,12 @@ export class SceneRenderer {
     const rows = this.screenBuffer.getRows();
     if (cols < 42 || rows < 16) return;
 
+    const detailRows = this.getTextTableDetailLineCount(model);
     const tableWidth = Math.min(cols - 12, Math.max(34, model.widths.reduce((sum, width) => sum + width, 0) + model.widths.length - 1));
     const footerRows = model.footer?.length ?? 0;
-    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, rows - 13 - footerRows));
+    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, rows - 12 - footerRows - detailRows));
     const panelWidth = Math.min(cols - 4, tableWidth + 8);
-    const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 11);
+    const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 10 + detailRows);
     const panelX = Math.floor((cols - panelWidth) / 2);
     const panelY = Math.floor((rows - panelHeight) / 2);
     const tableX = panelX + 4;
@@ -1216,9 +1218,23 @@ export class SceneRenderer {
       });
     });
     const selectedRow = model.rows[model.selectedIndex];
-    if (selectedRow?.detail && y + visibleRows + 1 < this.screenBuffer.getRows()) {
-      this.screenBuffer.drawString(selectedRow.detail.slice(0, tableWidth), x, y + visibleRows + 1, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+    const detailLineCount = this.getTextTableDetailLineCount(model);
+    if (selectedRow?.detail && detailLineCount > 0 && y + visibleRows + 1 < this.screenBuffer.getRows()) {
+      const detailWidth = Math.max(1, tableWidth - 3);
+      const detailLines = this.wrapText(selectedRow.detail, detailWidth).slice(0, detailLineCount);
+      const detailColour = '#7FD8FF';
+      detailLines.forEach((line, index) => {
+        const detailY = y + visibleRows + 1 + index;
+        if (detailY >= this.screenBuffer.getRows()) return;
+        this.screenBuffer.drawString(' '.repeat(tableWidth), x, detailY, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(index === 0 ? '::' : '  ', x, detailY, detailColour, CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(line.slice(0, detailWidth), x + 3, detailY, detailColour, CONFIG.DEFAULT_BG_COLOUR);
+      });
     }
+  }
+
+  private getTextTableDetailLineCount(model: TextTableModel): number {
+    return Math.max(0, Math.min(4, Math.floor(model.detailLineCount ?? 1)));
   }
 
   private drawTextScrollbar(x: number, y: number, height: number, totalRows: number, offset: number): void {

@@ -3343,6 +3343,7 @@ export class Game {
       selectedIndex: this.shipMenuSelection,
       viewOffset: this.shipMenuOffset,
       visibleRowCount: visibleRows,
+      detailLineCount: this.shipMenuSection === 'main' ? 2 : 1,
       footer: meta.footer,
     };
   }
@@ -3368,7 +3369,7 @@ export class Game {
         return { title: 'Confirm Jettison', subtitle: 'External bay doors armed. Cargo ejection is permanent.', columns: ['VENT', 'CARGO', 'AFTER', 'CONFIRMATION'], widths: [10, 24, 14, 40], footer: [`Enter confirms selected amount  ${backHint}`] };
       case 'main':
       default:
-        return { title: 'Ship Operations', subtitle: 'Internal vessel systems, manifests, crew, and compartment focus.', columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 18, 56], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
+        return { title: 'Ship Operations', subtitle: 'Internal vessel systems, manifests, crew, and compartment focus.', columns: ['SHIP AREA', 'STATE'], widths: [24, 24], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
     }
   }
 
@@ -3397,22 +3398,22 @@ export class Game {
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         const focus = getShipCompartment(this.currentShipCompartmentId);
         const rows: TextTableRow[] = [
-          { id: 'deck', cells: ['Deck Plan', focus.label, 'Internal compartments, watch stations, and current shipboard focus.'] },
-          { id: 'stations', cells: ['Stations', this.getShipStationCoverageLabel(), 'Crewed work points for navigation, survey, engineering, medical, and bay control.'] },
-          { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Ship hold plus rover cargo manifest.`] },
-          { id: 'crew', cells: ['Crew', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} ready`, `Roster, vitals, learning progress, and specialist coverage.`] },
-          { id: 'status', cells: ['Ship Status', this.getShipOperatingState(), 'Fuel, cargo, finance, crew, location, and current flight mode.'] },
-          { id: 'log', cells: ['Ship Log', this.getShipLogSummary(), 'Persistent watch notes, discoveries, mission state, and navigation fixes.'] },
+          { id: 'deck', cells: ['Deck Plan', focus.label], detail: 'Internal compartments, watch stations, and current shipboard focus.' },
+          { id: 'stations', cells: ['Stations', this.getShipStationCoverageLabel()], detail: 'Crewed work points for navigation, survey, engineering, medical, and bay control.' },
+          { id: 'cargo', cells: ['Cargo', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`], detail: `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Ship hold plus rover cargo manifest.` },
+          { id: 'crew', cells: ['Crew', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} ready`], detail: 'Roster, vitals, learning progress, and specialist coverage.' },
+          { id: 'status', cells: ['Ship Status', this.getShipOperatingState()], detail: 'Fuel, cargo, finance, crew, location, and current flight mode.' },
+          { id: 'log', cells: ['Ship Log', this.getShipLogSummary()], detail: 'Persistent watch notes, discoveries, mission state, and navigation fixes.' },
         ];
         if (this.stateManager.state === 'planet') {
-          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'disembarked' : `${roverTotal}/50 m^3`) : 'lost', 'Disembark, embark, refuel, and review the surface vehicle.'] });
+          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'disembarked' : `${roverTotal}/50 m^3`) : 'lost'], detail: 'Disembark, embark, refuel, and review the surface vehicle.' });
           rows.splice(4, 0, {
             id: 'launch',
             cells: [
               'Launch',
               this.isAtParkedShip() && !this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot ? 'ready' : 'parked ship req.',
-              'Lift from the landed ship to orbital view.',
             ],
+            detail: 'Lift from the landed ship to orbital view.',
             disabled: !this.isAtParkedShip() || this.player.terrainVehicle.deployed || this.player.terrainVehicle.onFoot,
           });
         }
@@ -4504,6 +4505,7 @@ export class Game {
       widths: meta.widths,
       title: meta.title,
       subtitle: meta.subtitle,
+      detailLineCount: this.starbaseSectionId === 'overview' ? 2 : 1,
       alert: this.starbaseAlert || this.statusMessage,
     });
   }
@@ -4685,7 +4687,7 @@ export class Game {
     const baseSubtitle = `${starbase.name} | ${new Date(0).toISOString().slice(11, 16)} station time`;
     switch (sectionId) {
       case 'overview':
-        return { title: 'Starbase Operations', subtitle: baseSubtitle, columns: ['SECTION', 'STATUS', 'SUMMARY'], widths: [16, 16, 48] };
+        return { title: 'Starbase Operations', subtitle: baseSubtitle, columns: ['PORT SECTION', 'STATUS'], widths: [24, 18] };
       case 'cargo':
         return { title: 'Cargo Manifest', subtitle: 'All cargo currently aboard your vessel.', columns: ['ITEM', 'QTY', 'VALUE', 'CLASS'], widths: [26, 7, 9, 18] };
       case 'buy':
@@ -4711,8 +4713,8 @@ export class Game {
       case 'overview':
         return STARBASE_SECTIONS.filter((section) => section.id !== 'overview').map((section) => ({
           id: section.id,
-          cells: [section.label, this.getSectionStatus(section.id), this.getSectionSummary(section.id)],
-          detail: `Open ${section.label}.`,
+          cells: [section.label, this.getSectionStatus(section.id)],
+          detail: `${this.getSectionSummary(section.id)} Enter opens ${section.label}.`,
         }));
       case 'cargo':
         return this.getCargoRows();

@@ -15,6 +15,11 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
       state,
       currentPlanet: null,
       currentSystem: null,
+      currentStarbase: null,
+    },
+    renderer: {
+      getCanvas: () => ({ height: 600 }),
+      getCharHeightPx: () => 12,
     },
     popupState: 'inactive',
     targetMenuOpen: false,
@@ -35,6 +40,10 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
     surfaceLegendSelection: 0,
     surfaceLegendOffset: 0,
     surfaceNotifications: [],
+    starbaseSectionId: 'overview',
+    starbaseSelectionBySection: {},
+    starbaseOffsetBySection: {},
+    starbaseAlert: '',
     activeMissions: {},
     currentTargetIndex: 0,
     currentTargetSignature: '',
@@ -113,6 +122,24 @@ describe('ship menu', () => {
     expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
     expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+  });
+
+  it('keeps root ship and starbase summaries beneath two-column selectors', () => {
+    const game = createShipMenuHarness();
+
+    const ship = game.createShipMenuModel();
+    expect(ship.columns).toEqual(['SHIP AREA', 'STATE']);
+    expect(ship.detailLineCount).toBe(2);
+    expect(ship.rows.every((row: any) => row.cells.length === 2)).toBe(true);
+    expect(ship.rows.find((row: any) => row.id === 'cargo')?.detail).toContain('Ship hold');
+
+    game.stateManager.state = 'starbase';
+    game.stateManager.currentStarbase = { name: 'Quiet Dock' };
+    const starbase = game.createCurrentStarbaseScreen();
+    expect(starbase.columns).toEqual(['PORT SECTION', 'STATUS']);
+    expect(starbase.detailLineCount).toBe(2);
+    expect(starbase.rows.every((row: any) => row.cells.length === 2)).toBe(true);
+    expect(starbase.rows.find((row: any) => row.id === 'buy')?.detail).toContain('Enter opens Buy');
   });
 
   it('shows rover cargo under its own manifest heading and transfers what fits when docking', () => {
