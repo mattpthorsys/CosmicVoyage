@@ -28,6 +28,18 @@ export function describePlanetType(type: string): string {
       return 'ice giant';
     case 'Oceanic':
       return 'ocean world';
+    case 'Hycean':
+      return 'hycean world';
+    case 'Greenhouse':
+      return 'greenhouse world';
+    case 'CarbonRich':
+      return 'carbon-rich world';
+    case 'Chthonian':
+      return 'chthonian world';
+    case 'Cryovolcanic':
+      return 'cryovolcanic world';
+    case 'DwarfIce':
+      return 'dwarf ice world';
     case 'Molten':
       return 'molten terrestrial world';
     case 'Rock':

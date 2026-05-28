@@ -821,18 +821,30 @@ export class SolarSystem {
     const giantBiasByClass: Record<string, number> = { M: 0.42, K: 0.85, G: 1.0, F: 1.2, A: 1.45, B: 0.7, O: 0.25, L: 0.18, T: 0.1, Y: 0.05 };
     const giantBias = (giantBiasByClass[starClass] ?? 1) * Math.pow(10, Math.max(-0.6, Math.min(0.5, this.metallicityFeH)) * 0.75);
     const iceBias = starClass === 'M' ? 1.15 : starClass === 'A' || starClass === 'F' ? 0.85 : 1;
+    const metalFactor = Math.pow(10, Math.max(-0.8, Math.min(0.6, this.metallicityFeH)));
+    const closeInFactor = orbitDistance_AU < 0.12 ? 2.2 : orbitDistance_AU < 0.35 ? 1.25 : 0.45;
+    const temperateHostFactor = starClass === 'M' || starClass === 'K' ? 1.25 : starClass === 'G' ? 1 : starClass === 'F' ? 0.75 : 0.35;
+    const carbonWorldBias = Math.max(0.03, Math.min(0.28, 0.06 * metalFactor * (starClass === 'M' || starClass === 'K' ? 1.15 : 1)));
+    const chthonianBias = Math.max(0.02, Math.min(0.55, 0.12 * metalFactor * closeInFactor));
+    const hyceanBias = Math.max(0.02, Math.min(0.42, 0.11 * metalFactor * temperateHostFactor));
+    const dwarfIceBias = starClass === 'A' || starClass === 'B' || starClass === 'O' ? 0.6 : 1.0;
 
     let choices: Array<{ item: string; weight: number }>;
     if (effectiveTemp > 800) {
       choices = [
         { item: 'Molten', weight: 7 },
+        { item: 'Chthonian', weight: 1.5 * chthonianBias },
         { item: 'Rock', weight: 2 },
+        { item: 'CarbonRich', weight: carbonWorldBias },
         { item: 'Lunar', weight: 1 },
       ];
     } else if (effectiveTemp > 390) {
       choices = [
         { item: 'Rock', weight: 5 },
+        { item: 'Greenhouse', weight: 2.2 * (starClass === 'M' ? 0.65 : 1) },
         { item: 'Molten', weight: 2 },
+        { item: 'Chthonian', weight: 0.85 * chthonianBias },
+        { item: 'CarbonRich', weight: carbonWorldBias },
         { item: 'Lunar', weight: 2 },
         { item: 'GasGiant', weight: 0.15 * giantBias },
       ];
@@ -840,6 +852,9 @@ export class SolarSystem {
       choices = [
         { item: 'Rock', weight: 4 },
         { item: 'Oceanic', weight: starClass === 'M' ? 2 : 3 },
+        { item: 'Hycean', weight: hyceanBias },
+        { item: 'Greenhouse', weight: 0.35 * (starClass === 'F' || starClass === 'G' || starClass === 'K' ? 1 : 0.45) },
+        { item: 'CarbonRich', weight: carbonWorldBias },
         { item: 'Lunar', weight: 1.2 },
         { item: 'GasGiant', weight: 0.2 * giantBias },
         { item: 'IceGiant', weight: 0.1 * giantBias },
@@ -847,7 +862,10 @@ export class SolarSystem {
     } else if (effectiveTemp > 150) {
       choices = [
         { item: 'Frozen', weight: 3 },
+        { item: 'Cryovolcanic', weight: 0.55 * iceBias * metalFactor },
+        { item: 'DwarfIce', weight: 0.35 * dwarfIceBias },
         { item: 'Rock', weight: 2 },
+        { item: 'Hycean', weight: 0.35 * hyceanBias },
         { item: 'Lunar', weight: 1.6 },
         { item: 'GasGiant', weight: 1.4 * giantBias },
         { item: 'IceGiant', weight: 1.1 * giantBias * iceBias },
@@ -855,6 +873,8 @@ export class SolarSystem {
     } else {
       choices = [
         { item: 'Frozen', weight: 3.2 },
+        { item: 'DwarfIce', weight: 1.25 * dwarfIceBias },
+        { item: 'Cryovolcanic', weight: 0.35 * iceBias * metalFactor },
         { item: 'Lunar', weight: 1.4 },
         { item: 'GasGiant', weight: 1.8 * giantBias },
         { item: 'IceGiant', weight: 1.7 * giantBias * iceBias },
@@ -989,11 +1009,13 @@ export class SolarSystem {
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
 
     if (isGiantParent && orbitFraction < 0.28 && tidalHeat > 0.22 && prng.random() < 0.55) {
-      return 'Lunar';
+      return prng.random() < 0.38 ? 'Cryovolcanic' : 'Lunar';
     }
     if (effectiveTemp < 170) {
       return this.weightedChoice(prng, [
         { item: 'Frozen', weight: isGiantParent ? 5 : 3 },
+        { item: 'Cryovolcanic', weight: isGiantParent && tidalHeat > 0.08 ? 1.4 : 0.25 },
+        { item: 'DwarfIce', weight: orbitFraction > 0.65 ? 1.1 : 0.3 },
         { item: 'Lunar', weight: isGiantParent && orbitFraction > 0.6 ? 1 : 2 },
       ]);
     }
@@ -1025,10 +1047,12 @@ export class SolarSystem {
     const isRegularGiantMoon = isGiantParent && (orbitFraction < 0.55 || distanceInParentRadii < 80);
     const capturedSizeFactor = isGiantParent && !isRegularGiantMoon ? 0.55 : 1;
     const indexFalloff = Math.max(0.35, 1 - moonIndex * 0.045);
-    const minDiameter = moonType === 'Frozen' ? 450 : 350;
+    const minDiameter = moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce' ? 450 : 350;
     const maxDiameter = Math.max(minDiameter + 50, Math.min(baseMax, parentDiameterLimit) * indexFalloff * capturedSizeFactor);
     const diameter = prng.random(minDiameter, maxDiameter);
-    const density = moonType === 'Frozen' ? prng.random(1.2, 2.4) : prng.random(2.4, 3.6);
+    const density = moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce'
+      ? prng.random(moonType === 'DwarfIce' ? 0.9 : 1.2, moonType === 'Cryovolcanic' ? 2.8 : 2.4)
+      : prng.random(2.4, 3.6);
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
     const gravity = calculateGravity(diameter, density);

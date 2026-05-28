@@ -148,20 +148,38 @@ function applyPlanetarySurfaceProcesses(
   const pressure = atmosphere?.pressure ?? 0;
   const density = atmosphere?.density ?? 'None';
 
-  if (planetType === 'Oceanic') {
+  if (planetType === 'Oceanic' || planetType === 'Hycean') {
     processed = compressToOceanWorld(processed);
-    processed = smoothHeightmap(processed, pressure > 0.5 ? 2 : 1, 0.42);
-    processed = addSubmarineRidges(processed, prng, 3);
-  } else if (planetType === 'Frozen') {
-    processed = smoothHeightmap(processed, density === 'Thick' ? 2 : 1, 0.28);
-    processed = addIceFractures(processed, prng, density === 'None' ? 8 : 5);
-  } else if (planetType === 'Molten') {
-    processed = addVolcanicRifts(processed, prng, 5);
-  } else if (planetType === 'Rock') {
+    processed = smoothHeightmap(processed, planetType === 'Hycean' ? 3 : pressure > 0.5 ? 2 : 1, planetType === 'Hycean' ? 0.55 : 0.42);
+    processed = addSubmarineRidges(processed, prng, planetType === 'Hycean' ? 5 : 3);
+    if (planetType === 'Hycean') processed = addIslandArcs(processed, prng, 3);
+  } else if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce') {
+    processed = smoothHeightmap(processed, density === 'Thick' ? 2 : 1, planetType === 'DwarfIce' ? 0.18 : 0.28);
+    processed = addIceFractures(processed, prng, planetType === 'Cryovolcanic' ? 11 : density === 'None' ? 8 : 5);
+    if (planetType === 'Cryovolcanic') processed = addCryovolcanicDomes(processed, prng, 9);
+    if (planetType === 'DwarfIce') {
+      processed = addCratersToHeightmap(processed, prng);
+      processed = addVolatileFrostBasins(processed, prng, 7);
+    }
+  } else if (planetType === 'Molten' || planetType === 'Chthonian') {
+    processed = addVolcanicRifts(processed, prng, planetType === 'Chthonian' ? 7 : 5);
+    if (planetType === 'Chthonian') {
+      processed = sharpenAirlessRelief(processed, 0.2);
+      processed = addAblationScarps(processed, prng, 8);
+    }
+  } else if (planetType === 'Rock' || planetType === 'Greenhouse' || planetType === 'CarbonRich') {
     const erosionPasses = density === 'Thick' ? 3 : density === 'Earth-like' ? 2 : density === 'Thin' ? 1 : 0;
     if (erosionPasses > 0) {
       processed = smoothHeightmap(processed, erosionPasses, Math.min(0.55, 0.18 + pressure * 0.08));
       processed = addSedimentaryPlains(processed, 0.12 + Math.min(0.18, pressure * 0.03));
+    }
+    if (planetType === 'Greenhouse') {
+      processed = addSedimentaryPlains(processed, 0.26);
+      processed = addTesseraTerrain(processed, prng, 7);
+    }
+    if (planetType === 'CarbonRich') {
+      processed = addCarbonDuneFields(processed, prng, 6);
+      processed = sharpenAirlessRelief(processed, 0.08);
     }
   } else if (planetType === 'Lunar') {
     processed = sharpenAirlessRelief(processed, 0.12);
@@ -220,6 +238,33 @@ function addSubmarineRidges(heightmap: number[][], prng: PRNG, ridgeCount: numbe
   return heightmap;
 }
 
+function addIslandArcs(heightmap: number[][], prng: PRNG, arcCount: number): number[][] {
+  const size = heightmap.length;
+  for (let arc = 0; arc < arcCount; arc++) {
+    const centerX = prng.random(0, size);
+    const centerY = prng.random(0, size);
+    const radius = prng.random(size * 0.18, size * 0.42);
+    const start = prng.random(0, Math.PI * 2);
+    const sweep = prng.random(Math.PI * 0.45, Math.PI * 1.15);
+    for (let step = 0; step < size * 2; step++) {
+      const t = start + (step / Math.max(1, size * 2 - 1)) * sweep;
+      const wobble = Math.sin(step * 0.21 + arc) * radius * 0.08;
+      const x = (Math.round(centerX + Math.cos(t) * (radius + wobble)) + size) % size;
+      const y = (Math.round(centerY + Math.sin(t) * (radius + wobble * 0.6)) + size) % size;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const px = (x + dx + size) % size;
+          const py = (y + dy + size) % size;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const lift = Math.max(0, 3 - distance) * prng.random(2.5, 6.5);
+          heightmap[py][px] = clampHeight(heightmap[py][px] + lift);
+        }
+      }
+    }
+  }
+  return heightmap;
+}
+
 function addIceFractures(heightmap: number[][], prng: PRNG, fractureCount: number): number[][] {
   const size = heightmap.length;
   for (let fracture = 0; fracture < fractureCount; fracture++) {
@@ -237,6 +282,51 @@ function addIceFractures(heightmap: number[][], prng: PRNG, fractureCount: numbe
   return heightmap;
 }
 
+function addCryovolcanicDomes(heightmap: number[][], prng: PRNG, domeCount: number): number[][] {
+  const size = heightmap.length;
+  for (let dome = 0; dome < domeCount; dome++) {
+    const cx = prng.randomInt(0, size - 1);
+    const cy = prng.randomInt(0, size - 1);
+    const radius = prng.randomInt(3, Math.max(5, Math.floor(size / 11)));
+    for (let y = cy - radius - 2; y <= cy + radius + 2; y++) {
+      for (let x = cx - radius - 2; x <= cx + radius + 2; x++) {
+        const px = (x + size) % size;
+        const py = (y + size) % size;
+        const dx = x - cx;
+        const dy = y - cy;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > radius + 1) continue;
+        const domeLift = Math.max(0, 1 - distance / Math.max(1, radius)) * prng.random(12, 26);
+        const caldera = distance < radius * 0.28 ? prng.random(4, 11) : 0;
+        heightmap[py][px] = clampHeight(heightmap[py][px] + domeLift - caldera);
+      }
+    }
+  }
+  return heightmap;
+}
+
+function addVolatileFrostBasins(heightmap: number[][], prng: PRNG, basinCount: number): number[][] {
+  const size = heightmap.length;
+  for (let basin = 0; basin < basinCount; basin++) {
+    const cx = prng.randomInt(0, size - 1);
+    const cy = prng.randomInt(0, size - 1);
+    const radius = prng.randomInt(4, Math.max(6, Math.floor(size / 7)));
+    for (let y = cy - radius; y <= cy + radius; y++) {
+      for (let x = cx - radius; x <= cx + radius; x++) {
+        const px = (x + size) % size;
+        const py = (y + size) % size;
+        const dx = x - cx;
+        const dy = y - cy;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > radius) continue;
+        const basinDepth = Math.cos((distance / radius) * Math.PI * 0.5) * prng.random(5, 15);
+        heightmap[py][px] = clampHeight(heightmap[py][px] - basinDepth);
+      }
+    }
+  }
+  return smoothHeightmap(heightmap, 1, 0.12);
+}
+
 function addVolcanicRifts(heightmap: number[][], prng: PRNG, riftCount: number): number[][] {
   const size = heightmap.length;
   for (let rift = 0; rift < riftCount; rift++) {
@@ -252,6 +342,63 @@ function addVolcanicRifts(heightmap: number[][], prng: PRNG, riftCount: number):
     }
   }
   return heightmap;
+}
+
+function addAblationScarps(heightmap: number[][], prng: PRNG, scarpCount: number): number[][] {
+  const size = heightmap.length;
+  for (let scarp = 0; scarp < scarpCount; scarp++) {
+    const angle = prng.random(-0.8, 0.8);
+    const intercept = prng.random(0, size);
+    const drop = prng.random(10, 28);
+    for (let x = 0; x < size; x++) {
+      const y = (Math.round(intercept + x * angle + Math.sin(x * 0.11 + scarp) * 2) + size) % size;
+      for (let offset = -2; offset <= 2; offset++) {
+        const py = (y + offset + size) % size;
+        const sign = offset < 0 ? 1 : -1;
+        heightmap[py][x] = clampHeight(heightmap[py][x] + sign * drop * (1 - Math.abs(offset) / 3));
+      }
+    }
+  }
+  return heightmap;
+}
+
+function addTesseraTerrain(heightmap: number[][], prng: PRNG, blockCount: number): number[][] {
+  const size = heightmap.length;
+  for (let block = 0; block < blockCount; block++) {
+    const x0 = prng.randomInt(0, size - 1);
+    const y0 = prng.randomInt(0, size - 1);
+    const width = prng.randomInt(Math.max(5, Math.floor(size / 9)), Math.max(7, Math.floor(size / 4)));
+    const height = prng.randomInt(Math.max(5, Math.floor(size / 10)), Math.max(7, Math.floor(size / 5)));
+    const uplift = prng.random(7, 18);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const px = (x0 + x + size) % size;
+        const py = (y0 + y + size) % size;
+        const ridge = (x % 4 === 0 || y % 5 === 0) ? prng.random(4, 10) : 0;
+        const warped = Math.sin((x + block) * 0.7) * Math.cos((y - block) * 0.55) * 3;
+        heightmap[py][px] = clampHeight(heightmap[py][px] + uplift + ridge + warped);
+      }
+    }
+  }
+  return smoothHeightmap(heightmap, 1, 0.08);
+}
+
+function addCarbonDuneFields(heightmap: number[][], prng: PRNG, fieldCount: number): number[][] {
+  const size = heightmap.length;
+  for (let field = 0; field < fieldCount; field++) {
+    const y0 = prng.randomInt(0, size - 1);
+    const bandHeight = prng.randomInt(Math.max(4, Math.floor(size / 12)), Math.max(6, Math.floor(size / 5)));
+    const phase = prng.random(0, Math.PI * 2);
+    for (let y = 0; y < bandHeight; y++) {
+      const py = (y0 + y + size) % size;
+      for (let x = 0; x < size; x++) {
+        const wave = Math.sin(x * 0.42 + y * 0.18 + phase) + Math.sin(x * 0.13 + phase * 0.7) * 0.5;
+        const lift = wave > 0.25 ? wave * prng.random(2, 7) : wave * prng.random(1, 3);
+        heightmap[py][x] = clampHeight(heightmap[py][x] + lift);
+      }
+    }
+  }
+  return smoothHeightmap(heightmap, 1, 0.1);
 }
 
 function addSedimentaryPlains(heightmap: number[][], strength: number): number[][] {

@@ -15,6 +15,12 @@ const PLANET_ALBEDOS: Record<string, number> = {
     'Molten':   0.08, // Very dark, absorbs heat
     'Rock':     0.25, // Varies, average rock/soil
     'Oceanic':  0.15, // Dark water absorbs, clouds/ice reflect more
+    'Hycean':   0.22,
+    'Greenhouse': 0.72,
+    'CarbonRich': 0.18,
+    'Chthonian': 0.10,
+    'Cryovolcanic': 0.68,
+    'DwarfIce': 0.62,
     'Lunar':    0.12, // Dark regolith
     'GasGiant': 0.35, // Depends on clouds, Jupiter ~0.34
     'IceGiant': 0.30, // Depends on clouds, Neptune ~0.29
@@ -220,8 +226,8 @@ function calculateTemperatureRange(
     const tilt = Math.max(0, Math.min(Math.PI / 2, options.axialTiltRad ?? 0));
     const tiltFactor = Math.sin(tilt);
     const lockedFactor = options.tidallyLocked ? 1 : 0;
-    const thinSurfaceBoost = planetType === 'Lunar' || atmosphere.density === 'None' || atmosphere.density === 'Trace' ? 1.35 : 1;
-    const giantDamping = planetType === 'GasGiant' || planetType === 'IceGiant' ? 0.35 : 1;
+    const thinSurfaceBoost = planetType === 'Lunar' || planetType === 'DwarfIce' || planetType === 'Chthonian' || atmosphere.density === 'None' || atmosphere.density === 'Trace' ? 1.35 : 1;
+    const giantDamping = planetType === 'GasGiant' || planetType === 'IceGiant' ? 0.35 : planetType === 'Hycean' || planetType === 'Greenhouse' ? 0.55 : 1;
     const variationFraction = Math.max(
         0.035,
         (0.09 + tiltFactor * 0.22 + lockedFactor * 0.42) * atmosphereBuffer * thinSurfaceBoost * giantDamping
@@ -263,9 +269,11 @@ function calculateInternalHeatContribution(
     const typeBase =
         planetType === 'GasGiant' ? 34 :
         planetType === 'IceGiant' ? 22 :
-        planetType === 'Molten' ? 18 :
-        planetType === 'Rock' || planetType === 'Oceanic' ? 8 :
-        planetType === 'Frozen' ? 5 :
+        planetType === 'Molten' || planetType === 'Chthonian' ? 18 :
+        planetType === 'Hycean' ? 11 :
+        planetType === 'Rock' || planetType === 'Oceanic' || planetType === 'Greenhouse' || planetType === 'CarbonRich' ? 8 :
+        planetType === 'Frozen' || planetType === 'Cryovolcanic' ? 5 :
+        planetType === 'DwarfIce' ? 2 :
         3;
     return Math.max(0, typeBase * diameterFactor * densityFactor * ageFactor);
 }
@@ -273,7 +281,12 @@ function calculateInternalHeatContribution(
 function calculateTidalHeatContribution(planetType: string, tidalHeatingFactor: number): number {
     const clamped = Math.max(0, Math.min(1, tidalHeatingFactor));
     if (clamped <= 0) return 0;
-    const typeScale = planetType === 'Lunar' ? 120 : planetType === 'Frozen' ? 95 : planetType === 'Rock' ? 80 : planetType === 'Oceanic' ? 65 : 35;
+    const typeScale =
+        planetType === 'Lunar' || planetType === 'Cryovolcanic' ? 120 :
+        planetType === 'Frozen' || planetType === 'DwarfIce' ? 95 :
+        planetType === 'Rock' || planetType === 'Greenhouse' || planetType === 'CarbonRich' || planetType === 'Chthonian' ? 80 :
+        planetType === 'Oceanic' || planetType === 'Hycean' ? 65 :
+        35;
     return typeScale * Math.pow(clamped, 0.9);
 }
 

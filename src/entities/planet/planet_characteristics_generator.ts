@@ -113,7 +113,7 @@ export function generatePlanetCharacteristics(
     // ... (insert magnetic field generation logic here as before, using diameter/density) ...
     const fieldRoll = planetPRNG.random();
     switch (planetType) { /* ... (same logic as previous step) ... */
-         case 'Molten': case 'Rock': case 'Oceanic':
+         case 'Molten': case 'Rock': case 'Oceanic': case 'Hycean': case 'Greenhouse': case 'CarbonRich': case 'Chthonian':
             if (fieldRoll < 0.7) {
                 const sizeFactor = Math.max(0.5, diameter / 12000);
                 const densityFactor = Math.max(0.5, density / 4.0);
@@ -122,7 +122,7 @@ export function generatePlanetCharacteristics(
         case 'GasGiant': case 'IceGiant':
              if (fieldRoll < 0.9) magneticFieldStrength = planetPRNG.random(100, 2000);
              break;
-        case 'Frozen': case 'Lunar':
+        case 'Frozen': case 'Cryovolcanic': case 'DwarfIce': case 'Lunar':
              if (fieldRoll < 0.15) magneticFieldStrength = planetPRNG.random(0.1, 5);
              break;
     }
@@ -176,16 +176,26 @@ export function generateRotationPeriodHours(
             baseHours = prng.random(11, 24);
             break;
         case 'Molten':
+        case 'Chthonian':
             baseHours = prng.random(28, 240);
             break;
         case 'Lunar':
+        case 'DwarfIce':
             baseHours = prng.random(60, 900);
             break;
         case 'Frozen':
+        case 'Cryovolcanic':
             baseHours = prng.random(18, 160);
             break;
         case 'Oceanic':
+        case 'Hycean':
             baseHours = prng.random(14, 54);
+            break;
+        case 'Greenhouse':
+            baseHours = prng.random(80, 1200);
+            break;
+        case 'CarbonRich':
+            baseHours = prng.random(10, 80);
             break;
         case 'Rock':
         default:

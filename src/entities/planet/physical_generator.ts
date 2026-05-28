@@ -77,6 +77,24 @@ function getSolidPlanetProfile(planetType: string): {
         case 'Oceanic':
             // Water-rich terrestrial worlds: lower bulk density, with compression on larger examples.
             return { minDiameter: 6500, maxDiameter: 20000, minDensity: 2.4, maxDensity: 5.2, baseDensity: 2.7, variance: 0.35, compression: 1.65 };
+        case 'Hycean':
+            // Ocean planets with volatile envelopes, usually super-Earth/sub-Neptune scale.
+            return { minDiameter: 11500, maxDiameter: 27000, minDensity: 1.6, maxDensity: 4.2, baseDensity: 1.9, variance: 0.28, compression: 1.45 };
+        case 'Greenhouse':
+            // Venus-like terrestrials with rocky interiors and dense secondary atmospheres.
+            return { minDiameter: 6000, maxDiameter: 16500, minDensity: 3.4, maxDensity: 6.4, baseDensity: 3.8, variance: 0.35, compression: 1.85 };
+        case 'CarbonRich':
+            // Carbide/graphite-rich rocky planets, often dense but not necessarily iron dominated.
+            return { minDiameter: 4200, maxDiameter: 17000, minDensity: 2.7, maxDensity: 5.9, baseDensity: 3.0, variance: 0.42, compression: 1.75 };
+        case 'Chthonian':
+            // Stripped rocky/metal cores left after envelope loss.
+            return { minDiameter: 3500, maxDiameter: 14500, minDensity: 5.0, maxDensity: 9.2, baseDensity: 5.5, variance: 0.5, compression: 2.4 };
+        case 'Cryovolcanic':
+            // Active icy bodies with rock/ice interiors and volatile cycling.
+            return { minDiameter: 1800, maxDiameter: 9500, minDensity: 1.1, maxDensity: 3.0, baseDensity: 1.35, variance: 0.25, compression: 1.15 };
+        case 'DwarfIce':
+            // Pluto/Ceres-class icy dwarf planets and large KBO-like bodies.
+            return { minDiameter: 450, maxDiameter: 3000, minDensity: 0.8, maxDensity: 2.5, baseDensity: 1.0, variance: 0.22, compression: 0.75 };
         case 'Lunar':
             // Moon/large-satellite class differentiated rocky/icy-rock bodies.
             return { minDiameter: 900, maxDiameter: 6500, minDensity: 1.9, maxDensity: 4.1, baseDensity: 2.2, variance: 0.28, compression: 1.25 };

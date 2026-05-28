@@ -588,6 +588,18 @@ export class SceneRenderer {
         return '#66D6FF';
       case 'Frozen':
         return '#D8FFFF';
+      case 'Hycean':
+        return '#70D8D0';
+      case 'Greenhouse':
+        return '#D7B063';
+      case 'CarbonRich':
+        return '#8A7E6A';
+      case 'Chthonian':
+        return '#BF7A5E';
+      case 'Cryovolcanic':
+        return '#A0D8C8';
+      case 'DwarfIce':
+        return '#C8D8E8';
       default:
         return PLANET_TYPES[planetType]?.terrainColours[4] || '#CCCCCC';
     }

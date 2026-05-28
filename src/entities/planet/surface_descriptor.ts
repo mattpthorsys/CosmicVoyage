@@ -10,6 +10,12 @@ export function generateHydrosphere(prng: PRNG, planetType: string, surfaceTemp:
     logger.debug(`[SurfDesc] Generating hydrosphere (Temp: ${surfaceTemp}K, Pressure: ${atmosphere.pressure.toFixed(3)} bar)...`);
     // Direct types
     if (planetType === 'Oceanic') return 'Global Saline Ocean';
+    if (planetType === 'Hycean') return 'Global High-Pressure Ocean beneath Hydrogen-Rich Air';
+    if (planetType === 'Greenhouse') return 'Desiccated Basins, Acid Cloud Reservoirs';
+    if (planetType === 'CarbonRich') return 'Dry Carbon-Rich Crust, Scarce Surface Water';
+    if (planetType === 'Chthonian') return 'None; Irradiated Metal-Silicate Surface';
+    if (planetType === 'Cryovolcanic') return 'Volatile Ice Shell, Subsurface Ocean Likely';
+    if (planetType === 'DwarfIce') return 'Patchy Nitrogen/Methane Frosts over Ice-Rock';
     if (planetType === 'Frozen') return 'Global Ice Sheet, Subsurface Ocean Possible';
     if (planetType === 'Molten' || planetType === 'Lunar') return 'None';
     if (planetType === 'GasGiant' || planetType === 'IceGiant') return 'N/A (Gaseous/Fluid Interior)';
@@ -46,6 +52,12 @@ export function generateLithosphere(prng: PRNG, planetType: string): string {
          case 'Molten': description = 'Silicate Lava Flows, Rapidly Cooling Crust'; break;
          case 'Rock': description = prng.choice(['Silicate Rock (Granite/Basalt), Tectonically Active?', 'Carbonaceous Rock, Sedimentary Layers, Fossil Potential?', 'Iron-Rich Crust, Evidence of Metallic Core'])!; break;
          case 'Oceanic': description = 'Submerged Silicate Crust, Probable Hydrothermal Vents'; break;
+         case 'Hycean': description = 'Global ocean over high-pressure ice and silicate mantle'; break;
+         case 'Greenhouse': description = 'Basaltic highlands, tessera terrain, sulfur-bearing plains'; break;
+         case 'CarbonRich': description = prng.choice(['Graphite-Carbide Crust, Diamond-Bearing Mantle Possible', 'Dry Carbonaceous Highlands and Carbide Basins'])!; break;
+         case 'Chthonian': description = 'Exposed Iron-Silicate Core, Ablated Mantle Remnants'; break;
+         case 'Cryovolcanic': description = 'Fractured Ice Shell, Ammonia-Water Cryolava Flows'; break;
+         case 'DwarfIce': description = 'Low-Gravity Ice-Rock Regolith, Volatile Frost Fields'; break;
          case 'Lunar': description = 'Impact-Pulverized Regolith, Basaltic Maria, Scarce Volatiles'; break;
          case 'GasGiant': description = 'No Solid Surface Defined'; break;
          case 'IceGiant': description = 'No Solid Surface Defined, Deep Icy/Fluid Mantle'; break;

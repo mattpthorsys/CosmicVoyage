@@ -88,7 +88,23 @@ function _getBasePrimaryWeights(
     const activity = estimateStellarActivity(environment, orbitAu);
     const metalVolatileFactor = Math.pow(10, environment.metallicityFeH * 0.18);
 
-    if (planetType === 'GasGiant' || planetType === 'IceGiant') {
+    if (planetType === 'Hycean') {
+        return {
+            'Hydrogen': 58,
+            'Helium': 14,
+            'Water Vapor': 18 * metalVolatileFactor,
+            'Methane': 7 * metalVolatileFactor,
+            'Ammonia': approxTemp_K < 330 ? 3 * metalVolatileFactor : 0.8,
+        };
+    } else if (planetType === 'Greenhouse') {
+        return { 'Carbon Dioxide': 72, 'Nitrogen': 15, 'Sulfur Dioxide': 8 * metalVolatileFactor, 'Water Vapor': 3, 'Carbon Monoxide': 2 };
+    } else if (planetType === 'Chthonian') {
+        return { 'Carbon Monoxide': 28, 'Silicon Monoxide': 24 * metalVolatileFactor, 'Sulfur Dioxide': 18 * metalVolatileFactor, 'Nitrogen': 6 };
+    } else if (planetType === 'CarbonRich') {
+        return { 'Carbon Dioxide': 32, 'Carbon Monoxide': 24, 'Methane': approxTemp_K < 360 ? 18 * metalVolatileFactor : 4, 'Nitrogen': 18, 'Hydrogen Cyanide': 6 * metalVolatileFactor };
+    } else if (planetType === 'Cryovolcanic' || planetType === 'DwarfIce') {
+        return { 'Nitrogen': 36, 'Methane': 26 * metalVolatileFactor, 'Ammonia': 14 * metalVolatileFactor, 'Argon': 12, 'Carbon Monoxide': 8 };
+    } else if (planetType === 'GasGiant' || planetType === 'IceGiant') {
         const heavyVolatile = planetType === 'IceGiant' ? 22 : 9;
         return {
             'Hydrogen': 70,
@@ -257,6 +273,12 @@ function estimateAtmosphereTemperatureK(planetType: string, orbitDistance_m: num
         Molten: 0.08,
         Rock: 0.25,
         Oceanic: 0.18,
+        Hycean: 0.22,
+        Greenhouse: 0.72,
+        CarbonRich: 0.18,
+        Chthonian: 0.1,
+        Cryovolcanic: 0.68,
+        DwarfIce: 0.62,
         Lunar: 0.12,
         GasGiant: 0.35,
         IceGiant: 0.3,
@@ -409,8 +431,16 @@ export function generateAtmosphere(
     logger.debug(`[AtmoGen] Initial density roll: ${densityRoll.toFixed(2)} -> ${initialDensity}`);
 
     // Adjustments based on type and escape velocity
-    if (planetType === 'GasGiant' || planetType === 'IceGiant') {
+    if (planetType === 'GasGiant' || planetType === 'IceGiant' || planetType === 'Hycean') {
       densityIndex = 3; // Always Thick
+    } else if (planetType === 'Greenhouse') {
+      densityIndex = 3;
+    } else if (planetType === 'Cryovolcanic') {
+      densityIndex = prng.choice([1, 2, 2, 3])!;
+    } else if (planetType === 'DwarfIce') {
+      densityIndex = prng.choice([0, 0, 1])!;
+    } else if (planetType === 'Chthonian') {
+      densityIndex = prng.choice([0, 1, 1])!;
     } else if (planetType === 'Lunar' || planetType === 'Molten') {
       densityIndex = prng.choice([0, 0, 1])!; // High chance of None/Thin
     } else {
@@ -441,9 +471,12 @@ export function generateAtmosphere(
 
     // Calculate Pressure (scales with density index and gravity)
     // Ensure pressure is non-zero only if density is not None
-    const pressure = densityIndex === 0
+    let pressure = densityIndex === 0
         ? 0
         : Math.max(0.001, prng.random(0.01, 5) * (densityIndex + 1) * Math.sqrt(gravity));
+    if (planetType === 'Hycean') pressure = Math.max(8, pressure * prng.random(4, 12));
+    if (planetType === 'Greenhouse') pressure = Math.max(12, pressure * prng.random(5, 18));
+    if (planetType === 'DwarfIce' && pressure > 0) pressure *= 0.08;
 
     logger.debug(`[AtmoGen] Final Density: ${finalDensity}, Pressure: ${pressure.toFixed(3)} bar`);
 

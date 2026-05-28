@@ -210,7 +210,13 @@ export const PLANET_TYPES: Record<string, PlanetTypeInfo> = {
     'Lunar':    { terrainColours: ['#303030', '#404040', '#505050', '#656565', '#7f7f7f', '#9a9a9a', '#b5b5b5', '#d0d0d0', '#ebebeb'], baseTemp: 250 },
     'GasGiant': { terrainColours: ['#6f3f1f', '#8B4513', '#A0522D', '#B86B42', '#CD853F', '#D2B48C', '#E8D8B8', '#F5EDE0', '#FFFFF0'], baseTemp: 150 }, // [cite: 430]
     'IceGiant': { terrainColours: ['#003060', '#004080', '#0050A0', '#0060C0', '#3377D0', '#6699E0', '#99BBF0', '#CCE6FF', '#E6F2FF'], baseTemp: 100 },
-    'Frozen':   { terrainColours: ['#A0C0C0', '#C0D0D0', '#E0E8E8', '#F0F4F4', '#FFFFFF', '#F8F8F8', '#E8E8E8', '#D8D8D8', '#C8C8C8'], baseTemp: 50 }
+    'Frozen':   { terrainColours: ['#A0C0C0', '#C0D0D0', '#E0E8E8', '#F0F4F4', '#FFFFFF', '#F8F8F8', '#E8E8E8', '#D8D8D8', '#C8C8C8'], baseTemp: 50 },
+    'Hycean':   { terrainColours: ['#001820', '#002830', '#003C48', '#005060', '#126878', '#3A8790', '#70A9AA', '#A8D2C8', '#D8FFF0'], baseTemp: 290 },
+    'Greenhouse': { terrainColours: ['#2A1808', '#43260B', '#60400F', '#7F5917', '#A07424', '#BF9140', '#D7B063', '#E8CC8C', '#F7E8C0'], baseTemp: 735 },
+    'CarbonRich': { terrainColours: ['#080808', '#15120F', '#262018', '#383025', '#514638', '#6D604F', '#8A7E6A', '#AFA58E', '#D6CFB6'], baseTemp: 320 },
+    'Chthonian': { terrainColours: ['#180C0A', '#2E1714', '#4A2720', '#65362C', '#844735', '#A05C45', '#BF7A5E', '#D99E80', '#F0C2A6'], baseTemp: 760 },
+    'Cryovolcanic': { terrainColours: ['#081418', '#10282E', '#1B3C42', '#28565A', '#3D7270', '#6A9088', '#A0B8A8', '#D0D8C8', '#F0F4E0'], baseTemp: 95 },
+    'DwarfIce': { terrainColours: ['#182028', '#283040', '#3A4658', '#526070', '#748090', '#9CA8B8', '#C8D0D8', '#E6ECEE', '#FFFFFF'], baseTemp: 45 }
 };
 
 // Could use an enum, but string array is simple enough for now. [cite: 431]

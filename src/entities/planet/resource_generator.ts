@@ -109,13 +109,13 @@ export function determineMineralRichness(prng: PRNG, planetType: string, metalli
   // Base chance based on type
   let richChance = 0.1; // Base chance for RICH or ULTRA_RICH
   let poorChance = 0.2; // Base chance for POOR or ULTRA_POOR
-  if (planetType === 'Rock' || planetType === 'Molten' || planetType === 'Lunar') {
+  if (planetType === 'Rock' || planetType === 'Molten' || planetType === 'Lunar' || planetType === 'CarbonRich' || planetType === 'Chthonian' || planetType === 'Greenhouse') {
     richChance = 0.25;
     poorChance = 0.15;
-  } else if (planetType === 'Frozen') {
+  } else if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce') {
     richChance = 0.05;
     poorChance = 0.3;
-  } else if (planetType === 'Oceanic') {
+  } else if (planetType === 'Oceanic' || planetType === 'Hycean') {
     richChance = 0.08;
     poorChance = 0.25;
   } else if (planetType === 'GasGiant' || planetType === 'IceGiant') {
@@ -169,16 +169,33 @@ export function calculateElementAbundance(
     weight *= _getLithosphereFactor(element, lithosphere);
     weight *= _getGravityFactor(element, gravity);
     if (key === 'DEUTERIUM') {
-      if (planetType === 'Frozen') weight *= 4.6;
-      else if (planetType === 'Oceanic') weight *= 2.4;
+      if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce') weight *= 4.6;
+      else if (planetType === 'Oceanic' || planetType === 'Hycean') weight *= 2.4;
       else if (planetType === 'Lunar') weight *= 1.8;
       else if (planetType === 'Rock') weight *= 0.75;
-      else if (planetType === 'Molten') weight *= 0.04;
+      else if (planetType === 'Molten' || planetType === 'Chthonian' || planetType === 'Greenhouse') weight *= 0.04;
 
       if (surfaceTemp <= 140) weight *= 2.2;
       else if (surfaceTemp <= 230) weight *= 1.55;
       else if (surfaceTemp <= 310) weight *= 0.85;
       else weight *= 0.18;
+    }
+    if (planetType === 'CarbonRich') {
+      if (key === 'CARBON') weight *= 5.5;
+      if (['IRON', 'NICKEL', 'SILICON', 'MAGNESIUM'].includes(key)) weight *= 0.75;
+      if (element.group === 'Ice') weight *= 0.18;
+    }
+    if (planetType === 'Chthonian') {
+      if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide') weight *= 2.6;
+      if (element.group === 'Ice' || element.group === 'Gas' || element.group === 'Noble') weight *= 0.02;
+    }
+    if (planetType === 'Greenhouse') {
+      if (['SULFUR', 'CARBON', 'POTASSIUM'].includes(key)) weight *= 1.8;
+      if (element.group === 'Ice') weight *= 0.08;
+    }
+    if (planetType === 'Cryovolcanic' || planetType === 'DwarfIce') {
+      if (element.group === 'Ice') weight *= planetType === 'Cryovolcanic' ? 2.6 : 3.4;
+      if (['CARBON', 'SULFUR'].includes(key)) weight *= 1.4;
     }
     if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide' || element.group === 'Metalloid') {
       weight *= Math.max(0.25, Math.min(2.25, Math.pow(10, metallicityFeH * 0.32)));
