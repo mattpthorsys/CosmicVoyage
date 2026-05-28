@@ -1566,10 +1566,7 @@ export class Game {
       // Calculate Speed Multiplier based on Zoom
       let speedMultiplier = 1.0;
       if (currentState === 'system') {
-        const defaultZoomIndex = 3; // Index of 1x zoom (adjust if default changes)
-        const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
-        speedMultiplier = Math.pow(0.5, zoomDifference);
-        speedMultiplier = Math.max(0.01, Math.min(speedMultiplier, 10.0)); // Clamp
+        speedMultiplier = this.getSystemCursorMoveSpeedMultiplier();
       }
 
       try {
@@ -1699,6 +1696,12 @@ export class Game {
     // Clamp index to prevent errors if it somehow goes out of bounds
     const safeIndex = Math.max(0, Math.min(this.currentZoomLevelIndex, this.zoomLevels.length - 1));
     return this.zoomLevels[safeIndex];
+  }
+
+  private getSystemCursorMoveSpeedMultiplier(): number {
+    const defaultZoomIndex = 3; // Index of 1x zoom (adjust if default changes)
+    const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
+    return Math.max(0.01, Math.min(Math.pow(0.5, zoomDifference), 10.0));
   }
 
   /** Handles scan requests triggered by ActionProcessor */
@@ -3791,7 +3794,7 @@ export class Game {
     return this.player.distanceSqToSystemCoords(coords.x, coords.y) < (CONFIG.LANDING_DISTANCE * multiplier) ** 2;
   }
 
-  private updateApproachAssist(deltaTime: number): void {
+  private updateApproachAssist(_deltaTime: number): void {
     if (this.stateManager.state !== 'system' || !this.approachTargetSignature) return;
     const target = this.getSelectedTarget();
     if (!target || this.getTargetSignature(target) !== this.approachTargetSignature) {
@@ -3810,7 +3813,7 @@ export class Game {
       return;
     }
 
-    const step = Math.min(distance - desiredDistance, Math.max(CONFIG.SYSTEM_MOVE_INCREMENT * 0.2, CONFIG.SYSTEM_MOVE_INCREMENT * deltaTime * 4));
+    const step = Math.min(distance - desiredDistance, CONFIG.SYSTEM_MOVE_INCREMENT * this.getSystemCursorMoveSpeedMultiplier());
     this.player.position.systemX += (dx / distance) * step;
     this.player.position.systemY += (dy / distance) * step;
     this.player.render.char = this.player.render.directionGlyph;
