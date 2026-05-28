@@ -3,9 +3,56 @@
 
 import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
-import { ELEMENTS } from '../../constants'; // Ensure ELEMENTS is imported
+import { ELEMENTS, MineralRichness } from '../../constants'; // Ensure ELEMENTS is imported
 import { logger } from '../../utils/logger';
 import { PerlinNoise } from '../../generation/perlin';
+
+export interface SurfaceElementGenerationProfile {
+  mineralRichness?: MineralRichness;
+  baseMinerals?: number;
+  metallicityFeH?: number;
+  surfaceTemp?: number;
+}
+
+const VOLATILE_KEYS = new Set(['DEUTERIUM', 'WATER_ICE', 'AMMONIA_ICE', 'METHANE_ICE', 'HYDROGEN', 'HELIUM']);
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getRichnessDensityFactor(richness: MineralRichness = MineralRichness.AVERAGE): number {
+  switch (richness) {
+    case MineralRichness.NONE:
+      return 0;
+    case MineralRichness.ULTRA_POOR:
+      return 0.42;
+    case MineralRichness.POOR:
+      return 0.68;
+    case MineralRichness.RICH:
+      return 1.45;
+    case MineralRichness.ULTRA_RICH:
+      return 2.1;
+    case MineralRichness.AVERAGE:
+    default:
+      return 1;
+  }
+}
+
+function getColdVolatileFactor(surfaceTemp: number | undefined): number {
+  if (surfaceTemp === undefined) return 1;
+  if (surfaceTemp <= 90) return 1.9;
+  if (surfaceTemp <= 150) return 1.65;
+  if (surfaceTemp <= 230) return 1.35;
+  if (surfaceTemp <= 273) return 1.12;
+  if (surfaceTemp <= 320) return 0.72;
+  return 0.32;
+}
+
+function getVolatileAbundance(planetAbundance: Record<string, number>): number {
+  return Object.entries(planetAbundance).reduce((sum, [key, abundance]) => {
+    return VOLATILE_KEYS.has(key) ? sum + Math.max(0, abundance) : sum;
+  }, 0);
+}
 
 /**
  * Generates the surface element map with sparsity, considering altitude.
@@ -23,7 +70,8 @@ export function generateSurfaceElementMap(
   mapSeed: string,    // For noise generator
   prng: PRNG,         // For cell choices
   planetAbundance: Record<string, number>,
-  heightmap: number[][]
+  heightmap: number[][],
+  profile: SurfaceElementGenerationProfile = {}
 ): string[][] | null {
   if (!heightmap || heightmap.length === 0 || !heightmap[0] || heightmap[0].length !== heightmap.length) {
     logger.error("[SurfElemGen] Cannot generate element map: Invalid heightmap provided.");
@@ -62,8 +110,21 @@ export function generateSurfaceElementMap(
   const richnessNoiseScale = 0.15; // Controls the size of richness patches
 
   // --- Sparsity Settings ---
-  const baseSparsity = 0.005; // Base chance of finding *any* element (lower = sparser) - ADJUSTABLE
-  const richnessInfluence = 0.3; // How much richness noise affects sparsity (0 to 1) - ADJUSTABLE
+  const richnessDensityFactor = getRichnessDensityFactor(profile.mineralRichness);
+  const baseMineralFactor = clamp(0.65 + (profile.baseMinerals ?? 45) / 90, 0.45, 2.35);
+  const metalDensityFactor = clamp(Math.pow(10, (profile.metallicityFeH ?? 0) * 0.12), 0.78, 1.28);
+  const volatileDensityFactor = clamp(
+    1 + (getVolatileAbundance(planetAbundance) / 100) * getColdVolatileFactor(profile.surfaceTemp) * 0.72,
+    1,
+    2.1
+  );
+  const depositDensityFactor = clamp(
+    richnessDensityFactor * baseMineralFactor * metalDensityFactor * volatileDensityFactor,
+    0,
+    3.1
+  );
+  const baseSparsity = 0.005 * depositDensityFactor; // Base chance of finding any deposit.
+  const richnessInfluence = 0.3 * depositDensityFactor; // Rich worlds have broader deposit patches.
 
   // --- Generate map cell by cell ---
   for (let y = 0; y < mapSize; y++) {
@@ -71,7 +132,7 @@ export function generateSurfaceElementMap(
 
       // 1. Determine if *anything* should spawn here (Sparsity Check)
       const richnessNoise = (richnessNoiseGenerator.get(x * richnessNoiseScale, y * richnessNoiseScale) + 1) / 2; // Noise 0-1
-      const localSparsityThreshold = baseSparsity + richnessNoise * richnessInfluence; // Cells in 'rich' areas are less sparse
+      const localSparsityThreshold = clamp(baseSparsity + richnessNoise * richnessInfluence, 0, 0.58); // Cells in rich areas are less sparse
       const cellChoicePRNG = prng.seedNew(`elem_cell_${x}_${y}`);
       const sparsityRoll = cellChoicePRNG.random();
 
@@ -103,6 +164,8 @@ export function generateSurfaceElementMap(
             noiseAffinityFactor = planetType === 'Frozen'
               ? 0.35 + Math.pow(elementClusterNoise, 2.2) * 1.65
               : 0.25 + Math.pow(elementClusterNoise, 3.0) * 1.35;
+        } else if (elementInfo.group === 'Ice') {
+            noiseAffinityFactor = 0.28 + Math.pow(elementClusterNoise, 2.0) * 1.55;
         } else if (['IRON', 'SILICON', 'CARBON'].includes(key)) {
             noiseAffinityFactor = 0.8 + elementClusterNoise * 0.4; // More uniform, slight cluster preference
         } // Add more rules as needed...
@@ -111,7 +174,12 @@ export function generateSurfaceElementMap(
         // --- Altitude Affinity ---
         let altitudeFactor = 1.0;
         // Heavier elements slightly more common lower down
-        if (elementInfo.atomicWeight > 100) { // e.g., Lead, Uranium, Tungsten, Gold, Platinum etc.
+        if (key === 'DEUTERIUM') {
+             altitudeFactor = planetType === 'Oceanic'
+               ? 0.55 + (1.0 - heightVal) * 1.1
+               : 0.45 + Math.pow(heightVal, 1.7) * 1.8;
+        }
+        else if (elementInfo.atomicWeight > 100) { // e.g., Lead, Uranium, Tungsten, Gold, Platinum etc.
              altitudeFactor = (1.0 - heightVal * 0.5); // Decrease weight by up to 50% at max height
         }
         // Lighter crustal elements slightly more common higher up
@@ -119,15 +187,19 @@ export function generateSurfaceElementMap(
              altitudeFactor = (0.7 + heightVal * 0.6); // Increase weight by up to 30% at max height (from base 0.7)
         }
         // Ices much more common higher up (colder)
-        else if (key === 'DEUTERIUM') {
-             altitudeFactor = planetType === 'Oceanic'
-               ? 0.55 + (1.0 - heightVal) * 1.1
-               : 0.45 + Math.pow(heightVal, 1.7) * 1.8;
-        }
         else if (elementInfo.group === 'Ice') {
              altitudeFactor = Math.pow(heightVal, 2) * 2.0; // Strong preference for high altitude
         }
         adjustedWeight *= altitudeFactor;
+
+        if (VOLATILE_KEYS.has(key)) {
+          adjustedWeight *= getColdVolatileFactor(profile.surfaceTemp);
+          if (planetType === 'Frozen') adjustedWeight *= 1.45;
+          if (planetType === 'Oceanic' && key === 'DEUTERIUM') adjustedWeight *= 1.25;
+        }
+        if (elementInfo.group === 'Metal' || elementInfo.group === 'Actinide' || elementInfo.group === 'Lanthanide' || elementInfo.group === 'Metalloid') {
+          adjustedWeight *= clamp(Math.pow(10, (profile.metallicityFeH ?? 0) * 0.18), 0.65, 1.55);
+        }
 
         // --- Temperature Affinity (Simple proxy using altitude) ---
         // Volatiles less likely at lowest (hottest proxy) altitudes

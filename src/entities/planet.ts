@@ -6,7 +6,7 @@ import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';
 // Import the specific interface from the generator file
 import { generatePlanetCharacteristics, PlanetCharacteristics, PlanetGenerationOptions } from './planet/planet_characteristics_generator';
-import { StellarEnvironment } from './stellar_environment';
+import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import { OrbitHost } from './stellar_body';
 // Import the generator and data interface
 import { SurfaceGenerator, SurfaceData } from './planet/surface_generator';
@@ -83,6 +83,7 @@ export class Planet {
   // Generation & State
   public readonly systemPRNG: PRNG; //
   public readonly mapSeed: string; //
+  private readonly stellarEnvironment: StellarEnvironment;
 
   // Surface Data (Lazy Loaded/Cached)
   private _surfaceData: SurfaceData | null = null; // Holds heightmap, colors, AND element map
@@ -112,6 +113,7 @@ export class Planet {
     this.orbitDistance = orbitDistance; //
     this.orbitAngle = angle; //
     this.orbitHost = orbitHost ?? { kind: 'barycentric' };
+    this.stellarEnvironment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
 
     // Seed PRNG specifically for this planet
     this.systemPRNG = systemPRNG.seedNew('planet_' + name); //
@@ -123,7 +125,7 @@ export class Planet {
         this.orbitDistance,
         this.systemPRNG,
         parentStarType,
-        stellarEnvironment,
+        this.stellarEnvironment,
         totalFlux_W_m2,
         generationOptions
     );
@@ -233,7 +235,12 @@ export class Planet {
     try {
       //
       // Pass the planet's overall abundance map to the generator
-      this._surfaceData = this._surfaceGenerator.generateSurfaceData(this.elementAbundance); //
+      this._surfaceData = this._surfaceGenerator.generateSurfaceData(this.elementAbundance, {
+        mineralRichness: this.mineralRichness,
+        baseMinerals: this.baseMinerals,
+        metallicityFeH: this.stellarEnvironment.metallicityFeH,
+        surfaceTemp: this.surfaceTemp,
+      }); //
       if (!this._surfaceData) {
         // Check if generator returned null
         throw new Error('Surface generator returned null data.'); //

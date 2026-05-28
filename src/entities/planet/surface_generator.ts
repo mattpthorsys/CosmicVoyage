@@ -1,11 +1,10 @@
 // src/entities/planet/surface_generator.ts (Added Sparsity Check)
 
 import { PRNG } from '../../utils/prng';
-import { CONFIG } from '../../config';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet';
 import { generateHeightmap } from './heightmap_generator';
-import { generateSurfaceElementMap } from './surface_element_generator';
+import { generateSurfaceElementMap, SurfaceElementGenerationProfile } from './surface_element_generator';
 import { generateRgbPaletteCache, generateHeightLevelColors } from './surface_colour_generator';
 import { RgbColour } from '../../rendering/colour';
 
@@ -34,7 +33,7 @@ export class SurfaceGenerator {
   }
 
   /** Generates all necessary surface data based on planet type. */
-  generateSurfaceData(planetAbundance: Record<string, number>): SurfaceData {
+  generateSurfaceData(planetAbundance: Record<string, number>, profile: SurfaceElementGenerationProfile = {}): SurfaceData {
     logger.info(`[SurfaceGen:${this.planetType}] Generating surface data...`);
     let heightmap: number[][] | null = null;
     let heightLevelColors: string[] | null = null;
@@ -62,7 +61,8 @@ export class SurfaceGenerator {
           this.mapSeed,
           this.prng,
           planetAbundance,
-          heightmap
+          heightmap,
+          profile
         );
 
         if (!surfaceElementMap) {

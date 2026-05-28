@@ -554,10 +554,10 @@ export class SolarSystem {
     });
     const volatileAbundance: Record<string, number> =
       planetType === 'GasGiant'
-        ? { Hydrogen: 0.62, Helium: 0.2, 'Methane Ice': 0.08, 'Ammonia Ice': 0.06, 'Water Ice': 0.04 }
+        ? { HYDROGEN: 0.62, HELIUM: 0.2, METHANE_ICE: 0.08, AMMONIA_ICE: 0.06, WATER_ICE: 0.04 }
         : planetType === 'IceGiant'
-          ? { 'Water Ice': 0.34, 'Methane Ice': 0.22, 'Ammonia Ice': 0.18, Hydrogen: 0.16, Helium: 0.1 }
-          : { 'Water Ice': 0.38, 'Methane Ice': 0.22, 'Ammonia Ice': 0.14, Silicon: 0.14, Iron: 0.12 };
+          ? { WATER_ICE: 0.34, METHANE_ICE: 0.22, AMMONIA_ICE: 0.18, HYDROGEN: 0.16, HELIUM: 0.1 }
+          : { WATER_ICE: 0.38, METHANE_ICE: 0.22, AMMONIA_ICE: 0.14, SILICON: 0.14, IRON: 0.12 };
 
     return {
       diameter: physical.diameter,
@@ -684,8 +684,8 @@ export class SolarSystem {
       mineralRichness: prng.random() < 0.14 ? MineralRichness.AVERAGE : MineralRichness.POOR,
       baseMinerals: prng.randomInt(2, 18),
       elementAbundance: moonType === 'Frozen'
-        ? { 'Water Ice': 0.34, 'Methane Ice': 0.2, 'Ammonia Ice': 0.14, Silicon: 0.18, Iron: 0.14 }
-        : { Silicon: 0.34, Iron: 0.24, Aluminium: 0.12, Magnesium: 0.12, 'Water Ice': 0.18 },
+        ? { WATER_ICE: 0.34, METHANE_ICE: 0.2, AMMONIA_ICE: 0.14, SILICON: 0.18, IRON: 0.14 }
+        : { SILICON: 0.34, IRON: 0.24, ALUMINIUM: 0.12, MAGNESIUM: 0.12, WATER_ICE: 0.18 },
       magneticFieldStrength: prng.random(0, 4) * (tidalHeat > 0.2 ? 1.4 : 0.45),
       axialTilt,
       tidallyLocked,
