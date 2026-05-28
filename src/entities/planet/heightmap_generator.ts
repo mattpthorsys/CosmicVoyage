@@ -5,6 +5,12 @@ import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet'; // Import type for crater check
 import { PRNG } from '../../utils/prng';
 
+interface CraterProfile {
+  countMultiplier: number;
+  radiusMultiplier: number;
+  depthMultiplier: number;
+}
+
 /**
  * Generates a planetary heightmap, potentially adding craters based on type/atmosphere.
  *
@@ -38,15 +44,9 @@ export function generateHeightmap(
       throw new Error('BaseHeightmapGenerator returned invalid map dimensions.');
     }
 
-    // Add craters for specific types after base generation
-    if (
-      planetType === 'Lunar' ||
-      (planetType === 'Rock' && (!atmosphere || atmosphere.density === 'None'))
-    ) {
-      generatedMap = addCratersToHeightmap(
-        generatedMap,
-        generator['prng'] // Access the PRNG from the generator instance
-      ); // Modifies map in place
+    const craterProfile = getCraterProfile(planetType, atmosphere);
+    if (craterProfile.countMultiplier > 0) {
+      generatedMap = addCratersToHeightmap(generatedMap, generator['prng'], craterProfile);
     }
 
     generatedMap = applyPlanetarySurfaceProcesses(generatedMap, planetType, atmosphere, generator['prng']);
@@ -71,39 +71,39 @@ export function generateHeightmap(
  * @param craterPRNG - The PRNG instance to use for crater generation.
  * @returns The modified heightmap array.
  */
-function addCratersToHeightmap(
+export function addCratersToHeightmap(
   heightmap: number[][],
-  craterPRNG: PRNG
+  craterPRNG: PRNG,
+  profile: CraterProfile = { countMultiplier: 1, radiusMultiplier: 1, depthMultiplier: 1 }
 ): number[][] {
   if (!heightmap) return heightmap;
   const mapSize = heightmap.length;
   if (mapSize <= 0) return heightmap;
 
   logger.info(`[CraterFunc] Adding impact craters...`);
-  const numCraters = craterPRNG.randomInt(
-    Math.floor(mapSize / 15),
-    Math.floor(mapSize / 5)
-  );
+  const minCraters = Math.max(0, Math.floor((mapSize / 15) * profile.countMultiplier));
+  const maxCraters = Math.max(minCraters, Math.floor((mapSize / 5) * profile.countMultiplier));
+  const numCraters = maxCraters <= 0 ? 0 : craterPRNG.randomInt(minCraters, maxCraters);
   logger.debug(`[CraterFunc] Generating ${numCraters} craters.`);
 
   for (let i = 0; i < numCraters; i++) {
-    const r = craterPRNG.randomInt(3, Math.max(5, Math.floor(mapSize / 10)));
+    const r = Math.max(2, Math.round(craterPRNG.randomInt(3, Math.max(5, Math.floor(mapSize / 10))) * profile.radiusMultiplier));
     const cx = craterPRNG.randomInt(0, mapSize - 1);
     const cy = craterPRNG.randomInt(0, mapSize - 1);
-    const depthFactor = craterPRNG.random(0.5, 2.0);
+    const depthFactor = craterPRNG.random(0.5, 2.0) * profile.depthMultiplier;
     const rimFactor = craterPRNG.random(0.1, 0.3);
     const maxDepth = r * depthFactor;
     const rimHeight = maxDepth * rimFactor;
     const startY = Math.max(0, cy - r - 2);
     const endY = Math.min(mapSize - 1, cy + r + 2);
-    const startX = Math.max(0, cx - r - 2);
-    const endX = Math.min(mapSize - 1, cx + r + 2);
+    const horizontalRadius = Math.min(mapSize, Math.ceil((r + 2) / getMercatorCraterLongitudeScale(cy, mapSize)));
 
     for (let y = startY; y <= endY; y++) {
-      for (let x = startX; x <= endX; x++) {
-        const dx = x - cx;
+      for (let xOffset = -horizontalRadius; xOffset <= horizontalRadius; xOffset++) {
+        const x = (cx + xOffset + mapSize) % mapSize;
+        const dx = xOffset;
         const dy = y - cy;
-        const distSq = dx * dx + dy * dy;
+        const distSq = getMercatorCraterDistanceSq(dx, dy, y, mapSize);
         if (distSq <= (r + 1) ** 2) {
           const dist = Math.sqrt(distSq);
           const currentH = heightmap[y]?.[x] ?? 0; // Add nullish coalescing for safety
@@ -138,6 +138,52 @@ function addCratersToHeightmap(
   return heightmap;
 }
 
+export function getMercatorCraterDistanceSq(dx: number, dy: number, row: number, mapSize: number): number {
+  const longitudeScale = getMercatorCraterLongitudeScale(row, mapSize);
+  return (dx * longitudeScale) ** 2 + dy * dy;
+}
+
+function getMercatorCraterLongitudeScale(row: number, mapSize: number): number {
+  const latitude = ((row / Math.max(1, mapSize - 1)) - 0.5) * Math.PI;
+  return Math.max(0.18, Math.abs(Math.cos(latitude)));
+}
+
+function getCraterProfile(planetType: string, atmosphere: Atmosphere): CraterProfile {
+  const density = atmosphere?.density ?? 'None';
+  const pressure = atmosphere?.pressure ?? 0;
+  const atmosphereErosion =
+    density === 'None' ? 1 :
+    density === 'Trace' ? 0.82 :
+    density === 'Thin' ? 0.58 :
+    density === 'Earth-like' ? 0.24 :
+    density === 'Thick' ? 0.08 :
+    0.02;
+  const pressureErosion = Math.max(0.02, Math.min(1, 1 / (1 + pressure * 0.28)));
+
+  switch (planetType) {
+    case 'Lunar':
+      return { countMultiplier: 1.45 * atmosphereErosion, radiusMultiplier: 1.05, depthMultiplier: 1.15 };
+    case 'DwarfIce':
+      return { countMultiplier: 1.25 * atmosphereErosion, radiusMultiplier: 1.0, depthMultiplier: 0.8 };
+    case 'Chthonian':
+      return { countMultiplier: 0.72 * atmosphereErosion, radiusMultiplier: 0.9, depthMultiplier: 0.85 };
+    case 'CarbonRich':
+      return { countMultiplier: 0.48 * atmosphereErosion * pressureErosion, radiusMultiplier: 0.95, depthMultiplier: 0.9 };
+    case 'Rock':
+      return { countMultiplier: 0.5 * atmosphereErosion * pressureErosion, radiusMultiplier: 1, depthMultiplier: 1 };
+    case 'Frozen':
+      return { countMultiplier: 0.58 * atmosphereErosion * pressureErosion, radiusMultiplier: 1.05, depthMultiplier: 0.72 };
+    case 'Cryovolcanic':
+      return { countMultiplier: 0.26 * atmosphereErosion * pressureErosion, radiusMultiplier: 0.88, depthMultiplier: 0.55 };
+    case 'Greenhouse':
+      return { countMultiplier: 0.08 * atmosphereErosion * pressureErosion, radiusMultiplier: 1.1, depthMultiplier: 0.35 };
+    case 'Molten':
+      return { countMultiplier: 0.04 * atmosphereErosion, radiusMultiplier: 0.85, depthMultiplier: 0.3 };
+    default:
+      return { countMultiplier: 0, radiusMultiplier: 1, depthMultiplier: 1 };
+  }
+}
+
 function applyPlanetarySurfaceProcesses(
   heightmap: number[][],
   planetType: string,
@@ -158,7 +204,6 @@ function applyPlanetarySurfaceProcesses(
     processed = addIceFractures(processed, prng, planetType === 'Cryovolcanic' ? 11 : density === 'None' ? 8 : 5);
     if (planetType === 'Cryovolcanic') processed = addCryovolcanicDomes(processed, prng, 9);
     if (planetType === 'DwarfIce') {
-      processed = addCratersToHeightmap(processed, prng);
       processed = addVolatileFrostBasins(processed, prng, 7);
     }
   } else if (planetType === 'Molten' || planetType === 'Chthonian') {

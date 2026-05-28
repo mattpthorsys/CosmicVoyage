@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateHeightmap } from '../../../entities/planet/heightmap_generator';
+import {
+  addCratersToHeightmap,
+  generateHeightmap,
+  getMercatorCraterDistanceSq,
+} from '../../../entities/planet/heightmap_generator';
 
 const THIN_ATMOSPHERE = { density: 'Thin', pressure: 0.08, composition: { Nitrogen: 80, Methane: 20 } };
 const THICK_ATMOSPHERE = { density: 'Thick', pressure: 8, composition: { 'Carbon Dioxide': 92, Nitrogen: 8 } };
@@ -47,5 +51,34 @@ describe('realistic specialised surface generation', () => {
     expect(chthonianStats.roughness).toBeGreaterThan(hyceanStats.roughness);
     expect(greenhouseStats.highFraction).toBeGreaterThan(hyceanStats.highFraction);
     expect(dwarfIceStats.lowFraction).toBeGreaterThan(greenhouseStats.lowFraction);
+  });
+
+  it('widens crater footprints toward map poles for projected surface maps', () => {
+    const mapSize = 64;
+    const flatMap = (value: number) => Array.from({ length: mapSize }, () => Array.from({ length: mapSize }, () => value));
+    const fakePrng = (cy: number) => {
+      const intValues = [1, 5, 32, cy];
+      return {
+        randomInt: () => intValues.shift() ?? 1,
+        random: (min: number) => min,
+      };
+    };
+
+    const equator = addCratersToHeightmap(flatMap(128), fakePrng(32) as any, {
+      countMultiplier: 0.25,
+      radiusMultiplier: 1,
+      depthMultiplier: 1,
+    });
+    const polar = addCratersToHeightmap(flatMap(128), fakePrng(3) as any, {
+      countMultiplier: 0.25,
+      radiusMultiplier: 1,
+      depthMultiplier: 1,
+    });
+
+    const equatorSpan = equator[32].filter((value) => value !== 128).length;
+    const polarSpan = polar[3].filter((value) => value !== 128).length;
+
+    expect(getMercatorCraterDistanceSq(6, 0, 3, mapSize)).toBeLessThan(getMercatorCraterDistanceSq(6, 0, 32, mapSize));
+    expect(polarSpan).toBeGreaterThan(equatorSpan);
   });
 });
