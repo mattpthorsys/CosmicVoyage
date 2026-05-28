@@ -57,7 +57,7 @@ export interface SurfaceVehicleOverlayModel {
   cargo: number;
   cargoCapacity: number;
   selectedIndex: number;
-  items: Array<{ label: string; status: string }>;
+  items: Array<{ id?: string; label: string; status: string; tone?: 'normal' | 'green' | 'red' | 'muted' }>;
   mapExpanded?: boolean;
   surfaceCellScale?: number;
   scanCursor?: { dx: number; dy: number };
@@ -1306,8 +1306,10 @@ export class SceneRenderer {
       const item = model.items[index];
       const selected = index === model.selectedIndex && !model.moving;
       const label = ` ${item.label.toUpperCase()} `;
-      const fg = selected ? '#001010' : '#9FFFE0';
-      const bg = selected ? '#00C8AA' : CONFIG.DEFAULT_BG_COLOUR;
+      const baseFg = item.tone === 'green' ? '#7CFFD0' : '#9FFFE0';
+      const selectedBg = item.tone === 'green' ? '#00C878' : '#9FFFE0';
+      const fg = selected ? '#001010' : baseFg;
+      const bg = selected ? selectedBg : CONFIG.DEFAULT_BG_COLOUR;
       if (cursorX + label.length >= panelX + panelWidth) break;
       this.screenBuffer.drawString(label, cursorX, rowY, fg, bg);
       cursorX += label.length + 1;

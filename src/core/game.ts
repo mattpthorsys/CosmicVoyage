@@ -1018,6 +1018,7 @@ export class Game {
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
       if (rover.moving) {
         rover.moving = false;
+        this.roverMenuSelection = this.getDefaultSurfaceVehicleMenuSelection();
         this.statusMessage = 'Terrain vehicle stopped.';
       } else {
         this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems()[this.roverMenuSelection]);
@@ -1064,7 +1065,7 @@ export class Game {
         this.inputManager.wasActionJustPressed('QUIT')
       ) {
         this.travelCommandMoving = false;
-        this.travelCommandSelection = this.getTravelMoveCommandIndex();
+        this.travelCommandSelection = this.getDefaultTravelCommandIndex();
         this.statusMessage = `${state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement paused. Arrows select commands.`;
         this.forceFullRender = true;
         return true;
@@ -2813,6 +2814,12 @@ export class Game {
     return items;
   }
 
+  private getDefaultSurfaceVehicleMenuSelection(): number {
+    const items = this.getSurfaceVehicleMenuItems();
+    const situationalIndex = items.findIndex((item) => item.id === 'embark');
+    return situationalIndex >= 0 ? situationalIndex : 0;
+  }
+
   private createSurfaceVehicleOverlayModel() {
     const items = this.getSurfaceVehicleMenuItems();
     const cargo = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
@@ -2828,7 +2835,7 @@ export class Game {
       cargo,
       cargoCapacity: this.player.terrainVehicle.cargoHold.capacity,
       selectedIndex: this.roverMenuSelection,
-      items: items.map((item) => ({ label: item.label, status: item.status })),
+      items: items.map((item) => ({ id: item.id, label: item.label, status: item.status, tone: item.id === 'embark' ? 'green' as const : 'normal' as const })),
       mapExpanded: this.surfaceMapExpanded,
       surfaceCellScale: this.surfaceMapExpanded ? 1 : CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE,
       scanCursor: this.surfaceScanCursor ?? undefined,
@@ -4248,6 +4255,12 @@ export class Game {
     return moveIndex >= 0 ? moveIndex : 0;
   }
 
+  private getDefaultTravelCommandIndex(): number {
+    const commands = this.getSelectableTravelCommandButtons();
+    const situationalIndex = commands.findIndex((button) => button.tone === 'green');
+    return situationalIndex >= 0 ? situationalIndex : this.getTravelMoveCommandIndex();
+  }
+
   private getSelectedTravelCommandId(): string {
     const commands = this.getSelectableTravelCommandButtons();
     this.travelCommandSelection = clampIndex(this.travelCommandSelection, commands.length);
@@ -4270,7 +4283,7 @@ export class Game {
       context: 'interstellar',
       targetName: this.getCommandStripTargetName(),
       primaryButtonId: enter?.id,
-      selectedButtonId: includeSelection ? (this.travelCommandMoving ? 'move' : this.getSelectedTravelCommandId()) : undefined,
+      selectedButtonId: includeSelection && !this.travelCommandMoving ? this.getSelectedTravelCommandId() : undefined,
       leftButtons: enter
         ? [commandButton(enter.id, enter.label, enter.action, { key: enter.key, tone: 'green', detail: enter.targetName ? `Enter ${enter.targetName}` : 'Enter navigable contact' })]
         : [],
@@ -4292,7 +4305,7 @@ export class Game {
       context: 'planetary',
       targetName: this.getCommandStripTargetName(),
       primaryButtonId: primaryTravel?.id,
-      selectedButtonId: includeSelection ? (this.travelCommandMoving ? 'move' : this.getSelectedTravelCommandId()) : undefined,
+      selectedButtonId: includeSelection && !this.travelCommandMoving ? this.getSelectedTravelCommandId() : undefined,
       leftButtons: primaryTravel
         ? [commandButton(primaryTravel.id, primaryTravel.label, primaryTravel.action, { key: primaryTravel.key, tone: 'green', detail: primaryTravel.targetName ? `${primaryTravel.label} ${primaryTravel.targetName}` : primaryTravel.label })]
         : [],
@@ -4326,6 +4339,7 @@ export class Game {
       context: 'terrain',
       targetName: this.stateManager.currentPlanet?.name,
       primaryButtonId: this.isAtParkedShip() ? 'embark' : undefined,
+      selectedButtonId: rover.moving ? undefined : this.getSurfaceVehicleMenuItems()[this.roverMenuSelection]?.id,
       leftButtons: this.isAtParkedShip()
         ? [commandButton('embark', 'Embark', 'ROVER_EMBARK', { tone: 'green', detail: 'Board the parked ship.' })]
         : [],

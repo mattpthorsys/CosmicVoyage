@@ -89,15 +89,42 @@ describe('travel command menu', () => {
 
     expect(game._handleTravelCommandInput()).toBe(true);
     expect(game.travelCommandMoving).toBe(false);
-    expect(game.getSelectedTravelCommandId()).toBe('move');
-
-    game.inputManager.wasActionJustPressed = (action: string) => action === 'MOVE_LEFT';
-    expect(game._handleTravelCommandInput()).toBe(true);
     expect(game.getSelectedTravelCommandId()).toBe('enter-system');
 
     game.inputManager.wasActionJustPressed = (action: string) => action === 'PRIMARY_ACTION';
     expect(game._handleTravelCommandInput()).toBe(true);
     expect(game.executeCommandBarAction).toHaveBeenCalledWith('ENTER_SYSTEM');
+  });
+
+  it('does not highlight a travel command while movement is engaged', () => {
+    const game = createTravelHarness('hyperspace', 'NONE');
+    game.getCurrentAvailableActions = () => [{ id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true }];
+
+    const moving = game.createHyperspaceCommandBar(game.getCurrentAvailableActions());
+    expect(moving.selectedButtonId).toBeUndefined();
+
+    game.travelCommandMoving = false;
+    game.travelCommandSelection = 0;
+    const selecting = game.createHyperspaceCommandBar(game.getCurrentAvailableActions());
+    expect(selecting.selectedButtonId).toBe('enter-system');
+  });
+
+  it('does not highlight a surface command while the rover is moving', () => {
+    const game = Object.assign(createTravelHarness('system', 'NONE'), {
+      stateManager: { state: 'planet', currentPlanet: { name: 'Dust' } },
+      cargoSystem: { getTotalUnits: () => 0 },
+      roverMenuSelection: 0,
+      isAtParkedShip: () => false,
+    });
+    game.player.terrainVehicle.deployed = true;
+    game.player.terrainVehicle.moving = true;
+
+    const moving = game.createSurfaceCommandBar();
+    expect(moving.selectedButtonId).toBeUndefined();
+
+    game.player.terrainVehicle.moving = false;
+    const selecting = game.createSurfaceCommandBar();
+    expect(selecting.selectedButtonId).toBe('map');
   });
 
   it('opens the target menu from the planetary command bar action', () => {

@@ -86,7 +86,7 @@ export class CommandStripUpdater {
     const enabled = button.enabled !== false;
     el.type = 'button';
     el.disabled = !enabled;
-    el.textContent = `${selected ? '> ' : ''}${button.key ? `[${this.formatKey(button.key)}] ` : ''}${button.label}${primary ? ' *' : ''}`;
+    el.textContent = `${button.key ? `[${this.formatKey(button.key)}] ` : ''}${button.label}${primary ? ' *' : ''}`;
     el.title = button.detail ?? button.label;
     el.style.fontFamily = CONFIG.FONT_FAMILY;
     el.style.fontSize = 'inherit';
@@ -101,7 +101,7 @@ export class CommandStripUpdater {
     el.style.letterSpacing = '0';
     el.style.whiteSpace = 'nowrap';
     el.style.boxShadow = selected && enabled ? '0 0 10px rgba(140, 255, 255, 0.35)' : primary && enabled ? '0 0 8px rgba(0, 255, 160, 0.35)' : 'none';
-    if (button.tone === 'green' && enabled) {
+    if (button.tone === 'green' && enabled && !selected) {
       el.classList.add('cosmic-command-button-green');
     }
     el.addEventListener('click', () => {
@@ -125,16 +125,16 @@ export class CommandStripUpdater {
   }
 
   private getBackgroundColour(button: CommandBarButton, primary: boolean, selected: boolean): string {
-    if (selected) return '#00C8AA';
+    if (selected) return button.tone === 'green' ? '#00C878' : '#9FFFE0';
     switch (button.tone) {
       case 'green':
-        return primary ? '#00C878' : '#003820';
+        return '#001010';
       case 'red':
         return '#240808';
       case 'muted':
         return '#001818';
       default:
-        return primary ? '#005A50' : '#001010';
+        return '#001010';
     }
   }
 
@@ -142,7 +142,7 @@ export class CommandStripUpdater {
     if (selected) return '#001010';
     switch (button.tone) {
       case 'green':
-        return primary ? '#001010' : '#7CFFD0';
+        return '#7CFFD0';
       case 'red':
         return '#FF8A7A';
       case 'muted':
@@ -166,8 +166,8 @@ export class CommandStripUpdater {
     style.id = 'cosmic-command-bar-styles';
     style.textContent = `
       @keyframes cosmic-command-green-flash {
-        0%, 44% { color: #001010; text-shadow: 0 0 3px rgba(180, 255, 230, 0.45); }
-        55%, 100% { color: #E8FFF8; text-shadow: 0 0 7px rgba(110, 255, 210, 0.75); }
+        0%, 44% { color: #48C8A8; text-shadow: 0 0 3px rgba(72, 200, 168, 0.35); }
+        55%, 100% { color: #A8FFE8; text-shadow: 0 0 7px rgba(110, 255, 210, 0.75); }
       }
       .cosmic-command-button-green {
         animation: cosmic-command-green-flash 1.55s steps(2, end) infinite;

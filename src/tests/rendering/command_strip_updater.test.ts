@@ -20,8 +20,10 @@ describe('CommandStripUpdater command bar', () => {
     });
 
     const buttons = [...element.querySelectorAll('button')];
-    expect(buttons.map((button) => button.textContent)).toEqual(['[ENTER] Enter System *', '> [S] Scan', 'Alert']);
+    expect(buttons.map((button) => button.textContent)).toEqual(['[ENTER] Enter System *', '[S] Scan', 'Alert']);
     expect(buttons[0].style.backgroundColor).not.toBe('');
+    expect(buttons[1].style.backgroundColor).toBe('#9FFFE0');
+    expect(buttons[1].style.color).toBe('#001010');
     expect(buttons[0].classList.contains('cosmic-command-button-green')).toBe(true);
     expect(document.getElementById('cosmic-command-bar-styles')?.textContent).toContain('cosmic-command-green-flash');
 
