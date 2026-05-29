@@ -1056,10 +1056,9 @@ export class SceneRenderer {
         const colour = solidMap && solidColours
           ? this.sampleSolidPlanetTexture(solidMap, solidColours, textureX, textureY)
           : this.sampleGiantPlanetTexture(planet, textureX, textureY, lon, lat, phase);
-        const light = Math.max(0.08, Math.min(1, 0.22 + 0.78 * (Math.cos(lon - phase * 0.6) * z)));
-        const limbShade = Math.max(0.45, 0.78 + z * 0.22);
-        const finalColour = adjustBrightness(this.hexToRgbFallback(colour), (0.32 + light * 0.82) * limbShade);
-        const char = light < 0.22 ? GLYPHS.SHADE_DARK : light < 0.48 ? GLYPHS.SHADE_MEDIUM : light < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
+        const light = this.calculateGlobeLighting(planet, lon, lat, z);
+        const finalColour = adjustBrightness(this.hexToRgbFallback(colour), light.brightness);
+        const char = light.glyph < 0.22 ? GLYPHS.SHADE_DARK : light.glyph < 0.48 ? GLYPHS.SHADE_MEDIUM : light.glyph < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
         this.screenBuffer.drawScaledChar(
           char,
           cx + dx * detailScale,
@@ -1071,6 +1070,46 @@ export class SceneRenderer {
         );
       }
     }
+  }
+
+  private calculateGlobeLighting(planet: Planet, longitude: number, latitude: number, viewNormalZ: number): { brightness: number; glyph: number } {
+    const subsolarLongitude = -0.55;
+    const subsolarLatitude = 0.12;
+    const incidence =
+      Math.sin(latitude) * Math.sin(subsolarLatitude) +
+      Math.cos(latitude) * Math.cos(subsolarLatitude) * Math.cos(longitude - subsolarLongitude);
+    const mu0 = Math.max(0, incidence);
+    const terminator = Math.max(0, Math.min(1, mu0 / 0.14));
+    const dayMask = terminator * terminator * (3 - 2 * terminator);
+    const nightMask = 1 - dayMask;
+    const mu = Math.max(0.03, viewNormalZ);
+    const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
+    const atmosphere = planet.atmosphere;
+    const pressure = atmosphere?.pressure ?? 0;
+    const density = atmosphere?.density ?? 'None';
+    const hasDenseAir = pressure >= 0.75 || density === 'Dense' || density === 'Thick' || density === 'Superdense';
+    const isAirlessRegolith = planet.type === 'Lunar' || planet.type === 'DwarfIce' || planet.type === 'Chthonian' || density === 'None' || density === 'Trace';
+
+    if (isGiant) {
+      const day = Math.pow(mu0, 0.62);
+      const limb = 0.55 + 0.45 * Math.pow(mu, 0.7);
+      const twilight = (1 - nightMask) * 0.05 * (1 - mu);
+      const brightness = Math.max(0.09, Math.min(1.18, 0.09 + day * limb * 1.02 + twilight));
+      return { brightness, glyph: Math.max(0.04, Math.min(1, day * (0.72 + 0.28 * mu))) };
+    }
+
+    if (isAirlessRegolith) {
+      const litFace = dayMask * (0.88 + 0.12 * Math.pow(mu, 0.35));
+      const brightness = Math.max(0.06, Math.min(1.08, 0.06 + litFace * 1.02));
+      return { brightness, glyph: Math.max(0.03, Math.min(1, litFace)) };
+    }
+
+    const atmosphereStrength = hasDenseAir ? 1 : 0.45;
+    const day = Math.pow(mu0, hasDenseAir ? 0.52 : 0.78);
+    const limb = hasDenseAir ? 0.78 + 0.22 * mu : 0.66 + 0.34 * mu;
+    const haze = dayMask * (1 - mu) * 0.08 * atmosphereStrength + nightMask * 0.025 * atmosphereStrength * (1 - mu);
+    const brightness = Math.max(0.07, Math.min(1.16, 0.07 + day * limb * 0.99 + haze));
+    return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu) + haze)) };
   }
 
   private sampleSolidPlanetTexture(heightmap: number[][], heightColours: string[], u: number, v: number): string {

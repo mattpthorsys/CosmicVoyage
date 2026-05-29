@@ -535,8 +535,8 @@ export class ScreenBuffer {
       if (charToDraw === ' ') continue;
       this.ctx.save();
       this.ctx.translate(px, py);
-      this.ctx.scale(glyph.scaleX, 1);
       this.ctx.font = `${this.charHeightPx * glyph.scaleY}px ${CONFIG.FONT_FAMILY}`;
+      this.ctx.scale(glyph.scaleX / glyph.scaleY, 1);
       this.ctx.fillStyle = glyph.fg || this.defaultFgColor;
       this.ctx.fillText(charToDraw, 0, 0);
       this.ctx.restore();

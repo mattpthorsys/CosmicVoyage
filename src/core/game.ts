@@ -4507,7 +4507,7 @@ export class Game {
       mode: this.orbitMode,
       landingCursorX: this.orbitLandingX,
       landingCursorY: this.orbitLandingY,
-      rotationPhase: this.orbitElapsedSeconds * 0.18,
+      rotationPhase: this.orbitElapsedSeconds * 0.06,
       alert: this.orbitAlert || this.statusMessage,
     });
   }

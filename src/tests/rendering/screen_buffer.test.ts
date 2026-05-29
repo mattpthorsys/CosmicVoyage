@@ -92,7 +92,7 @@ describe('ScreenBuffer rendering', () => {
 
     expect(ctx.fillRect).toHaveBeenCalledWith(4, 0, 4, 4);
     expect(ctx.translate).toHaveBeenCalledWith(4, 0);
-    expect(ctx.scale).toHaveBeenCalledWith(0.5, 1);
+    expect(ctx.scale).toHaveBeenCalledWith(1, 1);
     expect(ctx.fillText).toHaveBeenCalledWith('@', 0, 0);
   });
 });
