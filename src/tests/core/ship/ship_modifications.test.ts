@@ -4,6 +4,7 @@ import {
   createShipyardUpgradeOptions,
   getAvailableCargoPodBays,
   getShipCargoCapacity,
+  getShipDerivedStats,
   installShipyardUpgrade,
 } from '../../../core/ship_modifications';
 
@@ -24,6 +25,19 @@ describe('ship modifications', () => {
     expect(ship.missileCount).toBe(5);
     expect(ship.shieldClass).toBe(0);
     expect(ship.laserClass).toBe(0);
+    expect(getShipDerivedStats(ship)).toMatchObject({
+      cargoCapacity: 100,
+      emptyCargoBays: 12,
+      shieldRating: 0,
+      laserRating: 0,
+      missileCapacity: 10,
+      missileLoadPercent: 50,
+      probeCapacity: 3,
+      emptyProbeBays: 3,
+      specialBayCapacity: 4,
+      emptySpecialPurposeBays: 4,
+      landingBayCapacity: 1,
+    });
   });
 
   it('installs cargo pods, shields, lasers, and missiles within superstructure limits', () => {
@@ -39,6 +53,12 @@ describe('ship modifications', () => {
     expect(ship.laserClass).toBe(2);
     expect(installShipyardUpgrade(ship, 'shipyard:missile')).toContain('Loaded nuclear missile');
     expect(ship.missileCount).toBe(6);
+
+    const stats = getShipDerivedStats(ship);
+    expect(stats.cargoCapacity).toBe(125);
+    expect(stats.shieldRating).toBeGreaterThan(0);
+    expect(stats.laserRating).toBeGreaterThan(0);
+    expect(stats.driveEfficiencyPercent).toBeGreaterThanOrEqual(65);
   });
 
   it('marks unavailable shipyard upgrades disabled', () => {

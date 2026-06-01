@@ -25,6 +25,22 @@ export interface ShipModificationState {
   specialBaysOccupied: number;
 }
 
+export interface ShipDerivedStats {
+  cargoCapacity: number;
+  emptyCargoBays: number;
+  shieldRating: number;
+  laserRating: number;
+  missileCapacity: number;
+  missileLoadPercent: number;
+  probeCapacity: number;
+  emptyProbeBays: number;
+  specialBayCapacity: number;
+  emptySpecialPurposeBays: number;
+  landingBayCapacity: number;
+  driveEfficiencyPercent: number;
+  fittedLoadPercent: number;
+}
+
 export interface ShipyardUpgradeOption {
   id: string;
   label: string;
@@ -73,6 +89,47 @@ export function getShipCargoCapacity(ship: ShipModificationState): number {
 
 export function getAvailableCargoPodBays(ship: ShipModificationState): number {
   return Math.max(0, ship.superstructure.cargoBays - ship.cargoPodsInstalled);
+}
+
+export function getShipDerivedStats(ship: ShipModificationState): ShipDerivedStats {
+  const superstructure = ship.superstructure;
+  const occupiedMounts =
+    Math.min(superstructure.engineMounts, ship.engineClass > 0 ? 1 : 0) +
+    Math.min(superstructure.shieldMounts, ship.shieldClass > 0 ? 1 : 0) +
+    Math.min(superstructure.laserMounts, ship.laserClass > 0 ? 1 : 0) +
+    Math.min(superstructure.missileBayMounts, ship.missileCapacity > 0 ? 1 : 0) +
+    Math.min(superstructure.specialPurposeBays, ship.specialBaysOccupied) +
+    Math.min(superstructure.probeBays, ship.probeBaysOccupied) +
+    Math.min(superstructure.cargoBays, ship.cargoPodsInstalled);
+  const totalMounts =
+    superstructure.engineMounts +
+    superstructure.shieldMounts +
+    superstructure.laserMounts +
+    superstructure.missileBayMounts +
+    superstructure.specialPurposeBays +
+    superstructure.probeBays +
+    superstructure.cargoBays;
+  const fittedLoadPercent = totalMounts > 0 ? Math.round((occupiedMounts / totalMounts) * 100) : 0;
+  const shieldRating = ship.shieldClass > 0 ? ship.shieldClass * ship.shieldClass * 12 : 0;
+  const laserRating = ship.laserClass > 0 ? ship.laserClass * ship.laserClass * 10 : 0;
+  const payloadDrag = Math.round(fittedLoadPercent * 0.18);
+  const engineBonus = Math.max(0, ship.engineClass - 1) * 8;
+
+  return {
+    cargoCapacity: getShipCargoCapacity(ship),
+    emptyCargoBays: getAvailableCargoPodBays(ship),
+    shieldRating,
+    laserRating,
+    missileCapacity: ship.missileCapacity,
+    missileLoadPercent: ship.missileCapacity > 0 ? Math.round((ship.missileCount / ship.missileCapacity) * 100) : 0,
+    probeCapacity: superstructure.probeBays,
+    emptyProbeBays: Math.max(0, superstructure.probeBays - ship.probeBaysOccupied),
+    specialBayCapacity: superstructure.specialPurposeBays,
+    emptySpecialPurposeBays: Math.max(0, superstructure.specialPurposeBays - ship.specialBaysOccupied),
+    landingBayCapacity: superstructure.landingBays,
+    driveEfficiencyPercent: Math.max(65, Math.min(125, 100 + engineBonus - payloadDrag)),
+    fittedLoadPercent,
+  };
 }
 
 export function createShipyardUpgradeOptions(ship: ShipModificationState): ShipyardUpgradeOption[] {

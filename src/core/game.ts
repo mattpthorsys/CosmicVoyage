@@ -69,10 +69,12 @@ import {
 } from './crew';
 import { createShipDeckRows, createShipStationRows, getShipCompartment } from './ship_place';
 import {
+  CARGO_POD_COST,
   createShipyardUpgradeOptions,
-  getAvailableCargoPodBays,
   getShipCargoCapacity,
+  getShipDerivedStats,
   installShipyardUpgrade,
+  NUCLEAR_MISSILE_COST,
 } from './ship_modifications';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
@@ -3590,14 +3592,17 @@ export class Game {
     const stateLabel = this.stateManager.state === 'planet' ? `Surface: ${this.stateManager.currentPlanet?.name ?? 'unknown'}` : this.stateManager.state;
     const fuel = Math.round(this.player.resources.fuel);
     const ship = this.player.ship;
+    const stats = getShipDerivedStats(ship);
     return [
       { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
       { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
       { id: 'cargo', cells: ['Cargo hold', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
-      { id: 'superstructure', cells: ['Superstructure', ship.superstructure.name, 'Fixed', `${ship.superstructure.engineMounts} engine  ${ship.superstructure.specialPurposeBays} special  ${ship.superstructure.probeBays} probe  ${ship.superstructure.cargoBays} cargo bays`], disabled: true },
-      { id: 'cargo-pods', cells: ['Cargo pods', `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays}`, `${getAvailableCargoPodBays(ship)} empty`, `${ship.cargoPodCapacity} m^3 each; capacity ${getShipCargoCapacity(ship)} m^3`], disabled: true },
-      { id: 'weapons', cells: ['Weapons', `Laser C${ship.laserClass || '-'}`, ship.laserClass > 0 ? 'Online' : 'None', `Missiles ${ship.missileCount}/${ship.missileCapacity} nuclear`], disabled: true },
-      { id: 'shields', cells: ['Shields', ship.shieldClass > 0 ? `Class ${ship.shieldClass}` : 'None', ship.shieldClass > 0 ? 'Online' : 'Unfitted', ship.shieldClass > 0 ? 'Generator fitted in shield mount.' : 'No shield generator installed.'], disabled: true },
+      { id: 'superstructure', cells: ['Superstructure', ship.superstructure.name, `${stats.fittedLoadPercent}% fitted`, `${ship.superstructure.engineMounts} engine  ${ship.superstructure.specialPurposeBays} special  ${ship.superstructure.probeBays} probe  ${ship.superstructure.cargoBays} cargo bays`], disabled: true },
+      { id: 'drive', cells: ['Drive plant', `Class ${ship.engineClass}`, `${stats.driveEfficiencyPercent}% eff.`, 'Efficiency reflects fitted load and installed engine class.'], disabled: true },
+      { id: 'cargo-pods', cells: ['Cargo pods', `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays}`, `${stats.emptyCargoBays} empty`, `${ship.cargoPodCapacity} m^3 each; capacity ${stats.cargoCapacity} m^3`], disabled: true },
+      { id: 'weapons', cells: ['Weapons', `Laser C${ship.laserClass || '-'}`, ship.laserClass > 0 ? `Output ${stats.laserRating}` : 'None', `Missiles ${ship.missileCount}/${stats.missileCapacity} nuclear (${stats.missileLoadPercent}%)`], disabled: true },
+      { id: 'shields', cells: ['Shields', ship.shieldClass > 0 ? `Class ${ship.shieldClass}` : 'None', ship.shieldClass > 0 ? `Rating ${stats.shieldRating}` : 'Unfitted', ship.shieldClass > 0 ? 'Generator fitted in shield mount.' : 'No shield generator installed.'], disabled: true },
+      { id: 'bays', cells: ['Utility bays', `${stats.emptySpecialPurposeBays}/${stats.specialBayCapacity} special`, `${stats.emptyProbeBays}/${stats.probeCapacity} probe`, `Landing bays ${stats.landingBayCapacity}; terrain vehicle ${this.player.terrainVehicle.available ? 'secured' : 'missing'}`], disabled: true },
       { id: 'credits', cells: ['Credit account', `${this.player.resources.credits.toLocaleString()} Cr`, 'Liquid', 'Station-authorised spend balance.'], disabled: true },
       { id: 'crew', cells: ['Crew company', `${this.player.crew.length} aboard`, this.getCrewHealthLabel(), `Training points ${this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0)} available.`], disabled: true },
       { id: 'navigation', cells: ['Navigation', `Nav ${getBestCrewSkill(this.player.crew, 'navigation')}`, 'Crewed', `Pilot ${getBestCrewSkill(this.player.crew, 'piloting')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}`], disabled: true },
@@ -4785,7 +4790,7 @@ export class Game {
       case 'missions':
         return { title: 'Mission Board', subtitle: 'Local contracts authorised by station offices.', columns: ['CONTRACT', 'PAY', 'RISK', 'STATUS', 'SUMMARY'], widths: [22, 9, 7, 10, 32] };
       case 'shipyard':
-        return { title: 'Shipyard', subtitle: 'Refit estimates and upgrade placeholders.', columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'], widths: [18, 10, 8, 42] };
+        return { title: 'Shipyard', subtitle: 'Superstructure slots, installed modules, and refit orders.', columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'], widths: [22, 10, 8, 48] };
       case 'crew':
         return { title: 'Crew Roster', subtitle: 'Recruitment, personnel records, and starbase training.', columns: ['NAME', 'ROLE', 'COST/PTS', 'PROFILE'], widths: [20, 16, 9, 39] };
     }
@@ -4848,14 +4853,15 @@ export class Game {
         });
       case 'shipyard':
         return [
-          { id: 'terrain-vehicle', cells: ['Terrain vehicle', `${CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST.toLocaleString()} Cr`, 'Now', this.player.terrainVehicle.available ? 'Replacement bay occupied.' : 'Purchase replacement rover and surface kit.'], detail: 'Replacement includes fuel cell, cargo bay, scanner mast, and recovery transponder.', disabled: this.player.terrainVehicle.available },
+          ...this.getShipyardRefitRows(),
+          { id: 'terrain-vehicle', cells: ['Landing bay rover', `${CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST.toLocaleString()} Cr`, 'Now', this.player.terrainVehicle.available ? 'Vehicle bay occupied.' : 'Purchase replacement rover and surface kit.'], detail: 'Replacement includes fuel cell, cargo bay, scanner mast, and recovery transponder.', disabled: this.player.terrainVehicle.available },
           ...createShipyardUpgradeOptions(this.player.ship).map((option) => ({
             id: option.id,
             cells: [option.label, `${option.cost.toLocaleString()} Cr`, option.eta, option.workOrder],
             detail: option.detail,
             disabled: option.disabled,
           })),
-          { id: 's1', cells: ['Superstructure', 'TBD', '--', `${this.player.ship.superstructure.name} refit path reserved.`], detail: 'Stub: future superstructure replacement and expansion refits.', disabled: true },
+          { id: 's1', cells: ['Superstructure refit', 'TBD', '--', `${this.player.ship.superstructure.name} replacement path reserved.`], detail: 'Stub: future superstructure replacement and expansion refits. No frame swap is available yet.', disabled: true },
           { id: 's2', cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'], detail: 'Stub: scanner upgrade path.', disabled: true },
         ];
       case 'crew':
@@ -4865,6 +4871,69 @@ export class Game {
 
   private getCargoRows(): StarbaseTableRow[] {
     return this.getCargoRowsForHold(this.player.cargoHold.items, 'ship');
+  }
+
+  private getShipyardRefitRows(): StarbaseTableRow[] {
+    const ship = this.player.ship;
+    const stats = getShipDerivedStats(ship);
+    const shieldState = ship.shieldClass > 0 ? `Class ${ship.shieldClass}; rating ${stats.shieldRating}` : 'Empty shield mount; classes 1-5 available.';
+    const laserState = ship.laserClass > 0 ? `Class ${ship.laserClass}; output ${stats.laserRating}` : 'Empty laser hardpoint; classes 1-5 available.';
+    return [
+      {
+        id: 'refit:frame',
+        cells: ['Frame survey', '--', '--', `${ship.superstructure.name}; fitted load ${stats.fittedLoadPercent}%`],
+        detail: `${ship.superstructure.engineMounts} engine, ${ship.superstructure.shieldMounts} shield, ${ship.superstructure.laserMounts} laser, ${ship.superstructure.missileBayMounts} missile, ${ship.superstructure.specialPurposeBays} special, ${ship.superstructure.probeBays} probe, ${ship.superstructure.cargoBays} cargo bays.`,
+        disabled: true,
+      },
+      {
+        id: 'refit:engine',
+        cells: ['Engine mount', '--', '--', `Class ${ship.engineClass}; drive efficiency ${stats.driveEfficiencyPercent}%`],
+        detail: 'Primary drive is fitted. Future engine refits can use this slot without changing the superstructure.',
+        disabled: true,
+      },
+      {
+        id: 'refit:shield',
+        cells: ['Shield mount', 'See below', '--', shieldState],
+        detail: 'One shield generator mount. Installed classes supersede lower class generators.',
+        disabled: true,
+      },
+      {
+        id: 'refit:laser',
+        cells: ['Laser hardpoint', 'See below', '--', laserState],
+        detail: 'One ship laser hardpoint. Installed classes supersede lower class emitters.',
+        disabled: true,
+      },
+      {
+        id: 'refit:missiles',
+        cells: ['Missile bay', `${NUCLEAR_MISSILE_COST.toLocaleString()} Cr`, 'Now', `${ship.missileCount}/${stats.missileCapacity} nuclear missiles loaded (${stats.missileLoadPercent}%)`],
+        detail: 'Existing missile bay magazine accepts nuclear-tipped missiles. Enter the missile row below to load one.',
+        disabled: true,
+      },
+      {
+        id: 'refit:cargo',
+        cells: ['Cargo bays', `${CARGO_POD_COST.toLocaleString()} Cr`, '2h', `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays} pods; ${stats.cargoCapacity} m^3 capacity`],
+        detail: `${stats.emptyCargoBays} empty cargo bays remain. Each modular cargo pod adds ${ship.cargoPodCapacity} m^3.`,
+        disabled: true,
+      },
+      {
+        id: 'refit:special',
+        cells: ['Special purpose bays', 'TBD', '--', `${ship.specialBaysOccupied}/${stats.specialBayCapacity} occupied; ${stats.emptySpecialPurposeBays} reserved`],
+        detail: 'Future mission labs, repair workshops, medical systems, signal analyzers, or processors can live here.',
+        disabled: true,
+      },
+      {
+        id: 'refit:probe',
+        cells: ['Probe bays', 'TBD', '--', `${ship.probeBaysOccupied}/${stats.probeCapacity} occupied; ${stats.emptyProbeBays} empty`],
+        detail: 'Probe bay control exists, but probe construction and launch orders are not online yet.',
+        disabled: true,
+      },
+      {
+        id: 'refit:landing',
+        cells: ['Landing bay', '--', '--', `${stats.landingBayCapacity} bay; ${this.player.terrainVehicle.available ? 'terrain vehicle secured' : 'vehicle missing'}`],
+        detail: 'Landing bay supports the surface vehicle and transfer lock for planetside operations.',
+        disabled: true,
+      },
+    ];
   }
 
   private getCargoRowsForHold(items: Record<string, number>, source: 'ship' | 'rover'): StarbaseTableRow[] {

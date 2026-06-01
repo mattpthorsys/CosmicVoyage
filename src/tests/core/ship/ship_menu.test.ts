@@ -134,10 +134,28 @@ describe('ship menu', () => {
     const status = game.createShipMenuModel();
     expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
+    expect(status.rows.find((row: any) => row.id === 'drive')?.cells[2]).toContain('% eff.');
     expect(status.rows.find((row: any) => row.id === 'superstructure')?.cells[3]).toContain('16 cargo bays');
     expect(status.rows.find((row: any) => row.id === 'weapons')?.cells[3]).toContain('Missiles 5/10');
     expect(status.rows.find((row: any) => row.id === 'shields')?.cells[1]).toBe('None');
+    expect(status.rows.find((row: any) => row.id === 'bays')?.cells[3]).toContain('Landing bays 1');
     expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+  });
+
+  it('formats the starbase shipyard as a refit screen with superstructure slots and orders', () => {
+    const game = createShipMenuHarness('starbase');
+    const starbase = new Starbase('Quiet Dock', new PRNG('shipyard-screen'), 'Regression');
+    game.stateManager.currentStarbase = starbase;
+    game.starbaseSectionId = 'shipyard';
+
+    const model = game.createCurrentStarbaseScreen();
+    expect(model.subtitle).toContain('Superstructure slots');
+    expect(model.columns).toEqual(['BAY', 'QUOTE', 'ETA', 'WORK ORDER']);
+    expect(model.rows.find((row: any) => row.id === 'refit:frame')?.cells[3]).toContain('fitted load');
+    expect(model.rows.find((row: any) => row.id === 'refit:cargo')?.cells[3]).toContain('100 m^3 capacity');
+    expect(model.rows.find((row: any) => row.id === 'refit:special')?.detail).toContain('Future mission labs');
+    expect(model.rows.some((row: any) => row.id === 'shipyard:cargo-pod')).toBe(true);
+    expect(model.rows.some((row: any) => row.id === 'shipyard:shield:1')).toBe(true);
   });
 
   it('keeps root ship and starbase summaries beneath two-column selectors', () => {
