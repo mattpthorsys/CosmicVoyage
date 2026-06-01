@@ -71,8 +71,11 @@ import { createShipDeckRows, createShipStationRows, getShipCompartment } from '.
 import {
   CARGO_POD_COST,
   createShipyardUpgradeOptions,
+  getShipDamageSummary,
   getShipCargoCapacity,
   getShipDerivedStats,
+  getShipRepairCost,
+  getStarbaseShipyardProfile,
   installShipyardUpgrade,
   NUCLEAR_MISSILE_COST,
 } from './ship_modifications';
@@ -3596,6 +3599,7 @@ export class Game {
     return [
       { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
       { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
+      { id: 'damage', cells: ['Damage control', `${stats.hullIntegrityPercent}% hull`, stats.damagedSubsystemCount > 0 ? `${stats.damagedSubsystemCount} damaged` : 'Nominal', getShipDamageSummary(ship)], disabled: true },
       { id: 'cargo', cells: ['Cargo hold', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
       { id: 'superstructure', cells: ['Superstructure', ship.superstructure.name, `${stats.fittedLoadPercent}% fitted`, `${ship.superstructure.engineMounts} engine  ${ship.superstructure.specialPurposeBays} special  ${ship.superstructure.probeBays} probe  ${ship.superstructure.cargoBays} cargo bays`], disabled: true },
       { id: 'drive', cells: ['Drive plant', `Class ${ship.engineClass}`, `${stats.driveEfficiencyPercent}% eff.`, 'Efficiency reflects fitted load and installed engine class.'], disabled: true },
@@ -4644,7 +4648,9 @@ export class Game {
   }
 
   private purchaseShipyardUpgrade(optionId: string): void {
-    const option = createShipyardUpgradeOptions(this.player.ship).find((candidate) => candidate.id === optionId);
+    const starbaseName = this.stateManager.currentStarbase?.name ?? 'default shipyard';
+    const profile = getStarbaseShipyardProfile(starbaseName);
+    const option = createShipyardUpgradeOptions(this.player.ship, profile).find((candidate) => candidate.id === optionId);
     if (!option) {
       this.starbaseAlert = 'Shipyard order unavailable.';
       this.statusMessage = this.starbaseAlert;
@@ -4852,10 +4858,11 @@ export class Game {
           };
         });
       case 'shipyard':
+        const profile = getStarbaseShipyardProfile(starbase.name);
         return [
-          ...this.getShipyardRefitRows(),
+          ...this.getShipyardRefitRows(starbase),
           { id: 'terrain-vehicle', cells: ['Landing bay rover', `${CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST.toLocaleString()} Cr`, 'Now', this.player.terrainVehicle.available ? 'Vehicle bay occupied.' : 'Purchase replacement rover and surface kit.'], detail: 'Replacement includes fuel cell, cargo bay, scanner mast, and recovery transponder.', disabled: this.player.terrainVehicle.available },
-          ...createShipyardUpgradeOptions(this.player.ship).map((option) => ({
+          ...createShipyardUpgradeOptions(this.player.ship, profile).map((option) => ({
             id: option.id,
             cells: [option.label, `${option.cost.toLocaleString()} Cr`, option.eta, option.workOrder],
             detail: option.detail,
@@ -4873,12 +4880,20 @@ export class Game {
     return this.getCargoRowsForHold(this.player.cargoHold.items, 'ship');
   }
 
-  private getShipyardRefitRows(): StarbaseTableRow[] {
+  private getShipyardRefitRows(starbase: Starbase): StarbaseTableRow[] {
     const ship = this.player.ship;
     const stats = getShipDerivedStats(ship);
+    const profile = getStarbaseShipyardProfile(starbase.name);
+    const repairCost = getShipRepairCost(ship);
     const shieldState = ship.shieldClass > 0 ? `Class ${ship.shieldClass}; rating ${stats.shieldRating}` : 'Empty shield mount; classes 1-5 available.';
     const laserState = ship.laserClass > 0 ? `Class ${ship.laserClass}; output ${stats.laserRating}` : 'Empty laser hardpoint; classes 1-5 available.';
     return [
+      {
+        id: 'refit:yard',
+        cells: ['Yard profile', '--', '--', `${profile.label}; shields C${profile.maxShieldClass}, lasers C${profile.maxLaserClass}, repairs ${profile.repairQuality}`],
+        detail: `Station availability is local: missiles ${profile.sellsMissiles ? 'stocked' : 'not stocked'}, cargo pods ${profile.sellsCargoPods ? 'stocked' : 'not stocked'}.`,
+        disabled: true,
+      },
       {
         id: 'refit:frame',
         cells: ['Frame survey', '--', '--', `${ship.superstructure.name}; fitted load ${stats.fittedLoadPercent}%`],
@@ -4889,6 +4904,12 @@ export class Game {
         id: 'refit:engine',
         cells: ['Engine mount', '--', '--', `Class ${ship.engineClass}; drive efficiency ${stats.driveEfficiencyPercent}%`],
         detail: 'Primary drive is fitted. Future engine refits can use this slot without changing the superstructure.',
+        disabled: true,
+      },
+      {
+        id: 'refit:damage',
+        cells: ['Damage control', repairCost > 0 ? `${repairCost.toLocaleString()} Cr` : '--', repairCost > 0 ? 'Work' : '--', getShipDamageSummary(ship)],
+        detail: repairCost > 0 ? 'Enter the damage repair order below to restore hull and damaged subsystems.' : 'Hull and fitted modules are reading nominal.',
         disabled: true,
       },
       {

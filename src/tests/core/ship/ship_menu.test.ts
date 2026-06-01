@@ -134,6 +134,7 @@ describe('ship menu', () => {
     const status = game.createShipMenuModel();
     expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
+    expect(status.rows.find((row: any) => row.id === 'damage')?.cells[1]).toContain('% hull');
     expect(status.rows.find((row: any) => row.id === 'drive')?.cells[2]).toContain('% eff.');
     expect(status.rows.find((row: any) => row.id === 'superstructure')?.cells[3]).toContain('16 cargo bays');
     expect(status.rows.find((row: any) => row.id === 'weapons')?.cells[3]).toContain('Missiles 5/10');
@@ -151,9 +152,12 @@ describe('ship menu', () => {
     const model = game.createCurrentStarbaseScreen();
     expect(model.subtitle).toContain('Superstructure slots');
     expect(model.columns).toEqual(['BAY', 'QUOTE', 'ETA', 'WORK ORDER']);
+    expect(model.rows.find((row: any) => row.id === 'refit:yard')?.cells[3]).toContain('repairs');
     expect(model.rows.find((row: any) => row.id === 'refit:frame')?.cells[3]).toContain('fitted load');
+    expect(model.rows.find((row: any) => row.id === 'refit:damage')?.cells[3]).toContain('hull');
     expect(model.rows.find((row: any) => row.id === 'refit:cargo')?.cells[3]).toContain('100 m^3 capacity');
     expect(model.rows.find((row: any) => row.id === 'refit:special')?.detail).toContain('Future mission labs');
+    expect(model.rows.some((row: any) => row.id === 'shipyard:repair')).toBe(true);
     expect(model.rows.some((row: any) => row.id === 'shipyard:cargo-pod')).toBe(true);
     expect(model.rows.some((row: any) => row.id === 'shipyard:shield:1')).toBe(true);
   });

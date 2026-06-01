@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyShipDamage,
   createDefaultShipModifications,
   createShipyardUpgradeOptions,
   getAvailableCargoPodBays,
+  getShipDamageSummary,
   getShipCargoCapacity,
   getShipDerivedStats,
+  getShipRepairCost,
+  getStarbaseShipyardProfile,
   installShipyardUpgrade,
 } from '../../../core/ship_modifications';
 
@@ -72,5 +76,33 @@ describe('ship modifications', () => {
     expect(options.find((option) => option.id === 'shipyard:cargo-pod')?.disabled).toBe(true);
     expect(options.find((option) => option.id === 'shipyard:shield:1')?.disabled).toBe(true);
     expect(options.find((option) => option.id === 'shipyard:shield:3')?.disabled).toBe(false);
+  });
+
+  it('derives deterministic starbase shipyard availability from station identity', () => {
+    const ship = createDefaultShipModifications();
+    const frontier = getStarbaseShipyardProfile('Frontier Test Starbase Delta');
+    const repeated = getStarbaseShipyardProfile('Frontier Test Starbase Delta');
+
+    expect(repeated).toEqual(frontier);
+    const options = createShipyardUpgradeOptions(ship, { ...frontier, maxShieldClass: 1, maxLaserClass: 1, sellsMissiles: false });
+    expect(options.find((option) => option.id === 'shipyard:missile')?.disabled).toBe(true);
+    expect(options.find((option) => option.id === 'shipyard:shield:2')?.disabled).toBe(true);
+    expect(options.find((option) => option.id === 'shipyard:laser:1')?.disabled).toBe(false);
+  });
+
+  it('tracks hull and subsystem damage and repairs it through shipyard orders', () => {
+    const ship = createDefaultShipModifications();
+
+    expect(applyShipDamage(ship, 12, 'drive')).toContain('Drive affected');
+    expect(ship.damage.hullIntegrity).toBe(88);
+    expect(getShipDerivedStats(ship).driveEfficiencyPercent).toBeLessThan(100);
+    expect(getShipDamageSummary(ship)).toContain('Drive');
+    expect(getShipRepairCost(ship)).toBeGreaterThan(0);
+
+    const repair = createShipyardUpgradeOptions(ship).find((option) => option.id === 'shipyard:repair');
+    expect(repair?.disabled).toBe(false);
+    expect(installShipyardUpgrade(ship, 'shipyard:repair')).toBe('Hull and subsystem damage repaired.');
+    expect(ship.damage.hullIntegrity).toBe(100);
+    expect(getShipRepairCost(ship)).toBe(0);
   });
 });
