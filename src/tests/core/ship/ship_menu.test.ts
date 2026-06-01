@@ -134,6 +134,9 @@ describe('ship menu', () => {
     const status = game.createShipMenuModel();
     expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
     expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
+    expect(status.rows.find((row: any) => row.id === 'superstructure')?.cells[3]).toContain('16 cargo bays');
+    expect(status.rows.find((row: any) => row.id === 'weapons')?.cells[3]).toContain('Missiles 5/10');
+    expect(status.rows.find((row: any) => row.id === 'shields')?.cells[1]).toBe('None');
     expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
   });
 

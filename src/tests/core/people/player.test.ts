@@ -12,6 +12,11 @@ describe('Player', () => {
     expect(player.resources.fuel).toBe(CONFIG.INITIAL_FUEL);
     expect(player.resources.credits).toBe(CONFIG.INITIAL_CREDITS);
     expect(player.cargoHold.capacity).toBe(CONFIG.INITIAL_CARGO_CAPACITY);
+    expect(player.ship.superstructure.cargoBays).toBe(16);
+    expect(player.ship.cargoPodsInstalled).toBe(4);
+    expect(player.ship.missileCount).toBe(5);
+    expect(player.ship.shieldClass).toBe(0);
+    expect(player.ship.laserClass).toBe(0);
   });
 
   it('measures squared distance in system coordinates', () => {

@@ -17,6 +17,7 @@ import {
   createDefaultCargo,
   createDefaultTerrainVehicle,
 } from './components'; // Assuming components.ts is in the same directory
+import { createDefaultShipModifications, getShipCargoCapacity, ShipModificationState } from './ship_modifications';
 
 export class Player {
   // --- ADD Component Properties ---
@@ -26,6 +27,7 @@ export class Player {
   public cargoHold: CargoComponent;
   public terrainVehicle: TerrainVehicleComponent;
   public crew: CrewMember[];
+  public ship: ShipModificationState;
 
   // Constructor: Initializes components with default values
   constructor(
@@ -50,7 +52,8 @@ export class Player {
 
     this.resources = createDefaultResource(CONFIG.INITIAL_CREDITS, CONFIG.INITIAL_FUEL, CONFIG.MAX_FUEL);
 
-    this.cargoHold = createDefaultCargo(CONFIG.INITIAL_CARGO_CAPACITY);
+    this.ship = createDefaultShipModifications();
+    this.cargoHold = createDefaultCargo(getShipCargoCapacity(this.ship));
     this.terrainVehicle = createDefaultTerrainVehicle(CONFIG.TERRAIN_VEHICLE_CARGO_CAPACITY, CONFIG.TERRAIN_VEHICLE_MAX_FUEL);
     this.crew = createStartingCrew(crewSeed);
 

@@ -68,6 +68,12 @@ import {
   trainCrewSkill,
 } from './crew';
 import { createShipDeckRows, createShipStationRows, getShipCompartment } from './ship_place';
+import {
+  createShipyardUpgradeOptions,
+  getAvailableCargoPodBays,
+  getShipCargoCapacity,
+  installShipyardUpgrade,
+} from './ship_modifications';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 
@@ -3583,10 +3589,15 @@ export class Game {
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
     const stateLabel = this.stateManager.state === 'planet' ? `Surface: ${this.stateManager.currentPlanet?.name ?? 'unknown'}` : this.stateManager.state;
     const fuel = Math.round(this.player.resources.fuel);
+    const ship = this.player.ship;
     return [
       { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
       { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
       { id: 'cargo', cells: ['Cargo hold', `${cargoTotal}/${this.player.cargoHold.capacity} m^3`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
+      { id: 'superstructure', cells: ['Superstructure', ship.superstructure.name, 'Fixed', `${ship.superstructure.engineMounts} engine  ${ship.superstructure.specialPurposeBays} special  ${ship.superstructure.probeBays} probe  ${ship.superstructure.cargoBays} cargo bays`], disabled: true },
+      { id: 'cargo-pods', cells: ['Cargo pods', `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays}`, `${getAvailableCargoPodBays(ship)} empty`, `${ship.cargoPodCapacity} m^3 each; capacity ${getShipCargoCapacity(ship)} m^3`], disabled: true },
+      { id: 'weapons', cells: ['Weapons', `Laser C${ship.laserClass || '-'}`, ship.laserClass > 0 ? 'Online' : 'None', `Missiles ${ship.missileCount}/${ship.missileCapacity} nuclear`], disabled: true },
+      { id: 'shields', cells: ['Shields', ship.shieldClass > 0 ? `Class ${ship.shieldClass}` : 'None', ship.shieldClass > 0 ? 'Online' : 'Unfitted', ship.shieldClass > 0 ? 'Generator fitted in shield mount.' : 'No shield generator installed.'], disabled: true },
       { id: 'credits', cells: ['Credit account', `${this.player.resources.credits.toLocaleString()} Cr`, 'Liquid', 'Station-authorised spend balance.'], disabled: true },
       { id: 'crew', cells: ['Crew company', `${this.player.crew.length} aboard`, this.getCrewHealthLabel(), `Training points ${this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0)} available.`], disabled: true },
       { id: 'navigation', cells: ['Navigation', `Nav ${getBestCrewSkill(this.player.crew, 'navigation')}`, 'Crewed', `Pilot ${getBestCrewSkill(this.player.crew, 'piloting')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}`], disabled: true },
@@ -3604,7 +3615,7 @@ export class Game {
     const activeMissionCount = Object.keys(this.activeMissions).length;
 
     rows.push(this.createShipLogRow('001', 'NAV', 'FIX', this.getShipPositionLogEntry(), 'Current navigational fix and vessel state at the time the log panel was opened.'));
-    rows.push(this.createShipLogRow('002', 'SHIP', this.getShipOperatingState().toUpperCase(), `Fuel ${Math.round(this.player.resources.fuel)}/${this.player.resources.maxFuel} | Cargo ${cargoTotal}/${this.player.cargoHold.capacity} m^3 | ${this.player.crew.length} crew aboard.`, 'Core shipboard resources and current watch posture.'));
+    rows.push(this.createShipLogRow('002', 'SHIP', this.getShipOperatingState().toUpperCase(), `Fuel ${Math.round(this.player.resources.fuel)}/${this.player.resources.maxFuel} | Cargo ${cargoTotal}/${this.player.cargoHold.capacity} m^3 | Shields C${this.player.ship.shieldClass || '-'} | Laser C${this.player.ship.laserClass || '-'} | Missiles ${this.player.ship.missileCount}/${this.player.ship.missileCapacity}.`, 'Core shipboard resources, fitted combat systems, and current watch posture.'));
     rows.push(this.createShipLogRow('003', 'CREW', this.getCrewHealthLabel().toUpperCase(), `Best skills: Nav ${getBestCrewSkill(this.player.crew, 'navigation')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}  Eng ${getBestCrewSkill(this.player.crew, 'engineering')}  Med ${getBestCrewSkill(this.player.crew, 'medicine')}.`, 'Crew readiness, specialist coverage, and available shipboard judgement.'));
 
     if (system) {
@@ -4620,7 +4631,34 @@ export class Game {
       this.purchaseTerrainVehicle();
       return;
     }
+    if (this.starbaseSectionId === 'shipyard' && row.id.startsWith('shipyard:')) {
+      this.purchaseShipyardUpgrade(row.id);
+      return;
+    }
     this.starbaseAlert = row.detail || `${row.cells[0]} selected.`;
+  }
+
+  private purchaseShipyardUpgrade(optionId: string): void {
+    const option = createShipyardUpgradeOptions(this.player.ship).find((candidate) => candidate.id === optionId);
+    if (!option) {
+      this.starbaseAlert = 'Shipyard order unavailable.';
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    if (option.disabled) {
+      this.starbaseAlert = option.detail;
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    if (this.player.resources.credits < option.cost) {
+      this.starbaseAlert = `Insufficient credits for ${option.label}. Required ${option.cost.toLocaleString()} Cr.`;
+      this.statusMessage = this.starbaseAlert;
+      return;
+    }
+    this.player.resources.credits -= option.cost;
+    this.starbaseAlert = `${installShipyardUpgrade(this.player.ship, optionId)} Cost ${option.cost.toLocaleString()} Cr.`;
+    this.statusMessage = this.starbaseAlert;
+    this.player.cargoHold.capacity = getShipCargoCapacity(this.player.ship);
   }
 
   private purchaseTerrainVehicle(): void {
@@ -4811,9 +4849,14 @@ export class Game {
       case 'shipyard':
         return [
           { id: 'terrain-vehicle', cells: ['Terrain vehicle', `${CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST.toLocaleString()} Cr`, 'Now', this.player.terrainVehicle.available ? 'Replacement bay occupied.' : 'Purchase replacement rover and surface kit.'], detail: 'Replacement includes fuel cell, cargo bay, scanner mast, and recovery transponder.', disabled: this.player.terrainVehicle.available },
-          { id: 's1', cells: ['Cargo rack tuning', '620 Cr', '2h', '+10 cargo capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
-          { id: 's2', cells: ['Fuel bladder relining', '780 Cr', '3h', '+75 fuel capacity retrofit placeholder.'], detail: 'Stub: upgrade purchase not yet implemented.' },
-          { id: 's3', cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'], detail: 'Stub: scanner upgrade path.' },
+          ...createShipyardUpgradeOptions(this.player.ship).map((option) => ({
+            id: option.id,
+            cells: [option.label, `${option.cost.toLocaleString()} Cr`, option.eta, option.workOrder],
+            detail: option.detail,
+            disabled: option.disabled,
+          })),
+          { id: 's1', cells: ['Superstructure', 'TBD', '--', `${this.player.ship.superstructure.name} refit path reserved.`], detail: 'Stub: future superstructure replacement and expansion refits.', disabled: true },
+          { id: 's2', cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'], detail: 'Stub: scanner upgrade path.', disabled: true },
         ];
       case 'crew':
         return this.getCrewRows(starbase);
@@ -4854,7 +4897,7 @@ export class Game {
       const points = this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0);
       return points > 0 ? `${points} Training` : `${this.player.crew.length} Aboard`;
     }
-    if (sectionId === 'shipyard') return 'Stub';
+    if (sectionId === 'shipyard') return 'Refit';
     return 'Online';
   }
 
@@ -4867,7 +4910,7 @@ export class Game {
       services: 'Refuel and future station services.',
       notices: 'Read local port bulletins.',
       missions: 'Accept local scan and charting contracts.',
-      shipyard: 'Browse future upgrades and refits.',
+      shipyard: 'Buy missiles, cargo pods, shields, lasers, and future refits.',
       crew: 'Hire crew and assign training points.',
     };
     return summaries[sectionId];
