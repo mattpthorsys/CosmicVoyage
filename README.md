@@ -1,105 +1,158 @@
-# Cosmic Voyage 🚀
+# Cosmic Voyage
 
-**A retro-inspired, ASCII-based space exploration roguelike running in your browser.**
+Cosmic Voyage is a browser-based TypeScript space exploration game with a sparse CGA terminal style. It is built around procedural astronomy, quiet instrument panels, and the feeling of travelling through a very large and mostly indifferent universe.
 
-[![Status](https://img.shields.io/badge/status-🚧%20Work%20in%20Progress-yellow)](https://github.com/mattpthorsys/CosmicVoyage)
-[![Language](https://img.shields.io/badge/language-TypeScript-blue)](https://www.typescriptlang.org/)
-[![Build Tool](https://img.shields.io/badge/build-Vite-purple)](https://vitejs.dev/)
+The project is under active development. Systems are playable, but mechanics, balance, screens, and data models are still evolving.
 
----
+## Current Game
 
-## About The Game
+You command a small fusion-powered vessel through several scales of space:
 
-Cosmic Voyage takes inspiration from classic space exploration games like *Starflight*, bringing procedural generation and resource management to a terminal-style ASCII interface powered by HTML Canvas. Navigate a vast procedurally generated universe, explore unique star systems, land on diverse planets, scan for resources, manage your fuel and cargo, and trade at starbases.
+- Interstellar travel through a deterministic starfield with nebulae, brown dwarfs, rare deep-space phenomena, free planetary-mass objects, and subtle overlay instrumentation.
+- Planetary system travel with generated stars, binaries/trinaries, planets, moons, starbases, orbital paths, target selection, approach assist, zoom, and bottom command menus.
+- Orbital operations around planets, including a rotating ASCII globe, moon selection, scan summary, landing-map cursor, and coordinate-based landing.
+- Planet surface travel using a terrain vehicle with fuel, cargo, mining, surface scan cursor, map view, icon legend, crew status, and return-to-ship navigation.
+- Starbase operations with section menus, scrollable tables, cargo review, buy/sell/refuel services, notices, missions, shipyard, crew hiring, and training.
+- Ship operations outside starbase/orbit, including cargo, crew, ship status, jettison prompts, and the ship-as-place compartment view.
 
-**Status:** ⚠️ **Work in Progress** ⚠️
+The game favours deterministic procedural generation. Given the same seed and coordinates, stars, systems, planet properties, surfaces, resources, starbases, and mission boards should remain stable rather than changing with scan or travel order.
 
-This game is under active development. Features are continuously being added and refined. Expect bugs, incomplete mechanics, and potential changes.
+## Scientific Simulation
 
-## Core Features
+The simulation aims for plausible science rather than arcade space fantasy:
 
-* **Procedural Generation:** Explore unique star systems, planets, moons, and nebulae generated using seeded PRNGs and noise algorithms.
-* **Realistic Physics (Simplified):**
-    * Planetary orbits calculated based on mass and distance.
-    * Moon orbits calculated based on planetary mass and orbital distance.
-    * Physics-based atmospheric retention simulation.
-    * Surface temperature influenced by star luminosity, orbit, albedo, and atmospheric greenhouse effect.
-* **Multi-Level Navigation:** Seamlessly transition between hyperspace, star system view, and planetary surfaces.
-* **System View Zoom:** Zoom in and out of the system view to get a better perspective, affecting movement speed and time scale.
-* **Surface Exploration:** Land on planets and starbases. Explore generated terrain on solid bodies.
-* **Resource Management:** Scan planets for resources, mine valuable elements, manage cargo space, and track fuel consumption.
-* **Starbase Interaction:** Dock at starbases to trade goods and refuel your ship.
-* **ASCII Rendering:** Retro terminal aesthetic achieved using HTML Canvas and custom fonts.
-* **Detailed Logging:** Comprehensive logging system with configurable levels and downloadable log files for debugging.
+- Star generation includes main sequence stars, binary/trinary systems, brown dwarfs, rare neutron stars and black holes, and rare starless/local-frame objects.
+- Planet frequencies, types, moon counts, orbital velocities, densities, gravities, temperatures, axial tilt, tidal locking, and tidal heating are modelled from simplified astrophysical rules.
+- Planet classes include rocky, molten, lunar, oceanic, frozen, gas giant, ice giant, Hycean, greenhouse, carbon-rich, chthonian, cryovolcanic, and dwarf ice worlds.
+- Atmosphere, hydrosphere, lithosphere, temperature range, greenhouse effect, albedo, core heat, tidal flexing, and age all feed into scan descriptions and surface generation.
+- Surfaces use type-aware terrain generation: bands and turbulence for giants, craters where erosion permits, ice fractures, cryovolcanic domes, carbon dunes, volcanic rifts, oceanic ridges, and specialist palettes.
+- Nebula rendering is restrained and astronomical: emission, reflection, dark cloud, planetary, and remnant structures blend softly into black space.
+- Resources are biased by planetary type, stellar metallicity, volatile availability, and realistic element associations. Deuterium can be mined in plausible locations; helium-3 is primarily purchased at starbases.
 
-## Technology Stack
+## Interface
 
-* **Language:** TypeScript
-* **Build Tool / Dev Server:** Vite
-* **Rendering:** HTML Canvas API
-* **Core Libraries:**
-    * *(No major external runtime libraries like rot-js seem essential based on package.json, though it's listed as a dependency)*
-* **Development:** Node.js, npm, ESLint, Vitest
+Cosmic Voyage is keyboard-first, but newer screens use reusable text UI controls and bottom command menus so available actions are visible.
 
-## Prerequisites
+Common controls:
 
-* [Node.js](https://nodejs.org/) (v20.5.1 or compatible recommended)
-* [npm](https://www.npmjs.com/) (v9.8.0 or compatible recommended, usually included with Node.js)
+- `Arrow keys`: move ship, cursor, menu selection, or terrain vehicle depending on mode.
+- `Numpad 1/3/7/9`: diagonal interstellar movement with NumLock off.
+- `Enter` / `Space`: select, confirm, or perform the recommended/current action.
+- `Esc`: cancel menus, popups, targeting, orbit, or command movement where applicable.
+- `Tab`: recommended action / cycle target depending on context.
+- `?`: help reference.
+- `o`: ship operations.
+- `n`: navigation target menu.
+- `s`: scan or observe current space contact.
+- `v`: surface scan.
+- `m`: mine on the surface.
+- `l`: orbit, dock, launch, or depart where context allows.
+- `a`: approach selected target automatically.
+- `=` / `-`: zoom system view.
+- `F3`: performance profiler.
 
-## Setup & Installation
+Travel command strips:
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/mattpthorsys/CosmicVoyage.git](https://github.com/mattpthorsys/CosmicVoyage.git)
-    cd CosmicVoyage
-    ```
-   
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-   
+- Interstellar: Move, Scan, Operations, Observe, with a green Enter System button when available.
+- Planetary: Move, Scan, Operations, Observe, Targets, with a green Orbit/Dock/Leave button when available.
+- Surface: Map, Move, Cargo, Mine, Scan, Icon, with a green Embark button only when parked at the ship.
 
-## Running the Game
+Starbase screens use arrows, Page Up/Page Down, Left/Right section changes, Enter to use a row, and Escape or `l` to leave/cancel where appropriate.
 
-1.  **Start the development server:**
-    ```bash
-    npm run dev
-    ```
-   
-2.  **Open your browser:** Navigate to the local URL provided by Vite (e.g., `http://localhost:5173`).
+## Visual Style
 
-## Key Bindings
+The visual style is documented in [STYLE_GUIDE.md](STYLE_GUIDE.md). In short:
 
-*(Based on `src/config.ts`)*
+- black space baseline;
+- CGA-era square-grid typography;
+- restrained cyan, green, amber, and red signal colours;
+- dim overlays and instrument-like panels;
+- minimal animation used for scanning, cursor focus, orbital rotation, and starbase indicators.
 
-### Movement
-* **Hyperspace/System/Planet:** `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`
-* **Fine Control (System View):** `Shift` + Movement Keys
-* **Boost (Not Implemented?):** `Control` (Currently mapped, functionality TBD)
+## Project Structure
 
-### Navigation & Actions
-* **Enter System:** `Enter` (from Hyperspace)
-* **Leave System:** `Backspace` (from System, near edge)
-* **Land/Liftoff:** `l` (Context-dependent: System -> Land, Planet/Starbase -> Liftoff)
-* **Scan:**
-    * `s` (System View): Scans nearby object or star
-    * `v` (Planet Surface): Scans the planet
-* **Mine:** `m` (Planet Surface, after scanning)
-* **Trade:** `t` (Starbase)
-* **Refuel:** `r` (Starbase)
+Key folders:
 
-### Utility
-* **Zoom In (System View):** `=` / `+` / `NumpadAdd`
-* **Zoom Out (System View):** `-` / `NumpadSubtract`
-* **Download Log:** `p`
-* **Quit Game:** `Escape` (Stops loop, requires refresh)
+- `src/core`: game loop, state transitions, input handling, command menus, ship/crew/orbit/starbase UI models, missions, and high-level gameplay orchestration.
+- `src/entities`: generated stars, planets, systems, starbases, planetary physics, atmosphere, temperature, resources, and surface generation.
+- `src/generation`: deterministic PRNG/noise and system data generation.
+- `src/rendering`: canvas grid renderer, scene renderer, overlays, nebulae, starfields, status bars, and command strip rendering.
+- `src/systems`: cargo, mining, and movement logic.
+- `src/tests`: Vitest suites grouped by gameplay domain.
+- `src/assets/fonts`: CGA and DOS-style bitmap fonts used by the renderer.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a chart-style overview of how the code works.
+
+## Requirements
+
+- Node.js 20.5.1 or compatible
+- npm 9.8.0 or compatible
+
+The repository uses Volta metadata in `package.json` to pin the preferred Node version.
+
+## Setup
+
+```bash
+npm install
+```
+
+## Run
+
+```bash
+npm run dev
+```
+
+Open the local Vite URL shown in the terminal, usually `http://localhost:5173`.
+
+## Build
+
+```bash
+npm run build
+```
+
+To preview the production build:
+
+```bash
+npm run preview
+```
+
+## Tests
+
+Run the full suite:
+
+```bash
+npm run test:run
+```
+
+Useful focused groups:
+
+```bash
+npm run test:surface
+npm run test:ship
+npm run test:navigation
+npm run test:interface
+npm run test:people
+npm run test:entities
+npm run test:planetary
+npm run test:stellar
+npm run test:generation
+npm run test:systems
+npm run test:rendering
+npm run test:utils
+```
+
+The test grouping is described in [src/tests/README.md](src/tests/README.md). Rendering tests include visual-signature snapshots for important ASCII screens.
 
 ## Development Notes
 
-* **ECS-lite:** The codebase uses an entity-component-system (ECS) inspired approach with data components (`src/core/components.ts`) and systems (`src/systems/`) managing logic.
-* **Event Driven:** An event manager (`src/core/event_manager.ts`) is used for decoupling actions and state changes.
-* **State Management:** The `GameStateManager` (`src/core/game_state_manager.ts`) controls transitions between hyperspace, system, planet, and starbase views.
-* **Rendering Pipeline:** Uses a double-buffer system (`src/rendering/screen_buffer.ts`) with a background layer for stars and a main layer for game objects, composited onto the canvas.
-* **Configuration:** Game constants and settings are primarily managed in `src/config.ts` and `src/constants.ts`.
-* **Testing:** Unit tests are written using Vitest. Run with `npm test`.
+- `src/config.ts` contains tuning values, key bindings, travel scales, terrain vehicle limits, and procedural generation constants.
+- `src/constants.ts` contains glyphs, planet type palettes, atmosphere/resource metadata, and shared astronomical constants.
+- `GameStateManager` owns mode transitions between hyperspace, system, orbit, planet, and starbase.
+- `Game` coordinates the loop, current UI mode, contextual actions, command bars, popups, surface vehicle state, starbase rows, and renderer calls.
+- `SystemDataGenerator` keeps interstellar generation deterministic and caches system/contact properties.
+- `ScreenBuffer` stages character cells and supports sub-cell scaled glyphs for high-detail orbital and map views.
+- `SceneRenderer` draws the major game screens; `RendererFacade` connects renderer updates to game events and DOM status/command bars.
+
+## Status
+
+Cosmic Voyage is playable but unfinished. The codebase currently emphasizes deterministic generation, scientific plausibility, readable terminal UI, and test coverage for systems that have recently been made more complex.
