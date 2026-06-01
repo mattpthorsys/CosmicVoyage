@@ -181,6 +181,25 @@ function createRenderSignature(drawCalls: DrawCall[]): {
   };
 }
 
+function renderTextRows(drawCalls: DrawCall[]): string[] {
+  const rows = new Map<number, Map<number, string>>();
+  for (const call of drawCalls) {
+    if (call.char === null) continue;
+    const row = rows.get(call.y) ?? new Map<number, string>();
+    row.set(call.x, call.char);
+    rows.set(call.y, row);
+  }
+
+  return Array.from(rows.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, row]) => {
+      const maxX = Math.max(...row.keys());
+      let line = '';
+      for (let x = 0; x <= maxX; x++) line += row.get(x) ?? ' ';
+      return line.trimEnd();
+    });
+}
+
 describe('SceneRenderer visual regressions', () => {
   it('shifts hyperspace frames by one-cell movement without rebuilding the full viewport', () => {
     const { buffer, stagedFrames } = createMockScreenBuffer(7, 5);
@@ -310,6 +329,67 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it('autosizes starbase columns to fit long shipyard bay labels when space permits', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(150, 54);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+    const starbase = new Starbase('wide-yard', new PRNG('wide-yard'), 'Regression');
+
+    renderer.drawStarbaseInterface(player, starbase, {
+      stationName: starbase.name,
+      sectionId: 'shipyard',
+      sections: [{ id: 'shipyard', label: 'Shipyard' }],
+      title: 'Shipyard',
+      subtitle: 'Regression refit yard',
+      columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'],
+      widths: [8, 8, 5, 18],
+      rows: [
+        {
+          id: 'probe-bay',
+          cells: ['Auxiliary probe bay', '12,500 Cr', '18h', 'Install pressure-rated survey probe cradle.'],
+          detail: 'Full detail remains available below the table.',
+        },
+      ],
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 1,
+      footer: ['Enter purchase  Esc leave'],
+    });
+
+    const renderedRows = renderTextRows(drawCalls);
+    expect(renderedRows.some((line) => line.includes('Auxiliary probe bay'))).toBe(true);
+  });
+
+  it('keeps autosized starbase tables inside narrow viewports', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(70, 32);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+    const starbase = new Starbase('narrow-yard', new PRNG('narrow-yard'), 'Regression');
+
+    renderer.drawStarbaseInterface(player, starbase, {
+      stationName: starbase.name,
+      sectionId: 'shipyard',
+      sections: [{ id: 'shipyard', label: 'Shipyard' }],
+      title: 'Shipyard',
+      subtitle: 'Regression refit yard',
+      columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'],
+      widths: [18, 10, 8, 42],
+      rows: [
+        {
+          id: 'long-order',
+          cells: ['Special purpose bay', '88,000 Cr', '14d', 'A deliberately long refit order that cannot fit in a small viewport.'],
+          detail: 'Overflow text is described in the detail area when selected.',
+        },
+      ],
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 1,
+      footer: ['Enter purchase  Esc leave'],
+    });
+
+    expect(Math.max(...drawCalls.map((call) => call.x))).toBeLessThan(70);
+  });
+
   it('renders reusable modal tables for navigation target selection', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(110, 44);
     const renderer = createSceneRenderer(buffer);
@@ -332,6 +412,32 @@ describe('SceneRenderer visual regressions', () => {
 
     expect(drawCalls.some((call) => call.char === '█')).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
+  });
+
+  it('autosizes reusable modal tables without clipping long option names', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(120, 36);
+    const renderer = createSceneRenderer(buffer);
+
+    renderer.drawTextModalTable({
+      title: 'Ship Cargo',
+      subtitle: 'Regression inventory',
+      columns: ['SECTION', 'STATUS'],
+      widths: [8, 8],
+      rows: [
+        {
+          id: 'cargo-pod',
+          cells: ['Forward modular cargo pod bay', 'Loaded and pressure locked'],
+          detail: 'The selected row detail is still the place for longer notes.',
+        },
+      ],
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 1,
+      footer: ['Esc close'],
+    });
+
+    const renderedRows = renderTextRows(drawCalls);
+    expect(renderedRows.some((line) => line.includes('Forward modular cargo pod bay'))).toBe(true);
   });
 
   it('renders the orbital operations screen with globe, landing map, and summary panels', () => {

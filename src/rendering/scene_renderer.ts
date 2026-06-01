@@ -46,6 +46,11 @@ type GiantAtmosphereSample = {
   edge: number;
 };
 
+interface TextTableLayout {
+  model: TextTableModel;
+  tableWidth: number;
+}
+
 export interface SurfaceVehicleOverlayModel {
   notifications: string[];
   deployed: boolean;
@@ -897,34 +902,38 @@ export class SceneRenderer {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     this.drawingContext.drawBox(0, 0, cols, rows, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    const panelWidth = Math.min(112, Math.max(48, cols - 6));
+    const maxPanelWidth = Math.max(48, cols - 4);
+    const tableLayout = this.resolveTextTableLayout(model, maxPanelWidth - 9);
+    const renderModel = { ...model, widths: tableLayout.model.widths };
+    const defaultPanelWidth = Math.min(112, Math.max(48, cols - 6));
+    const panelWidth = Math.min(maxPanelWidth, Math.max(defaultPanelWidth, tableLayout.tableWidth + 9));
     const panelHeight = Math.min(34, Math.max(18, rows - 5));
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(2, Math.floor((rows - panelHeight) / 2));
 
     this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#00C8FF', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${model.title.toUpperCase()} `, panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(model.stationName.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(` ${renderModel.title.toUpperCase()} `, panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(renderModel.stationName.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
     this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
 
-    this.drawTextTabs(model.sections, model.sectionId, panelX + 4, panelY + 6, panelX + panelWidth - 2);
+    this.drawTextTabs(renderModel.sections, renderModel.sectionId, panelX + 4, panelY + 6, panelX + panelWidth - 2);
 
     const tableX = panelX + 4;
     const tableY = panelY + 8;
     const tableWidth = panelWidth - 9;
     const detailRows = this.getTextTableDetailLineCount(model);
     const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelHeight - 17 - detailRows));
-    this.drawTextTableHeader(model, tableX, tableY, tableWidth);
-    this.drawTextTableRows(model, tableX, tableY + 2, tableWidth, visibleRows);
+    this.drawTextTableHeader(renderModel, tableX, tableY, tableWidth);
+    this.drawTextTableRows(renderModel, tableX, tableY + 2, tableWidth, visibleRows);
     this.drawTextScrollbar(tableX + tableWidth + 1, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
 
-    if (model.alert) {
-      this.screenBuffer.drawString(model.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    if (renderModel.alert) {
+      this.screenBuffer.drawString(renderModel.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
-      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(model.alert.length, panelWidth - 9), panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(renderModel.alert.length, panelWidth - 9), panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
     }
-    model.footer.forEach((line, index) => {
+    renderModel.footer.forEach((line, index) => {
       this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#FFD66B' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
     });
     this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
@@ -936,7 +945,9 @@ export class SceneRenderer {
     if (cols < 42 || rows < 16) return;
 
     const detailRows = this.getTextTableDetailLineCount(model);
-    const tableWidth = Math.min(cols - 12, Math.max(34, model.widths.reduce((sum, width) => sum + width, 0) + model.widths.length - 1));
+    const tableLayout = this.resolveTextTableLayout(model, cols - 12);
+    const renderModel = { ...model, widths: tableLayout.model.widths };
+    const tableWidth = Math.max(34, tableLayout.tableWidth);
     const footerRows = model.footer?.length ?? 0;
     const visibleRows = Math.max(1, Math.min(model.visibleRowCount, rows - 12 - footerRows - detailRows));
     const panelWidth = Math.min(cols - 4, tableWidth + 8);
@@ -947,14 +958,14 @@ export class SceneRenderer {
     const tableY = panelY + 5;
 
     this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#3EA6A6', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${model.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
-    if (model.subtitle) {
-      this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(` ${renderModel.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    if (renderModel.subtitle) {
+      this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
     }
 
-    this.drawTextTableHeader(model, tableX, tableY, tableWidth);
-    this.drawTextTableRows(model, tableX, tableY + 2, tableWidth, visibleRows);
-    this.drawTextScrollbar(panelX + panelWidth - 3, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
+    this.drawTextTableHeader(renderModel, tableX, tableY, tableWidth);
+    this.drawTextTableRows(renderModel, tableX, tableY + 2, tableWidth, visibleRows);
+    this.drawTextScrollbar(panelX + panelWidth - 3, tableY + 2, visibleRows, renderModel.rows.length, renderModel.viewOffset);
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
@@ -1276,6 +1287,75 @@ export class SceneRenderer {
       cursorX += width + 1;
     });
     this.screenBuffer.drawString('-'.repeat(Math.max(1, tableWidth)), x, y + 1, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+  }
+
+  private resolveTextTableLayout(model: TextTableModel, maxTableWidth: number): TextTableLayout {
+    const columnCount = Math.max(
+      model.columns.length,
+      model.widths.length,
+      ...model.rows.map((row) => row.cells.length),
+      1
+    );
+    const minimumWidths = Array.from({ length: columnCount }, (_, index) => {
+      const headerWidth = model.columns[index]?.length ?? 0;
+      const configuredWidth = model.widths[index] ?? 12;
+      return Math.max(4, Math.min(configuredWidth, Math.max(4, headerWidth)));
+    });
+    const desiredWidths = minimumWidths.map((minimumWidth, index) => {
+      const configuredWidth = model.widths[index] ?? 12;
+      const headerWidth = model.columns[index]?.length ?? 0;
+      const widestCell = model.rows.reduce((widest, row) => Math.max(widest, (row.cells[index] ?? '').length), 0);
+      return Math.max(minimumWidth, configuredWidth, headerWidth, widestCell);
+    });
+    const widths = this.clampTextTableWidths(desiredWidths, minimumWidths, maxTableWidth);
+    return {
+      model: { ...model, widths },
+      tableWidth: this.getTextTableWidth(widths),
+    };
+  }
+
+  private clampTextTableWidths(desiredWidths: number[], minimumWidths: number[], maxTableWidth: number): number[] {
+    const gapWidth = Math.max(0, desiredWidths.length - 1);
+    if (desiredWidths.reduce((sum, width) => sum + width, 0) + gapWidth <= maxTableWidth) {
+      return desiredWidths.slice();
+    }
+
+    const availableCellWidth = Math.max(desiredWidths.length * 4, maxTableWidth - gapWidth);
+    const softColumnCap = Math.max(18, Math.floor(availableCellWidth * 0.48));
+    const widths = desiredWidths.map((width, index) => Math.max(minimumWidths[index] ?? 4, Math.min(width, softColumnCap)));
+
+    while (this.getTextTableWidth(widths) > maxTableWidth) {
+      let shrinkIndex = -1;
+      let shrinkWidth = -1;
+      for (let index = widths.length - 1; index >= 0; index--) {
+        const minimumWidth = minimumWidths[index] ?? 4;
+        if (widths[index] > minimumWidth && widths[index] > shrinkWidth) {
+          shrinkIndex = index;
+          shrinkWidth = widths[index];
+        }
+      }
+      if (shrinkIndex < 0) break;
+      widths[shrinkIndex]--;
+    }
+
+    while (this.getTextTableWidth(widths) > maxTableWidth) {
+      let shrinkIndex = -1;
+      let shrinkWidth = -1;
+      for (let index = widths.length - 1; index >= 0; index--) {
+        if (widths[index] > 4 && widths[index] > shrinkWidth) {
+          shrinkIndex = index;
+          shrinkWidth = widths[index];
+        }
+      }
+      if (shrinkIndex < 0) break;
+      widths[shrinkIndex]--;
+    }
+
+    return widths;
+  }
+
+  private getTextTableWidth(widths: number[]): number {
+    return widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1);
   }
 
   private drawTextTableRows(model: TextTableModel, x: number, y: number, tableWidth: number, visibleRows: number): void {
