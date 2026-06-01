@@ -164,7 +164,7 @@ export class DrawingContext {
     maxX: number,
     maxY: number
   ): void {
-    const tolerance = Math.max(0.75, radius * 0.006);
+    const tolerance = Math.min(1.5, Math.max(0.75, radius * 0.006));
     const minRadiusSq = (radius - tolerance) * (radius - tolerance);
     const maxRadiusSq = (radius + tolerance) * (radius + tolerance);
 

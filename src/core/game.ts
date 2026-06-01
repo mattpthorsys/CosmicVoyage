@@ -1233,7 +1233,7 @@ export class Game {
           this._startApproachAssist();
           return true;
         }
-        if (action === 'SCAN_SYSTEM_OBJECT' && this.scanSelectedSystemTargetIfAvailable()) {
+        if (action === 'SCAN_SYSTEM_OBJECT' && this.scanLocalOrSelectedSystemTargetIfAvailable()) {
           return true;
         }
         if (action === 'MINE') {
@@ -1376,12 +1376,20 @@ export class Game {
     }
   }
 
-  private scanSelectedSystemTargetIfAvailable(): boolean {
+  private scanLocalOrSelectedSystemTargetIfAvailable(): boolean {
     if (this.stateManager.state !== 'system') return false;
+    const localTarget = this.getLocalSystemScanTarget();
+    if (localTarget) {
+      this.terminalOverlay.clear();
+      this._dumpScanToTerminal(localTarget);
+      this.statusMessage = '';
+      this.forceFullRender = true;
+      return true;
+    }
+
     const selectedTarget = this.getSelectedTarget();
     if (!selectedTarget) return false;
-    const canRemoteScan = selectedTarget instanceof Planet;
-    if (!canRemoteScan && !this.isTargetWithinScanRange(selectedTarget)) return false;
+    if (!this.isTargetWithinScanRange(selectedTarget)) return false;
     this.terminalOverlay.clear();
     this._dumpScanToTerminal(this.getScannableNavigationTarget(selectedTarget));
     this.statusMessage = '';
@@ -1399,7 +1407,7 @@ export class Game {
       return;
     }
     if (actionName === 'SCAN_SYSTEM_OBJECT') {
-      if (this.scanSelectedSystemTargetIfAvailable()) {
+      if (this.scanLocalOrSelectedSystemTargetIfAvailable()) {
         return;
       }
     }
@@ -1734,29 +1742,8 @@ export class Game {
         if (!system) {
           scanStatusMessage = '<e>Scan Error: System data missing.</e>';
         } else {
-          const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
-          const scannableObject = system.getScannableObjectNear(this.player.position.systemX, this.player.position.systemY);
-          const distSqToObject = nearbyObject
-            ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY)
-            : Infinity;
-          const nearbyStar = system.getStarNear(
-            this.player.position.systemX,
-            this.player.position.systemY,
-            CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER
-          );
-          const distSqToStar = nearbyStar
-            ? this.player.distanceSqToSystemCoords(nearbyStar.systemX, nearbyStar.systemY)
-            : Infinity;
-          const scanThresholdSq = (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2;
-          if (nearbyStar && distSqToStar < distSqToObject && distSqToStar < scanThresholdSq) {
-            targetToScan = nearbyStar;
-            //scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_STAR(system.name);
-          } else if (scannableObject && distSqToObject < scanThresholdSq) {
-            targetToScan = scannableObject;
-            // scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_OBJECT(nearbyObject.name);
-          } else {
-            scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_FAIL_NO_TARGET;
-          }
+          targetToScan = this.getLocalSystemScanTarget();
+          if (!targetToScan) scanStatusMessage = STATUS_MESSAGES.SYSTEM_SCAN_FAIL_NO_TARGET;
         }
       } else {
         scanStatusMessage = `<e>Cannot perform system scan in ${currentState} state.</e>`;
@@ -3822,10 +3809,43 @@ export class Game {
     return target;
   }
 
+  private getLocalSystemScanTarget(): ScanTarget | null {
+    if (this.stateManager.state !== 'system') return null;
+    const system = this.stateManager.currentSystem;
+    if (!system) return null;
+
+    const scanX = this.player.position.systemX;
+    const scanY = this.player.position.systemY;
+    const nearbyObject = system.getObjectNear(scanX, scanY);
+    const scannableObject = system.getScannableObjectNear(scanX, scanY);
+    const objectThreshold = CONFIG.LANDING_DISTANCE;
+    const objectDistanceSq = nearbyObject
+      ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY)
+      : Infinity;
+    const starThreshold = CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
+    const nearbyStar = system.getStarNear(scanX, scanY, starThreshold);
+    const starDistanceSq = nearbyStar
+      ? this.player.distanceSqToSystemCoords(nearbyStar.systemX, nearbyStar.systemY)
+      : Infinity;
+
+    const objectScore = scannableObject ? objectDistanceSq / (objectThreshold * objectThreshold) : Infinity;
+    const starScore = nearbyStar ? starDistanceSq / (starThreshold * starThreshold) : Infinity;
+    if (nearbyStar && starScore <= objectScore) return nearbyStar;
+    if (scannableObject && objectScore <= 1) return scannableObject;
+    if (nearbyStar && starScore <= 1) return nearbyStar;
+    return null;
+  }
+
   private isTargetWithinScanRange(target: NavigationTarget): boolean {
     const coords = this.getTargetCoords(target);
     const multiplier = target instanceof Planet || target instanceof Starbase ? 1 : CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
     return this.player.distanceSqToSystemCoords(coords.x, coords.y) < (CONFIG.LANDING_DISTANCE * multiplier) ** 2;
+  }
+
+  private getTargetApproachDistance(target: NavigationTarget): number {
+    return target instanceof Planet || target instanceof Starbase
+      ? CONFIG.LANDING_DISTANCE
+      : CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
   }
 
   private updateApproachAssist(_deltaTime: number): void {
@@ -3840,7 +3860,7 @@ export class Game {
     const dx = coords.x - this.player.position.systemX;
     const dy = coords.y - this.player.position.systemY;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    const desiredDistance = CONFIG.LANDING_DISTANCE * 0.7;
+    const desiredDistance = this.getTargetApproachDistance(target);
     if (distance <= desiredDistance) {
       this.approachTargetSignature = null;
       this.statusMessage = `Approach complete: ${this.getTargetName(target)}.`;

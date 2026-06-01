@@ -169,6 +169,18 @@ describe('DrawingContext', () => {
       }
     });
 
+    it('caps large off-screen orbit thickness to three cells', () => {
+      drawingContext.drawOrbit(10, -5000, 5010, '.', '#888', 0, 0, 19, 19);
+
+      expect(drawCharSpy).toHaveBeenCalled();
+      for (const call of drawCharSpy.mock.calls) {
+        const dx = call[1] - 10;
+        const dy = call[2] + 5000;
+        const radialError = Math.abs(Math.hypot(dx, dy) - 5010);
+        expect(radialError).toBeLessThanOrEqual(1.51);
+      }
+    });
+
      it('should not draw if radius is zero or negative', () => {
         drawingContext.drawOrbit(5, 5, 0, '.', '#888');
         expect(drawCharSpy).not.toHaveBeenCalled();

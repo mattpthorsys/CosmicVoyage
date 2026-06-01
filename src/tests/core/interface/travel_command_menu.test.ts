@@ -136,7 +136,7 @@ describe('travel command menu', () => {
     expect(game.openTargetMenu).toHaveBeenCalledOnce();
   });
 
-  it('scans a selected planet even when it is outside close scan range', () => {
+  it('does not scan a stale selected planet outside close scan range', () => {
     const game = createTravelHarness('system', 'NONE');
     const planet = createPlanetTarget();
     game.getSelectedTarget = () => planet;
@@ -146,10 +146,10 @@ describe('travel command menu', () => {
     game.completedMissionIds = new Set();
     game.completeMissionsForScan = vi.fn();
 
-    expect(game.scanSelectedSystemTargetIfAvailable()).toBe(true);
+    expect(game.scanLocalOrSelectedSystemTargetIfAvailable()).toBe(false);
 
-    expect(planet.scan).toHaveBeenCalledOnce();
-    expect(game.terminalOverlay.addMessageLines).toHaveBeenCalledWith(['<h>Remote I</h>', 'Rocky world scan.']);
+    expect(planet.scan).not.toHaveBeenCalled();
+    expect(game.terminalOverlay.addMessageLines).not.toHaveBeenCalled();
   });
 
   it('uses the observe reticle to scan the body under the cursor', () => {
