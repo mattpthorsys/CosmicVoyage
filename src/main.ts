@@ -11,6 +11,29 @@ import { CONFIG } from './config'; // CONFIG needed for seed reporting
 
 logger.info("main.ts executing...");
 
+function renderFatalInitializationError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack ?? '' : '';
+    const wrapper = document.createElement('div');
+    wrapper.style.color = 'red';
+    wrapper.style.backgroundColor = 'black';
+    wrapper.style.padding = '20px';
+    wrapper.style.fontFamily = 'monospace';
+    wrapper.style.border = '2px solid red';
+
+    const heading = document.createElement('h1');
+    heading.textContent = 'Fatal Initialization Error';
+    const messageParagraph = document.createElement('p');
+    messageParagraph.textContent = message;
+    const stackPre = document.createElement('pre');
+    stackPre.textContent = stack;
+
+    wrapper.appendChild(heading);
+    wrapper.appendChild(messageParagraph);
+    wrapper.appendChild(stackPre);
+    document.body.replaceChildren(wrapper);
+}
+
 window.onload = () => {
     logger.info("DOM fully loaded.");
     const statusBar = document.getElementById('statusBar'); // Get status bar for errors
@@ -32,8 +55,7 @@ window.onload = () => {
             statusBar.style.color = 'red';
             statusBar.style.backgroundColor = 'black'; // Ensure visibility
         }
-        // Optionally display error more prominently in the body
-        document.body.innerHTML = `<div style="colour: red; background: black; padding: 20px; font-family: monospace; border: 2px solid red;"><h1>Fatal Initialization Error</h1><p>${error instanceof Error ? error.message : String(error)}</p><pre>${error instanceof Error ? error.stack : ''}</pre></div>`;
+        renderFatalInitializationError(error);
     }
 };
 

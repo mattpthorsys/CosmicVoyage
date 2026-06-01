@@ -176,7 +176,7 @@ export const logger: Logger = {
         // Log the attempt using the logger's own method
         this.info("--- Preparing log file for download... ---");
         const defaultFilename = `cosmic_voyage_log_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-         const finalFilename = filename || defaultFilename;
+         const finalFilename = sanitizeDownloadFilename(filename || defaultFilename);
          try {
              const logContent = this.getLogBufferAsString(true); // Get content with header
              const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
@@ -199,3 +199,12 @@ export const logger: Logger = {
          }
     }
 }; // End logger object definition
+
+function sanitizeDownloadFilename(filename: string): string {
+    const sanitized = filename
+        .replace(/[/\\?%*:|"<>]/g, '_')
+        .replace(/[\u0000-\u001F\u007F]/g, '')
+        .trim()
+        .slice(0, 120);
+    return sanitized || 'cosmic_voyage_log.txt';
+}
