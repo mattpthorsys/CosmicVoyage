@@ -12,6 +12,7 @@ export interface SurfaceElementGenerationProfile {
   baseMinerals?: number;
   metallicityFeH?: number;
   surfaceTemp?: number;
+  hydrosphere?: string;
 }
 
 const VOLATILE_KEYS = new Set(['DEUTERIUM', 'WATER_ICE', 'AMMONIA_ICE', 'METHANE_ICE', 'HYDROGEN', 'HELIUM']);

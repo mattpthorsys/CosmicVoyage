@@ -51,6 +51,12 @@ interface TextTableLayout {
   tableWidth: number;
 }
 
+interface SolidTextureSample {
+  colour: string;
+  liquid: boolean;
+  reflectiveColour?: string;
+}
+
 export interface SurfaceVehicleOverlayModel {
   notifications: string[];
   deployed: boolean;
@@ -633,6 +639,7 @@ export class SceneRenderer {
     const map = planet.heightmap;
     const heightColors = planet.heightLevelColors;
     const elementMap = planet.surfaceElementMap;
+    const liquidOverlay = this.getPlanetLiquidOverlay(planet);
     if (!map || !heightColors || !elementMap) {
       logger.error(`[SceneRenderer.drawSolidPlanetSurface] Surface data missing for ${planet.name}.`);
       this._drawError(`Surface Error: Missing Data for ${planet.name}`);
@@ -669,13 +676,16 @@ export class SceneRenderer {
         const wrappedMapY = ((mapY % mapSize) + mapSize) % mapSize;
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
-        const terrainColor = heightColors[height] || '#FF00FF';
+        const submerged = !!liquidOverlay && height <= liquidOverlay.seaLevel;
+        const terrainColor = submerged
+          ? liquidOverlay.colour
+          : heightColors[height] || '#FF00FF';
         const screenX = viewport.x + x;
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
         const elementKey = elementMap[wrappedMapY]?.[wrappedMapX];
         const isCellCenter = x % cellScale === Math.floor(cellScale / 2) && y % cellScale === Math.floor(cellScale / 2);
-        if (isCellCenter) this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
+        if (!submerged && isCellCenter) this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
       }
     }
     if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
@@ -702,6 +712,20 @@ export class SceneRenderer {
       width,
       height,
     };
+  }
+
+  private getPlanetLiquidOverlay(planet: Planet) {
+    if (
+      !Object.prototype.hasOwnProperty.call(planet, '_surfaceData') &&
+      !Object.prototype.hasOwnProperty.call(planet, '_surfaceGenerator')
+    ) {
+      return null;
+    }
+    try {
+      return planet.surfaceLiquid ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /** Draws the resource overlay character (%) if applicable for the given cell. */
@@ -1064,11 +1088,18 @@ export class SceneRenderer {
         const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
         const textureX = this.wrapUnit(lon / (Math.PI * 2) + 0.5);
         const textureY = this.mercatorTextureY(lat);
-        const colour = solidMap && solidColours
-          ? this.sampleSolidPlanetTexture(solidMap, solidColours, textureX, textureY)
-          : this.sampleGiantPlanetTexture(planet, textureX, textureY, lon, lat, phase);
+        const solidSample = solidMap && solidColours
+          ? this.sampleSolidPlanetTexture(planet, textureX, textureY)
+          : null;
+        const colour = solidSample?.colour ?? this.sampleGiantPlanetTexture(planet, textureX, textureY, lon, lat, phase);
         const light = this.calculateGlobeLighting(planet, lon, lat, z);
-        const finalColour = adjustBrightness(this.hexToRgbFallback(colour), light.brightness);
+        const brightness = solidSample?.liquid
+          ? this.calculateLiquidGlobeBrightness(light.brightness, lon, lat, z)
+          : light.brightness;
+        const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
+        const finalColour = solidSample?.liquid && solidSample.reflectiveColour
+          ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(lon, lat, z) * light.glyph)
+          : baseColour;
         const char = light.glyph < 0.22 ? GLYPHS.SHADE_DARK : light.glyph < 0.48 ? GLYPHS.SHADE_MEDIUM : light.glyph < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
         this.screenBuffer.drawScaledChar(
           char,
@@ -1123,13 +1154,24 @@ export class SceneRenderer {
     return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu) + haze)) };
   }
 
-  private sampleSolidPlanetTexture(heightmap: number[][], heightColours: string[], u: number, v: number): string {
+  private sampleSolidPlanetTexture(planet: Planet, u: number, v: number): SolidTextureSample {
+    const heightmap = planet.heightmap;
+    const heightColours = planet.heightLevelColors;
+    if (!heightmap || !heightColours) return { colour: '#88BBBB', liquid: false };
     const mapSize = heightmap.length;
-    if (mapSize <= 0) return '#88BBBB';
+    if (mapSize <= 0) return { colour: '#88BBBB', liquid: false };
     const mapX = Math.floor(this.wrapUnit(u) * mapSize) % mapSize;
     const mapY = Math.max(0, Math.min(mapSize - 1, Math.floor(v * mapSize)));
     const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(heightmap[mapY]?.[mapX] ?? 0)));
-    return heightColours[height] ?? '#88BBBB';
+    const liquid = this.getPlanetLiquidOverlay(planet);
+    if (liquid && height <= liquid.seaLevel) {
+      return {
+        colour: liquid.colour,
+        liquid: true,
+        reflectiveColour: liquid.reflectiveColour,
+      };
+    }
+    return { colour: heightColours[height] ?? '#88BBBB', liquid: false };
   }
 
   private sampleGiantPlanetTexture(planet: Planet, u: number, _v: number, _lon: number, lat: number, phase: number): string {
@@ -1138,6 +1180,22 @@ export class SceneRenderer {
     const lat01 = Math.max(0, Math.min(1, 0.5 - lat / Math.PI));
     const phase01 = this.wrapUnit(phase / (Math.PI * 2));
     return this.sampleGiantAtmosphere(planet, palette, u, lat01, phase01).colour;
+  }
+
+  private calculateLiquidGlobeBrightness(baseBrightness: number, longitude: number, latitude: number, viewNormalZ: number): number {
+    return Math.max(0.05, Math.min(1.32, baseBrightness + this.calculateLiquidGlint(longitude, latitude, viewNormalZ) * 0.22));
+  }
+
+  private calculateLiquidGlint(longitude: number, latitude: number, viewNormalZ: number): number {
+    const subsolarLongitude = -0.55;
+    const subsolarLatitude = 0.12;
+    const incidence =
+      Math.sin(latitude) * Math.sin(subsolarLatitude) +
+      Math.cos(latitude) * Math.cos(subsolarLatitude) * Math.cos(longitude - subsolarLongitude);
+    const sunVisible = Math.max(0, incidence);
+    const view = Math.max(0, viewNormalZ);
+    const alignment = Math.max(0, 1 - Math.abs(longitude - subsolarLongitude) * 0.42 - Math.abs(latitude - subsolarLatitude) * 0.7);
+    return Math.pow(sunVisible * view * alignment, 4.2);
   }
 
   private mercatorTextureY(latitudeRad: number): number {
@@ -1184,7 +1242,10 @@ export class SceneRenderer {
         let colour = this.sampleGiantMapBand(planet, palette, col, row, detailWidth, detailHeight, model.rotationPhase);
         if (map && colours) {
           const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(map[mapY]?.[mapX] ?? 0)));
-          colour = colours[heightValue] ?? colour;
+          const liquid = this.getPlanetLiquidOverlay(planet);
+          colour = liquid && heightValue <= liquid.seaLevel
+            ? liquid.colour
+            : colours[heightValue] ?? colour;
         }
         if (col === cursorX && row === cursorY) {
           this.screenBuffer.drawScaledChar(

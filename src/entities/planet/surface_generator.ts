@@ -6,6 +6,7 @@ import { Atmosphere } from '../../entities/planet';
 import { generateHeightmap } from './heightmap_generator';
 import { generateSurfaceElementMap, SurfaceElementGenerationProfile } from './surface_element_generator';
 import { generateRgbPaletteCache, generateHeightLevelColors } from './surface_colour_generator';
+import { createSurfaceLiquidOverlay, isLiquidCovered, SurfaceLiquidOverlay } from './surface_liquid';
 import { RgbColour } from '../../rendering/colour';
 
 // Interface for the generated surface data package
@@ -14,6 +15,7 @@ export interface SurfaceData {
   heightLevelColors: string[] | null;
   rgbPaletteCache: RgbColour[] | null;
   surfaceElementMap: string[][] | null;
+  liquidOverlay: SurfaceLiquidOverlay | null;
 }
 
 /** Generates surface data (heightmap, colours, palettes, element map) for a planet. */
@@ -39,6 +41,7 @@ export class SurfaceGenerator {
     let heightLevelColors: string[] | null = null;
     let rgbPaletteCache: RgbColour[] | null = null;
     let surfaceElementMap: string[][] | null = null;
+    let liquidOverlay: SurfaceLiquidOverlay | null = null;
 
     rgbPaletteCache = generateRgbPaletteCache(this.planetType);
 
@@ -55,6 +58,14 @@ export class SurfaceGenerator {
       heightmap = generateHeightmap(this.mapSeed, this.planetType, this.atmosphere);
 
       if (heightmap) {
+        liquidOverlay = createSurfaceLiquidOverlay({
+          planetType: this.planetType,
+          hydrosphere: profile.hydrosphere ?? '',
+          surfaceTemp: profile.surfaceTemp ?? 288,
+          atmosphere: this.atmosphere,
+          heightmap,
+        });
+
         // Generate Element Map using overall planet abundance and heightmap
         surfaceElementMap = generateSurfaceElementMap(
           this.planetType, // Pass necessary context
@@ -67,6 +78,8 @@ export class SurfaceGenerator {
 
         if (!surfaceElementMap) {
           logger.error(`[SurfaceGen:${this.planetType}] Surface element map generation failed.`);
+        } else if (liquidOverlay) {
+          surfaceElementMap = maskSubmergedElements(surfaceElementMap, heightmap, liquidOverlay);
         }
 
         // Generate colours based on the final heightmap
@@ -95,6 +108,16 @@ export class SurfaceGenerator {
       }
     }
 
-    return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap };
+    return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay };
   }
 } // End SurfaceGenerator class
+
+function maskSubmergedElements(
+  elementMap: string[][],
+  heightmap: number[][],
+  liquidOverlay: SurfaceLiquidOverlay
+): string[][] {
+  return elementMap.map((row, y) =>
+    row.map((element, x) => (isLiquidCovered(heightmap[y]?.[x] ?? 0, liquidOverlay) ? '' : element))
+  );
+}

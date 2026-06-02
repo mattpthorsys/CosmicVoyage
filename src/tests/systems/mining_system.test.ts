@@ -69,4 +69,14 @@ describe('MiningSystem quantity extraction', () => {
 
     expect(player.cargoHold.items.DEUTERIUM).toBe(0.4);
   });
+
+  it('refuses submerged deposits until future equipment exists', () => {
+    const { mining, planet } = createMiningHarness();
+    planet.isSubmergedSurface = () => true;
+
+    const estimate = mining.getMiningEstimate();
+
+    expect(estimate.canMine).toBe(false);
+    expect(estimate.message).toContain('Submerged mining requires future ship equipment');
+  });
 });

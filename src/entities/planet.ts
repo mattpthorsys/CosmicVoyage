@@ -10,6 +10,7 @@ import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_envi
 import { OrbitHost } from './stellar_body';
 // Import the generator and data interface
 import { SurfaceGenerator, SurfaceData } from './planet/surface_generator';
+import { isLiquidCovered, SurfaceLiquidOverlay } from './planet/surface_liquid';
 // Re-export needed types if they aren't in a shared file
 export type AtmosphereComposition = Record<string, number>;
 //
@@ -228,6 +229,22 @@ export class Planet {
     return this._surfaceData?.surfaceElementMap ?? null; // Access from _surfaceData
   }
 
+  get surfaceLiquid(): SurfaceLiquidOverlay | null {
+    if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
+      this.ensureSurfaceReady();
+    }
+    return this._surfaceData?.liquidOverlay ?? null;
+  }
+
+  isSubmergedSurface(x: number, y: number): boolean {
+    const map = this.heightmap;
+    const liquid = this.surfaceLiquid;
+    if (!map || !liquid || map.length === 0) return false;
+    const wrappedX = ((x % map.length) + map.length) % map.length;
+    const wrappedY = ((y % map.length) + map.length) % map.length;
+    return isLiquidCovered(map[wrappedY]?.[wrappedX] ?? 0, liquid);
+  }
+
   /** Ensures surface data (including element map) is generated and cached if needed. Throws on failure. */
   ensureSurfaceReady(): void {
     //
@@ -252,6 +269,7 @@ export class Planet {
         baseMinerals: this.baseMinerals,
         metallicityFeH: this.stellarEnvironment.metallicityFeH,
         surfaceTemp: this.surfaceTemp,
+        hydrosphere: this.hydrosphere,
       }); //
       if (!this._surfaceData) {
         // Check if generator returned null

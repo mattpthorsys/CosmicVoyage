@@ -208,6 +208,9 @@ export class MiningSystem {
     if (planet.isMined(currentX, currentY)) {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
     }
+    if (typeof planet.isSubmergedSurface === 'function' && planet.isSubmergedSurface(currentX, currentY)) {
+      return { canMine: false, maxAmount: 0, message: 'This deposit lies below liquid surface. Submerged mining requires future ship equipment.' };
+    }
 
     const elementKey = elementMap[currentY][currentX];
     logger.debug(`[MiningSystem] Element key at [${currentX}, ${currentY}]: "${elementKey}"`);
