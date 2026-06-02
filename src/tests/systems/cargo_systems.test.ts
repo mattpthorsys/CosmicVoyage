@@ -33,4 +33,17 @@ describe('CargoSystem', () => {
     expect(system.removeItem(cargo, 'IRON', 99)).toBe(4);
     expect(cargo.items.IRON).toBeUndefined();
   });
+
+  it('keeps fractional cargo quantities rounded to tenths', () => {
+    const cargo = createDefaultCargo(50);
+    const system = new CargoSystem();
+
+    system.addItem(cargo, 'IRON', 26.3);
+    system.addItem(cargo, 'DEUTERIUM', 0.1);
+
+    expect(system.getTotalUnits(cargo)).toBe(26.4);
+    expect(cargo.items.DEUTERIUM).toBe(0.1);
+    expect(system.removeItem(cargo, 'IRON', 0.2)).toBe(0.2);
+    expect(cargo.items.IRON).toBe(26.1);
+  });
 });

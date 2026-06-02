@@ -34,6 +34,28 @@ function createMiningHarness(): { mining: any; player: Player; planet: any } {
   return { mining, player, planet };
 }
 
+function createGridMiningHarness(surfaceElementMap: string[][]): { mining: any; player: Player; planet: any } {
+  const harness = createMiningHarness();
+  const minedAmounts = new Map<string, number>();
+  const depletedSites = new Set<string>();
+  harness.planet.surfaceElementMap = surfaceElementMap;
+  harness.planet.elementAbundance = { IRON: 100, DEUTERIUM: 100 };
+  harness.planet.lastMinedSite = '';
+  harness.planet.isMined = (x: number, y: number) => depletedSites.has(`${x},${y}`);
+  harness.planet.getMinedAmount = (x: number, y: number) => minedAmounts.get(`${x},${y}`) ?? 0;
+  harness.planet.recordMinedAmount = (x: number, y: number, amount: number, totalYield: number) => {
+    const key = `${x},${y}`;
+    harness.planet.lastMinedSite = key;
+    const nextAmount = (minedAmounts.get(key) ?? 0) + amount;
+    minedAmounts.set(key, nextAmount);
+    if (nextAmount >= totalYield) depletedSites.add(key);
+  };
+  harness.planet.markMined = (x: number, y: number) => depletedSites.add(`${x},${y}`);
+  harness.player.position.surfaceX = 1;
+  harness.player.position.surfaceY = 1;
+  return harness;
+}
+
 describe('MiningSystem quantity extraction', () => {
   it('mines a requested partial amount without exhausting the location', () => {
     const { mining, player, planet } = createMiningHarness();
@@ -78,5 +100,48 @@ describe('MiningSystem quantity extraction', () => {
 
     expect(estimate.canMine).toBe(false);
     expect(estimate.message).toContain('Submerged mining requires future ship equipment');
+  });
+
+  it('mines deposits in adjacent terrain cells', () => {
+    const { mining, player, planet } = createGridMiningHarness([
+      ['', '', ''],
+      ['', '', 'IRON'],
+      ['', '', ''],
+    ]);
+
+    mining.mine(0.2);
+
+    expect(player.cargoHold.items.IRON).toBe(0.2);
+    expect(planet.lastMinedSite).toBe('2,1');
+  });
+
+  it('prefers the current terrain cell before adjacent cells', () => {
+    const { mining, player, planet } = createGridMiningHarness([
+      ['', '', ''],
+      ['', 'IRON', 'DEUTERIUM'],
+      ['', '', ''],
+    ]);
+
+    mining.mine(0.2);
+
+    expect(player.cargoHold.items.IRON).toBe(0.2);
+    expect(player.cargoHold.items.DEUTERIUM).toBeUndefined();
+    expect(planet.lastMinedSite).toBe('1,1');
+  });
+
+  it('reports all reachable adjacent mining options', () => {
+    const { mining } = createGridMiningHarness([
+      ['DEUTERIUM', '', ''],
+      ['', 'IRON', 'DEUTERIUM'],
+      ['', '', ''],
+    ]);
+
+    const options = mining.getMiningOptions();
+
+    expect(options.map((option: any) => `${option.elementKey}@${option.x},${option.y}`)).toEqual([
+      'IRON@1,1',
+      'DEUTERIUM@0,0',
+      'DEUTERIUM@2,1',
+    ]);
   });
 });

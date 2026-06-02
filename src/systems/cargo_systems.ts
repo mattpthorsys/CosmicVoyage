@@ -14,7 +14,7 @@ export class CargoSystem {
 
     /** Calculates the current total units of cargo held in a cargo component. */
     getTotalUnits(cargoHold: CargoComponent): number {
-        return Object.values(cargoHold.items).reduce((sum, quantity) => sum + quantity, 0);
+        return roundCargoQuantity(Object.values(cargoHold.items).reduce((sum, quantity) => sum + quantity, 0));
     }
 
     /**
@@ -35,9 +35,9 @@ export class CargoSystem {
             return 0;
         }
 
-        const amountToAdd = Math.min(amount, availableCapacity);
+        const amountToAdd = roundCargoQuantity(Math.min(amount, availableCapacity));
         const oldElementAmount = cargoHold.items[elementKey] || 0;
-        cargoHold.items[elementKey] = oldElementAmount + amountToAdd; // Modify component data
+        cargoHold.items[elementKey] = roundCargoQuantity(oldElementAmount + amountToAdd); // Modify component data
 
         // Logging is better handled by the caller which has more context (e.g., mined vs bought)
         // logger.info(`[CargoSystem] Added: ${amountToAdd} units of ${elementKey}. New Total: ${currentTotal + amountToAdd}/${cargoHold.capacity}.`);
@@ -65,8 +65,8 @@ export class CargoSystem {
         }
         const currentAmount = cargoHold.items[elementKey] || 0;
         if (currentAmount <= 0) return 0;
-        const removed = Math.min(currentAmount, Math.floor(amount));
-        const remaining = currentAmount - removed;
+        const removed = roundCargoQuantity(Math.min(currentAmount, amount));
+        const remaining = roundCargoQuantity(currentAmount - removed);
         if (remaining > 0) cargoHold.items[elementKey] = remaining;
         else delete cargoHold.items[elementKey];
         return removed;
@@ -88,3 +88,7 @@ export class CargoSystem {
      }
 
 } // End CargoSystem class
+
+function roundCargoQuantity(value: number): number {
+    return Math.round(value * 10) / 10;
+}

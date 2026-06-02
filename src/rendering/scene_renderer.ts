@@ -1533,7 +1533,7 @@ export class SceneRenderer {
     if (menuY >= this.screenBuffer.getRows()) return;
     const fuelPct = model.maxFuel > 0 ? Math.round((Math.max(0, model.fuel) / model.maxFuel) * 100) : 0;
     const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel} ${fuelPct}%`;
-    const cargo = `CARGO ${model.cargo}/${model.cargoCapacity} m^3`;
+    const cargo = `CARGO ${formatCargoAmount(model.cargo)}/${Math.round(model.cargoCapacity)} m^3`;
     const mode = model.mapExpanded ? 'MAP' : model.moving ? 'MOVING' : 'STOPPED';
     this.screenBuffer.drawString(`${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth), panelX + 1, menuY, model.moving ? '#9FFFE0' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
 
@@ -1646,3 +1646,7 @@ export class SceneRenderer {
   }
 
 } // End SceneRenderer class
+
+function formatCargoAmount(value: number): string {
+  return (Math.round(value * 10) / 10).toFixed(1);
+}

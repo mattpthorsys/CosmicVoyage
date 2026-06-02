@@ -17,6 +17,12 @@ export interface MiningEstimate {
   message?: string;
 }
 
+export type MiningSite = MiningEstimate & {
+  totalYield?: number;
+  x?: number;
+  y?: number;
+};
+
 export class MiningSystem {
 
   private readonly terminalOverlay: TerminalOverlay;
@@ -77,7 +83,32 @@ export class MiningSystem {
     }
   }
 
+  getMiningOptions(): MiningSite[] {
+    if (this.stateManager.state !== 'planet') return [];
+    const planet = this.stateManager.currentPlanet;
+    if (!planet || planet.type === 'GasGiant' || planet.type === 'IceGiant') return [];
+
+    planet.ensureSurfaceReady();
+    const elementMap = planet.surfaceElementMap;
+    if (!elementMap) return [];
+    const currentX = this.player.position.surfaceX;
+    const currentY = this.player.position.surfaceY;
+    if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length) return [];
+
+    return this.getNearbyMiningCoordinates(currentX, currentY, elementMap)
+      .map(({ x, y }) => this.getMiningSiteAt(planet, elementMap, x, y))
+      .filter((site): site is MiningSite & { elementKey: string; x: number; y: number } => site.canMine && !!site.elementKey && site.x !== undefined && site.y !== undefined);
+  }
+
   mine(requestedAmount?: number): void {
+    this.mineSelectedSite(null, requestedAmount);
+  }
+
+  mineAt(x: number, y: number, requestedAmount?: number): void {
+    this.mineSelectedSite({ x, y }, requestedAmount);
+  }
+
+  private mineSelectedSite(selectedSite: { x: number; y: number } | null, requestedAmount?: number): void {
     logger.info(`!!!!!! [MiningSystem] handleMineRequest EXECUTION STARTED !!!!!!`); // Made it INFO level for visibility
 
     if (!this.stateManager) {
@@ -109,7 +140,7 @@ export class MiningSystem {
         logger.error("[MiningSystem] In 'planet' state but currentPlanet is null!");
       } else {
         try {
-          const site = this.getMiningSite(planet);
+          const site = selectedSite ? this.getMiningSiteByCoordinate(planet, selectedSite.x, selectedSite.y) : this.getMiningSite(planet);
           if (!site.canMine || !site.elementKey) {
             statusMessage = site.message || '';
             actionFailedReason = site.message || 'Cannot mine';
@@ -130,7 +161,9 @@ export class MiningSystem {
 
               if (actuallyAdded > 0) {
                 this.player.awardCrewExperience('geology', 8 + Math.ceil(actuallyAdded));
-                planet.recordMinedAmount(this.player.position.surfaceX, this.player.position.surfaceY, actuallyAdded, site.totalYield ?? site.maxAmount);
+                const mineX = site.x ?? this.player.position.surfaceX;
+                const mineY = site.y ?? this.player.position.surfaceY;
+                planet.recordMinedAmount(mineX, mineY, actuallyAdded, site.totalYield ?? site.maxAmount);
                 const currentTotalCargo = this.cargoSystem.getTotalUnits(cargoHold);
                 statusMessage = STATUS_MESSAGES.PLANET_MINE_SUCCESS(
                   actuallyAdded,
@@ -188,7 +221,21 @@ export class MiningSystem {
     logger.info(`!!!!!! [MiningSystem] handleMineRequest EXECUTION FINISHED !!!!!!`); // Changed to INFO
   }
 
-  private getMiningSite(planet: Planet): MiningEstimate & { totalYield?: number } {
+  private getMiningSiteByCoordinate(planet: Planet, x: number, y: number): MiningSite {
+    if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
+      return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_INVALID_TYPE(planet.type) };
+    }
+    planet.ensureSurfaceReady();
+    const elementMap = planet.surfaceElementMap;
+    if (!elementMap) {
+      throw new Error('Surface element map data is missing after ensureSurfaceReady.');
+    }
+    const mapHeight = elementMap.length;
+    const mapWidth = elementMap[0]?.length ?? 0;
+    return this.getMiningSiteAt(planet, elementMap, wrapIndex(x, mapWidth), wrapIndex(y, mapHeight));
+  }
+
+  private getMiningSite(planet: Planet): MiningSite {
     if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_INVALID_TYPE(planet.type) };
     }
@@ -205,17 +252,68 @@ export class MiningSystem {
     if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length) {
       throw new Error(`Player position [${currentX},${currentY}] out of map bounds.`);
     }
-    if (planet.isMined(currentX, currentY)) {
-      return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
-    }
-    if (typeof planet.isSubmergedSurface === 'function' && planet.isSubmergedSurface(currentX, currentY)) {
-      return { canMine: false, maxAmount: 0, message: 'This deposit lies below liquid surface. Submerged mining requires future ship equipment.' };
+
+    let fallback: MiningSite | null = null;
+    for (const { x, y } of this.getNearbyMiningCoordinates(currentX, currentY, elementMap)) {
+      const site = this.getMiningSiteAt(planet, elementMap, x, y);
+      if (site.canMine) return site;
+      if (!fallback && site.elementKey) fallback = site;
     }
 
-    const elementKey = elementMap[currentY][currentX];
-    logger.debug(`[MiningSystem] Element key at [${currentX}, ${currentY}]: "${elementKey}"`);
+    return fallback ?? { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS };
+  }
+
+  private getNearbyMiningCoordinates(
+    currentX: number,
+    currentY: number,
+    elementMap: string[][]
+  ): Array<{ x: number; y: number }> {
+    const offsets = [
+      [0, 0],
+      [-1, -1],
+      [0, -1],
+      [1, -1],
+      [-1, 0],
+      [1, 0],
+      [-1, 1],
+      [0, 1],
+      [1, 1],
+    ];
+    const height = elementMap.length;
+    const width = elementMap[0]?.length ?? 0;
+    const seen = new Set<string>();
+    const coordinates: Array<{ x: number; y: number }> = [];
+    for (const [dx, dy] of offsets) {
+      const x = wrapIndex(currentX + dx, width);
+      const y = wrapIndex(currentY + dy, height);
+      const key = `${x},${y}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        coordinates.push({ x, y });
+      }
+    }
+    return coordinates;
+  }
+
+  private getMiningSiteAt(planet: Planet, elementMap: string[][], x: number, y: number): MiningSite {
+    if (planet.isMined(x, y)) {
+      return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
+    }
+
+    const elementKey = elementMap[y][x];
+    logger.debug(`[MiningSystem] Element key at [${x}, ${y}]: "${elementKey}"`);
     if (!elementKey) {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS };
+    }
+
+    if (typeof planet.isSubmergedSurface === 'function' && planet.isSubmergedSurface(x, y)) {
+      return {
+        canMine: false,
+        maxAmount: 0,
+        elementKey,
+        elementName: ELEMENTS[elementKey]?.name || elementKey,
+        message: 'This deposit lies below liquid surface. Submerged mining requires future ship equipment.',
+      };
     }
 
     const elementInfo = ELEMENTS[elementKey];
@@ -230,12 +328,12 @@ export class MiningSystem {
       };
     }
 
-    const minePRNG = planet.systemPRNG.seedNew(`mine_${currentX}_${currentY}`);
+    const minePRNG = planet.systemPRNG.seedNew(`mine_${x}_${y}`);
     const totalYield = roundToTenth(minePRNG.random(0.1, 15.05));
-    const alreadyMined = planet.getMinedAmount(currentX, currentY);
+    const alreadyMined = planet.getMinedAmount(x, y);
     const remaining = roundToTenth(Math.max(0, totalYield - alreadyMined));
     if (remaining <= 0) {
-      planet.markMined(currentX, currentY);
+      planet.markMined(x, y);
       return { canMine: false, maxAmount: 0, elementKey, elementName: elementInfo?.name || elementKey, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
     }
     return {
@@ -244,6 +342,8 @@ export class MiningSystem {
       elementName: elementInfo?.name || elementKey,
       maxAmount: remaining,
       totalYield,
+      x,
+      y,
     };
   }
 
@@ -256,4 +356,9 @@ export class MiningSystem {
 
 function roundToTenth(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function wrapIndex(value: number, size: number): number {
+  if (size <= 0) return 0;
+  return ((value % size) + size) % size;
 }

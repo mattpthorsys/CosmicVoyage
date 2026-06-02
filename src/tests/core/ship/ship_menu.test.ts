@@ -289,6 +289,53 @@ describe('ship menu', () => {
     expect(main.rows.find((row: any) => row.id === 'launch')).toMatchObject({ disabled: false });
   });
 
+  it('keeps landed ship operations open while embarked planetside', () => {
+    const game = createShipMenuHarness('planet');
+    game.shipMenuOpen = true;
+    game.shipMenuSection = 'main';
+    game.player.terrainVehicle.deployed = false;
+
+    game.inputState.pressed = 'QUIT';
+    game._handleShipMenuInput();
+
+    expect(game.shipMenuOpen).toBe(true);
+    expect(game.statusMessage).toContain('disembark');
+
+    game.player.terrainVehicle.deployed = true;
+    game.inputState.pressed = 'QUIT';
+    game._handleShipMenuInput();
+
+    expect(game.shipMenuOpen).toBe(false);
+  });
+
+  it('uses a local extraction selector before mining when multiple deposits are reachable', () => {
+    const game = createShipMenuHarness('planet');
+    game.stateManager.currentPlanet = {
+      surfaceElementMap: [
+        ['', '', ''],
+        ['', '', ''],
+        ['', '', ''],
+      ],
+    };
+    game.player.position.surfaceX = 1;
+    game.player.position.surfaceY = 1;
+    game.player.terrainVehicle.deployed = true;
+
+    game.openSurfaceExtractionSelector('mine', [
+      { canMine: true, elementKey: 'IRON', elementName: 'Iron', maxAmount: 1.2, x: 1, y: 1 },
+      { canMine: true, elementKey: 'DEUTERIUM', elementName: 'Deuterium', maxAmount: 0.7, x: 2, y: 1 },
+    ]);
+
+    game.inputState.pressed = 'MOVE_DOWN';
+    game._handleSurfaceExtractionSelectorInput();
+    game.inputState.pressed = 'ENTER_SYSTEM';
+    game._handleSurfaceExtractionSelectorInput();
+
+    expect(game.surfaceExtractionSelector).toBeNull();
+    expect(game.quantitySelector.context).toMatchObject({ type: 'mine', x: 2, y: 1 });
+    expect(game.quantitySelector.subject).toContain('East');
+  });
+
   it('creates a scrollable surface icon legend model', () => {
     const game = createShipMenuHarness('planet');
 
