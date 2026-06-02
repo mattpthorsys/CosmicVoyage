@@ -40,12 +40,13 @@ describe('MiningSystem quantity extraction', () => {
     const estimate = mining.getMiningEstimate();
 
     expect(estimate.canMine).toBe(true);
-    expect(estimate.maxAmount).toBeGreaterThan(2);
+    expect(estimate.maxAmount).toBeGreaterThanOrEqual(0.1);
+    expect(estimate.maxAmount).toBeLessThanOrEqual(15);
 
-    mining.mine(2);
+    mining.mine(0.2);
 
-    expect(player.cargoHold.items.IRON).toBe(2);
-    expect(planet.minedAmount).toBe(2);
+    expect(player.cargoHold.items.IRON).toBe(0.2);
+    expect(planet.minedAmount).toBe(0.2);
     expect(planet.depleted).toBe(false);
   });
 
@@ -53,10 +54,10 @@ describe('MiningSystem quantity extraction', () => {
     const { mining, player } = createMiningHarness();
     player.terrainVehicle.deployed = true;
 
-    mining.mine(3);
+    mining.mine(0.3);
 
     expect(player.cargoHold.items.IRON).toBeUndefined();
-    expect(player.terrainVehicle.cargoHold.items.IRON).toBe(3);
+    expect(player.terrainVehicle.cargoHold.items.IRON).toBe(0.3);
   });
 
   it('mines sparse deuterium deposits as fuel feedstock', () => {
@@ -64,8 +65,8 @@ describe('MiningSystem quantity extraction', () => {
     planet.surfaceElementMap = [['DEUTERIUM']];
     planet.elementAbundance = { DEUTERIUM: 100 };
 
-    mining.mine(2);
+    mining.mine(0.4);
 
-    expect(player.cargoHold.items.DEUTERIUM).toBe(2);
+    expect(player.cargoHold.items.DEUTERIUM).toBe(0.4);
   });
 });

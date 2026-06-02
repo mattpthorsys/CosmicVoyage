@@ -14,6 +14,22 @@ function countDeposits(map: string[][] | null, predicate: (key: string) => boole
 }
 
 describe('surface element generation', () => {
+  it('keeps mineral deposits sparse after frequency reduction', () => {
+    const heightmap = makeHeightmap(64);
+    const abundance = { IRON: 32, SILICON: 28, COPPER: 12, WATER_ICE: 18, DEUTERIUM: 10 };
+
+    const map = generateSurfaceElementMap('Rock', 'sparse-density-test', new PRNG('sparse-density-test'), abundance, heightmap, {
+      mineralRichness: MineralRichness.AVERAGE,
+      baseMinerals: 55,
+      metallicityFeH: 0,
+      surfaceTemp: 285,
+    });
+
+    const deposits = countDeposits(map);
+    expect(deposits).toBeGreaterThan(5);
+    expect(deposits).toBeLessThan(220);
+  });
+
   it('scales deposit density with mineral richness and metallicity context', () => {
     const heightmap = makeHeightmap(48);
     const abundance = { IRON: 32, SILICON: 28, COPPER: 12, WATER_ICE: 18, DEUTERIUM: 10 };

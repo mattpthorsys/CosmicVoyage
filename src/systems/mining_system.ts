@@ -116,8 +116,8 @@ export class MiningSystem {
           } else {
             const cargoHold = this.player.getActiveSurfaceCargoHold();
             const freeCargo = cargoHold.capacity - this.cargoSystem.getTotalUnits(cargoHold);
-            const desiredAmount = requestedAmount === undefined ? site.maxAmount : Math.max(1, Math.floor(requestedAmount));
-            const amountToMine = Math.min(site.maxAmount, desiredAmount, freeCargo);
+            const desiredAmount = requestedAmount === undefined ? site.maxAmount : Math.max(0.1, roundToTenth(requestedAmount));
+            const amountToMine = roundToTenth(Math.min(site.maxAmount, desiredAmount, freeCargo));
             if (amountToMine <= 0) {
               statusMessage = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
                 this.cargoSystem.getTotalUnits(cargoHold),
@@ -129,7 +129,7 @@ export class MiningSystem {
               logger.debug(`[MiningSystem] CargoSystem.addItem returned: ${actuallyAdded}`);
 
               if (actuallyAdded > 0) {
-                this.player.awardCrewExperience('geology', 8 + actuallyAdded);
+                this.player.awardCrewExperience('geology', 8 + Math.ceil(actuallyAdded));
                 planet.recordMinedAmount(this.player.position.surfaceX, this.player.position.surfaceY, actuallyAdded, site.totalYield ?? site.maxAmount);
                 const currentTotalCargo = this.cargoSystem.getTotalUnits(cargoHold);
                 statusMessage = STATUS_MESSAGES.PLANET_MINE_SUCCESS(
@@ -227,11 +227,10 @@ export class MiningSystem {
       };
     }
 
-    const abundanceFactor = Math.max(0.1, Math.sqrt(baseAbundance / 100));
     const minePRNG = planet.systemPRNG.seedNew(`mine_${currentX}_${currentY}`);
-    const totalYield = Math.max(1, Math.round(CONFIG.MINING_RATE_FACTOR * abundanceFactor * minePRNG.random(0.6, 1.4)));
+    const totalYield = roundToTenth(minePRNG.random(0.1, 15.05));
     const alreadyMined = planet.getMinedAmount(currentX, currentY);
-    const remaining = Math.max(0, totalYield - alreadyMined);
+    const remaining = roundToTenth(Math.max(0, totalYield - alreadyMined));
     if (remaining <= 0) {
       planet.markMined(currentX, currentY);
       return { canMine: false, maxAmount: 0, elementKey, elementName: elementInfo?.name || elementKey, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
@@ -251,3 +250,7 @@ export class MiningSystem {
     eventManager.unsubscribe(GameEvents.MINE_REQUESTED, this.handleMineRequest.bind(this));
   }
 } // End MiningSystem class
+
+function roundToTenth(value: number): number {
+  return Math.round(value * 10) / 10;
+}

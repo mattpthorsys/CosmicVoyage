@@ -9,6 +9,7 @@ export interface QuantitySelectorState<Context = unknown> {
   max: number;
   value: number;
   step: number;
+  precision: number;
   context: Context;
 }
 
@@ -21,10 +22,13 @@ export function createQuantitySelector<Context>(args: {
   max: number;
   value?: number;
   step?: number;
+  precision?: number;
   context: Context;
 }): QuantitySelectorState<Context> {
-  const min = Math.max(1, Math.floor(args.min ?? 1));
-  const max = Math.max(min, Math.floor(args.max));
+  const precision = Math.max(0, Math.min(3, Math.floor(args.precision ?? 0)));
+  const min = roundQuantity(Math.max(precision > 0 ? 0.1 : 1, args.min ?? (precision > 0 ? 0.1 : 1)), precision);
+  const max = Math.max(min, roundQuantity(args.max, precision));
+  const defaultStep = precision > 0 ? 0.1 : Math.max(1, Math.round(max / 10));
   return {
     title: args.title,
     subject: args.subject,
@@ -32,8 +36,9 @@ export function createQuantitySelector<Context>(args: {
     unitLabel: args.unitLabel ?? 'units',
     min,
     max,
-    value: clampQuantity(args.value ?? max, min, max),
-    step: Math.max(1, Math.floor(args.step ?? Math.max(1, Math.round(max / 10)))),
+    value: clampQuantity(args.value ?? max, min, max, precision),
+    step: roundQuantity(Math.max(precision > 0 ? 0.1 : 1, args.step ?? defaultStep), precision),
+    precision,
     context: args.context,
   };
 }
@@ -44,7 +49,7 @@ export function adjustQuantitySelector<Context>(
 ): QuantitySelectorState<Context> {
   return {
     ...selector,
-    value: clampQuantity(selector.value + delta, selector.min, selector.max),
+    value: clampQuantity(selector.value + delta, selector.min, selector.max, selector.precision),
   };
 }
 
@@ -54,12 +59,15 @@ export function setQuantitySelectorValue<Context>(
 ): QuantitySelectorState<Context> {
   return {
     ...selector,
-    value: clampQuantity(value, selector.min, selector.max),
+    value: clampQuantity(value, selector.min, selector.max, selector.precision),
   };
 }
 
 export function createQuantitySelectorModel(selector: QuantitySelectorState): TextModalTableModel {
   const remaining = selector.max - selector.value;
+  const valueText = formatQuantity(selector.value, selector.precision);
+  const maxText = formatQuantity(selector.max, selector.precision);
+  const remainingText = formatQuantity(remaining, selector.precision);
   return {
     title: selector.title,
     subtitle: selector.subject,
@@ -69,9 +77,9 @@ export function createQuantitySelectorModel(selector: QuantitySelectorState): Te
       {
         id: 'amount',
         cells: [
-          `${selector.value} ${selector.unitLabel}`,
-          `${selector.max}`,
-          String(remaining),
+          `${valueText} ${selector.unitLabel}`,
+          maxText,
+          remainingText,
           `${formatQuantityGauge(selector.value, selector.max, 22)} ${selector.detail}`,
         ],
       },
@@ -86,8 +94,17 @@ export function createQuantitySelectorModel(selector: QuantitySelectorState): Te
   };
 }
 
-function clampQuantity(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, Math.floor(value)));
+function clampQuantity(value: number, min: number, max: number, precision: number = 0): number {
+  return roundQuantity(Math.max(min, Math.min(max, value)), precision);
+}
+
+function roundQuantity(value: number, precision: number): number {
+  const multiplier = 10 ** precision;
+  return Math.round(value * multiplier) / multiplier;
+}
+
+function formatQuantity(value: number, precision: number): string {
+  return precision > 0 ? value.toFixed(precision) : String(Math.round(value));
 }
 
 function formatQuantityGauge(value: number, max: number, width: number): string {

@@ -2814,6 +2814,8 @@ export class Game {
       unitLabel: 'm^3',
       max: estimate.maxAmount,
       value: estimate.maxAmount,
+      step: 0.1,
+      precision: 1,
       context: { type: 'mine' },
     }));
   }

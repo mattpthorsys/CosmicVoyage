@@ -493,8 +493,8 @@ export class Planet {
   /** Adds extracted units to a coordinate and marks the location depleted when its yield is exhausted. */
   recordMinedAmount(x: number, y: number, amount: number, totalYield: number): void {
     const key = `${x},${y}`;
-    this.minedLocationAmounts[key] = this.getMinedAmount(x, y) + Math.max(0, Math.floor(amount));
-    if (this.minedLocationAmounts[key] >= Math.max(1, Math.floor(totalYield))) {
+    this.minedLocationAmounts[key] = Math.round((this.getMinedAmount(x, y) + Math.max(0, amount)) * 10) / 10;
+    if (this.minedLocationAmounts[key] >= Math.max(0.1, totalYield) - 0.0001) {
       this.markMined(x, y);
     }
   }
