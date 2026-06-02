@@ -93,7 +93,16 @@ export function generatePlanetCharacteristics(
     const surfaceTemp = temperatureProfile.average;
 
     // 6. Generate Surface Descriptors (use final temp)
-    const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere);
+    const hydrosphere = generateHydrosphere(planetPRNG, planetType, surfaceTemp, atmosphere, {
+        surfaceTempMin: temperatureProfile.min,
+        surfaceTempMax: temperatureProfile.max,
+        gravity,
+        escapeVelocity,
+        diameterKm: diameter,
+        densityGcm3: density,
+        orbitDistanceM: orbitDistance,
+        environment,
+    });
     const lithosphere = generateLithosphere(planetPRNG, planetType);
 
     // 7. Generate Resources (use final temp, lithosphere, gravity)

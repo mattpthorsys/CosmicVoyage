@@ -37,12 +37,21 @@ export function isLiquidCovered(height: number, overlay: SurfaceLiquidOverlay | 
 
 function getLiquidCoverage(planetType: string, hydrosphere: string, surfaceTemp: number, atmosphere: Atmosphere): number {
   const hydro = hydrosphere.toLowerCase();
-  if (planetType === 'Oceanic') return 0.82;
-  if (planetType === 'Hycean') return 0.92;
+  if (hydro.includes('desiccated') || hydro.includes('dry') || hydro.includes('no stable surface ocean')) return 0;
+  if (hydro.includes('global ice shell') || hydro.includes('global ice sheet')) return 0;
+  if (planetType === 'Oceanic' && hydro.includes('global saline ocean')) return 0.82;
+  if (planetType === 'Hycean' && hydro.includes('global high-pressure ocean')) return 0.92;
   if (hydro.includes('global saline ocean') || hydro.includes('global high-pressure ocean')) return 0.86;
+  if (hydro.includes('shallow saline seas')) return 0.36;
+  if (hydro.includes('cold brine seas')) return 0.22;
+  if (hydro.includes('supercritical global water')) return atmosphere.pressure > 22 ? 0.32 : 0;
   if (hydro.includes('significant oceans')) return 0.48;
   if (hydro.includes('small seas')) return 0.28;
+  if (hydro.includes('connected shallow seas')) return 0.42;
   if (hydro.includes('lakes') || hydro.includes('rivers')) return 0.18;
+  if (hydro.includes('methane/ethane') || hydro.includes('hydrocarbon')) return surfaceTemp >= 88 && surfaceTemp <= 190 ? 0.12 : 0;
+  if (hydro.includes('nitrogen frost plains') || hydro.includes('nitrogen/methane frosts')) return surfaceTemp >= 55 && surfaceTemp <= 115 ? 0.06 : 0;
+  if (hydro.includes('ammonia-water') || hydro.includes('cryolava reservoirs')) return surfaceTemp >= 170 && surfaceTemp <= 260 ? 0.08 : 0;
   if (hydro.includes('trace liquid')) return 0.04;
   if (hydro.includes('supercritical fluid') && atmosphere.pressure > 5) return 0.12;
   if (hydro.includes('acid') && atmosphere.pressure > 0.5) return 0.1;
@@ -61,9 +70,11 @@ function getLiquidKind(planetType: string, hydrosphere: string, surfaceTemp: num
   const hydro = hydrosphere.toLowerCase();
   if (planetType === 'Hycean') return 'hycean';
   if (hydro.includes('acid')) return 'acid';
+  if (hydro.includes('hydrocarbon') || hydro.includes('ethane')) return 'methane';
   if (hydro.includes('methane')) return 'methane';
   if (hydro.includes('nitrogen')) return 'nitrogen';
-  if (hydro.includes('ammonia')) return 'ammonia';
+  if (hydro.includes('ammonia') || hydro.includes('cryolava')) return 'ammonia';
+  if (hydro.includes('brine')) return 'brine';
   if (surfaceTemp < 245) return 'brine';
   return 'water';
 }
