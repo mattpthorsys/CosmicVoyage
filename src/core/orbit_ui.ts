@@ -51,17 +51,18 @@ export function createOrbitScreenModel(args: {
   const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(parentSeparation);
   const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(parentSeparation);
   const classText = describePlanetType(selected.type);
+  const temperatureRange = `${selected.surfaceTempMin}-${selected.surfaceTempMax}K`;
   const description = [
-    `${selected.name} is a ${classText} with ${selected.gravity.toFixed(2)}g gravity and a surface temperature of ${selected.surfaceTemp}K avg (${selected.surfaceTempMin}-${selected.surfaceTempMax}K).`,
+    `Profile: ${selected.name} is a ${classText}. Gravity ${selected.gravity.toFixed(2)}g. Temperature ${selected.surfaceTemp}K average, range ${temperatureRange}.`,
     selected.orbitDistance <= 0
-      ? 'Orbit none; free planetary-mass object in interstellar space.'
-      : `Orbital scale ${orbitText} from the system primary; one-way signal delay ${signalText}.`,
-    `Atmosphere ${selected.atmosphere.density.toLowerCase()} at ${pressure} bar; hydrosphere ${selected.hydrosphere.toLowerCase()}, lithosphere ${selected.lithosphere.toLowerCase()}.`,
+      ? 'Orbit: none. Free planetary-mass object in interstellar space.'
+      : `Orbit: ${orbitText} from the system primary. One-way signal delay ${signalText}.`,
+    `Atmosphere: ${selected.atmosphere.density.toLowerCase()}, ${pressure} bar. Hydrosphere: ${selected.hydrosphere.toLowerCase()}. Lithosphere: ${selected.lithosphere.toLowerCase()}.`,
     selected.type === 'GasGiant' || selected.type === 'IceGiant'
-      ? `Atmospheric resources: ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
+      ? `Resources: atmospheric signatures ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
       : selected.scanned
-        ? `Mineral scan ${selected.mineralRichness}; primary resource ${selected.primaryResource || 'N/A'}. Deposits: ${topElements.join(', ') || 'none significant'}.`
-        : `Mineral scan pending. Potential richness ${selected.mineralRichness}; orbital survey can select a safe landing zone.`,
+        ? `Minerals: scan ${selected.mineralRichness}. Primary resource ${selected.primaryResource || 'N/A'}. Deposits ${topElements.join(', ') || 'none significant'}.`
+        : `Minerals: scan pending. Potential richness ${selected.mineralRichness}. Orbital survey can select a safe landing zone.`,
   ];
 
   const bodies = [args.parentPlanet, ...args.parentPlanet.moons].map((planet, index) => ({

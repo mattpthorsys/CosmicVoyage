@@ -1057,7 +1057,13 @@ export class SceneRenderer {
       ...this.formatOrbitSummaryLines(model.description, descWidth - 2),
     ];
     lines.slice(0, descHeight - 3).forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, descWidth - 2), descX + 1, descY + 2 + index, index < 3 ? '#9FFFE0' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+      this.drawOrbitSummaryLine(
+        line.slice(0, descWidth - 2),
+        descX + 1,
+        descY + 2 + index,
+        descWidth - 2,
+        index < 3 ? '#9FFFE0' : '#00AA66'
+      );
     });
 
     if (model.alert) {
@@ -1222,6 +1228,32 @@ export class SceneRenderer {
       lines.push(...this.wrapText(paragraph, width));
     });
     return lines;
+  }
+
+  private drawOrbitSummaryLine(line: string, x: number, y: number, width: number, baseColour: string): void {
+    const measurePattern = /~?\d[\d,]*(?:\.\d+)?(?:-\d[\d,]*(?:\.\d+)?)?\s?(?:g\/cm3|m\^3|AU|bar|deg|hours?|mins?|minutes?|secs?|seconds?|km|Cr|K|g|s|%)/g;
+    let cursorX = x;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = measurePattern.exec(line)) !== null && cursorX < x + width) {
+      const plain = line.slice(lastIndex, match.index);
+      if (plain) {
+        const clippedPlain = plain.slice(0, x + width - cursorX);
+        this.screenBuffer.drawString(clippedPlain, cursorX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR);
+        cursorX += clippedPlain.length;
+      }
+
+      const measurement = match[0].slice(0, x + width - cursorX);
+      if (measurement) {
+        this.screenBuffer.drawString(measurement, cursorX, y, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+        cursorX += measurement.length;
+      }
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (cursorX < x + width && lastIndex < line.length) {
+      this.screenBuffer.drawString(line.slice(lastIndex, lastIndex + x + width - cursorX), cursorX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR);
+    }
   }
 
   private drawOrbitLandingMap(model: OrbitScreenModel, x: number, y: number, width: number, height: number): void {
