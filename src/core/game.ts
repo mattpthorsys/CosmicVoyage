@@ -1510,6 +1510,7 @@ export class Game {
     this.currentTargetSignature = signature;
     this.approachTargetSignature = startApproach ? signature : null;
     if (startApproach) {
+      this.setShipFacingTowardTarget(target);
       this.player.awardCrewExperience('navigation', 4);
       this.player.awardCrewExperience('piloting', 2);
     }
@@ -1529,6 +1530,7 @@ export class Game {
       return;
     }
     this.approachTargetSignature = this.getTargetSignature(target);
+    this.setShipFacingTowardTarget(target);
     this.player.awardCrewExperience('navigation', 4);
     this.player.awardCrewExperience('piloting', 2);
     this.statusMessage = `Approach assist engaged: ${this.getTargetName(target)}.`;
@@ -3866,8 +3868,20 @@ export class Game {
 
   private getTargetApproachDistance(target: NavigationTarget): number {
     return target instanceof Planet || target instanceof Starbase
-      ? CONFIG.LANDING_DISTANCE
+      ? CONFIG.LANDING_DISTANCE * 0.62
       : CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
+  }
+
+  private setShipFacingTowardTarget(target: NavigationTarget): void {
+    const coords = this.getTargetCoords(target);
+    const dx = coords.x - this.player.position.systemX;
+    const dy = coords.y - this.player.position.systemY;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      this.player.render.directionGlyph = dx >= 0 ? GLYPHS.SHIP_EAST : GLYPHS.SHIP_WEST;
+    } else {
+      this.player.render.directionGlyph = dy >= 0 ? GLYPHS.SHIP_SOUTH : GLYPHS.SHIP_NORTH;
+    }
+    this.player.render.char = this.player.render.directionGlyph;
   }
 
   private updateApproachAssist(_deltaTime: number): void {
