@@ -132,15 +132,26 @@ describe('ship menu', () => {
 
     game.shipMenuSection = 'status';
     const status = game.createShipMenuModel();
-    expect(status.rows.find((row: any) => row.id === 'cargo')?.cells[1]).toContain('m^3');
-    expect(status.rows.some((row: any) => row.id === 'fuel' && row.cells[3].includes('['))).toBe(true);
-    expect(status.rows.find((row: any) => row.id === 'damage')?.cells[1]).toContain('% hull');
-    expect(status.rows.find((row: any) => row.id === 'drive')?.cells[2]).toContain('% eff.');
-    expect(status.rows.find((row: any) => row.id === 'superstructure')?.cells[3]).toContain('16 cargo bays');
-    expect(status.rows.find((row: any) => row.id === 'weapons')?.cells[3]).toContain('Missiles 5/10');
-    expect(status.rows.find((row: any) => row.id === 'shields')?.cells[1]).toBe('None');
-    expect(status.rows.find((row: any) => row.id === 'bays')?.cells[3]).toContain('Landing bays 1');
-    expect(status.rows.some((row: any) => row.id === 'navigation')).toBe(true);
+    expect(status.columns).toEqual(['VESSEL DIAGRAM', 'READOUT']);
+    expect(status.rows).toEqual([]);
+    expect(status.dashboard).toBeDefined();
+    const dashboardText = status.dashboard!.map((line: any) => line.segments.map((segment: any) => segment.text).join('')).join('\n');
+    const dashboardTones = status.dashboard!.flatMap((line: any) => line.segments.map((segment: any) => segment.tone));
+    expect(status.footer).toEqual(['Esc/Left back']);
+    expect(dashboardText).toContain('┌');
+    expect(dashboardText).toContain('BRIDGE');
+    expect(dashboardText).toContain('COMMAND');
+    expect(dashboardText).toContain('NAV');
+    expect(dashboardText).toContain('COMMS');
+    expect(dashboardText).toContain('DRIVE TRUNK');
+    expect(dashboardText).toContain('D/He3');
+    expect(dashboardText).toContain('PAYLOAD SPINE');
+    expect(dashboardText).toContain('CARGO');
+    expect(dashboardText).toContain('MISSILE BAY');
+    expect(dashboardText).toContain('LANDING');
+    expect(dashboardText).toContain('Nav/Astro');
+    expect(dashboardText).not.toContain('╭');
+    expect(dashboardTones).toEqual(expect.arrayContaining(['cyan', 'green', 'amber', 'bright']));
   });
 
   it('formats the starbase shipyard as a refit screen with superstructure slots and orders', () => {

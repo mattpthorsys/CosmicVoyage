@@ -20,10 +20,22 @@ export interface TextTableModel {
   detailLineCount?: number;
 }
 
+export type TextDashboardTone = 'normal' | 'muted' | 'cyan' | 'green' | 'amber' | 'red' | 'bright';
+
+export interface TextDashboardSegment {
+  text: string;
+  tone?: TextDashboardTone;
+}
+
+export interface TextDashboardLine {
+  segments: TextDashboardSegment[];
+}
+
 export interface TextModalTableModel extends TextTableModel {
   title: string;
   subtitle?: string;
   footer?: string[];
+  dashboard?: TextDashboardLine[];
 }
 
 export interface SelectionViewport {

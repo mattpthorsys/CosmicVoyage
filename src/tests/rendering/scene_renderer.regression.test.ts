@@ -414,6 +414,34 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it('renders dashboard modals as coloured diagrams rather than selectable tables', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(120, 42);
+    const renderer = createSceneRenderer(buffer);
+
+    renderer.drawTextModalTable({
+      title: 'Ship Status',
+      subtitle: 'Regression dashboard',
+      columns: ['VESSEL DIAGRAM', 'READOUT'],
+      widths: [62, 34],
+      rows: [],
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 18,
+      dashboard: [
+        { segments: [{ text: '┌──── CORE ────┐', tone: 'cyan' }] },
+        { segments: [{ text: '│', tone: 'cyan' }, { text: 'DRIVE TRUNK ', tone: 'green' }, { text: '[====..]', tone: 'amber' }, { text: '│', tone: 'cyan' }] },
+        { segments: [{ text: '└──────────────┘', tone: 'cyan' }] },
+      ],
+      footer: ['Esc/Left back'],
+    });
+
+    const renderedRows = renderTextRows(drawCalls);
+    expect(renderedRows.join('\n')).toContain('DRIVE TRUNK');
+    expect(renderedRows.join('\n')).not.toContain('VESSEL DIAGRAM');
+    expect(drawCalls.some((call) => call.char === 'D' && call.fg === '#00AA66')).toBe(true);
+    expect(drawCalls.some((call) => call.char === '[' && call.fg === '#FFD66B')).toBe(true);
+  });
+
   it('autosizes reusable modal tables without clipping long option names', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(120, 36);
     const renderer = createSceneRenderer(buffer);

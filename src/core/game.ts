@@ -74,7 +74,6 @@ import {
   getShipDamageSummary,
   getShipCargoCapacity,
   getShipDerivedStats,
-  getEngineFuelUseMultiplier,
   getShipRepairCost,
   getStarbaseShipyardProfile,
   installShipyardUpgrade,
@@ -82,6 +81,7 @@ import {
 } from './ship_modifications';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
+import { createShipStatusDashboard } from './ship_status_dashboard';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -967,6 +967,10 @@ export class Game {
           this.closeShipMenu('Ship menu closed.');
         }
       } else this.openShipMenuSection('main');
+      return true;
+    }
+
+    if (this.shipMenuSection === 'status') {
       return true;
     }
 
@@ -3580,6 +3584,7 @@ export class Game {
   }
 
   private getShipMenuVisibleRows(): number {
+    if (this.shipMenuSection === 'status') return 18;
     return 12;
   }
 
@@ -3601,6 +3606,7 @@ export class Game {
       visibleRowCount: visibleRows,
       detailLineCount: this.shipMenuSection === 'main' ? 2 : 1,
       footer: meta.footer,
+      dashboard: this.shipMenuSection === 'status' ? this.getShipStatusDashboard() : undefined,
     };
   }
 
@@ -3616,7 +3622,7 @@ export class Game {
       case 'crew':
         return { title: 'Crew Records', subtitle: 'Personnel vitals, readiness, and specialist coverage.', columns: ['CREW', 'DUTY', 'VITALS', 'READINESS / SKILLS'], widths: [20, 16, 13, 41], footer: [`Up/Down inspect  ${backHint}`] };
       case 'status':
-        return { title: 'Ship Status', subtitle: 'Primary shipboard systems, drive economy, and operating posture.', columns: ['SYSTEM', 'READING', 'STATE', 'TELEMETRY'], widths: [18, 18, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
+        return { title: 'Ship Status', subtitle: 'Primary shipboard systems, drive economy, and operating posture.', columns: ['VESSEL DIAGRAM', 'READOUT'], widths: [62, 34], footer: ['Esc/Left back'] };
       case 'log':
         return { title: 'Ship Log', subtitle: 'Chronicle, fixes, anomalies, and watch notes recorded by ship systems.', columns: ['LOG', 'CHANNEL', 'STATE', 'ENTRY'], widths: [8, 12, 13, 55], footer: [`Up/Down inspect  PageUp/PageDown scroll  ${backHint}`] };
       case 'rover':
@@ -3640,7 +3646,7 @@ export class Game {
       case 'crew':
         return this.getShipCrewMenuRows();
       case 'status':
-        return this.getShipStatusMenuRows();
+        return [];
       case 'log':
         return this.getShipLogMenuRows();
       case 'rover':
@@ -3822,29 +3828,25 @@ export class Game {
     ];
   }
 
-  private getShipStatusMenuRows(): TextTableRow[] {
+  private getShipStatusDashboard() {
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
     const stateLabel = this.stateManager.state === 'planet' ? `Surface: ${this.stateManager.currentPlanet?.name ?? 'unknown'}` : this.stateManager.state;
-    const fuel = Math.round(this.player.resources.fuel);
-    const ship = this.player.ship;
-    const stats = getShipDerivedStats(ship);
-    const fuelUseMultiplier = getEngineFuelUseMultiplier(ship.engineClass);
-    return [
-      { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
-      { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
-      { id: 'damage', cells: ['Damage control', `${stats.hullIntegrityPercent}% hull`, stats.damagedSubsystemCount > 0 ? `${stats.damagedSubsystemCount} damaged` : 'Nominal', getShipDamageSummary(ship)], disabled: true },
-      { id: 'cargo', cells: ['Cargo hold', `${this.formatCargoLoad(cargoTotal, this.player.cargoHold.capacity)} m^3`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
-      { id: 'superstructure', cells: ['Superstructure', ship.superstructure.name, `${stats.fittedLoadPercent}% fitted`, `${ship.superstructure.engineMounts} engine  ${ship.superstructure.specialPurposeBays} special  ${ship.superstructure.probeBays} probe  ${ship.superstructure.cargoBays} cargo bays`], disabled: true },
-      { id: 'drive', cells: ['Drive plant', `Class ${ship.engineClass}`, `${stats.driveEfficiencyPercent}% eff.`, `Interstellar fuel use x${fuelUseMultiplier.toFixed(2)}; speed unchanged by class.`], disabled: true },
-      { id: 'cargo-pods', cells: ['Cargo pods', `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays}`, `${stats.emptyCargoBays} empty`, `${ship.cargoPodCapacity} m^3 each; capacity ${stats.cargoCapacity} m^3`], disabled: true },
-      { id: 'weapons', cells: ['Weapons', `Laser C${ship.laserClass || '-'}`, ship.laserClass > 0 ? `Output ${stats.laserRating}` : 'None', `Missiles ${ship.missileCount}/${stats.missileCapacity} nuclear (${stats.missileLoadPercent}%)`], disabled: true },
-      { id: 'shields', cells: ['Shields', ship.shieldClass > 0 ? `Class ${ship.shieldClass}` : 'None', ship.shieldClass > 0 ? `Rating ${stats.shieldRating}` : 'Unfitted', ship.shieldClass > 0 ? 'Generator fitted in shield mount.' : 'No shield generator installed.'], disabled: true },
-      { id: 'bays', cells: ['Utility bays', `${stats.emptySpecialPurposeBays}/${stats.specialBayCapacity} special`, `${stats.emptyProbeBays}/${stats.probeCapacity} probe`, `Landing bays ${stats.landingBayCapacity}; terrain vehicle ${this.player.terrainVehicle.available ? 'secured' : 'missing'}`], disabled: true },
-      { id: 'credits', cells: ['Credit account', `${this.player.resources.credits.toLocaleString()} Cr`, 'Liquid', 'Station-authorised spend balance.'], disabled: true },
-      { id: 'crew', cells: ['Crew company', `${this.player.crew.length} aboard`, this.getCrewHealthLabel(), `Training points ${this.player.crew.reduce((sum, member) => sum + member.trainingPoints, 0)} available.`], disabled: true },
-      { id: 'navigation', cells: ['Navigation', `Nav ${getBestCrewSkill(this.player.crew, 'navigation')}`, 'Crewed', `Pilot ${getBestCrewSkill(this.player.crew, 'piloting')}  Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}`], disabled: true },
-      { id: 'survey', cells: ['Survey suite', `Geo ${getBestCrewSkill(this.player.crew, 'geology')}`, 'Crewed', `Astro ${getBestCrewSkill(this.player.crew, 'astroscience')}  Comms ${getBestCrewSkill(this.player.crew, 'communication')}`], disabled: true },
-    ];
+    return createShipStatusDashboard({
+      ship: this.player.ship,
+      stats: getShipDerivedStats(this.player.ship),
+      crew: this.player.crew,
+      cargoTotal,
+      cargoCapacity: this.player.cargoHold.capacity,
+      fuel: Math.round(this.player.resources.fuel),
+      maxFuel: this.player.resources.maxFuel,
+      credits: this.player.resources.credits,
+      worldX: this.player.position.worldX,
+      worldY: this.player.position.worldY,
+      stateLabel,
+      operatingState: this.getShipOperatingState(),
+      crewHealthLabel: this.getCrewHealthLabel(),
+      terrainVehicleAvailable: this.player.terrainVehicle.available,
+    });
   }
 
   private getShipLogMenuRows(): TextTableRow[] {

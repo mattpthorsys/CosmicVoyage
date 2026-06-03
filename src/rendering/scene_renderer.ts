@@ -13,7 +13,7 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
-import { TextMenuSection, TextModalTableModel, TextTableModel } from '../core/text_ui';
+import { TextDashboardLine, TextDashboardTone, TextMenuSection, TextModalTableModel, TextTableModel } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 
@@ -968,6 +968,11 @@ export class SceneRenderer {
     const rows = this.screenBuffer.getRows();
     if (cols < 42 || rows < 16) return;
 
+    if (model.dashboard) {
+      this.drawTextDashboard(model);
+      return;
+    }
+
     const detailRows = this.getTextTableDetailLineCount(model);
     const tableLayout = this.resolveTextTableLayout(model, cols - 12);
     const renderModel = { ...model, widths: tableLayout.model.widths };
@@ -995,6 +1000,62 @@ export class SceneRenderer {
     (model.footer ?? []).forEach((line, index) => {
       this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, '#777777', CONFIG.DEFAULT_BG_COLOUR);
     });
+  }
+
+  private drawTextDashboard(model: TextModalTableModel): void {
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    const footerRows = model.footer?.length ?? 0;
+    const contentWidth = Math.max(54, Math.min(104, Math.max(...model.dashboard!.map((line) => this.getDashboardLineLength(line)), 54)));
+    const visibleRows = Math.min(model.dashboard!.length, Math.max(1, rows - 10 - footerRows));
+    const panelWidth = Math.min(cols - 4, contentWidth + 8);
+    const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 8);
+    const panelX = Math.floor((cols - panelWidth) / 2);
+    const panelY = Math.floor((rows - panelHeight) / 2);
+    const contentX = panelX + 4;
+    const contentY = panelY + 5;
+
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#3EA6A6', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(` ${model.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    if (model.subtitle) {
+      this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#7FD8FF', CONFIG.DEFAULT_BG_COLOUR);
+    }
+
+    model.dashboard!.slice(0, visibleRows).forEach((line, index) => {
+      this.drawDashboardLine(line, contentX, contentY + index, panelWidth - 8);
+    });
+
+    const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
+    (model.footer ?? []).forEach((line, index) => {
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    });
+  }
+
+  private drawDashboardLine(line: TextDashboardLine, x: number, y: number, width: number): void {
+    let cursorX = x;
+    for (const segment of line.segments) {
+      if (cursorX >= x + width) return;
+      const text = segment.text.slice(0, x + width - cursorX);
+      this.screenBuffer.drawString(text, cursorX, y, this.getDashboardToneColour(segment.tone ?? 'normal'), CONFIG.DEFAULT_BG_COLOUR);
+      cursorX += text.length;
+    }
+  }
+
+  private getDashboardLineLength(line: TextDashboardLine): number {
+    return line.segments.reduce((sum, segment) => sum + segment.text.length, 0);
+  }
+
+  private getDashboardToneColour(tone: TextDashboardTone): string {
+    switch (tone) {
+      case 'muted': return '#2F6F68';
+      case 'cyan': return '#5FC8FF';
+      case 'green': return '#00AA66';
+      case 'amber': return '#FFD66B';
+      case 'red': return '#FF6677';
+      case 'bright': return '#8CFFFF';
+      case 'normal':
+      default: return '#9FFFE0';
+    }
   }
 
   drawOrbitInterface(model: OrbitScreenModel): void {
