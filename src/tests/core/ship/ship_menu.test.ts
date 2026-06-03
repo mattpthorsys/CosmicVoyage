@@ -123,12 +123,16 @@ describe('ship menu', () => {
     expect(cargo.columns).toEqual(['BAY / CARGO', 'QTY', 'VALUE', 'LOAD / ACTION']);
     expect(cargo.rows[0].cells[3]).toContain('[');
     expect(cargo.rows[0].detail).toContain('m^3 free');
+    expect(cargo.rows[0].cellTones).toEqual(expect.arrayContaining(['cyan', 'bright']));
     expect(cargo.rows.some((row: any) => row.cells[3].includes('Enter to arm ejector'))).toBe(true);
+    expect(cargo.rows.some((row: any) => row.cellTones?.includes('amber'))).toBe(true);
 
     game.shipMenuSection = 'crew';
     const crew = game.createShipMenuModel();
     expect(crew.rows[0].cells[2]).toMatch(/green|wounded|Uncrewed/);
+    expect(crew.rows[0].cellTones).toEqual(expect.arrayContaining(['cyan', 'green']));
     expect(crew.rows[1].cells[3]).toContain('XP');
+    expect(crew.rows[1].cellTones).toEqual(expect.arrayContaining(['bright', 'cyan']));
 
     game.shipMenuSection = 'status';
     const status = game.createShipMenuModel();

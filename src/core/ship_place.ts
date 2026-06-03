@@ -94,6 +94,9 @@ export function createShipDeckRows(context: ShipPlaceContext): TextTableRow[] {
         getCompartmentReadout(compartment.id, context),
       ],
       detail: `${compartment.station}: ${compartment.function}`,
+      tone: current ? 'bright' : 'green',
+      cellTones: ['cyan', current ? 'bright' : 'green', crewName === 'Uncrewed' ? 'amber' : 'cyan', current ? 'amber' : 'green', 'bright'],
+      detailTone: 'cyan',
     };
   });
 }
@@ -114,6 +117,9 @@ export function createShipStationRows(context: ShipPlaceContext): TextTableRow[]
       ],
       detail: `Enter focuses ${compartment.label}. ${compartment.function}`,
       disabled: rating <= 0,
+      tone: rating <= 0 ? 'muted' : current ? 'bright' : 'green',
+      cellTones: ['cyan', 'green', rating <= 0 ? 'amber' : 'bright', current ? 'amber' : rating > 0 ? 'green' : 'muted', 'bright'],
+      detailTone: rating <= 0 ? 'muted' : 'cyan',
     };
   });
 }

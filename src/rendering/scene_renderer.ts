@@ -13,7 +13,7 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
-import { TextDashboardLine, TextDashboardTone, TextMenuSection, TextModalTableModel, TextTableModel } from '../core/text_ui';
+import { TextDashboardLine, TextMenuSection, TextModalTableModel, TextTableModel, TextTableRow, TextTone } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 
@@ -1036,7 +1036,7 @@ export class SceneRenderer {
     for (const segment of line.segments) {
       if (cursorX >= x + width) return;
       const text = segment.text.slice(0, x + width - cursorX);
-      this.screenBuffer.drawString(text, cursorX, y, this.getDashboardToneColour(segment.tone ?? 'normal'), CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(text, cursorX, y, this.getTextToneColour(segment.tone ?? 'normal'), CONFIG.DEFAULT_BG_COLOUR);
       cursorX += text.length;
     }
   }
@@ -1045,7 +1045,7 @@ export class SceneRenderer {
     return line.segments.reduce((sum, segment) => sum + segment.text.length, 0);
   }
 
-  private getDashboardToneColour(tone: TextDashboardTone): string {
+  private getTextToneColour(tone: TextTone): string {
     switch (tone) {
       case 'muted': return '#2F6F68';
       case 'cyan': return '#5FC8FF';
@@ -1521,13 +1521,16 @@ export class SceneRenderer {
     rows.forEach((row, rowIndex) => {
       const absoluteIndex = model.viewOffset + rowIndex;
       const selected = absoluteIndex === model.selectedIndex;
-      const fg = row.disabled ? '#506060' : selected ? '#001010' : '#00AA66';
+      const rowTone = row.tone ?? (row.disabled ? 'muted' : 'green');
+      const fg = selected ? '#001010' : this.getTextToneColour(rowTone);
       const bg = selected ? '#00FF66' : CONFIG.DEFAULT_BG_COLOUR;
       this.screenBuffer.drawChar(selected ? '>' : ' ', x - 2, y + rowIndex, selected ? '#00FF66' : '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
       let cursorX = x;
       row.cells.forEach((cell, index) => {
         const width = model.widths[index] ?? 12;
-        this.screenBuffer.drawString(cell.padEnd(width).slice(0, width), cursorX, y + rowIndex, fg, bg);
+        const cellTone = row.cellTones?.[index] ?? rowTone;
+        const cellFg = selected ? fg : this.getTextToneColour(cellTone);
+        this.screenBuffer.drawString(cell.padEnd(width).slice(0, width), cursorX, y + rowIndex, cellFg, bg);
         cursorX += width + 1;
       });
     });
@@ -1536,7 +1539,7 @@ export class SceneRenderer {
     if (selectedRow?.detail && detailLineCount > 0 && y + visibleRows + 1 < this.screenBuffer.getRows()) {
       const detailWidth = Math.max(1, tableWidth - 3);
       const detailLines = this.wrapText(selectedRow.detail, detailWidth).slice(0, detailLineCount);
-      const detailColour = '#7FD8FF';
+      const detailColour = this.getTextToneColour(selectedRow.detailTone ?? 'cyan');
       detailLines.forEach((line, index) => {
         const detailY = y + visibleRows + 1 + index;
         if (detailY >= this.screenBuffer.getRows()) return;

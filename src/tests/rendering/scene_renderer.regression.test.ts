@@ -442,6 +442,44 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === '[' && call.fg === '#FFD66B')).toBe(true);
   });
 
+  it('renders ordinary modal table cells with row and cell tones', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(100, 34);
+    const renderer = createSceneRenderer(buffer);
+
+    renderer.drawTextModalTable({
+      title: 'Ship Cargo',
+      subtitle: 'Regression cargo colours',
+      columns: ['BAY / CARGO', 'QTY', 'VALUE', 'LOAD / ACTION'],
+      widths: [20, 7, 8, 24],
+      rows: [
+        {
+          id: 'overview',
+          cells: ['Hold capacity', '25.0', '100', '[####......] Light'],
+          disabled: true,
+          cellTones: ['cyan', 'bright', 'bright', 'green'],
+          detail: 'Cargo detail line.',
+          detailTone: 'cyan',
+        },
+        {
+          id: 'iron',
+          cells: ['Bay 01 Iron', '77', '125', 'Enter to arm ejector'],
+          cellTones: ['green', 'bright', 'amber', 'cyan'],
+          detail: 'Selected cargo.',
+          detailTone: 'amber',
+        },
+      ],
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 2,
+      footer: ['Esc/Left back'],
+    });
+
+    expect(drawCalls.some((call) => call.char === 'B' && call.fg === '#00AA66')).toBe(true);
+    expect(drawCalls.some((call) => call.char === '7' && call.fg === '#8CFFFF')).toBe(true);
+    expect(drawCalls.some((call) => call.char === '2' && call.fg === '#FFD66B')).toBe(true);
+    expect(drawCalls.some((call) => call.char === 'E' && call.fg === '#5FC8FF')).toBe(true);
+  });
+
   it('autosizes reusable modal tables without clipping long option names', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(120, 36);
     const renderer = createSceneRenderer(buffer);

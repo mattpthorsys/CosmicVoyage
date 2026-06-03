@@ -32,7 +32,7 @@ import {
   StarbaseTableRow,
   STARBASE_SECTIONS,
 } from './starbase_ui';
-import { clampIndex, moveSelection, TextModalTableModel, TextTableRow } from './text_ui';
+import { clampIndex, moveSelection, TextModalTableModel, TextTableRow, TextTone } from './text_ui';
 import {
   adjustQuantitySelector,
   createQuantitySelector,
@@ -3660,15 +3660,15 @@ export class Game {
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         const focus = getShipCompartment(this.currentShipCompartmentId);
         const rows: TextTableRow[] = [
-          { id: 'deck', cells: ['Deck Plan', `Focus: ${focus.label}`], detail: 'Internal compartments, active watch location, and the ship as a traversable place.' },
-          { id: 'stations', cells: ['Duty Stations', this.getShipStationCoverageLabel()], detail: 'Crewed navigation, survey, engineering, medical, communications, and bay-control posts.' },
-          { id: 'cargo', cells: ['Cargo Manifest', `${this.formatCargoLoad(cargoTotal, this.player.cargoHold.capacity)} m^3 aboard`], detail: `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Ship hold inventory, rover transfer state, and external jettison control.` },
-          { id: 'crew', cells: ['Crew Records', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} fit for duty`], detail: 'Roster, vitals, learning progress, and specialist coverage.' },
-          { id: 'status', cells: ['Ship Status', `${this.getShipOperatingState()} / Drive C${this.player.ship.engineClass}`], detail: 'Fuel reserve, drive economy, damage, modules, cargo capacity, finance, and navigation posture.' },
-          { id: 'log', cells: ['Ship Log', this.getShipLogSummary()], detail: 'Persistent watch notes, discoveries, mission state, and navigation fixes.' },
+          { id: 'deck', cells: ['Deck Plan', `Focus: ${focus.label}`], detail: 'Internal compartments, active watch location, and the ship as a traversable place.', cellTones: ['cyan', 'bright'], detailTone: 'cyan' },
+          { id: 'stations', cells: ['Duty Stations', this.getShipStationCoverageLabel()], detail: 'Crewed navigation, survey, engineering, medical, communications, and bay-control posts.', cellTones: ['cyan', 'green'], detailTone: 'cyan' },
+          { id: 'cargo', cells: ['Cargo Manifest', `${this.formatCargoLoad(cargoTotal, this.player.cargoHold.capacity)} m^3 aboard`], detail: `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Ship hold inventory, rover transfer state, and external jettison control.`, cellTones: ['cyan', this.getCargoTone(cargoTotal, this.player.cargoHold.capacity)], detailTone: 'cyan' },
+          { id: 'crew', cells: ['Crew Records', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} fit for duty`], detail: 'Roster, vitals, learning progress, and specialist coverage.', cellTones: ['cyan', wounded > 0 ? 'amber' : 'green'], detailTone: wounded > 0 ? 'amber' : 'cyan' },
+          { id: 'status', cells: ['Ship Status', `${this.getShipOperatingState()} / Drive C${this.player.ship.engineClass}`], detail: 'Fuel reserve, drive economy, damage, modules, cargo capacity, finance, and navigation posture.', cellTones: ['cyan', 'bright'], detailTone: 'cyan' },
+          { id: 'log', cells: ['Ship Log', this.getShipLogSummary()], detail: 'Persistent watch notes, discoveries, mission state, and navigation fixes.', cellTones: ['cyan', this.statusMessage ? 'amber' : 'green'], detailTone: 'cyan' },
         ];
         if (this.stateManager.state === 'planet') {
-          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'surface sortie active' : `${this.formatCargoLoad(roverTotal, this.player.terrainVehicle.cargoHold.capacity)} m^3 stowed`) : 'vehicle lost'], detail: 'Disembark, embark, refuel, review rover cargo, and manage the planetside sortie.' });
+          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'surface sortie active' : `${this.formatCargoLoad(roverTotal, this.player.terrainVehicle.cargoHold.capacity)} m^3 stowed`) : 'vehicle lost'], detail: 'Disembark, embark, refuel, review rover cargo, and manage the planetside sortie.', cellTones: ['cyan', this.player.terrainVehicle.available ? 'green' : 'red'], detailTone: this.player.terrainVehicle.available ? 'cyan' : 'red' });
           rows.splice(4, 0, {
             id: 'launch',
             cells: [
@@ -3677,6 +3677,8 @@ export class Game {
             ],
             detail: 'Lift from the landed ship to orbital view.',
             disabled: !this.isAtParkedShip() || this.player.terrainVehicle.deployed || this.player.terrainVehicle.onFoot,
+            cellTones: ['cyan', this.isAtParkedShip() && !this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot ? 'green' : 'amber'],
+            detailTone: 'cyan',
           });
         }
         return rows;
@@ -3725,9 +3727,11 @@ export class Game {
         ],
         detail: `${this.formatCargoAmount(this.player.cargoHold.capacity - cargoTotal)} m^3 free. Jettisoned cargo is unrecoverable in the current build.`,
         disabled: true,
+        cellTones: ['cyan', this.getCargoTone(cargoTotal, this.player.cargoHold.capacity), 'bright', this.getCargoTone(cargoTotal, this.player.cargoHold.capacity)],
+        detailTone: 'cyan',
       },
     ];
-    const shipCargoRows = this.getCargoRowsForHold(this.player.cargoHold.items, 'ship').map((row, index) => ({
+    const shipCargoRows = this.getCargoRowsForHold(this.player.cargoHold.items, 'ship').map((row, index): TextTableRow => ({
       id: row.disabled ? row.id : `cargo:${row.id}`,
       cells: [
         row.disabled ? row.cells[0] : `Bay ${String(index + 1).padStart(2, '0')} ${row.cells[0]}`,
@@ -3737,18 +3741,22 @@ export class Game {
       ],
       detail: row.disabled ? row.detail : `${row.detail ?? row.cells[0]} Select to choose jettison amount.`,
       disabled: row.disabled,
+      cellTones: row.disabled ? ['muted', 'muted', 'muted', 'muted'] : ['green', 'bright', 'amber', 'cyan'],
+      detailTone: row.disabled ? 'muted' : 'cyan',
     }));
-    const roverCargoRows = this.getCargoRowsForHold(this.player.terrainVehicle.cargoHold.items, 'rover').map((row) => ({
+    const roverCargoRows = this.getCargoRowsForHold(this.player.terrainVehicle.cargoHold.items, 'rover').map((row): TextTableRow => ({
       id: `rover:${row.id}`,
       cells: [row.disabled ? row.cells[0] : `Rover ${row.cells[0]}`, row.cells[1], row.cells[2], row.disabled ? 'Vehicle bay empty' : 'Terrain vehicle cargo; docks into ship when space permits'],
       detail: row.detail,
       disabled: true,
+      cellTones: row.disabled ? ['muted', 'muted', 'muted', 'muted'] : ['cyan', 'bright', 'amber', 'green'],
+      detailTone: row.disabled ? 'muted' : 'cyan',
     }));
     return [
       ...rows,
-      { id: 'ship-heading', cells: ['-- Ship Hold --', this.formatCargoAmount(cargoTotal), `${this.player.cargoHold.capacity}`, 'Primary cargo bay'], disabled: true },
+      { id: 'ship-heading', cells: ['-- Ship Hold --', this.formatCargoAmount(cargoTotal), `${this.player.cargoHold.capacity}`, 'Primary cargo bay'], disabled: true, cellTones: ['cyan', 'bright', 'bright', 'cyan'], detailTone: 'cyan' },
       ...shipCargoRows,
-      { id: 'rover-heading', cells: ['-- Terrain Vehicle --', this.formatCargoAmount(roverTotal), `${this.player.terrainVehicle.cargoHold.capacity}`, this.player.terrainVehicle.deployed ? 'Out on surface' : 'Docked in vehicle bay'], disabled: true },
+      { id: 'rover-heading', cells: ['-- Terrain Vehicle --', this.formatCargoAmount(roverTotal), `${this.player.terrainVehicle.cargoHold.capacity}`, this.player.terrainVehicle.deployed ? 'Out on surface' : 'Docked in vehicle bay'], disabled: true, cellTones: ['cyan', 'bright', 'bright', this.player.terrainVehicle.deployed ? 'amber' : 'green'], detailTone: 'cyan' },
       ...roverCargoRows,
     ];
   }
@@ -3768,26 +3776,36 @@ export class Game {
           rover.deployed || rover.onFoot ? 'Enter embarks at parked ship and transfers cargo.' : 'Enter disembarks with full rover fuel.',
         ],
         disabled: !onSurface || (!rover.available && !rover.onFoot),
+        cellTones: ['cyan', rover.onFoot ? 'amber' : rover.deployed ? 'green' : 'bright', rover.available ? 'green' : 'red', 'cyan'],
+        detailTone: rover.available ? 'cyan' : 'red',
       },
       {
         id: 'rover:launch',
         cells: ['Launch', atShip && !rover.deployed && !rover.onFoot ? 'ready' : 'parked ship req.', onSurface ? 'orbit' : 'locked', 'Launch from landed ship to orbital view.'],
         disabled: !onSurface || !atShip || rover.deployed || rover.onFoot,
+        cellTones: ['cyan', atShip && !rover.deployed && !rover.onFoot ? 'green' : 'amber', onSurface ? 'bright' : 'muted', 'cyan'],
+        detailTone: atShip ? 'cyan' : 'amber',
       },
       {
         id: 'rover-fuel',
         cells: ['Vehicle fuel', `${rover.fuel.toFixed(1)}/${rover.maxFuel}`, rover.fuel > 0 ? 'ready' : 'empty', `${this.formatGauge(rover.fuel, rover.maxFuel, 20)} altitude raises consumption`],
         disabled: true,
+        cellTones: ['cyan', this.getFuelTone(rover.fuel, rover.maxFuel), rover.fuel > 0 ? 'green' : 'red', this.getFuelTone(rover.fuel, rover.maxFuel)],
+        detailTone: this.getFuelTone(rover.fuel, rover.maxFuel),
       },
       {
         id: 'rover-cargo',
         cells: ['Vehicle cargo', `${this.formatCargoLoad(cargoTotal, rover.cargoHold.capacity)} m^3`, this.getCargoLoadLabel(cargoTotal), `${this.formatGauge(cargoTotal, rover.cargoHold.capacity, 20)} transfers on dock`],
         disabled: true,
+        cellTones: ['cyan', this.getCargoTone(cargoTotal, rover.cargoHold.capacity), this.getCargoTone(cargoTotal, rover.cargoHold.capacity), 'green'],
+        detailTone: 'cyan',
       },
       {
         id: 'rover-controls',
         cells: ['Surface controls', rover.moving ? 'moving' : 'stopped', 'menu', rover.moving ? 'Enter/Space stops; arrows drive.' : 'Stopped: arrows select rover actions.'],
         disabled: true,
+        cellTones: ['cyan', rover.moving ? 'green' : 'bright', 'cyan', 'bright'],
+        detailTone: 'cyan',
       },
     ];
   }
@@ -3805,11 +3823,13 @@ export class Game {
         ],
         detail: `Coverage totals: Comms ${getCrewSkillTotal(crew, 'communication')}, Geo ${getCrewSkillTotal(crew, 'geology')}, Pilot ${getCrewSkillTotal(crew, 'piloting')}, Security ${getCrewSkillTotal(crew, 'spaceCombat')}.`,
         disabled: true,
+        cellTones: ['cyan', 'bright', this.getCrewHealthTone(), 'green'],
+        detailTone: 'cyan',
       },
     ];
     return [
       ...rows,
-      ...crew.map((member) => {
+      ...crew.map((member): TextTableRow => {
         const nextXp = getNextLevelExperience(member.level);
         const healthBar = this.formatGauge(member.hitPoints, member.maxHitPoints, 8);
         const xpBar = this.formatGauge(member.experience, nextXp, 8);
@@ -3823,6 +3843,8 @@ export class Game {
           ],
           detail: `Durability ${member.durability}. Human learning cap 10. Training can be assigned from a starbase crew office.`,
           disabled: true,
+          cellTones: ['bright', 'cyan', this.getMemberHealthTone(member), member.trainingPoints > 0 ? 'amber' : 'green'],
+          detailTone: member.trainingPoints > 0 ? 'amber' : 'cyan',
         };
       }),
     ];
@@ -3895,6 +3917,8 @@ export class Game {
       cells: [id, channel, state, entry],
       detail,
       disabled: true,
+      cellTones: ['muted', this.getShipLogChannelTone(channel), this.getShipLogStateTone(state), 'bright'],
+      detailTone: this.getShipLogStateTone(state) === 'red' ? 'red' : 'cyan',
     };
   }
 
@@ -3922,14 +3946,14 @@ export class Game {
     const held = itemKey ? this.player.cargoHold.items[itemKey] || 0 : 0;
     const name = itemKey ? this.getTradeItemInfo(itemKey)?.name ?? itemKey : 'No cargo';
     if (!itemKey || held <= 0) {
-      return [{ id: 'cancel', cells: ['Cancel', name, '--', 'Return to cargo manifest.'] }];
+      return [{ id: 'cancel', cells: ['Cancel', name, '--', 'Return to cargo manifest.'], cellTones: ['cyan', 'muted', 'muted', 'cyan'], detailTone: 'cyan' }];
     }
     const rows: TextTableRow[] = [
-      { id: '1', cells: ['1 unit', name, `${held - 1} left`, 'Vent one sealed unit through external bay.'] },
+      { id: '1', cells: ['1 unit', name, `${held - 1} left`, 'Vent one sealed unit through external bay.'], cellTones: ['amber', 'bright', 'green', 'amber'], detailTone: 'amber' },
     ];
-    if (held >= 10) rows.push({ id: '10', cells: ['10 units', name, `${held - 10} left`, 'Vent ten units. Confirm bay doors armed.'] });
-    rows.push({ id: 'all', cells: ['ALL', name, '0 left', 'Purge the full cargo stack. No recovery beacon.'] });
-    rows.push({ id: 'cancel', cells: ['Cancel', name, `${held} held`, 'Stand down ejector sequence.'] });
+    if (held >= 10) rows.push({ id: '10', cells: ['10 units', name, `${held - 10} left`, 'Vent ten units. Confirm bay doors armed.'], cellTones: ['amber', 'bright', 'green', 'amber'], detailTone: 'amber' });
+    rows.push({ id: 'all', cells: ['ALL', name, '0 left', 'Purge the full cargo stack. No recovery beacon.'], cellTones: ['red', 'bright', 'red', 'red'], detailTone: 'red' });
+    rows.push({ id: 'cancel', cells: ['Cancel', name, `${held} held`, 'Stand down ejector sequence.'], cellTones: ['cyan', 'bright', 'green', 'cyan'], detailTone: 'cyan' });
     return rows;
   }
 
@@ -3948,6 +3972,14 @@ export class Game {
     return 'Ready';
   }
 
+  private getFuelTone(value: number, max: number): TextTone {
+    const ratio = value / Math.max(1, max);
+    if (ratio <= 0) return 'red';
+    if (ratio < 0.2) return 'amber';
+    if (ratio < 0.5) return 'bright';
+    return 'green';
+  }
+
   private getCargoLoadLabel(cargoTotal: number): string {
     const ratio = cargoTotal / Math.max(1, this.player.cargoHold.capacity);
     if (cargoTotal <= 0) return 'Empty';
@@ -3957,11 +3989,45 @@ export class Game {
     return 'Light';
   }
 
+  private getCargoTone(cargoTotal: number, capacity: number): TextTone {
+    const ratio = cargoTotal / Math.max(1, capacity);
+    if (cargoTotal <= 0) return 'muted';
+    if (ratio >= 1) return 'red';
+    if (ratio > 0.75) return 'amber';
+    if (ratio > 0.35) return 'green';
+    return 'bright';
+  }
+
   private getCrewHealthLabel(): string {
     if (this.player.crew.length === 0) return 'Uncrewed';
     const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
     if (wounded === 0) return 'All green';
     return `${wounded} wounded`;
+  }
+
+  private getCrewHealthTone(): TextTone {
+    if (this.player.crew.length === 0) return 'amber';
+    return this.player.crew.some((member) => member.hitPoints < member.maxHitPoints) ? 'amber' : 'green';
+  }
+
+  private getMemberHealthTone(member: CrewMember): TextTone {
+    if (member.hitPoints <= 0) return 'red';
+    if (member.hitPoints < member.maxHitPoints) return 'amber';
+    return 'green';
+  }
+
+  private getShipLogChannelTone(channel: string): TextTone {
+    if (channel === 'ALERT') return 'amber';
+    if (channel === 'MISSION') return 'green';
+    if (channel === 'TARGET' || channel === 'SURVEY') return 'cyan';
+    return 'bright';
+  }
+
+  private getShipLogStateTone(state: string): TextTone {
+    if (/CAUTION|FAIL|ERROR|LOW|UNSCANNED/i.test(state)) return 'amber';
+    if (/CLEAR|SCANNED|ACTIVE|SELECTED|FIX|ONLINE|READY|DRIFT|QUIET/i.test(state)) return 'green';
+    if (/NONE|VOID|UNCREWED/i.test(state)) return 'muted';
+    return 'cyan';
   }
 
   private getShipOperatingState(): string {

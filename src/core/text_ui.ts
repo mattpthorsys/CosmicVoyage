@@ -3,11 +3,16 @@ export interface TextMenuSection<Id extends string = string> {
   label: string;
 }
 
+export type TextTone = 'normal' | 'muted' | 'cyan' | 'green' | 'amber' | 'red' | 'bright';
+
 export interface TextTableRow {
   id: string;
   cells: string[];
   detail?: string;
   disabled?: boolean;
+  tone?: TextTone;
+  cellTones?: TextTone[];
+  detailTone?: TextTone;
 }
 
 export interface TextTableModel {
@@ -20,7 +25,7 @@ export interface TextTableModel {
   detailLineCount?: number;
 }
 
-export type TextDashboardTone = 'normal' | 'muted' | 'cyan' | 'green' | 'amber' | 'red' | 'bright';
+export type TextDashboardTone = TextTone;
 
 export interface TextDashboardSegment {
   text: string;

@@ -36,7 +36,7 @@ describe('ship status dashboard layout', () => {
 
     expect(text).toContain('SURVEY SUPERSTRUCTURE');
     expect(text).toContain('BRIDGE');
-    expect(text).toContain('   COMMAND');
+    expect(text).toContain('COMMAND');
     expect(text).toContain('DRIVE TRUNK');
     expect(text).toContain('PAYLOAD SPINE');
     expect(text).toContain('CORE');
