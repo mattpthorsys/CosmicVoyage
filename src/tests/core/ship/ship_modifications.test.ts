@@ -4,6 +4,7 @@ import {
   createDefaultShipModifications,
   createShipyardUpgradeOptions,
   getAvailableCargoPodBays,
+  getEngineFuelUseMultiplier,
   getShipDamageSummary,
   getShipCargoCapacity,
   getShipDerivedStats,
@@ -42,6 +43,13 @@ describe('ship modifications', () => {
       emptySpecialPurposeBays: 4,
       landingBayCapacity: 1,
     });
+  });
+
+  it('makes lower engine classes consume more interstellar fuel without changing drive class speed', () => {
+    expect(getEngineFuelUseMultiplier(1)).toBeGreaterThan(getEngineFuelUseMultiplier(3));
+    expect(getEngineFuelUseMultiplier(3)).toBeGreaterThan(getEngineFuelUseMultiplier(5));
+    expect(getEngineFuelUseMultiplier(0)).toBe(getEngineFuelUseMultiplier(1));
+    expect(getEngineFuelUseMultiplier(9)).toBe(getEngineFuelUseMultiplier(5));
   });
 
   it('installs cargo pods, shields, lasers, and missiles within superstructure limits', () => {

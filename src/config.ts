@@ -39,6 +39,7 @@ export const CONFIG = {
 
   // --- Fuel & Economy ---
   HYPERSPACE_FUEL_COST: 10, // Fuel cost to jump between systems (Currently applies on entry)
+  HYPERSPACE_MOVE_FUEL_COST: 0.35, // Reactor fuel consumed per interstellar cell moved before engine-class efficiency.
   SYSTEM_MOVE_FUEL_COST: 0.0, // Fuel cost per move update within a system (Set > 0 to enable)
   FUEL_PER_CREDIT: 10, // Units of fuel bought per credit at starbase
   MINERAL_SELL_PRICE: 5, // Credits received per unit of mineral sold

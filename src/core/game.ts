@@ -21,7 +21,7 @@ import { CargoSystem } from '../systems/cargo_systems';
 import { MiningSite, MiningSystem } from '../systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
 import { AstrometricOverlay } from '../rendering/astrometric_overlay';
-import { SystemDataGenerator } from '../generation/system_data_generator';
+import { DeepSpacePhenomenonProperties, SystemDataGenerator } from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
 import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
 import { commandButton, CommandBarButton, CommandBarModel } from './command_bar';
@@ -74,6 +74,7 @@ import {
   getShipDamageSummary,
   getShipCargoCapacity,
   getShipDerivedStats,
+  getEngineFuelUseMultiplier,
   getShipRepairCost,
   getStarbaseShipyardProfile,
   installShipyardUpgrade,
@@ -1300,17 +1301,7 @@ export class Game {
             this.statusMessage = ''; // Scan uses terminal, clear status bar
           } else if ('requestSystemPeek' in actionResult) {
             this.terminalOverlay.clear(); // <<< CLEAR before handling peek request
-            const peekedSystem = this.stateManager.peekAtSystem(
-              this.player.position.worldX,
-              this.player.position.worldY
-            );
-            if (peekedSystem) {
-              // Add initial scanning message *before* dumping results
-              //this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCANNING_SYSTEM(peekedSystem.name));
-              this._dumpScanToTerminal(peekedSystem); // Dump results using new method
-            } else {
-              this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
-            }
+            this.scanCurrentHyperspaceCell();
             this.statusMessage = ''; // System peek uses terminal
           }
         }
@@ -1459,9 +1450,7 @@ export class Game {
       this.statusMessage = '';
     } else if (actionResult && 'requestSystemPeek' in actionResult) {
       this.terminalOverlay.clear();
-      const peekedSystem = this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY);
-      if (peekedSystem) this._dumpScanToTerminal(peekedSystem);
-      else this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
+      this.scanCurrentHyperspaceCell();
       this.statusMessage = '';
     }
 
@@ -1469,6 +1458,26 @@ export class Game {
       this.statusMessage = this.stateManager.statusMessage;
       this.stateManager.statusMessage = '';
     }
+  }
+
+  private scanCurrentHyperspaceCell(): void {
+    const worldX = this.player.position.worldX;
+    const worldY = this.player.position.worldY;
+    const peekedSystem = this.stateManager.peekAtSystem(worldX, worldY);
+    if (peekedSystem) {
+      this._dumpScanToTerminal(peekedSystem);
+      return;
+    }
+
+    const phenomenon = this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
+    if (phenomenon.exists) {
+      this.terminalOverlay.addMessageLines(this.formatDeepSpacePhenomenonScan(phenomenon, worldX, worldY));
+      this.player.awardCrewExperience('astroscience', phenomenon.type === 'ancient-signal' ? 12 : 8);
+      this.player.awardCrewExperience('communication', phenomenon.type === 'ancient-signal' ? 8 : 3);
+      return;
+    }
+
+    this.terminalOverlay.addMessage(STATUS_MESSAGES.HYPERSPACE_SCAN_FAIL);
   }
 
   private choosePrimaryAction(actions: AvailableAction[]): AvailableAction | null {
@@ -1943,6 +1952,45 @@ export class Game {
     this.statusMessage = `Observed ${quality.label}.`;
   }
 
+  private formatDeepSpacePhenomenonScan(phenomenon: DeepSpacePhenomenonProperties, worldX: number, worldY: number): string[] {
+    const classification = phenomenon.classification ?? 'UNRESOLVED DEEP-SPACE SOURCE';
+    const name = phenomenon.name ?? 'Uncatalogued return';
+    const rarity = phenomenon.rarity ?? 'unclassified';
+    const signal = phenomenon.signal ?? 'intermittent low-energy return';
+    const lines = [
+      '<h>DEEP-SPACE SIGNAL SCAN</h>',
+      `SOURCE: <hl>${name}</hl>`,
+      `CLASS: <hl>${classification}</hl>`,
+      `GRID: <hl>${worldX},${worldY}</hl>  TRACE: <hl>${signal}</hl>`,
+      `RARITY: <hl>${rarity}</hl>  MARKER: <hl>${phenomenon.char ?? '?'}</hl>`,
+    ];
+
+    switch (phenomenon.type) {
+      case 'ancient-signal':
+        lines.push('Narrowband repetition is too regular for ordinary astrophysical noise. No language layer resolved.');
+        break;
+      case 'debris-field':
+        lines.push('Cold artificial returns drift without transponder acknowledgement. Approach should be deliberate.');
+        break;
+      case 'dark-nebula':
+        lines.push('Signal is mostly absence: background starlight is being absorbed by cold molecular dust.');
+        break;
+      case 'neutron-star':
+        lines.push('Compact remnant pulse timing is stable. Radiation discipline advised at closer range.');
+        break;
+      case 'black-hole':
+        lines.push('No luminous primary resolved; lensing geometry suggests a compact mass concentration.');
+        break;
+      case 'rogue-planet':
+        lines.push('Thermal remnant is consistent with a free planetary-mass object.');
+        break;
+      default:
+        lines.push('Return is real but does not yet match a reliable local catalogue entry.');
+    }
+
+    return lines;
+  }
+
   private getInterstellarObservationQuality(
     cursor: TravelObserveCursor,
     starType: string | null,
@@ -2259,20 +2307,22 @@ export class Game {
     }
 
     // --- Update Terminal Overlay ---
-    this.terminalOverlay.update(deltaTime); // Update typing/fading
-    this.astrometricOverlay.update(
-      {
-        state: this.stateManager.state,
-        player: this.player,
-        system: this.stateManager.currentSystem,
-        planet: this.stateManager.currentPlanet,
-        starbase: this.stateManager.currentStarbase,
-        viewScale: this.getCurrentViewScale(),
-      },
-      deltaTime,
-      Math.max(1, Math.floor(this.renderer.getCanvas().width / Math.max(1, this.renderer.getCharWidthPx()))),
-      Math.max(1, Math.floor(this.renderer.getCanvas().height / Math.max(1, this.renderer.getCharHeightPx())))
-    );
+    if (!this.shipMenuOpen) {
+      this.terminalOverlay.update(deltaTime); // Update typing/fading
+      this.astrometricOverlay.update(
+        {
+          state: this.stateManager.state,
+          player: this.player,
+          system: this.stateManager.currentSystem,
+          planet: this.stateManager.currentPlanet,
+          starbase: this.stateManager.currentStarbase,
+          viewScale: this.getCurrentViewScale(),
+        },
+        deltaTime,
+        Math.max(1, Math.floor(this.renderer.getCanvas().width / Math.max(1, this.renderer.getCharWidthPx()))),
+        Math.max(1, Math.floor(this.renderer.getCanvas().height / Math.max(1, this.renderer.getCharHeightPx())))
+      );
+    }
 
     // --- Update Core Game Logic (if not blocked by popup) ---
     if (!blockGameUpdates) {
@@ -3566,7 +3616,7 @@ export class Game {
       case 'crew':
         return { title: 'Crew Records', subtitle: 'Personnel vitals, readiness, and specialist coverage.', columns: ['CREW', 'DUTY', 'VITALS', 'READINESS / SKILLS'], widths: [20, 16, 13, 41], footer: [`Up/Down inspect  ${backHint}`] };
       case 'status':
-        return { title: 'Ship Status', subtitle: 'Primary shipboard systems and operating posture.', columns: ['SYSTEM', 'READING', 'STATE', 'TELEMETRY'], widths: [18, 18, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
+        return { title: 'Ship Status', subtitle: 'Primary shipboard systems, drive economy, and operating posture.', columns: ['SYSTEM', 'READING', 'STATE', 'TELEMETRY'], widths: [18, 18, 12, 42], footer: [`Up/Down inspect  ${backHint}`] };
       case 'log':
         return { title: 'Ship Log', subtitle: 'Chronicle, fixes, anomalies, and watch notes recorded by ship systems.', columns: ['LOG', 'CHANNEL', 'STATE', 'ENTRY'], widths: [8, 12, 13, 55], footer: [`Up/Down inspect  PageUp/PageDown scroll  ${backHint}`] };
       case 'rover':
@@ -3575,7 +3625,7 @@ export class Game {
         return { title: 'Confirm Jettison', subtitle: 'External bay doors armed. Cargo ejection is permanent.', columns: ['VENT', 'CARGO', 'AFTER', 'CONFIRMATION'], widths: [10, 24, 14, 40], footer: [`Enter confirms selected amount  ${backHint}`] };
       case 'main':
       default:
-        return { title: 'Ship Operations', subtitle: 'Internal vessel systems, manifests, crew, and compartment focus.', columns: ['SHIP AREA', 'STATE'], widths: [24, 24], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
+        return { title: 'Ship Operations', subtitle: 'Quiet shipboard console. HUD overlays are muted while this panel is open.', columns: ['SECTION', 'STATUS'], widths: [26, 28], footer: ['Up/Down select  Enter/Right open  Esc/Left close'] };
     }
   }
 
@@ -3604,19 +3654,19 @@ export class Game {
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         const focus = getShipCompartment(this.currentShipCompartmentId);
         const rows: TextTableRow[] = [
-          { id: 'deck', cells: ['Deck Plan', focus.label], detail: 'Internal compartments, watch stations, and current shipboard focus.' },
-          { id: 'stations', cells: ['Stations', this.getShipStationCoverageLabel()], detail: 'Crewed work points for navigation, survey, engineering, medical, and bay control.' },
-          { id: 'cargo', cells: ['Cargo', `${this.formatCargoLoad(cargoTotal, this.player.cargoHold.capacity)} m^3`], detail: `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Ship hold plus rover cargo manifest.` },
-          { id: 'crew', cells: ['Crew', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} ready`], detail: 'Roster, vitals, learning progress, and specialist coverage.' },
-          { id: 'status', cells: ['Ship Status', this.getShipOperatingState()], detail: 'Fuel, cargo, finance, crew, location, and current flight mode.' },
+          { id: 'deck', cells: ['Deck Plan', `Focus: ${focus.label}`], detail: 'Internal compartments, active watch location, and the ship as a traversable place.' },
+          { id: 'stations', cells: ['Duty Stations', this.getShipStationCoverageLabel()], detail: 'Crewed navigation, survey, engineering, medical, communications, and bay-control posts.' },
+          { id: 'cargo', cells: ['Cargo Manifest', `${this.formatCargoLoad(cargoTotal, this.player.cargoHold.capacity)} m^3 aboard`], detail: `${this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 14)} Ship hold inventory, rover transfer state, and external jettison control.` },
+          { id: 'crew', cells: ['Crew Records', wounded > 0 ? `${wounded} wounded` : `${this.player.crew.length} fit for duty`], detail: 'Roster, vitals, learning progress, and specialist coverage.' },
+          { id: 'status', cells: ['Ship Status', `${this.getShipOperatingState()} / Drive C${this.player.ship.engineClass}`], detail: 'Fuel reserve, drive economy, damage, modules, cargo capacity, finance, and navigation posture.' },
           { id: 'log', cells: ['Ship Log', this.getShipLogSummary()], detail: 'Persistent watch notes, discoveries, mission state, and navigation fixes.' },
         ];
         if (this.stateManager.state === 'planet') {
-          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'disembarked' : `${this.formatCargoLoad(roverTotal, this.player.terrainVehicle.cargoHold.capacity)} m^3`) : 'lost'], detail: 'Disembark, embark, refuel, and review the surface vehicle.' });
+          rows.splice(3, 0, { id: 'rover', cells: ['Terrain Vehicle', this.player.terrainVehicle.available ? (this.player.terrainVehicle.deployed ? 'surface sortie active' : `${this.formatCargoLoad(roverTotal, this.player.terrainVehicle.cargoHold.capacity)} m^3 stowed`) : 'vehicle lost'], detail: 'Disembark, embark, refuel, review rover cargo, and manage the planetside sortie.' });
           rows.splice(4, 0, {
             id: 'launch',
             cells: [
-              'Launch',
+              'Launch To Orbit',
               this.isAtParkedShip() && !this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot ? 'ready' : 'parked ship req.',
             ],
             detail: 'Lift from the landed ship to orbital view.',
@@ -3778,13 +3828,14 @@ export class Game {
     const fuel = Math.round(this.player.resources.fuel);
     const ship = this.player.ship;
     const stats = getShipDerivedStats(ship);
+    const fuelUseMultiplier = getEngineFuelUseMultiplier(ship.engineClass);
     return [
       { id: 'flight', cells: ['Flight mode', stateLabel, this.getShipOperatingState(), `World grid ${this.player.position.worldX},${this.player.position.worldY}`], disabled: true },
       { id: 'fuel', cells: ['Fuel reserve', `${fuel}/${this.player.resources.maxFuel}`, this.getFuelStateLabel(), this.formatGauge(fuel, this.player.resources.maxFuel, 22)], disabled: true },
       { id: 'damage', cells: ['Damage control', `${stats.hullIntegrityPercent}% hull`, stats.damagedSubsystemCount > 0 ? `${stats.damagedSubsystemCount} damaged` : 'Nominal', getShipDamageSummary(ship)], disabled: true },
       { id: 'cargo', cells: ['Cargo hold', `${this.formatCargoLoad(cargoTotal, this.player.cargoHold.capacity)} m^3`, this.getCargoLoadLabel(cargoTotal), this.formatGauge(cargoTotal, this.player.cargoHold.capacity, 22)], disabled: true },
       { id: 'superstructure', cells: ['Superstructure', ship.superstructure.name, `${stats.fittedLoadPercent}% fitted`, `${ship.superstructure.engineMounts} engine  ${ship.superstructure.specialPurposeBays} special  ${ship.superstructure.probeBays} probe  ${ship.superstructure.cargoBays} cargo bays`], disabled: true },
-      { id: 'drive', cells: ['Drive plant', `Class ${ship.engineClass}`, `${stats.driveEfficiencyPercent}% eff.`, 'Efficiency reflects fitted load and installed engine class.'], disabled: true },
+      { id: 'drive', cells: ['Drive plant', `Class ${ship.engineClass}`, `${stats.driveEfficiencyPercent}% eff.`, `Interstellar fuel use x${fuelUseMultiplier.toFixed(2)}; speed unchanged by class.`], disabled: true },
       { id: 'cargo-pods', cells: ['Cargo pods', `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays}`, `${stats.emptyCargoBays} empty`, `${ship.cargoPodCapacity} m^3 each; capacity ${stats.cargoCapacity} m^3`], disabled: true },
       { id: 'weapons', cells: ['Weapons', `Laser C${ship.laserClass || '-'}`, ship.laserClass > 0 ? `Output ${stats.laserRating}` : 'None', `Missiles ${ship.missileCount}/${stats.missileCapacity} nuclear (${stats.missileLoadPercent}%)`], disabled: true },
       { id: 'shields', cells: ['Shields', ship.shieldClass > 0 ? `Class ${ship.shieldClass}` : 'None', ship.shieldClass > 0 ? `Rating ${stats.shieldRating}` : 'Unfitted', ship.shieldClass > 0 ? 'Generator fitted in shield mount.' : 'No shield generator installed.'], disabled: true },
@@ -4174,7 +4225,7 @@ export class Game {
     const currentState = this.stateManager.state;
     try {
       const directCanvasOverlayVisible =
-        this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent() || this.profilerVisible;
+        (!this.shipMenuOpen && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) || this.profilerVisible;
       const mainRenderSignature = this.getMainRenderSignature();
       if (this.canSkipMainRender(currentState, directCanvasOverlayVisible, mainRenderSignature)) {
         return;
@@ -4289,18 +4340,22 @@ export class Game {
       this.lastMainRenderSignature = mainRenderSignature;
 
       const overlayStart = performance.now();
-      this.astrometricOverlay.render(
-        this.renderer.getContext(),
-        this.renderer.getCharWidthPx(),
-        this.renderer.getCharHeightPx()
-      );
+      if (!this.shipMenuOpen) {
+        this.astrometricOverlay.render(
+          this.renderer.getContext(),
+          this.renderer.getCharWidthPx(),
+          this.renderer.getCharHeightPx()
+        );
+      }
 
       // Draw Terminal Overlay on top
-      this.terminalOverlay.render(
-        this.renderer.getContext(),
-        this.renderer.getCanvas().width,
-        this.renderer.getCanvas().height
-      );
+      if (!this.shipMenuOpen) {
+        this.terminalOverlay.render(
+          this.renderer.getContext(),
+          this.renderer.getCanvas().width,
+          this.renderer.getCanvas().height
+        );
+      }
       this.renderPerformanceOverlay();
       this.lastFrameProfile.overlayMs = performance.now() - overlayStart;
     } catch (renderError) {

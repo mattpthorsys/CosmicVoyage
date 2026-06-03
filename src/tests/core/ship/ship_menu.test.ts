@@ -166,7 +166,7 @@ describe('ship menu', () => {
     const game = createShipMenuHarness();
 
     const ship = game.createShipMenuModel();
-    expect(ship.columns).toEqual(['SHIP AREA', 'STATE']);
+    expect(ship.columns).toEqual(['SECTION', 'STATUS']);
     expect(ship.detailLineCount).toBe(2);
     expect(ship.rows.every((row: any) => row.cells.length === 2)).toBe(true);
     expect(ship.rows.find((row: any) => row.id === 'cargo')?.detail).toContain('Ship hold');

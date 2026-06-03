@@ -124,7 +124,7 @@ export function generateSurfaceElementMap(
     0,
     3.1
   );
-  const depositFrequencyScale = 0.2;
+  const depositFrequencyScale = 0.1;
   const baseSparsity = 0.005 * depositDensityFactor * depositFrequencyScale; // Base chance of finding any deposit.
   const richnessInfluence = 0.3 * depositDensityFactor * depositFrequencyScale; // Rich worlds have broader deposit patches.
 

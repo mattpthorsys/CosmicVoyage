@@ -80,6 +80,12 @@ export const DEFAULT_CARGO_POD_CAPACITY = 25;
 export const HULL_REPAIR_COST_PER_POINT = 12;
 export const SUBSYSTEM_REPAIR_COST_PER_POINT = 18;
 
+export function getEngineFuelUseMultiplier(engineClass: number): number {
+  const normalizedClass = Math.max(1, Math.min(5, Math.round(engineClass)));
+  const multipliers = [0, 1.4, 1.15, 1.0, 0.85, 0.72];
+  return multipliers[normalizedClass] ?? 1.4;
+}
+
 export function createDefaultShipModifications(): ShipModificationState {
   const superstructure: ShipSuperstructure = {
     name: 'Survey Superstructure I',

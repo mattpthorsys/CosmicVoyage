@@ -8,6 +8,7 @@ import { CONFIG } from '../config';
 import { GLYPHS } from '../constants';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from '../core/event_manager';
+import { getEngineFuelUseMultiplier } from '../core/ship_modifications';
 
 // Define or import the event data structure expected by handleMoveRequest
 export interface MoveRequestData {
@@ -99,8 +100,22 @@ export class MovementSystem {
 
         const oldX = position.worldX;
         const oldY = position.worldY;
+        const cellDistance = Math.hypot(dx, dy);
+        const fuelCost = CONFIG.HYPERSPACE_MOVE_FUEL_COST * cellDistance * getEngineFuelUseMultiplier(this.player.ship.engineClass);
+        if (fuelCost > 0 && this.player.resources.fuel < fuelCost) {
+            logger.warn(`[MovementSystem] Hyperspace move refused: fuel ${this.player.resources.fuel.toFixed(2)} below required ${fuelCost.toFixed(2)}.`);
+            return;
+        }
         position.worldX += dx; // Simple integer addition
         position.worldY += dy;
+        if (fuelCost > 0) {
+            const oldFuel = this.player.resources.fuel;
+            this.player.resources.fuel = Math.max(0, this.player.resources.fuel - fuelCost);
+            eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
+                newFuel: this.player.resources.fuel,
+                amountChanged: this.player.resources.fuel - oldFuel,
+            });
+        }
         if (dx !== 0 || dy !== 0) {
             position.lastWorldMoveDx = dx;
             position.lastWorldMoveDy = dy;
