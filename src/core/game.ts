@@ -32,7 +32,7 @@ import {
   StarbaseTableRow,
   STARBASE_SECTIONS,
 } from './starbase_ui';
-import { clampIndex, moveSelection, TextModalTableModel, TextTableRow, TextTone } from './text_ui';
+import { clampIndex, moveSelection, moveSelectionInRows, TextModalTableModel, TextTableRow, TextTone } from './text_ui';
 import {
   adjustQuantitySelector,
   createQuantitySelector,
@@ -980,22 +980,22 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.moveShipMenuSelection(-1, rows.length, visibleRows);
+      this.moveShipMenuSelection(-1, rows, visibleRows);
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.moveShipMenuSelection(1, rows.length, visibleRows);
+      this.moveShipMenuSelection(1, rows, visibleRows);
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
-      this.moveShipMenuSelection(-visibleRows, rows.length, visibleRows);
+      this.moveShipMenuSelection(-visibleRows, rows, visibleRows);
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
-      this.moveShipMenuSelection(visibleRows, rows.length, visibleRows);
+      this.moveShipMenuSelection(visibleRows, rows, visibleRows);
       return true;
     }
 
@@ -2710,10 +2710,10 @@ export class Game {
     this.shipMenuSection = section;
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
-    const viewport = moveSelection(
+    const viewport = moveSelectionInRows(
       this.shipMenuSelectionBySection[section] ?? 0,
       0,
-      rows.length,
+      rows,
       visibleRows,
       this.shipMenuOffsetBySection[section] ?? 0
     );
@@ -2723,8 +2723,8 @@ export class Game {
     this.forceFullRender = true;
   }
 
-  private moveShipMenuSelection(delta: number, rowCount: number, visibleRows: number): void {
-    const viewport = moveSelection(this.shipMenuSelection, delta, rowCount, visibleRows, this.shipMenuOffset);
+  private moveShipMenuSelection(delta: number, rows: TextTableRow[], visibleRows: number): void {
+    const viewport = moveSelectionInRows(this.shipMenuSelection, delta, rows, visibleRows, this.shipMenuOffset);
     this.shipMenuSelection = viewport.selectedIndex;
     this.shipMenuOffset = viewport.viewOffset;
     this.forceFullRender = true;
@@ -3591,7 +3591,7 @@ export class Game {
   private createShipMenuModel(): TextModalTableModel {
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
-    const viewport = moveSelection(this.shipMenuSelection, 0, rows.length, visibleRows, this.shipMenuOffset);
+    const viewport = moveSelectionInRows(this.shipMenuSelection, 0, rows, visibleRows, this.shipMenuOffset);
     this.shipMenuSelection = viewport.selectedIndex;
     this.shipMenuOffset = viewport.viewOffset;
     const meta = this.getShipMenuMeta();
@@ -3754,9 +3754,9 @@ export class Game {
     }));
     return [
       ...rows,
-      { id: 'ship-heading', cells: ['-- Ship Hold --', this.formatCargoAmount(cargoTotal), `${this.player.cargoHold.capacity}`, 'Primary cargo bay'], disabled: true, cellTones: ['cyan', 'bright', 'bright', 'cyan'], detailTone: 'cyan' },
+      { id: 'ship-heading', cells: ['-- Ship Hold --', this.formatCargoAmount(cargoTotal), `${this.player.cargoHold.capacity}`, 'Primary cargo bay'], disabled: true, skipSelection: true, cellTones: ['cyan', 'bright', 'bright', 'cyan'], detailTone: 'cyan' },
       ...shipCargoRows,
-      { id: 'rover-heading', cells: ['-- Terrain Vehicle --', this.formatCargoAmount(roverTotal), `${this.player.terrainVehicle.cargoHold.capacity}`, this.player.terrainVehicle.deployed ? 'Out on surface' : 'Docked in vehicle bay'], disabled: true, cellTones: ['cyan', 'bright', 'bright', this.player.terrainVehicle.deployed ? 'amber' : 'green'], detailTone: 'cyan' },
+      { id: 'rover-heading', cells: ['-- Terrain Vehicle --', this.formatCargoAmount(roverTotal), `${this.player.terrainVehicle.cargoHold.capacity}`, this.player.terrainVehicle.deployed ? 'Out on surface' : 'Docked in vehicle bay'], disabled: true, skipSelection: true, cellTones: ['cyan', 'bright', 'bright', this.player.terrainVehicle.deployed ? 'amber' : 'green'], detailTone: 'cyan' },
       ...roverCargoRows,
     ];
   }

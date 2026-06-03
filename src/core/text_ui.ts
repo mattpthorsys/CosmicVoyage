@@ -10,6 +10,7 @@ export interface TextTableRow {
   cells: string[];
   detail?: string;
   disabled?: boolean;
+  skipSelection?: boolean;
   tone?: TextTone;
   cellTones?: TextTone[];
   detailTone?: TextTone;
@@ -65,6 +66,41 @@ export function moveSelection(
   currentOffset: number
 ): SelectionViewport {
   return setSelection(currentIndex + delta, rowCount, visibleRows, currentOffset);
+}
+
+export function moveSelectionInRows(
+  currentIndex: number,
+  delta: number,
+  rows: TextTableRow[],
+  visibleRows: number,
+  currentOffset: number
+): SelectionViewport {
+  if (rows.length === 0) return setSelection(0, 0, visibleRows, currentOffset);
+  const current = findSelectableRowIndex(rows, clampIndex(currentIndex, rows.length), delta >= 0 ? 1 : -1);
+  const baseIndex = current >= 0 ? current : clampIndex(currentIndex, rows.length);
+  if (delta === 0) {
+    const selectedIndex = findNearestSelectableRowIndex(rows, baseIndex, 1);
+    return setSelection(selectedIndex >= 0 ? selectedIndex : baseIndex, rows.length, visibleRows, currentOffset);
+  }
+
+  const direction = delta > 0 ? 1 : -1;
+  const targetIndex = clampIndex(baseIndex + delta, rows.length);
+  const selectedIndex = findSelectableRowIndex(rows, targetIndex, direction);
+  if (selectedIndex < 0) return setSelection(baseIndex, rows.length, visibleRows, currentOffset);
+  return setSelection(selectedIndex, rows.length, visibleRows, currentOffset);
+}
+
+function findSelectableRowIndex(rows: TextTableRow[], startIndex: number, direction: 1 | -1): number {
+  for (let index = startIndex; index >= 0 && index < rows.length; index += direction) {
+    if (!rows[index].skipSelection) return index;
+  }
+  return -1;
+}
+
+function findNearestSelectableRowIndex(rows: TextTableRow[], startIndex: number, preferredDirection: 1 | -1): number {
+  const preferred = findSelectableRowIndex(rows, startIndex, preferredDirection);
+  if (preferred >= 0) return preferred;
+  return findSelectableRowIndex(rows, startIndex, preferredDirection === 1 ? -1 : 1);
 }
 
 export function setSelection(

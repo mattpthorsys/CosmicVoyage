@@ -158,6 +158,27 @@ describe('ship menu', () => {
     expect(dashboardTones).toEqual(expect.arrayContaining(['cyan', 'green', 'amber', 'bright']));
   });
 
+  it('skips cargo manifest heading rows during ship menu navigation', () => {
+    const game = createShipMenuHarness();
+    game.cargoSystem.addItem(game.player.cargoHold, 'IRON', 25);
+    game.shipMenuSection = 'cargo';
+
+    let model = game.createShipMenuModel();
+    expect(model.rows[1]).toMatchObject({ id: 'ship-heading', skipSelection: true });
+    expect(model.rows[3]).toMatchObject({ id: 'rover-heading', skipSelection: true });
+
+    game.shipMenuSelection = 0;
+    game.moveShipMenuSelection(1, model.rows, model.visibleRowCount);
+    expect(model.rows[game.shipMenuSelection].id).toBe('cargo:IRON');
+
+    game.moveShipMenuSelection(1, model.rows, model.visibleRowCount);
+    expect(model.rows[game.shipMenuSelection].id).toBe('rover:rover:empty');
+
+    model = game.createShipMenuModel();
+    game.moveShipMenuSelection(-1, model.rows, model.visibleRowCount);
+    expect(model.rows[game.shipMenuSelection].id).toBe('cargo:IRON');
+  });
+
   it('formats the starbase shipyard as a refit screen with superstructure slots and orders', () => {
     const game = createShipMenuHarness('starbase');
     const starbase = new Starbase('Quiet Dock', new PRNG('shipyard-screen'), 'Regression');
