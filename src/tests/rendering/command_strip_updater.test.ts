@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { commandButton } from '../../core/command_bar';
 import { eventManager, GameEvents } from '../../core/event_manager';
 import { CommandStripUpdater } from '../../rendering/command_strip_updater';
+import { TEXT_PALETTE } from '../../rendering/text_palette';
 
 describe('CommandStripUpdater command bar', () => {
   it('renders themed command bar buttons and publishes selected actions', () => {
@@ -22,8 +23,8 @@ describe('CommandStripUpdater command bar', () => {
     const buttons = [...element.querySelectorAll('button')];
     expect(buttons.map((button) => button.textContent)).toEqual(['[ENTER] Enter System *', '[S] Scan', 'Alert']);
     expect(buttons[0].style.backgroundColor).not.toBe('');
-    expect(buttons[1].style.backgroundColor).toBe('#9FFFE0');
-    expect(buttons[1].style.color).toBe('#001010');
+    expect(buttons[1].style.backgroundColor).toBe(TEXT_PALETTE.text);
+    expect(buttons[1].style.color).toBe(TEXT_PALETTE.inverseText);
     expect(buttons[0].classList.contains('cosmic-command-button-green')).toBe(true);
     expect(document.getElementById('cosmic-command-bar-styles')?.textContent).toContain('cosmic-command-green-flash');
 

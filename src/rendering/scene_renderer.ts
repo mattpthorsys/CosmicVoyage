@@ -16,6 +16,7 @@ import { OrbitScreenModel } from '../core/orbit_ui';
 import { TextDashboardLine, TextMenuSection, TextModalTableModel, TextTableModel, TextTableRow, TextTone } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
+import { TEXT_PALETTE } from './text_palette';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -247,7 +248,7 @@ export class SceneRenderer {
   private createCell(char: string | null, fg: string | null, bg: string | null, isTransparentBg: boolean): CellState {
     return {
       char: char || ' ',
-      fg: fg || CONFIG.DEFAULT_FG_COLOUR,
+      fg: fg || TEXT_PALETTE.text,
       bg: isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : (bg || CONFIG.DEFAULT_BG_COLOUR),
       isTransparentBg,
     };
@@ -469,7 +470,7 @@ export class SceneRenderer {
 
   private _drawPlanetBody(planet: Planet, planetViewX: number, planetViewY: number, marker: string): void {
       const planetColor = this.getPlanetDisplayColour(planet.type);
-      this.screenBuffer.drawChar(marker, planetViewX, planetViewY, '#000000', planetColor);
+      this.screenBuffer.drawChar(marker, planetViewX, planetViewY, TEXT_PALETTE.inverseText, planetColor);
   }
 
   private getPlanetMarker(index: number): string {
@@ -494,7 +495,7 @@ export class SceneRenderer {
       const sbViewX = Math.floor((starbase.systemX - viewWorldStartX) / viewScale);
       const sbViewY = Math.floor((starbase.systemY - viewWorldStartY) / viewScale);
       if (sbViewX >= 0 && sbViewX < cols && sbViewY >= 0 && sbViewY < rows) {
-           this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbViewX, sbViewY, '#001010', CONFIG.STARBASE_COLOUR);
+           this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbViewX, sbViewY, TEXT_PALETTE.inverseText, CONFIG.STARBASE_COLOUR);
       }
   }
 
@@ -509,8 +510,8 @@ export class SceneRenderer {
     const startX = 1;
     const startY = 1;
 
-    this.drawingContext.drawBox(startX, startY, panelWidth, panelHeight, '#3EA6A6', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' NAV TARGETS ', startX + 2, startY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(startX, startY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorder, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' NAV TARGETS ', startX + 2, startY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
 
     visiblePlanets.slice(0, maxRows).forEach((item, row) => {
       const planetColor = this.getPlanetDisplayColour(item.planet.type);
@@ -522,8 +523,8 @@ export class SceneRenderer {
       const name = item.planet.name.replace(`${system.name} `, '');
       const label = `${item.marker} ${name.padEnd(5).slice(0, 5)} ${distanceAu.toFixed(2).padStart(5)}AU ${lightTime.padStart(7).slice(0, 7)} ${bearing}`;
       const y = startY + 2 + row;
-      this.screenBuffer.drawChar(item.marker, startX + 2, y, '#000000', planetColor);
-      this.screenBuffer.drawString(label.slice(2, panelWidth - 4), startX + 4, y, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawChar(item.marker, startX + 2, y, TEXT_PALETTE.inverseText, planetColor);
+      this.screenBuffer.drawString(label.slice(2, panelWidth - 4), startX + 4, y, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
     });
   }
 
@@ -546,7 +547,7 @@ export class SceneRenderer {
     if (mapScale_m_per_cell <= 0 || !Number.isFinite(mapScale_m_per_cell)) { return; }
     this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', CONFIG.DEFAULT_BG_COLOUR);
     const title = system.isStarless ? ' LOCAL FRAME ' : ' LOCAL SYSTEM ';
-    this.screenBuffer.drawString(title.slice(0, mapWidth), mapStartX + 1, mapStartY - 1, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(title.slice(0, mapWidth), mapStartX + 1, mapStartY - 1, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     const worldToMinimap = (worldX_m: number, worldY_m: number): { x: number; y: number } | null => {
       const mapX = Math.floor(worldX_m / mapScale_m_per_cell + mapWidth / 2);
       const mapY = Math.floor(worldY_m / mapScale_m_per_cell + mapHeight / 2);
@@ -580,7 +581,7 @@ export class SceneRenderer {
     const playerPos = worldToMinimap(player.position.systemX, player.position.systemY);
     if (playerPos) { this.screenBuffer.drawChar(player.render.char, playerPos.x, playerPos.y, player.render.fgColor, CONFIG.DEFAULT_BG_COLOUR); }
     const scaleText = `1 cell ${formatDistanceAu(mapScale_m_per_cell)}`;
-    this.screenBuffer.drawString(scaleText.slice(0, mapWidth), mapStartX, mapStartY + mapHeight + 1, '#777777', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(scaleText.slice(0, mapWidth), mapStartX, mapStartY + mapHeight + 1, TEXT_PALETTE.textDim, CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private getPlanetDisplayColour(planetType: string): string {
@@ -935,11 +936,11 @@ export class SceneRenderer {
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(2, Math.floor((rows - panelHeight) / 2));
 
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#00C8FF', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${renderModel.title.toUpperCase()} `, panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(renderModel.stationName.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorderBright, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(` ${renderModel.title.toUpperCase()} `, panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(renderModel.stationName.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
 
     this.drawTextTabs(renderModel.sections, renderModel.sectionId, panelX + 4, panelY + 6, panelX + panelWidth - 2);
 
@@ -953,12 +954,12 @@ export class SceneRenderer {
     this.drawTextScrollbar(tableX + tableWidth + 1, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
 
     if (renderModel.alert) {
-      this.screenBuffer.drawString(renderModel.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(renderModel.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
-      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(renderModel.alert.length, panelWidth - 9), panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(renderModel.alert.length, panelWidth - 9), panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
     }
     renderModel.footer.forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#FFD66B' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
     });
     this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
   }
@@ -986,10 +987,10 @@ export class SceneRenderer {
     const tableX = panelX + 4;
     const tableY = panelY + 5;
 
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#3EA6A6', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${renderModel.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorder, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(` ${renderModel.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     if (renderModel.subtitle) {
-      this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
     }
 
     this.drawTextTableHeader(renderModel, tableX, tableY, tableWidth);
@@ -998,7 +999,7 @@ export class SceneRenderer {
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, '#777777', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, TEXT_PALETTE.textDim, CONFIG.DEFAULT_BG_COLOUR);
     });
   }
 
@@ -1015,10 +1016,10 @@ export class SceneRenderer {
     const contentX = panelX + 4;
     const contentY = panelY + 5;
 
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#3EA6A6', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${model.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorder, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(` ${model.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     if (model.subtitle) {
-      this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#7FD8FF', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.cyanSoft, CONFIG.DEFAULT_BG_COLOUR);
     }
 
     model.dashboard!.slice(0, visibleRows).forEach((line, index) => {
@@ -1027,7 +1028,7 @@ export class SceneRenderer {
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
     });
   }
 
@@ -1047,14 +1048,14 @@ export class SceneRenderer {
 
   private getTextToneColour(tone: TextTone): string {
     switch (tone) {
-      case 'muted': return '#2F6F68';
-      case 'cyan': return '#5FC8FF';
-      case 'green': return '#00AA66';
-      case 'amber': return '#FFD66B';
-      case 'red': return '#FF6677';
-      case 'bright': return '#8CFFFF';
+      case 'muted': return TEXT_PALETTE.textMuted;
+      case 'cyan': return TEXT_PALETTE.cyan;
+      case 'green': return TEXT_PALETTE.green;
+      case 'amber': return TEXT_PALETTE.amber;
+      case 'red': return TEXT_PALETTE.red;
+      case 'bright': return TEXT_PALETTE.textBright;
       case 'normal':
-      default: return '#9FFFE0';
+      default: return TEXT_PALETTE.text;
     }
   }
 
@@ -1063,24 +1064,24 @@ export class SceneRenderer {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     this.screenBuffer.clear(false);
-    this.drawingContext.drawBox(0, 0, cols, rows, '#008A9A', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.drawingContext.drawBox(0, 0, cols, rows, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
 
     const panelWidth = Math.min(126, Math.max(64, cols - 4));
     const panelHeight = Math.min(46, Math.max(32, Math.floor(rows * 0.78)));
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(1, Math.floor((rows - panelHeight) / 3));
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, '#00C8FF', CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorderBright, CONFIG.DEFAULT_BG_COLOUR, ' ');
 
-    this.screenBuffer.drawString(` ${model.title.toUpperCase()} `, panelX + 3, panelY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(model.selectedBody.name.slice(0, panelWidth - 6), panelX + 3, panelY + 2, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(` ${model.title.toUpperCase()} `, panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(model.selectedBody.name.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
 
     let bodyTabX = panelX + 4;
     model.bodies.forEach((body) => {
       const label = body.selected ? `[${body.label}]` : ` ${body.label} `;
       if (bodyTabX + label.length < panelX + panelWidth - 2) {
-        this.screenBuffer.drawString(label, bodyTabX, panelY + 6, body.selected ? '#001010' : '#00AA66', body.selected ? '#00FFFF' : CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(label, bodyTabX, panelY + 6, body.selected ? TEXT_PALETTE.inverseText : TEXT_PALETTE.green, body.selected ? TEXT_PALETTE.cyanActive : CONFIG.DEFAULT_BG_COLOUR);
       }
       bodyTabX += label.length + 1;
     });
@@ -1093,8 +1094,8 @@ export class SceneRenderer {
     const sphereBoxHeight = contentHeight;
     const sphereCx = panelX + 3 + Math.floor(leftColumnWidth / 2);
     const sphereCy = contentTop + 3 + sphereRadius;
-    this.drawingContext.drawBox(panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' ORBITAL VIEW ', panelX + 5, contentTop, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' ORBITAL VIEW ', panelX + 5, contentTop, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     this.drawRotatingPlanetSphere(model, sphereCx, sphereCy, sphereRadius);
     this.drawOrbitViewReadout(model, panelX + 5, contentTop + sphereBoxHeight - 3, leftColumnWidth - 4);
 
@@ -1102,16 +1103,16 @@ export class SceneRenderer {
     const mapHeight = Math.max(10, Math.min(20, contentHeight - 4));
     const mapX = panelX + panelWidth - mapWidth - 6;
     const mapY = contentTop;
-    this.drawingContext.drawBox(mapX - 1, mapY, mapWidth + 2, mapHeight + 4, model.mode === 'landing' ? '#00FFFF' : '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' LANDING MAP ', mapX + 1, mapY, model.mode === 'landing' ? '#8CFFFF' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(mapX - 1, mapY, mapWidth + 2, mapHeight + 4, model.mode === 'landing' ? TEXT_PALETTE.cyanActive : TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' LANDING MAP ', mapX + 1, mapY, model.mode === 'landing' ? TEXT_PALETTE.textBright : TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
     this.drawOrbitLandingMap(model, mapX, mapY + 2, mapWidth, mapHeight);
 
     const descX = panelX + leftColumnWidth + 8;
     const descY = contentTop;
     const descWidth = Math.max(30, mapX - descX - 3);
     const descHeight = Math.max(10, contentBottom - descY + 1);
-    this.drawingContext.drawBox(descX - 1, descY, descWidth + 2, descHeight, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' SCAN SUMMARY ', descX + 1, descY, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(descX - 1, descY, descWidth + 2, descHeight, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString(' SCAN SUMMARY ', descX + 1, descY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     const lines = [
       ...this.formatOrbitSummaryLines(model.telemetry, descWidth - 2),
       '',
@@ -1123,17 +1124,17 @@ export class SceneRenderer {
         descX + 1,
         descY + 2 + index,
         descWidth - 2,
-        index < 3 ? '#9FFFE0' : '#00AA66'
+        index < 3 ? TEXT_PALETTE.text : TEXT_PALETTE.green
       );
     });
 
     if (model.alert) {
-      this.screenBuffer.drawString(model.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(model.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
-      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(model.alert.length, panelWidth - 9), panelY + panelHeight - 5, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(model.alert.length, panelWidth - 9), panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
     }
     model.footer.forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? '#5FC8FF' : '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? TEXT_PALETTE.cyan : TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
     });
   }
 
@@ -1278,8 +1279,8 @@ export class SceneRenderer {
   private drawOrbitViewReadout(model: OrbitScreenModel, x: number, y: number, width: number): void {
     const phaseText = `ROT ${Math.floor((model.rotationPhase % 1) * 360).toString().padStart(3)} DEG`;
     const modeText = model.mode === 'landing' ? 'LANDING SOLUTION' : 'SURVEY HOLD';
-    this.screenBuffer.drawString(phaseText.slice(0, width), x, y, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(modeText.slice(0, width), x, y + 1, model.mode === 'landing' ? '#FFD66B' : '#00AA66', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(phaseText.slice(0, width), x, y, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(modeText.slice(0, width), x, y + 1, model.mode === 'landing' ? TEXT_PALETTE.amber : TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private formatOrbitSummaryLines(paragraphs: string[], width: number): string[] {
@@ -1306,7 +1307,7 @@ export class SceneRenderer {
 
       const measurement = match[0].slice(0, x + width - cursorX);
       if (measurement) {
-        this.screenBuffer.drawString(measurement, cursorX, y, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(measurement, cursorX, y, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
         cursorX += measurement.length;
       }
       lastIndex = match.index + match[0].length;
@@ -1345,8 +1346,8 @@ export class SceneRenderer {
             '+',
             x + col * detailScale,
             y + row * detailScale,
-            '#001010',
-            model.mode === 'landing' ? '#00FFFF' : '#00AA66',
+            TEXT_PALETTE.inverseText,
+            model.mode === 'landing' ? TEXT_PALETTE.cyanActive : TEXT_PALETTE.green,
             detailScale,
             detailScale
           );
@@ -1363,7 +1364,7 @@ export class SceneRenderer {
         }
       }
     }
-    this.screenBuffer.drawString(`X ${model.landingCursorX.toString().padStart(3)} Y ${model.landingCursorY.toString().padStart(3)}`.slice(0, width), x, y + height + 1, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(`X ${model.landingCursorX.toString().padStart(3)} Y ${model.landingCursorY.toString().padStart(3)}`.slice(0, width), x, y + height + 1, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private sampleGiantMapBand(
@@ -1425,8 +1426,8 @@ export class SceneRenderer {
           label,
           cursorX,
           y,
-          active ? '#001010' : '#00AA66',
-          active ? '#00FFFF' : CONFIG.DEFAULT_BG_COLOUR
+          active ? TEXT_PALETTE.inverseText : TEXT_PALETTE.green,
+          active ? TEXT_PALETTE.cyanActive : CONFIG.DEFAULT_BG_COLOUR
         );
       }
       cursorX += label.length + 1;
@@ -1437,10 +1438,10 @@ export class SceneRenderer {
     let cursorX = x;
     model.columns.forEach((column, index) => {
       const width = model.widths[index] ?? 12;
-      this.screenBuffer.drawString(column.padEnd(width).slice(0, width), cursorX, y, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(column.padEnd(width).slice(0, width), cursorX, y, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
       cursorX += width + 1;
     });
-    this.screenBuffer.drawString('-'.repeat(Math.max(1, tableWidth)), x, y + 1, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString('-'.repeat(Math.max(1, tableWidth)), x, y + 1, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private resolveTextTableLayout(model: TextTableModel, maxTableWidth: number): TextTableLayout {
@@ -1515,16 +1516,16 @@ export class SceneRenderer {
   private drawTextTableRows(model: TextTableModel, x: number, y: number, tableWidth: number, visibleRows: number): void {
     const rows = model.rows.slice(model.viewOffset, model.viewOffset + visibleRows);
     if (rows.length === 0) {
-      this.screenBuffer.drawString('No records available.'.slice(0, tableWidth), x, y, '#506060', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString('No records available.'.slice(0, tableWidth), x, y, TEXT_PALETTE.textDim, CONFIG.DEFAULT_BG_COLOUR);
       return;
     }
     rows.forEach((row, rowIndex) => {
       const absoluteIndex = model.viewOffset + rowIndex;
       const selected = absoluteIndex === model.selectedIndex;
       const rowTone = row.tone ?? (row.disabled ? 'muted' : 'green');
-      const fg = selected ? '#001010' : this.getTextToneColour(rowTone);
-      const bg = selected ? '#00FF66' : CONFIG.DEFAULT_BG_COLOUR;
-      this.screenBuffer.drawChar(selected ? '>' : ' ', x - 2, y + rowIndex, selected ? '#00FF66' : '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+      const fg = selected ? TEXT_PALETTE.inverseText : this.getTextToneColour(rowTone);
+      const bg = selected ? TEXT_PALETTE.greenBright : CONFIG.DEFAULT_BG_COLOUR;
+      this.screenBuffer.drawChar(selected ? '>' : ' ', x - 2, y + rowIndex, selected ? TEXT_PALETTE.greenBright : TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
       let cursorX = x;
       row.cells.forEach((cell, index) => {
         const width = model.widths[index] ?? 12;
@@ -1543,7 +1544,7 @@ export class SceneRenderer {
       detailLines.forEach((line, index) => {
         const detailY = y + visibleRows + 1 + index;
         if (detailY >= this.screenBuffer.getRows()) return;
-        this.screenBuffer.drawString(' '.repeat(tableWidth), x, detailY, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(' '.repeat(tableWidth), x, detailY, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
         this.screenBuffer.drawString(index === 0 ? '::' : '  ', x, detailY, detailColour, CONFIG.DEFAULT_BG_COLOUR);
         this.screenBuffer.drawString(line.slice(0, detailWidth), x + 3, detailY, detailColour, CONFIG.DEFAULT_BG_COLOUR);
       });
@@ -1556,15 +1557,15 @@ export class SceneRenderer {
 
   private drawTextScrollbar(x: number, y: number, height: number, totalRows: number, offset: number): void {
     if (height <= 0) return;
-    for (let i = 0; i < height; i++) this.screenBuffer.drawChar('│', x, y + i, '#006A6A', CONFIG.DEFAULT_BG_COLOUR);
+    for (let i = 0; i < height; i++) this.screenBuffer.drawChar('│', x, y + i, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
     if (totalRows <= height) {
-      for (let i = 0; i < height; i++) this.screenBuffer.drawChar('█', x, y + i, '#00AAAA', CONFIG.DEFAULT_BG_COLOUR);
+      for (let i = 0; i < height; i++) this.screenBuffer.drawChar('█', x, y + i, TEXT_PALETTE.cyanSignal, CONFIG.DEFAULT_BG_COLOUR);
       return;
     }
     const thumbHeight = Math.max(1, Math.floor((height / totalRows) * height));
     const maxOffset = Math.max(1, totalRows - height);
     const thumbY = y + Math.floor((offset / maxOffset) * (height - thumbHeight));
-    for (let i = 0; i < thumbHeight; i++) this.screenBuffer.drawChar('█', x, thumbY + i, '#00FFFF', CONFIG.DEFAULT_BG_COLOUR);
+    for (let i = 0; i < thumbHeight; i++) this.screenBuffer.drawChar('█', x, thumbY + i, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
   }
 
   private drawSurfaceHud(
@@ -1577,18 +1578,18 @@ export class SceneRenderer {
     const lon = (player.position.surfaceX / mapSize) * 360 - 180;
     const label = ` ${planet.name}  ${this.formatSurfaceCoordinate(lat, 'NS')} x ${this.formatSurfaceCoordinate(lon, 'EW')}  GRID ${Math.floor(player.position.surfaceX)},${Math.floor(player.position.surfaceY)} `;
     const clippedLabel = label.slice(0, Math.max(0, viewport.width - 2));
-    this.screenBuffer.drawString(clippedLabel, viewport.x + 1, viewport.y - 1, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(clippedLabel, viewport.x + 1, viewport.y - 1, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
 
     const footer = '  N ^   S v   W <   E >  ';
     const footerX = viewport.x + Math.max(1, viewport.width - footer.length - 1);
-    this.screenBuffer.drawString(footer, footerX, viewport.y + viewport.height, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(footer, footerX, viewport.y + viewport.height, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
 
     const crossX = viewport.x + Math.floor(viewport.width / 2);
     const crossY = viewport.y + Math.floor(viewport.height / 2);
-    this.screenBuffer.drawChar('+', crossX - 1, crossY, '#001010', '#00FFFF');
-    this.screenBuffer.drawChar('+', crossX + 1, crossY, '#001010', '#00FFFF');
-    this.screenBuffer.drawChar('+', crossX, crossY - 1, '#001010', '#00FFFF');
-    this.screenBuffer.drawChar('+', crossX, crossY + 1, '#001010', '#00FFFF');
+    this.screenBuffer.drawChar('+', crossX - 1, crossY, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
+    this.screenBuffer.drawChar('+', crossX + 1, crossY, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
+    this.screenBuffer.drawChar('+', crossX, crossY - 1, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
+    this.screenBuffer.drawChar('+', crossX, crossY + 1, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
   }
 
   private formatSurfaceCoordinate(value: number, axis: 'NS' | 'EW'): string {
@@ -1607,11 +1608,11 @@ export class SceneRenderer {
     const panelWidth = viewport.width;
     if (panelY >= this.screenBuffer.getRows() - 1) return;
     const notifications = model.notifications.length > 0 ? model.notifications : ['Surface systems nominal.'];
-    this.drawingContext.drawBox(panelX - 1, panelY - 1, panelWidth + 2, 6, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString('NOTIFICATIONS', panelX + 2, panelY - 1, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(panelX - 1, panelY - 1, panelWidth + 2, 6, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString('NOTIFICATIONS', panelX + 2, panelY - 1, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
     for (let index = 0; index < 4; index++) {
       const line = (notifications[index] ?? '').slice(0, panelWidth - 4);
-      this.screenBuffer.drawString(line, panelX + 2, panelY + index, index === 0 ? '#FFD66B' : '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(line, panelX + 2, panelY + index, index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.textSoft, CONFIG.DEFAULT_BG_COLOUR);
     }
 
     if (!model.deployed) {
@@ -1620,7 +1621,7 @@ export class SceneRenderer {
         : model.available
           ? 'Terrain vehicle embarked. Open ship operations to disembark.'
           : 'Terrain vehicle lost. Replacement required at a starport shipyard.';
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 4), panelX + 2, panelY + 5, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(line.slice(0, panelWidth - 4), panelX + 2, panelY + 5, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
       this.drawSurfaceCrewSidebar(model, viewport);
       return;
     }
@@ -1631,7 +1632,7 @@ export class SceneRenderer {
     const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel} ${fuelPct}%`;
     const cargo = `CARGO ${formatCargoAmount(model.cargo)}/${Math.round(model.cargoCapacity)} m^3`;
     const mode = model.mapExpanded ? 'MAP' : model.moving ? 'MOVING' : 'STOPPED';
-    this.screenBuffer.drawString(`${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth), panelX + 1, menuY, model.moving ? '#9FFFE0' : '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(`${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth), panelX + 1, menuY, model.moving ? TEXT_PALETTE.text : TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
 
     let cursorX = panelX + 1;
     const rowY = menuY + 1;
@@ -1639,9 +1640,9 @@ export class SceneRenderer {
       const item = model.items[index];
       const selected = index === model.selectedIndex && !model.moving;
       const label = ` ${item.label.toUpperCase()} `;
-      const baseFg = item.tone === 'green' ? '#7CFFD0' : '#9FFFE0';
-      const selectedBg = item.tone === 'green' ? '#00C878' : '#9FFFE0';
-      const fg = selected ? '#001010' : baseFg;
+      const baseFg = item.tone === 'green' ? TEXT_PALETTE.greenSoft : TEXT_PALETTE.text;
+      const selectedBg = item.tone === 'green' ? TEXT_PALETTE.greenAction : TEXT_PALETTE.text;
+      const fg = selected ? TEXT_PALETTE.inverseText : baseFg;
       const bg = selected ? selectedBg : CONFIG.DEFAULT_BG_COLOUR;
       if (cursorX + label.length >= panelX + panelWidth) break;
       this.screenBuffer.drawString(label, cursorX, rowY, fg, bg);
@@ -1652,7 +1653,7 @@ export class SceneRenderer {
       const hint = model.atShip && selected.label.toLowerCase() !== 'embark'
         ? `${selected.label}: ${selected.status} | At ship: select EMBARK to board.`
         : `${selected.label}: ${selected.status}`;
-      this.screenBuffer.drawString(hint.slice(0, panelWidth), panelX + 1, rowY + 1, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(hint.slice(0, panelWidth), panelX + 1, rowY + 1, TEXT_PALETTE.textSoft, CONFIG.DEFAULT_BG_COLOUR);
     }
     this.drawSurfaceCrewSidebar(model, viewport);
   }
@@ -1663,7 +1664,7 @@ export class SceneRenderer {
     const y = viewport.y + Math.floor(viewport.height / 2) + cursor.dy * scale;
     if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
     const lit = Math.floor(performance.now() / 350) % 2 === 0;
-    const fg = lit ? '#FFD66B' : '#806A30';
+    const fg = lit ? TEXT_PALETTE.amber : TEXT_PALETTE.amberDim;
     const bg = lit ? null : CONFIG.DEFAULT_BG_COLOUR;
     if (y > viewport.y) this.screenBuffer.drawChar('^', x, y - 1, fg, bg);
     if (y < viewport.y + viewport.height - 1) this.screenBuffer.drawChar('v', x, y + 1, fg, bg);
@@ -1677,8 +1678,8 @@ export class SceneRenderer {
     const y = viewport.y + Math.floor(viewport.height / 2) + Math.round(ship.y * scale);
     if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
     const phase = (Math.sin((performance.now() / 1000) * Math.PI * 2) + 1) / 2;
-    const colour = phase > 0.66 ? '#8CFFFF' : phase > 0.33 ? '#50C8C8' : '#2A807C';
-    this.screenBuffer.drawChar('S', x, y, '#001010', colour);
+    const colour = phase > 0.66 ? TEXT_PALETTE.textBright : phase > 0.33 ? TEXT_PALETTE.cyanBorder : TEXT_PALETTE.textMuted;
+    this.screenBuffer.drawChar('S', x, y, TEXT_PALETTE.inverseText, colour);
     if (x > viewport.x) this.screenBuffer.drawChar('<', x - 1, y, colour, null);
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, colour, null);
   }
@@ -1689,23 +1690,23 @@ export class SceneRenderer {
     const width = Math.max(0, this.screenBuffer.getCols() - x - 2);
     if (width < 16) return;
     const height = Math.min(rows - 4, viewport.height + 8);
-    this.drawingContext.drawBox(x - 1, viewport.y - 1, width + 2, height, '#006A6A', CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString('SURFACE TELEMETRY', x + 1, viewport.y - 1, '#8CFFFF', CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(x - 1, viewport.y - 1, width + 2, height, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.screenBuffer.drawString('SURFACE TELEMETRY', x + 1, viewport.y - 1, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     let row = viewport.y + 1;
     if (model.shipDistance) {
       const km = model.shipDistance.distanceKm >= 100 ? model.shipDistance.distanceKm.toFixed(0) : model.shipDistance.distanceKm.toFixed(1);
-      this.screenBuffer.drawString(`SHIP ${km} km`.slice(0, width), x, row++, '#FFD66B', CONFIG.DEFAULT_BG_COLOUR);
-      this.screenBuffer.drawString(`BRG  ${model.shipDistance.direction}`.slice(0, width), x, row++, '#B8FFF0', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`SHIP ${km} km`.slice(0, width), x, row++, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`BRG  ${model.shipDistance.direction}`.slice(0, width), x, row++, TEXT_PALETTE.textSoft, CONFIG.DEFAULT_BG_COLOUR);
     }
     if (model.altitudeBand) {
-      this.screenBuffer.drawString(`RELIEF ${model.altitudeBand.current}`.slice(0, width), x, row++, '#9FFFE0', CONFIG.DEFAULT_BG_COLOUR);
-      this.screenBuffer.drawString(`${model.altitudeBand.low} / ${model.altitudeBand.high}`.slice(0, width), x, row++, '#5FC8FF', CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`RELIEF ${model.altitudeBand.current}`.slice(0, width), x, row++, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(`${model.altitudeBand.low} / ${model.altitudeBand.high}`.slice(0, width), x, row++, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
     }
     row++;
     model.crew.slice(0, Math.max(0, viewport.y + height - row - 1)).forEach((member, index) => {
       const dead = member.hitPoints <= 0;
       const hp = dead ? 'DEAD' : `${member.hitPoints}/${member.maxHitPoints}`;
-      const fg = dead ? '#FF6060' : member.hitPoints < member.maxHitPoints * 0.4 ? '#FFD66B' : '#9FFFE0';
+      const fg = dead ? TEXT_PALETTE.red : member.hitPoints < member.maxHitPoints * 0.4 ? TEXT_PALETTE.amber : TEXT_PALETTE.text;
       const nameWidth = Math.max(5, width - hp.length - 3);
       this.screenBuffer.drawString(`${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width), x, row + index, fg, CONFIG.DEFAULT_BG_COLOUR);
     });
@@ -1727,8 +1728,8 @@ export class SceneRenderer {
       const colour = heightColors[Math.max(0, Math.min(numColors - 1, colourIndex))] || '#FF00FF';
       for (let w = 0; w < legendWidth; ++w) { this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour); }
     }
-    this.screenBuffer.drawString("High", startX - 4, startY, CONFIG.DEFAULT_FG_COLOUR, null);
-    this.screenBuffer.drawString("Low", startX - 3, startY + legendHeight - 1, CONFIG.DEFAULT_FG_COLOUR, null);
+    this.screenBuffer.drawString("High", startX - 4, startY, TEXT_PALETTE.text, null);
+    this.screenBuffer.drawString("Low", startX - 3, startY + legendHeight - 1, TEXT_PALETTE.text, null);
   }
 
   /** Helper to draw an error message centered on the screen */
@@ -1738,7 +1739,7 @@ export class SceneRenderer {
       const x = Math.floor((cols - message.length) / 2);
       const y = Math.floor(rows / 2);
       this.screenBuffer.clear(true);
-      this.screenBuffer.drawString(message, x, y, '#FF0000', '#000000');
+      this.screenBuffer.drawString(message, x, y, TEXT_PALETTE.red, TEXT_PALETTE.background);
   }
 
 } // End SceneRenderer class

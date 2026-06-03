@@ -12,6 +12,7 @@ import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { formatHyperspaceSignalDelay, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyContact, HyperspaceSurveyService } from '../core/hyperspace_survey';
+import { TEXT_PALETTE } from './text_palette';
 
 interface OverlayContext {
   state: GameState;
@@ -113,7 +114,7 @@ export class AstrometricOverlay {
     ctx.save();
     ctx.font = `${charHeight * this.fontScale}px ${CONFIG.THIN_FONT_FAMILY}`;
     ctx.textBaseline = 'top';
-    ctx.shadowColor = '#00FF66';
+    ctx.shadowColor = TEXT_PALETTE.greenBright;
     ctx.shadowBlur = 5;
 
     this.drawHyperspaceStarbaseMarkers(ctx, charWidth, charHeight, now);
@@ -132,7 +133,7 @@ export class AstrometricOverlay {
       this.drawConnector(ctx, item, visibleLines, charWidth, charHeight);
 
       visibleLines.forEach((line, row) => {
-        ctx.fillStyle = row === 0 ? '#00CCAA' : item.color;
+        ctx.fillStyle = row === 0 ? TEXT_PALETTE.cyanSignal : item.color;
         ctx.fillText(line, item.x * charWidth, (item.y + row) * charHeight);
       });
     }
@@ -227,7 +228,7 @@ export class AstrometricOverlay {
         y,
         targetX: Math.floor(cols / 2) + contact.dx,
         targetY: Math.floor(rows / 2) + contact.dy,
-        color: '#00FF66',
+        color: TEXT_PALETTE.greenBright,
         createdAt: now,
         typedChars: 0,
         durationMs: this.getDuration(context.state),
@@ -246,7 +247,7 @@ export class AstrometricOverlay {
       state: context.state,
       x,
       y,
-      color: '#007755',
+      color: TEXT_PALETTE.green,
       createdAt: now,
       typedChars: 0,
       durationMs: this.getDuration(context.state) * 0.75,
@@ -288,7 +289,7 @@ export class AstrometricOverlay {
         y: Math.max(2, Math.floor(rows * 0.24)),
         targetX: Math.floor((nearestStar.systemX - viewWorldStartX) / context.viewScale),
         targetY: Math.floor((nearestStar.systemY - viewWorldStartY) / context.viewScale),
-        color: '#9FFFE0',
+        color: TEXT_PALETTE.text,
         createdAt: now,
         typedChars: 0,
         durationMs: this.getDuration(context.state),
@@ -319,7 +320,7 @@ export class AstrometricOverlay {
       y: Math.max(1, Math.min(rows - 5, selected.viewY - 2)),
       targetX: selected.viewX,
       targetY: selected.viewY,
-      color: '#00FF66',
+        color: TEXT_PALETTE.greenBright,
       createdAt: now,
       typedChars: 0,
       durationMs: this.getDuration(context.state),
@@ -345,7 +346,7 @@ export class AstrometricOverlay {
       y,
       targetX: viewport.x + Math.floor(viewport.width / 2),
       targetY: viewport.y + Math.floor(viewport.height / 2),
-      color: '#00FF66',
+        color: TEXT_PALETTE.greenBright,
       createdAt: now,
       typedChars: 0,
       durationMs: this.getDuration(context.state),
@@ -516,7 +517,7 @@ export class AstrometricOverlay {
 
     ctx.save();
     ctx.shadowBlur = 0;
-    ctx.fillStyle = '#38BDB5';
+    ctx.fillStyle = TEXT_PALETTE.cyanBorder;
     for (const marker of this.hyperspaceStarbaseMarkers) {
       const nearLift = 1 - this.smoothstep(20, 42, marker.distanceCells);
       ctx.globalAlpha = Math.min(0.42, baseAlpha + nearLift * 0.16);
@@ -715,7 +716,7 @@ export class AstrometricOverlay {
     const visibleLength = pathLength * drawProgress;
 
     ctx.save();
-    ctx.strokeStyle = '#007755';
+    ctx.strokeStyle = TEXT_PALETTE.green;
     ctx.lineWidth = Math.max(1, charHeight * 0.08);
     ctx.shadowBlur = 4;
     ctx.beginPath();
@@ -728,9 +729,9 @@ export class AstrometricOverlay {
     ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = '#007755';
+    ctx.fillStyle = TEXT_PALETTE.green;
     ctx.fillText(dir > 0 ? '├' : '┤', (labelAnchorX + (dir > 0 ? 0 : -1)) * charWidth, labelMidY * charHeight);
-    ctx.fillStyle = '#00FF66';
+    ctx.fillStyle = TEXT_PALETTE.greenBright;
     ctx.fillText('+', targetX * charWidth, targetY * charHeight);
   }
 

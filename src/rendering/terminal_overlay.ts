@@ -3,6 +3,7 @@
 
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
+import { TEXT_PALETTE } from './text_palette';
 
 // -- Marker Definitions -- (remain the same)
 const MARKERS = {
@@ -72,21 +73,21 @@ export class TerminalOverlay {
   setTheme(theme: 'dark' | 'light'): void {
     logger.info(`[TerminalOverlay] Setting theme to: ${theme}`);
     if (theme === 'light') {
-      this.fgColorDefault = CONFIG.TRM_FG_COLOUR_LIGHT;
+      this.fgColorDefault = TEXT_PALETTE.textSoft;
       this.colorMap = {
-        [MARKERS.HEADING_START]: CONFIG.TRM_COLOR_HEADING_LIGHT,
-        [MARKERS.HIGHLIGHT_START]: CONFIG.TRM_COLOR_HIGHLIGHT_LIGHT,
-        [MARKERS.WARNING_START]: CONFIG.TRM_COLOR_WARNING_LIGHT,
-        [MARKERS.EMERGENCY_START]: CONFIG.TRM_COLOR_EMERGENCY_LIGHT,
+        [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSoft,
+        [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.green,
+        [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
+        [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
       };
     } else {
       // Default to dark
-      this.fgColorDefault = CONFIG.TRM_FG_COLOUR_DARK;
+      this.fgColorDefault = TEXT_PALETTE.green;
       this.colorMap = {
-        [MARKERS.HEADING_START]: CONFIG.TRM_COLOR_HEADING_DARK,
-        [MARKERS.HIGHLIGHT_START]: CONFIG.TRM_COLOR_HIGHLIGHT_DARK,
-        [MARKERS.WARNING_START]: CONFIG.TRM_COLOR_WARNING_DARK,
-        [MARKERS.EMERGENCY_START]: CONFIG.TRM_COLOR_EMERGENCY_DARK,
+        [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSignal,
+        [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.greenBright,
+        [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
+        [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
       };
     }
     // Optional: Force a re-render if messages are currently displayed

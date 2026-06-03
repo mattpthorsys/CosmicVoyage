@@ -18,6 +18,7 @@ import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TextModalTableModel } from '../core/text_ui';
+import { TEXT_PALETTE } from './text_palette';
 
 /**
  * Facade class for the rendering system.
@@ -294,11 +295,11 @@ export class RendererFacade {
         startY,
         currentWidth,
         currentHeight,
-        CONFIG.POPUP_BORDER_COLOUR, // Border Colour (fg)
-        CONFIG.POPUP_BG_COLOUR, // Background for the border chars themselves
+        TEXT_PALETTE.cyanBorder, // Border colour
+        TEXT_PALETTE.panelBackground, // Background for the border chars themselves
         ' ', // Fill character
-        CONFIG.POPUP_FG_COLOUR, // FG for fill char (doesn't matter)
-        CONFIG.POPUP_BG_COLOUR // Background colour for the inside area
+        TEXT_PALETTE.text, // FG for fill char (doesn't matter)
+        TEXT_PALETTE.panelBackground // Background colour for the inside area
       );
     }
 
@@ -333,8 +334,8 @@ export class RendererFacade {
               char,
               drawX,
               drawY,
-              CONFIG.POPUP_FG_COLOUR, // Text colour
-              CONFIG.POPUP_BG_COLOUR // Background *behind* the text
+              isCloseLine ? TEXT_PALETTE.amber : TEXT_PALETTE.text, // Text colour
+              TEXT_PALETTE.panelBackground // Background *behind* the text
             );
           }
           charactersDrawn++;

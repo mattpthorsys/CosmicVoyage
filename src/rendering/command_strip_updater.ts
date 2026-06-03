@@ -2,6 +2,7 @@ import { AvailableAction } from '../core/available_actions';
 import { CommandBarButton, CommandBarModel } from '../core/command_bar';
 import { eventManager, GameEvents } from '../core/event_manager';
 import { CONFIG } from '../config';
+import { TEXT_PALETTE } from './text_palette';
 
 export class CommandStripUpdater {
   private readonly element: HTMLElement;
@@ -9,8 +10,8 @@ export class CommandStripUpdater {
   constructor(element: HTMLElement) {
     this.element = element;
     this.element.style.fontFamily = CONFIG.FONT_FAMILY;
-    this.element.style.backgroundColor = '#001010';
-    this.element.style.color = '#9FFFE0';
+    this.element.style.backgroundColor = TEXT_PALETTE.panelBackground;
+    this.element.style.color = TEXT_PALETTE.text;
     this.element.style.boxSizing = 'border-box';
     this.element.style.overflow = 'hidden';
     this.element.style.whiteSpace = 'nowrap';
@@ -47,19 +48,19 @@ export class CommandStripUpdater {
     if (targetName) {
       const target = document.createElement('span');
       target.textContent = `TARGET ${targetName}`;
-      target.style.color = '#00CCAA';
+      target.style.color = TEXT_PALETTE.cyanSignal;
       this.element.appendChild(target);
     }
 
     actionsOrModel.slice(0, 7).forEach((action) => {
       const key = document.createElement('span');
       key.textContent = `[${this.formatKey(action.key)}] `;
-      key.style.color = action.enabled ? '#FFD700' : '#506060';
+      key.style.color = action.enabled ? TEXT_PALETTE.amber : TEXT_PALETTE.textDim;
       this.element.appendChild(key);
 
       const label = document.createElement('span');
       label.textContent = action.id === primaryActionId ? `${action.label} *` : action.label;
-      label.style.color = action.enabled ? '#9FFFE0' : '#506060';
+      label.style.color = action.enabled ? TEXT_PALETTE.text : TEXT_PALETTE.textDim;
       this.element.appendChild(label);
     });
   }
@@ -69,7 +70,7 @@ export class CommandStripUpdater {
       const target = document.createElement('span');
       target.textContent = `TARGET ${model.targetName}`;
       target.title = model.context;
-      target.style.color = '#00CCAA';
+      target.style.color = TEXT_PALETTE.cyanSignal;
       target.style.marginRight = '4px';
       this.element.appendChild(target);
     }
@@ -94,8 +95,8 @@ export class CommandStripUpdater {
     el.style.padding = '3px 8px';
     el.style.borderRadius = '0';
     el.style.border = `1px solid ${this.getBorderColour(button)}`;
-    el.style.backgroundColor = enabled ? this.getBackgroundColour(button, primary, selected) : '#001010';
-    el.style.color = enabled ? this.getForegroundColour(button, primary, selected) : '#506060';
+    el.style.backgroundColor = enabled ? this.getBackgroundColour(button, primary, selected) : TEXT_PALETTE.panelBackground;
+    el.style.color = enabled ? this.getForegroundColour(button, primary, selected) : TEXT_PALETTE.textDim;
     el.style.cursor = enabled ? 'pointer' : 'default';
     el.style.textTransform = 'uppercase';
     el.style.letterSpacing = '0';
@@ -114,41 +115,41 @@ export class CommandStripUpdater {
   private getBorderColour(button: CommandBarButton): string {
     switch (button.tone) {
       case 'green':
-        return '#00C878';
+        return TEXT_PALETTE.greenAction;
       case 'red':
-        return '#8A3030';
+        return TEXT_PALETTE.redBorder;
       case 'muted':
-        return '#305050';
+        return TEXT_PALETTE.textDim;
       default:
-        return '#006A6A';
+        return TEXT_PALETTE.cyanDeep;
     }
   }
 
   private getBackgroundColour(button: CommandBarButton, primary: boolean, selected: boolean): string {
-    if (selected) return button.tone === 'green' ? '#00C878' : '#9FFFE0';
+    if (selected) return button.tone === 'green' ? TEXT_PALETTE.greenAction : TEXT_PALETTE.text;
     switch (button.tone) {
       case 'green':
-        return '#001010';
+        return TEXT_PALETTE.panelBackground;
       case 'red':
-        return '#240808';
+        return TEXT_PALETTE.panelBackgroundDanger;
       case 'muted':
-        return '#001818';
+        return TEXT_PALETTE.panelBackgroundRaised;
       default:
-        return '#001010';
+        return TEXT_PALETTE.panelBackground;
     }
   }
 
   private getForegroundColour(button: CommandBarButton, primary: boolean, selected: boolean): string {
-    if (selected) return '#001010';
+    if (selected) return TEXT_PALETTE.inverseText;
     switch (button.tone) {
       case 'green':
-        return '#7CFFD0';
+        return TEXT_PALETTE.greenSoft;
       case 'red':
-        return '#FF8A7A';
+        return TEXT_PALETTE.redSoft;
       case 'muted':
-        return '#608080';
+        return TEXT_PALETTE.textDim;
       default:
-        return primary ? '#D8FFF6' : '#9FFFE0';
+        return primary ? TEXT_PALETTE.textStrong : TEXT_PALETTE.text;
     }
   }
 
@@ -166,8 +167,8 @@ export class CommandStripUpdater {
     style.id = 'cosmic-command-bar-styles';
     style.textContent = `
       @keyframes cosmic-command-green-flash {
-        0%, 44% { color: #48C8A8; text-shadow: 0 0 3px rgba(72, 200, 168, 0.35); }
-        55%, 100% { color: #A8FFE8; text-shadow: 0 0 7px rgba(110, 255, 210, 0.75); }
+        0%, 44% { color: ${TEXT_PALETTE.greenFlashDim}; text-shadow: 0 0 3px rgba(72, 200, 168, 0.35); }
+        55%, 100% { color: ${TEXT_PALETTE.greenFlashBright}; text-shadow: 0 0 7px rgba(110, 255, 210, 0.75); }
       }
       .cosmic-command-button-green {
         animation: cosmic-command-green-flash 1.55s steps(2, end) infinite;

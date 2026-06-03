@@ -3,6 +3,7 @@
 
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
+import { TEXT_PALETTE } from './text_palette';
 
 // Define Markers (Ensure these match the tags you use in status messages)
 const MARKERS = {
@@ -33,7 +34,7 @@ export class StatusBarUpdater {
   private statusBarMaxChars: number = 240;
   private currentTheme: 'default' | 'tan' = 'default';
   private colorMap: Record<string, string> = {};
-  private fgColorDefault: string = CONFIG.SB_FG_COLOUR_DEFAULT;
+  private fgColorDefault: string = TEXT_PALETTE.text;
 
   constructor(statusBarElement: HTMLElement, initialTheme: 'default' | 'tan' = 'default') {
     if (!statusBarElement) {
@@ -44,7 +45,7 @@ export class StatusBarUpdater {
     this.statusBarElement = statusBarElement;
     // Apply base styling
     this.statusBarElement.style.fontFamily = CONFIG.FONT_FAMILY;
-    this.statusBarElement.style.backgroundColor = CONFIG.STATUS_BAR_BG_COLOUR;
+    this.statusBarElement.style.backgroundColor = TEXT_PALETTE.background;
     this.statusBarElement.style.whiteSpace = 'pre-wrap';
     this.statusBarElement.style.lineHeight = '1.4';
     this.statusBarElement.style.overflow = 'hidden';
@@ -62,20 +63,20 @@ export class StatusBarUpdater {
     this.currentTheme = theme;
 
     if (theme === 'tan') {
-      this.fgColorDefault = CONFIG.SB_FG_COLOUR_TAN;
+      this.fgColorDefault = TEXT_PALETTE.textSoft;
       this.colorMap = {
-          [MARKERS.HEADING_START]: CONFIG.SB_COLOR_HEADING_TAN,
-          [MARKERS.HIGHLIGHT_START]: CONFIG.SB_COLOR_HIGHLIGHT_TAN,
-          [MARKERS.WARNING_START]: CONFIG.SB_COLOR_WARNING_TAN,
-          [MARKERS.EMERGENCY_START]: CONFIG.SB_COLOR_EMERGENCY_TAN,
+          [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSoft,
+          [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.amber,
+          [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
+          [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
       };
     } else { // Default (Amber)
-      this.fgColorDefault = CONFIG.SB_FG_COLOUR_DEFAULT;
+      this.fgColorDefault = TEXT_PALETTE.text;
       this.colorMap = {
-          [MARKERS.HEADING_START]: CONFIG.SB_COLOR_HEADING_DEFAULT,
-          [MARKERS.HIGHLIGHT_START]: CONFIG.SB_COLOR_HIGHLIGHT_DEFAULT,
-          [MARKERS.WARNING_START]: CONFIG.SB_COLOR_WARNING_DEFAULT,
-          [MARKERS.EMERGENCY_START]: CONFIG.SB_COLOR_EMERGENCY_DEFAULT,
+          [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSignal,
+          [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.greenBright,
+          [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
+          [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
       };
     }
     // Update the base text color immediately

@@ -11,6 +11,7 @@ import { SystemDataGenerator } from '../../generation/system_data_generator';
 import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
 import { GLYPHS } from '../../constants';
+import { TEXT_PALETTE } from '../../rendering/text_palette';
 
 type DrawCall = {
   char: string | null;
@@ -438,8 +439,8 @@ describe('SceneRenderer visual regressions', () => {
     const renderedRows = renderTextRows(drawCalls);
     expect(renderedRows.join('\n')).toContain('DRIVE TRUNK');
     expect(renderedRows.join('\n')).not.toContain('VESSEL DIAGRAM');
-    expect(drawCalls.some((call) => call.char === 'D' && call.fg === '#00AA66')).toBe(true);
-    expect(drawCalls.some((call) => call.char === '[' && call.fg === '#FFD66B')).toBe(true);
+    expect(drawCalls.some((call) => call.char === 'D' && call.fg === TEXT_PALETTE.green)).toBe(true);
+    expect(drawCalls.some((call) => call.char === '[' && call.fg === TEXT_PALETTE.amber)).toBe(true);
   });
 
   it('renders ordinary modal table cells with row and cell tones', () => {
@@ -474,10 +475,10 @@ describe('SceneRenderer visual regressions', () => {
       footer: ['Esc/Left back'],
     });
 
-    expect(drawCalls.some((call) => call.char === 'B' && call.fg === '#00AA66')).toBe(true);
-    expect(drawCalls.some((call) => call.char === '7' && call.fg === '#8CFFFF')).toBe(true);
-    expect(drawCalls.some((call) => call.char === '2' && call.fg === '#FFD66B')).toBe(true);
-    expect(drawCalls.some((call) => call.char === 'E' && call.fg === '#5FC8FF')).toBe(true);
+    expect(drawCalls.some((call) => call.char === 'B' && call.fg === TEXT_PALETTE.green)).toBe(true);
+    expect(drawCalls.some((call) => call.char === '7' && call.fg === TEXT_PALETTE.textBright)).toBe(true);
+    expect(drawCalls.some((call) => call.char === '2' && call.fg === TEXT_PALETTE.amber)).toBe(true);
+    expect(drawCalls.some((call) => call.char === 'E' && call.fg === TEXT_PALETTE.cyan)).toBe(true);
   });
 
   it('autosizes reusable modal tables without clipping long option names', () => {

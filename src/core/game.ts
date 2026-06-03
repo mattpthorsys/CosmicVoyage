@@ -82,6 +82,7 @@ import {
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 import { createShipStatusDashboard } from './ship_status_dashboard';
+import { TEXT_PALETTE } from '../rendering/text_palette';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -4280,7 +4281,7 @@ export class Game {
     const rows = this.renderer.getGridRows();
     if (x < 0 || x >= cols || y < 0 || y >= rows) return;
     const lit = Math.floor(performance.now() / 420) % 2 === 0;
-    const fg = lit ? '#8CFFF0' : '#2F6F68';
+    const fg = lit ? TEXT_PALETTE.textBright : TEXT_PALETTE.textMuted;
     const bg = lit ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR;
     if (y > 0) this.renderer.drawChar('^', x, y - 1, fg, bg);
     if (y < rows - 1) this.renderer.drawChar('v', x, y + 1, fg, bg);
@@ -4528,14 +4529,14 @@ export class Game {
 
     ctx.save();
     ctx.globalAlpha = 0.72;
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = TEXT_PALETTE.background;
     ctx.fillRect(x - Math.floor(charWidth * 0.5), y - Math.floor(charHeight * 0.35), width, height);
     ctx.globalAlpha = 0.92;
     ctx.font = `${charHeight * 0.78}px ${CONFIG.THIN_FONT_FAMILY}`;
     ctx.textBaseline = 'top';
     ctx.shadowBlur = 0;
     lines.forEach((line, index) => {
-      ctx.fillStyle = index === 0 ? '#00CCAA' : '#7FE8C4';
+      ctx.fillStyle = index === 0 ? TEXT_PALETTE.cyanSignal : TEXT_PALETTE.greenSoft;
       ctx.fillText(line, x, y + index * charHeight);
     });
     ctx.restore();
@@ -4555,7 +4556,7 @@ export class Game {
   private _renderError(message: string): void {
     logger.error(`[Game:_renderError] Displaying: ${message}`);
     this.renderer.clear(true); // Clear physically
-    this.renderer.drawString(message, 1, 1, '#FF0000', CONFIG.DEFAULT_BG_COLOUR);
+    this.renderer.drawString(message, 1, 1, TEXT_PALETTE.red, CONFIG.DEFAULT_BG_COLOUR);
     this.statusMessage = `ERROR: ${message}`;
     this._publishStatusUpdate(); // Update status bar
     // Render the error state immediately
