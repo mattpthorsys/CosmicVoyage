@@ -166,6 +166,8 @@ describe('ship menu', () => {
     let model = game.createShipMenuModel();
     expect(model.rows[1]).toMatchObject({ id: 'ship-heading', skipSelection: true });
     expect(model.rows[3]).toMatchObject({ id: 'rover-heading', skipSelection: true });
+    expect(model.rows[1].cellTones).toEqual(expect.arrayContaining(['muted', 'cyan']));
+    expect(model.rows[3].cellTones).toEqual(expect.arrayContaining(['muted', 'cyan']));
 
     game.shipMenuSelection = 0;
     game.moveShipMenuSelection(1, model.rows, model.visibleRowCount);

@@ -3754,9 +3754,9 @@ export class Game {
     }));
     return [
       ...rows,
-      { id: 'ship-heading', cells: ['-- Ship Hold --', this.formatCargoAmount(cargoTotal), `${this.player.cargoHold.capacity}`, 'Primary cargo bay'], disabled: true, skipSelection: true, cellTones: ['cyan', 'bright', 'bright', 'cyan'], detailTone: 'cyan' },
+      { id: 'ship-heading', cells: ['-- Ship Hold --', this.formatCargoAmount(cargoTotal), `${this.player.cargoHold.capacity}`, 'Primary cargo bay'], disabled: true, skipSelection: true, cellTones: ['muted', 'cyan', 'cyan', 'muted'], detailTone: 'muted' },
       ...shipCargoRows,
-      { id: 'rover-heading', cells: ['-- Terrain Vehicle --', this.formatCargoAmount(roverTotal), `${this.player.terrainVehicle.cargoHold.capacity}`, this.player.terrainVehicle.deployed ? 'Out on surface' : 'Docked in vehicle bay'], disabled: true, skipSelection: true, cellTones: ['cyan', 'bright', 'bright', this.player.terrainVehicle.deployed ? 'amber' : 'green'], detailTone: 'cyan' },
+      { id: 'rover-heading', cells: ['-- Terrain Vehicle --', this.formatCargoAmount(roverTotal), `${this.player.terrainVehicle.cargoHold.capacity}`, this.player.terrainVehicle.deployed ? 'Out on surface' : 'Docked in vehicle bay'], disabled: true, skipSelection: true, cellTones: ['muted', 'cyan', 'cyan', this.player.terrainVehicle.deployed ? 'amber' : 'muted'], detailTone: 'muted' },
       ...roverCargoRows,
     ];
   }
