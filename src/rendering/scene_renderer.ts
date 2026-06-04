@@ -1288,13 +1288,36 @@ export class SceneRenderer {
   private calculateLiquidGlint(longitude: number, latitude: number, viewNormalZ: number): number {
     const subsolarLongitude = -0.55;
     const subsolarLatitude = 0.12;
+    const cosLat = Math.cos(latitude);
+    const surfaceNormal = {
+      x: cosLat * Math.sin(longitude),
+      y: Math.sin(latitude),
+      z: cosLat * Math.cos(longitude),
+    };
+    const cosSunLat = Math.cos(subsolarLatitude);
+    const sunVector = {
+      x: cosSunLat * Math.sin(subsolarLongitude),
+      y: Math.sin(subsolarLatitude),
+      z: cosSunLat * Math.cos(subsolarLongitude),
+    };
     const incidence =
       Math.sin(latitude) * Math.sin(subsolarLatitude) +
       Math.cos(latitude) * Math.cos(subsolarLatitude) * Math.cos(longitude - subsolarLongitude);
     const sunVisible = Math.max(0, incidence);
-    const view = Math.max(0, viewNormalZ);
-    const alignment = Math.max(0, 1 - Math.abs(longitude - subsolarLongitude) * 0.42 - Math.abs(latitude - subsolarLatitude) * 0.7);
-    return Math.pow(sunVisible * view * alignment, 4.2);
+    const viewVisible = Math.max(0, viewNormalZ);
+    const halfVectorLength = Math.hypot(sunVector.x, sunVector.y, sunVector.z + 1);
+    if (halfVectorLength <= 0) return 0;
+    const halfVector = {
+      x: sunVector.x / halfVectorLength,
+      y: sunVector.y / halfVectorLength,
+      z: (sunVector.z + 1) / halfVectorLength,
+    };
+    const specularAlignment = Math.max(
+      0,
+      surfaceNormal.x * halfVector.x + surfaceNormal.y * halfVector.y + surfaceNormal.z * halfVector.z
+    );
+    const limbFade = Math.min(1, viewVisible / 0.28);
+    return Math.pow(specularAlignment, 42) * Math.pow(sunVisible, 0.8) * limbFade;
   }
 
   private mercatorTextureY(latitudeRad: number): number {

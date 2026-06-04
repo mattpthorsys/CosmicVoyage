@@ -552,4 +552,26 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK)).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
+
+  it('places ocean glint near the specular star-view alignment', () => {
+    const { buffer } = createMockScreenBuffer(80, 40);
+    const renderer = createSceneRenderer(buffer) as any;
+    const subsolarLongitude = -0.55;
+    const subsolarLatitude = 0.12;
+    const cosSunLat = Math.cos(subsolarLatitude);
+    const sunVector = {
+      x: cosSunLat * Math.sin(subsolarLongitude),
+      y: Math.sin(subsolarLatitude),
+      z: cosSunLat * Math.cos(subsolarLongitude),
+    };
+    const halfLength = Math.hypot(sunVector.x, sunVector.y, sunVector.z + 1);
+    const specularLongitude = Math.atan2(sunVector.x / halfLength, (sunVector.z + 1) / halfLength);
+    const specularLatitude = Math.asin(sunVector.y / halfLength);
+
+    const specular = renderer.calculateLiquidGlint(specularLongitude, specularLatitude, 0.98);
+    const offAngle = renderer.calculateLiquidGlint(specularLongitude + 1.2, specularLatitude + 0.45, 0.98);
+
+    expect(specular).toBeGreaterThan(0.05);
+    expect(offAngle).toBeLessThan(specular * 0.1);
+  });
 });

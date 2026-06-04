@@ -48,4 +48,13 @@ describe('Game main render signatures', () => {
     expect(game.canSkipMainRender('hyperspace', false, signature)).toBe(true);
     expect(game.canSkipMainRender('hyperspace', true, signature)).toBe(false);
   });
+
+  it('advances orbital globe phase by simulated time over body rotation period', () => {
+    const game = createRenderGateHarness();
+    game.orbitElapsedSeconds = 40;
+    const body = { rotationPeriodHours: 24 };
+    const simulatedSecondsPerRealSecond = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
+
+    expect(game.getOrbitGlobeRotationPhase(body)).toBeCloseTo((40 * simulatedSecondsPerRealSecond) / (24 * 60 * 60));
+  });
 });

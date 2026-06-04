@@ -176,6 +176,7 @@ export class Game {
   private orbitLandingY: number = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
   private orbitAlert: string = '';
   private orbitElapsedSeconds: number = 0;
+  private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private currentTargetIndex: number = 0;
   private currentTargetSignature: string = '';
   private approachTargetSignature: string | null = null;
@@ -323,6 +324,7 @@ export class Game {
       const planet = this.stateManager.currentPlanet;
       this.orbitMode = 'overview';
       this.orbitAlert = '';
+      this.orbitElapsedSeconds = 0;
       if (planet) {
         const bodies = this.getOrbitBodies();
         const selectedIndex = bodies.indexOf(planet);
@@ -4869,9 +4871,18 @@ export class Game {
       mode: this.orbitMode,
       landingCursorX: this.orbitLandingX,
       landingCursorY: this.orbitLandingY,
-      rotationPhase: this.orbitElapsedSeconds * 0.06,
+      rotationPhase: this.getOrbitGlobeRotationPhase(selectedBody),
       alert: this.orbitAlert || this.statusMessage,
     });
+  }
+
+  private getOrbitGlobeRotationPhase(body: Planet): number {
+    const rotationPeriodSeconds = body.rotationPeriodHours * 60 * 60;
+    if (!Number.isFinite(rotationPeriodSeconds) || rotationPeriodSeconds <= 0) {
+      return this.orbitElapsedSeconds * 0.006;
+    }
+    const simulatedSeconds = this.orbitElapsedSeconds * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
+    return simulatedSeconds / rotationPeriodSeconds;
   }
 
   private createCurrentStarbaseScreen(): StarbaseScreenModel {
