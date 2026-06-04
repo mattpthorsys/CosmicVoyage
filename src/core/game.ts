@@ -4413,7 +4413,7 @@ export class Game {
       this.lastMainRenderSignature = mainRenderSignature;
 
       const overlayStart = performance.now();
-      if (!this.shipMenuOpen) {
+      if (!this.shouldSuppressHudForeground()) {
         this.astrometricOverlay.render(
           this.renderer.getContext(),
           this.renderer.getCharWidthPx(),
@@ -4422,7 +4422,7 @@ export class Game {
       }
 
       // Draw Terminal Overlay on top
-      if (!this.shipMenuOpen) {
+      if (!this.shouldSuppressHudForeground()) {
         this.terminalOverlay.render(
           this.renderer.getContext(),
           this.renderer.getCanvas().width,
@@ -4439,6 +4439,10 @@ export class Game {
       this._publishStatusUpdate(); // Try to show error
       this.stopGame(); // Stop loop on render errors
     }
+  }
+
+  private shouldSuppressHudForeground(): boolean {
+    return this.shipMenuOpen || this.targetMenuOpen;
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {

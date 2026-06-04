@@ -57,4 +57,18 @@ describe('Game main render signatures', () => {
 
     expect(game.getOrbitGlobeRotationPhase(body)).toBeCloseTo((40 * simulatedSecondsPerRealSecond) / (24 * 60 * 60));
   });
+
+  it('suppresses HUD foreground while modal navigation menus are open', () => {
+    const game = createRenderGateHarness();
+    game.shipMenuOpen = false;
+    game.targetMenuOpen = false;
+    expect(game.shouldSuppressHudForeground()).toBe(false);
+
+    game.targetMenuOpen = true;
+    expect(game.shouldSuppressHudForeground()).toBe(true);
+
+    game.targetMenuOpen = false;
+    game.shipMenuOpen = true;
+    expect(game.shouldSuppressHudForeground()).toBe(true);
+  });
 });
