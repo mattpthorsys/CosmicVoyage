@@ -19,6 +19,7 @@ export interface OrbitScreenModel {
   bodies: OrbitBodyOption[];
   mode: OrbitInteractionMode;
   rotationPhase: number;
+  illuminationPhase: number;
   landingCursorX: number;
   landingCursorY: number;
   mapSize: number;
@@ -36,6 +37,7 @@ export function createOrbitScreenModel(args: {
   landingCursorX: number;
   landingCursorY: number;
   rotationPhase: number;
+  illuminationPhase: number;
   alert?: string;
 }): OrbitScreenModel {
   const selected = args.selectedBody;
@@ -79,6 +81,7 @@ export function createOrbitScreenModel(args: {
     bodies,
     mode: args.mode,
     rotationPhase: args.rotationPhase,
+    illuminationPhase: args.illuminationPhase,
     landingCursorX: ((Math.floor(args.landingCursorX) % mapSize) + mapSize) % mapSize,
     landingCursorY: Math.max(0, Math.min(mapSize - 1, Math.floor(args.landingCursorY))),
     mapSize,

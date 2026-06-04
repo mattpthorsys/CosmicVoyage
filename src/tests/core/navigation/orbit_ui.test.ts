@@ -54,6 +54,7 @@ describe('Orbit UI formatting', () => {
       landingCursorX: 0,
       landingCursorY: 0,
       rotationPhase: 0,
+      illuminationPhase: 0,
     });
 
     expect(model.description[0]).toContain('ice giant');

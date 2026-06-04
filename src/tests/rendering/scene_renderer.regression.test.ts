@@ -537,6 +537,7 @@ describe('SceneRenderer visual regressions', () => {
       bodies: [{ label: 'Primary', planet, selected: true }],
       mode: 'landing',
       rotationPhase: 0.35,
+      illuminationPhase: 0.35,
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,

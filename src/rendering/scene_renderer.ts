@@ -1140,7 +1140,8 @@ export class SceneRenderer {
 
   private drawRotatingPlanetSphere(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
     const planet = model.selectedBody;
-    const phase = model.rotationPhase * Math.PI * 2;
+    const texturePhase = model.rotationPhase * Math.PI * 2;
+    const illuminationPhase = model.illuminationPhase * Math.PI * 2;
     const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
     const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightLevelColors;
     const detailScale = 0.5;
@@ -1152,21 +1153,23 @@ export class SceneRenderer {
         const d = nx * nx + ny * ny;
         if (d > 1) continue;
         const z = Math.sqrt(Math.max(0, 1 - d));
-        const lon = Math.atan2(nx, z) + phase;
+        const viewLongitude = Math.atan2(nx, z);
+        const textureLongitude = viewLongitude + texturePhase;
+        const illuminationLongitude = viewLongitude + illuminationPhase;
         const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
-        const textureX = this.wrapUnit(lon / (Math.PI * 2) + 0.5);
+        const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
         const textureY = this.mercatorTextureY(lat);
         const solidSample = solidMap && solidColours
           ? this.sampleSolidPlanetTexture(planet, textureX, textureY)
           : null;
-        const colour = solidSample?.colour ?? this.sampleGiantPlanetTexture(planet, textureX, textureY, lon, lat, phase);
-        const light = this.calculateGlobeLighting(planet, lon, lat, z);
+        const colour = solidSample?.colour ?? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, lat, texturePhase);
+        const light = this.calculateGlobeLighting(planet, illuminationLongitude, lat, z);
         const brightness = solidSample?.liquid
-          ? this.calculateLiquidGlobeBrightness(light.brightness, lon, lat, z)
+          ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, lat, z)
           : light.brightness;
         const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
         const finalColour = solidSample?.liquid && solidSample.reflectiveColour
-          ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(lon, lat, z) * light.glyph)
+          ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, lat, z) * light.glyph)
           : baseColour;
         const char = light.glyph < 0.22 ? GLYPHS.SHADE_DARK : light.glyph < 0.48 ? GLYPHS.SHADE_MEDIUM : light.glyph < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
         this.screenBuffer.drawScaledChar(

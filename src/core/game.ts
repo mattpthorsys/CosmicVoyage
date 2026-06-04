@@ -4876,6 +4876,7 @@ export class Game {
       landingCursorX: this.orbitLandingX,
       landingCursorY: this.orbitLandingY,
       rotationPhase: this.getOrbitGlobeRotationPhase(selectedBody),
+      illuminationPhase: this.getOrbitGlobeIlluminationPhase(),
       alert: this.orbitAlert || this.statusMessage,
     });
   }
@@ -4887,6 +4888,10 @@ export class Game {
     }
     const simulatedSeconds = this.orbitElapsedSeconds * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
     return simulatedSeconds / rotationPeriodSeconds;
+  }
+
+  private getOrbitGlobeIlluminationPhase(): number {
+    return this.orbitElapsedSeconds * 0.06;
   }
 
   private createCurrentStarbaseScreen(): StarbaseScreenModel {

@@ -58,6 +58,15 @@ describe('Game main render signatures', () => {
     expect(game.getOrbitGlobeRotationPhase(body)).toBeCloseTo((40 * simulatedSecondsPerRealSecond) / (24 * 60 * 60));
   });
 
+  it('keeps orbital illumination cadence separate from physical globe rotation', () => {
+    const game = createRenderGateHarness();
+    game.orbitElapsedSeconds = 40;
+    const body = { rotationPeriodHours: 24 };
+
+    expect(game.getOrbitGlobeIlluminationPhase()).toBeCloseTo(40 * 0.06);
+    expect(game.getOrbitGlobeRotationPhase(body)).not.toBeCloseTo(game.getOrbitGlobeIlluminationPhase());
+  });
+
   it('suppresses HUD foreground while modal navigation menus are open', () => {
     const game = createRenderGateHarness();
     game.shipMenuOpen = false;
