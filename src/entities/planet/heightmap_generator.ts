@@ -50,6 +50,7 @@ export function generateHeightmap(
     }
 
     generatedMap = applyPlanetarySurfaceProcesses(generatedMap, planetType, atmosphere, generator['prng']);
+    generatedMap = blendLongitudeSeam(generatedMap);
 
     logger.info(
       `[HeightmapGenFunc] Generated ${generatedMap.length}x${generatedMap.length} heightmap for ${planetType}.`
@@ -465,4 +466,26 @@ function sharpenAirlessRelief(heightmap: number[][], strength: number): number[]
 
 function clampHeight(value: number): number {
   return Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(value)));
+}
+
+export function blendLongitudeSeam(heightmap: number[][], bandWidth: number = Math.max(4, Math.floor(heightmap.length / 32))): number[][] {
+  const size = heightmap.length;
+  if (size <= 2 || bandWidth <= 0) return heightmap;
+  const width = Math.min(Math.floor(size / 2), Math.max(1, bandWidth));
+
+  for (let y = 0; y < size; y++) {
+    for (let offset = 0; offset < width; offset++) {
+      const leftX = offset;
+      const rightX = size - 1 - offset;
+      const left = heightmap[y]?.[leftX] ?? 0;
+      const right = heightmap[y]?.[rightX] ?? 0;
+      const midpoint = (left + right) / 2;
+      const weight = Math.pow(1 - offset / Math.max(1, width), 1.7);
+      heightmap[y][leftX] = clampHeight(left * (1 - weight) + midpoint * weight);
+      heightmap[y][rightX] = clampHeight(right * (1 - weight) + midpoint * weight);
+    }
+    heightmap[y][size - 1] = heightmap[y][0];
+  }
+
+  return heightmap;
 }

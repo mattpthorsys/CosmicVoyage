@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addCratersToHeightmap,
+  blendLongitudeSeam,
   generateHeightmap,
   getMercatorCraterDistanceSq,
 } from '../../../entities/planet/heightmap_generator';
@@ -80,5 +81,18 @@ describe('realistic specialised surface generation', () => {
 
     expect(getMercatorCraterDistanceSq(6, 0, 3, mapSize)).toBeLessThan(getMercatorCraterDistanceSq(6, 0, 32, mapSize));
     expect(polarSpan).toBeGreaterThan(equatorSpan);
+  });
+
+  it('blends generated surface features across the longitude seam', () => {
+    const map = Array.from({ length: 12 }, (_, y) =>
+      Array.from({ length: 12 }, (_, x) => (x === 0 ? 20 + y : x === 11 ? 220 - y : 120))
+    );
+
+    const blended = blendLongitudeSeam(map, 3);
+
+    for (let y = 0; y < blended.length; y++) {
+      expect(blended[y][blended.length - 1]).toBe(blended[y][0]);
+      expect(Math.abs(blended[y][1] - blended[y][10])).toBeLessThan(120);
+    }
   });
 });

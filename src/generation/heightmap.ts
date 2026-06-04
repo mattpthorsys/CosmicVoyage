@@ -98,6 +98,7 @@ export class HeightmapGenerator {
 
         // Normalize the heightmap values to the configured range (e.g., 0 to CONFIG.PLANET_HEIGHT_LEVELS - 1)
         this.normalize(); // Logs normalization process
+        this.enforceLongitudeWrap();
 
         logger.info(`[HeightmapGen] Diamond-Square generation complete.`);
         return this.map; // Return the generated map
@@ -213,6 +214,16 @@ export class HeightmapGenerator {
             }
         }
         logger.info(`[HeightmapGen] Normalization complete.`);
+    }
+
+    private enforceLongitudeWrap(): void {
+        if (!this.map || this.map.length === 0) return;
+        for (let y = 0; y <= this.max; y++) {
+            if (!this.map[y]) continue;
+            const midpoint = Math.round(((this.map[y][0] ?? 0) + (this.map[y][this.max] ?? 0)) / 2);
+            this.map[y][0] = midpoint;
+            this.map[y][this.max] = midpoint;
+        }
     }
 
 } // End HeightmapGenerator class

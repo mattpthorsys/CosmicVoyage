@@ -481,6 +481,23 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === 'E' && call.fg === TEXT_PALETTE.cyan)).toBe(true);
   });
 
+  it('samples solid planet textures smoothly across wrapped longitude', () => {
+    const { buffer } = createMockScreenBuffer(80, 30);
+    const renderer = createSceneRenderer(buffer) as any;
+    const heightmap = [
+      [20, 100, 140, 220],
+      [20, 100, 140, 220],
+      [20, 100, 140, 220],
+      [20, 100, 140, 220],
+    ];
+
+    const seamSample = renderer.sampleWrappedHeight(heightmap, 0.99, 0.5);
+    const nearStartSample = renderer.sampleWrappedHeight(heightmap, 0.01, 0.5);
+
+    expect(seamSample.height).toBeLessThan(50);
+    expect(nearStartSample.height).toBeLessThan(50);
+  });
+
   it('autosizes reusable modal tables without clipping long option names', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(120, 36);
     const renderer = createSceneRenderer(buffer);

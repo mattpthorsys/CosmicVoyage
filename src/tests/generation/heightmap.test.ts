@@ -90,8 +90,18 @@ describe('HeightmapGenerator', () => {
          // Check if the normalization likely spread values across the range
          // (May not always hit exact 0 and maxLevel depending on algorithm and roughness)
         // expect(foundMin).toBe(true);
-        // expect(foundMax).toBe(true);
+         // expect(foundMax).toBe(true);
     });
+
+     it('generate() should make the longitude seam periodic', () => {
+        const generator = new HeightmapGenerator(17, 0.5, testSeed);
+        const map = generator.generate(500);
+        const last = generator.size - 1;
+
+        for (let y = 0; y < generator.size; y++) {
+            expect(map[y][last]).toBe(map[y][0]);
+        }
+     });
 
      it('normalize() should handle a flat map (range is zero)', () => {
          const targetSize = 5; // 2^2 + 1

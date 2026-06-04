@@ -1228,9 +1228,8 @@ export class SceneRenderer {
     if (!heightmap || !heightColours) return { colour: '#88BBBB', liquid: false };
     const mapSize = heightmap.length;
     if (mapSize <= 0) return { colour: '#88BBBB', liquid: false };
-    const mapX = Math.floor(this.wrapUnit(u) * mapSize) % mapSize;
-    const mapY = Math.max(0, Math.min(mapSize - 1, Math.floor(v * mapSize)));
-    const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(heightmap[mapY]?.[mapX] ?? 0)));
+    const sample = this.sampleWrappedHeight(heightmap, u, v);
+    const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height)));
     const liquid = this.getPlanetLiquidOverlay(planet);
     if (liquid && height <= liquid.seaLevel) {
       return {
@@ -1239,7 +1238,39 @@ export class SceneRenderer {
         reflectiveColour: liquid.reflectiveColour,
       };
     }
-    return { colour: heightColours[height] ?? '#88BBBB', liquid: false };
+    return { colour: this.sampleHeightColour(heightColours, sample.height), liquid: false };
+  }
+
+  private sampleWrappedHeight(heightmap: number[][], u: number, v: number): { height: number; x: number; y: number } {
+    const size = heightmap.length;
+    const x = this.wrapUnit(u) * size;
+    const y = Math.max(0, Math.min(size - 1.000001, v * size));
+    const x0 = Math.floor(x) % size;
+    const x1 = (x0 + 1) % size;
+    const y0 = Math.max(0, Math.min(size - 1, Math.floor(y)));
+    const y1 = Math.max(0, Math.min(size - 1, y0 + 1));
+    const tx = x - Math.floor(x);
+    const ty = y - Math.floor(y);
+    const h00 = heightmap[y0]?.[x0] ?? 0;
+    const h10 = heightmap[y0]?.[x1] ?? h00;
+    const h01 = heightmap[y1]?.[x0] ?? h00;
+    const h11 = heightmap[y1]?.[x1] ?? h10;
+    const top = h00 * (1 - tx) + h10 * tx;
+    const bottom = h01 * (1 - tx) + h11 * tx;
+    return { height: top * (1 - ty) + bottom * ty, x, y };
+  }
+
+  private sampleHeightColour(heightColours: string[], height: number): string {
+    if (heightColours.length === 0) return '#88BBBB';
+    const clamped = Math.max(0, Math.min(heightColours.length - 1, height));
+    const lowIndex = Math.floor(clamped);
+    const highIndex = Math.min(heightColours.length - 1, lowIndex + 1);
+    const mix = clamped - lowIndex;
+    if (mix <= 0 || lowIndex === highIndex) return heightColours[lowIndex] ?? '#88BBBB';
+    const low = this.hexToRgbFallback(heightColours[lowIndex] ?? '#88BBBB');
+    const high = this.hexToRgbFallback(heightColours[highIndex] ?? heightColours[lowIndex] ?? '#88BBBB');
+    const blended = interpolateColour(low, high, mix);
+    return rgbToHex(blended.r, blended.g, blended.b);
   }
 
   private sampleGiantPlanetTexture(planet: Planet, u: number, _v: number, _lon: number, lat: number, phase: number): string {
@@ -1327,19 +1358,20 @@ export class SceneRenderer {
     const detailScale = 0.5;
     const detailWidth = Math.max(1, Math.floor(width / detailScale));
     const detailHeight = Math.max(1, Math.floor(height / detailScale));
-    const cursorX = Math.round((model.landingCursorX / Math.max(1, model.mapSize - 1)) * (detailWidth - 1));
+    const cursorX = Math.floor(this.wrapUnit(model.landingCursorX / Math.max(1, model.mapSize)) * detailWidth) % detailWidth;
     const cursorY = Math.round((model.landingCursorY / Math.max(1, model.mapSize - 1)) * (detailHeight - 1));
     for (let row = 0; row < detailHeight; row++) {
       for (let col = 0; col < detailWidth; col++) {
-        const mapX = Math.floor((col / Math.max(1, detailWidth - 1)) * (model.mapSize - 1));
-        const mapY = Math.floor((row / Math.max(1, detailHeight - 1)) * (model.mapSize - 1));
+        const u = col / Math.max(1, detailWidth);
+        const v = row / Math.max(1, detailHeight - 1);
         let colour = this.sampleGiantMapBand(planet, palette, col, row, detailWidth, detailHeight, model.rotationPhase);
         if (map && colours) {
-          const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(map[mapY]?.[mapX] ?? 0)));
+          const sample = this.sampleWrappedHeight(map, u, v);
+          const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height)));
           const liquid = this.getPlanetLiquidOverlay(planet);
           colour = liquid && heightValue <= liquid.seaLevel
             ? liquid.colour
-            : colours[heightValue] ?? colour;
+            : this.sampleHeightColour(colours, sample.height);
         }
         if (col === cursorX && row === cursorY) {
           this.screenBuffer.drawScaledChar(
