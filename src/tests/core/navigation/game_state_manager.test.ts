@@ -86,6 +86,26 @@ describe('GameStateManager orbital exits', () => {
     expect(player.position.systemX).toBe(planet.systemX);
     expect(player.position.systemY).toBe(planet.systemY);
   });
+
+  it('relaunches from a moon while keeping the parent planet as the orbital reference', () => {
+    const { player, manager } = createManager();
+    const parent = createOrbitingPlanet();
+    const moon = createOrbitingPlanet();
+    parent.moons = [moon];
+    moon.systemX = parent.systemX + 1.7e8;
+    moon.systemY = parent.systemY - 2.4e8;
+    const system = {
+      name: 'Moon System',
+      getOrbitParentFor: (body: Planet) => (body === moon ? parent : body),
+    };
+    (manager as any)._changeState('planet', system, moon, null);
+
+    expect(manager.launchFromSurfaceToOrbit()).toBe(true);
+    expect(manager.currentPlanet).toBe(moon);
+    expect(manager.currentOrbitReferencePlanet).toBe(parent);
+    expect(player.position.systemX).toBe(moon.systemX);
+    expect(player.position.systemY).toBe(moon.systemY);
+  });
 });
 
 describe('GameStateManager system entry', () => {

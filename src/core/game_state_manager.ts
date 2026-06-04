@@ -19,6 +19,7 @@ export class GameStateManager {
   private _state: GameState;
   private _currentSystem: SolarSystem | null = null;
   private _currentPlanet: Planet | null = null;
+  private _currentOrbitReferencePlanet: Planet | null = null;
   private _currentStarbase: Starbase | null = null;
   /** Holds the latest status message for the game state manager. */
   public statusMessage: string = ''; // Keep for action processor status
@@ -53,6 +54,9 @@ export class GameStateManager {
   }
   get currentPlanet(): Planet | null {
     return this._currentPlanet;
+  }
+  get currentOrbitReferencePlanet(): Planet | null {
+    return this._currentOrbitReferencePlanet ?? this._currentPlanet;
   }
   get currentStarbase(): Starbase | null {
     return this._currentStarbase;
@@ -171,6 +175,7 @@ export class GameStateManager {
       if (nearbyObject instanceof Planet) {
         const orbitParent = this._currentSystem.getOrbitParentFor(nearbyObject);
         const insertionTarget = orbitParent === nearbyObject ? nearbyObject.name : `${orbitParent.name} local space`;
+        this._currentOrbitReferencePlanet = orbitParent;
         this._changeState('orbit', this._currentSystem, orbitParent, null);
         this.player.render.char = CONFIG.PLAYER_CHAR;
         this.statusMessage = `Orbital insertion at ${insertionTarget}.`;
@@ -227,8 +232,10 @@ export class GameStateManager {
       return false;
     }
     const planet = this._currentPlanet;
+    const orbitReference = this._currentSystem.getOrbitParentFor(planet);
     this._setPlayerStateAtSystemObject(planet);
     this._changeState('orbit', this._currentSystem, planet, null);
+    this._currentOrbitReferencePlanet = orbitReference;
     this.player.render.char = CONFIG.PLAYER_CHAR;
     this.statusMessage = `Launched to orbit of ${planet.name}.`;
     eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, planet);
@@ -380,6 +387,7 @@ export class GameStateManager {
 
     if (targetObject instanceof Planet) {
       newState = 'planet';
+      this._currentOrbitReferencePlanet = this._currentSystem?.getOrbitParentFor(targetObject) ?? targetObject;
       const mapSize = targetObject.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
       this.player.position.surfaceX = ((Math.floor(surfaceX ?? mapSize / 2) % mapSize) + mapSize) % mapSize;
       this.player.position.surfaceY = Math.max(0, Math.min(mapSize - 1, Math.floor(surfaceY ?? mapSize / 2)));
@@ -447,6 +455,9 @@ export class GameStateManager {
     this._currentSystem = system;
     this._currentPlanet = planet;
     this._currentStarbase = starbase;
+    if (newState !== 'orbit' && newState !== 'planet') {
+      this._currentOrbitReferencePlanet = null;
+    }
     logger.debug(
       `[GameStateManager._changeState] State changing: '<span class="math-inline">\{oldState\}' \-\> '</span>{newState}'`
     );

@@ -321,10 +321,12 @@ export class Game {
     }
     if (newState === 'orbit') {
       const planet = this.stateManager.currentPlanet;
-      this.orbitSelectedBodyIndex = 0;
       this.orbitMode = 'overview';
       this.orbitAlert = '';
       if (planet) {
+        const bodies = this.getOrbitBodies();
+        const selectedIndex = bodies.indexOf(planet);
+        this.orbitSelectedBodyIndex = selectedIndex >= 0 ? selectedIndex : 0;
         const mapSize = getPlanetMapSize(planet);
         this.orbitLandingX = Math.floor(mapSize / 2);
         this.orbitLandingY = Math.floor(mapSize / 2);
@@ -4832,14 +4834,14 @@ export class Game {
   }
 
   private getOrbitBodies(): Planet[] {
-    const parent = this.stateManager.currentPlanet;
+    const parent = this.stateManager.currentOrbitReferencePlanet;
     if (!parent) return [];
     return [parent, ...parent.moons];
   }
 
   private getSelectedOrbitBody(): Planet {
     const bodies = this.getOrbitBodies();
-    const parent = this.stateManager.currentPlanet;
+    const parent = this.stateManager.currentOrbitReferencePlanet;
     if (bodies.length === 0 || !parent) {
       throw new Error('No orbital body selected.');
     }
@@ -4857,7 +4859,7 @@ export class Game {
   }
 
   private createCurrentOrbitScreen(): OrbitScreenModel {
-    const parentPlanet = this.stateManager.currentPlanet!;
+    const parentPlanet = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
     const selectedBody = this.getSelectedOrbitBody();
     if (!selectedBody.scanned) selectedBody.scan();
     return createOrbitScreenModel({
