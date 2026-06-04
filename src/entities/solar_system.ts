@@ -108,7 +108,7 @@ export class SolarSystem {
     let maxOrbit_m = 0;
     this.planets.forEach((p) => {
       if (p) {
-        maxOrbit_m = Math.max(maxOrbit_m, p.orbitDistance);
+        maxOrbit_m = Math.max(maxOrbit_m, p.orbitDistance, Math.sqrt(p.systemX * p.systemX + p.systemY * p.systemY));
         // Also consider furthest moon orbit relative to star (approx)
         if (p.moons && p.moons.length > 0) {
           const furthestMoonOrbit = p.moons.reduce((max, moon) => Math.max(max, moon.orbitDistance), 0);
@@ -349,9 +349,12 @@ export class SolarSystem {
     const orbitScaleBase = this.systemPRNG.random(1.5, 2.0);
     let lastOrbitDistance = this.systemPRNG.random(MIN_INNER_ORBIT_M, Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M));
     const MIN_PLANET_SEPARATION_M = 0.1 * AU_IN_METERS; // e.g., 0.1 AU separation minimum
+    const secondaryHosts = this.getSecondaryCircumstellarPlanetHosts();
+    const reservedSecondarySlots = Math.min(3, secondaryHosts.length * 2);
+    const primarySlotLimit = Math.max(1, CONFIG.MAX_PLANETS_PER_SYSTEM - reservedSecondarySlots);
 
     let planetsGenerated = 0;
-    for (let i = 0; i < CONFIG.MAX_PLANETS_PER_SYSTEM; i++) {
+    for (let i = 0; i < primarySlotLimit; i++) {
       logger.debug(`[System:${this.name}] Considering planet slot ${i + 1}...`);
 
       let currentOrbitDistance =
@@ -391,12 +394,12 @@ export class SolarSystem {
         orbitCenter.x + Math.cos(angle) * currentOrbitDistance,
         orbitCenter.y + Math.sin(angle) * currentOrbitDistance
       );
-      const formationChance = this.getPlanetFormationChance(i, currentOrbitDistance, totalFlux);
+      const parentStar = this.getPlanetEnvironmentStar(orbitHost);
+      const formationChance = this.getPlanetFormationChance(i, currentOrbitDistance, totalFlux, parentStar.starType, 0.08);
       if (this.systemPRNG.random() < formationChance) {
         logger.debug(`[System:${this.name}] Slot ${i + 1}: Planet formation roll success.`);
-        const planetType = this.determinePlanetType(currentOrbitDistance, totalFlux);
+        const planetType = this.determinePlanetType(currentOrbitDistance, totalFlux, parentStar.starType, orbitHost);
         const planetName = `${this.name} ${this.getRomanNumeral(i + 1)}`;
-        const parentStar = this.getPlanetEnvironmentStar(orbitHost);
         const parentStarType = parentStar.starType; // Pass star type to planet constructor
         const tidalRotation = this.calculatePlanetTidalRotation(
           planetType,
@@ -490,7 +493,113 @@ export class SolarSystem {
       logger.info(`[System:${this.name}] Added fallback planetary body for exploration pacing.`);
     }
 
+    planetsGenerated += this.generateSecondaryCircumstellarPlanets(secondaryHosts);
+
     logger.info(`[System:${this.name}] Planet generation complete. ${planetsGenerated} planets created.`);
+  }
+
+  private getSecondaryCircumstellarPlanetHosts(): StellarBody[] {
+    if (this.architecture.kind === 'single' || this.architecture.kind === 'starless') return [];
+    return this.stars.filter((star) => {
+      if (star.id === 'A') return false;
+      const stableZone = this.getCircumstellarStableZone(star);
+      return stableZone !== null && stableZone.maxOrbit_m / Math.max(stableZone.minOrbit_m, 1) >= 2.2;
+    });
+  }
+
+  private getCircumstellarStableZone(star: StellarBody): { minOrbit_m: number; maxOrbit_m: number; nearestStarDistance_m: number } | null {
+    const nearestStarDistance_m = this.getNearestOtherStarDistance(star);
+    if (!Number.isFinite(nearestStarDistance_m) || nearestStarDistance_m < 5 * AU_IN_METERS) return null;
+
+    const starClass = star.starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G';
+    const minByClassAu: Record<string, number> = { O: 0.9, B: 0.65, A: 0.35, F: 0.22, G: 0.16, K: 0.1, M: 0.055, L: 0.035, T: 0.025, Y: 0.02 };
+    const minOrbit_m = Math.max(star.radiusM * 18, (minByClassAu[starClass] ?? 0.12) * AU_IN_METERS);
+    const stabilityFraction = this.architecture.kind === 'triple' && star.id === 'C' ? 0.14 : 0.16;
+    const maxOrbit_m = nearestStarDistance_m * stabilityFraction;
+    if (maxOrbit_m <= minOrbit_m * 1.7) return null;
+    return { minOrbit_m, maxOrbit_m, nearestStarDistance_m };
+  }
+
+  private getNearestOtherStarDistance(star: StellarBody): number {
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const other of this.stars) {
+      if (other.id === star.id) continue;
+      const dx = star.systemX - other.systemX;
+      const dy = star.systemY - other.systemY;
+      nearest = Math.min(nearest, Math.hypot(dx, dy));
+    }
+    return nearest;
+  }
+
+  private generateSecondaryCircumstellarPlanets(hosts: StellarBody[]): number {
+    if (hosts.length === 0) return 0;
+    let generated = 0;
+    for (const host of hosts) {
+      const remainingSlots = CONFIG.MAX_PLANETS_PER_SYSTEM - this.planets.filter(Boolean).length;
+      if (remainingSlots <= 0 || generated >= 3) break;
+      const stableZone = this.getCircumstellarStableZone(host);
+      if (!stableZone) continue;
+
+      const hostPRNG = this.systemPRNG.seedNew(`circumstellar_${host.id}`);
+      const maxForHost = Math.min(remainingSlots, 3 - generated, hostPRNG.random() < 0.72 ? 1 : 2);
+      const spacing = hostPRNG.random(1.55, 2.25);
+      let lastOrbit = hostPRNG.random(stableZone.minOrbit_m, Math.min(stableZone.maxOrbit_m, stableZone.minOrbit_m * 2.2));
+
+      for (let localIndex = 0; localIndex < maxForHost; localIndex++) {
+        const slot = this.planets.findIndex((planet) => planet === null);
+        if (slot < 0) return generated;
+        const orbitDistance = localIndex === 0
+          ? lastOrbit
+          : Math.min(stableZone.maxOrbit_m, lastOrbit * spacing + hostPRNG.random(0.03 * AU_IN_METERS, 0.12 * AU_IN_METERS));
+        if (orbitDistance > stableZone.maxOrbit_m) break;
+
+        const orbitHost: OrbitHost = { kind: 'circumstellar', starId: host.id };
+        const angle = hostPRNG.random(0, Math.PI * 2);
+        const x = host.systemX + Math.cos(angle) * orbitDistance;
+        const y = host.systemY + Math.sin(angle) * orbitDistance;
+        const totalFlux = this.calculateFluxAt(x, y);
+        const formationChance = this.getPlanetFormationChance(localIndex, orbitDistance, totalFlux, host.starType, 0.0);
+        if (hostPRNG.random() > formationChance) {
+          lastOrbit = orbitDistance;
+          continue;
+        }
+
+        const planetType = this.determinePlanetType(orbitDistance, totalFlux, host.starType, orbitHost);
+        const planetName = `${this.name} ${host.id}-${this.getRomanNumeral(localIndex + 1)}`;
+        const tidalRotation = this.calculatePlanetTidalRotation(
+          planetType,
+          orbitDistance,
+          host.massKg,
+          host.environment.ageGyr,
+          this.systemPRNG.seedNew(`tidal_lock_${planetName}`)
+        );
+        const planet = new Planet(
+          planetName,
+          planetType,
+          orbitDistance,
+          angle,
+          this.systemPRNG,
+          host.starType,
+          undefined,
+          host.environment,
+          orbitHost,
+          host.systemX,
+          host.systemY,
+          totalFlux,
+          tidalRotation
+        );
+        this.planets[slot] = planet;
+        this.generateMoonsForPlanet(planet, planetName, host, host.starType, totalFlux);
+        generated++;
+        lastOrbit = orbitDistance;
+        logger.info(
+          `[System:${this.name}] Generated circumstellar planet ${planet.name} around star ${host.id} at ${(
+            orbitDistance / AU_IN_METERS
+          ).toFixed(2)} AU inside ${(stableZone.maxOrbit_m / AU_IN_METERS).toFixed(2)} AU stability limit.`
+        );
+      }
+    }
+    return generated;
   }
 
   private generateRoguePlanetaryMassObject(): void {
@@ -769,8 +878,14 @@ export class SolarSystem {
     return Number.isFinite(flux) && flux > 0 ? flux : 1361;
   }
 
-  private getPlanetFormationChance(slotIndex: number, orbitDistance_m: number, totalFlux_W_m2: number): number {
-    const starClass = this.getSpectralClass();
+  private getPlanetFormationChance(
+    slotIndex: number,
+    orbitDistance_m: number,
+    totalFlux_W_m2: number,
+    hostStarType: string = this.starType,
+    architecturePenalty: number = this.architecture.kind === 'single' ? 0 : 0.08
+  ): number {
+    const starClass = this.getSpectralClass(hostStarType);
     const baseByClass: Record<string, number> = {
       M: 0.82,
       K: 0.9,
@@ -789,7 +904,6 @@ export class SolarSystem {
     const compactSystemBoost = (starClass === 'M' || starClass === 'L' || starClass === 'T' || starClass === 'Y') && orbitAU < 2 ? 0.08 : 0;
     const hotStarPenalty = ['A', 'B', 'O'].includes(starClass) && effectiveTemp > 420 ? -0.18 : 0;
     const lateSlotPenalty = slotIndex * (starClass === 'M' || starClass === 'K' ? 0.035 : 0.055);
-    const architecturePenalty = this.architecture.kind === 'single' ? 0 : 0.08;
     return this.clamp(
       (baseByClass[starClass] ?? 0.75) + metallicityBoost + compactSystemBoost + hotStarPenalty - lateSlotPenalty - architecturePenalty,
       0.03,
@@ -798,9 +912,14 @@ export class SolarSystem {
   }
 
   /** Determines the likely planet type based on local stellar flux. */
-  private determinePlanetType(orbitDistance_m: number, totalFlux_W_m2?: number): string {
+  private determinePlanetType(
+    orbitDistance_m: number,
+    totalFlux_W_m2?: number,
+    hostStarType: string = this.starType,
+    orbitHost: OrbitHost = this.getDefaultPlanetOrbitHost()
+  ): string {
     logger.debug(`[System:${this.name}] Determining planet type for orbit ${orbitDistance_m.toExponential(2)}m...`);
-    const typePRNG = this.systemPRNG.seedNew('type_' + orbitDistance_m.toFixed(0));
+    const typePRNG = this.systemPRNG.seedNew(`type_${getHostLabel(orbitHost)}_${orbitDistance_m.toFixed(0)}`);
     const orbitDistance_AU = orbitDistance_m / AU_IN_METERS;
     const flux = totalFlux_W_m2 ?? this.calculateFluxAt(orbitDistance_m, 0);
     const effectiveTemp = this.getEffectiveTemperature(flux);
@@ -814,10 +933,10 @@ export class SolarSystem {
     logger.debug(
       `[System:${this.name}] Effective temp at orbit ${orbitDistance_AU.toFixed(2)} AU: ${effectiveTemp.toFixed(
         1
-      )}K (Flux: ${flux.toExponential(2)} W/m^2, Host: ${getHostLabel(this.getDefaultPlanetOrbitHost())})`
+      )}K (Flux: ${flux.toExponential(2)} W/m^2, Host: ${getHostLabel(orbitHost)})`
     );
 
-    const starClass = this.getSpectralClass();
+    const starClass = this.getSpectralClass(hostStarType);
     const giantBiasByClass: Record<string, number> = { M: 0.42, K: 0.85, G: 1.0, F: 1.2, A: 1.45, B: 0.7, O: 0.25, L: 0.18, T: 0.1, Y: 0.05 };
     const giantBias = (giantBiasByClass[starClass] ?? 1) * Math.pow(10, Math.max(-0.6, Math.min(0.5, this.metallicityFeH)) * 0.75);
     const iceBias = starClass === 'M' ? 1.15 : starClass === 'A' || starClass === 'F' ? 0.85 : 1;
@@ -1113,8 +1232,8 @@ export class SolarSystem {
     return 278.3 * Math.pow(Math.max(totalFlux_W_m2, 0.0001) / 1361, 0.25);
   }
 
-  private getSpectralClass(): string {
-    return (this.starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G') as string;
+  private getSpectralClass(starType: string = this.starType): string {
+    return (starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G') as string;
   }
 
   private weightedChoice<T>(prng: PRNG, choices: Array<{ item: T; weight: number }>): T {

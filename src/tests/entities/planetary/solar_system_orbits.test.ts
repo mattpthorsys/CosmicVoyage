@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AU_IN_METERS, GRAVITATIONAL_CONSTANT_G, SOLAR_MASS_KG } from '../../../constants';
-import { SystemDataGenerator } from '../../../generation/system_data_generator';
+import { AU_IN_METERS, GRAVITATIONAL_CONSTANT_G, SOLAR_MASS_KG, SPECTRAL_TYPES } from '../../../constants';
+import { SystemBasicProperties, SystemDataGenerator } from '../../../generation/system_data_generator';
 import { PRNG } from '../../../utils/prng';
 import { Planet } from '../../../entities/planet';
 import { SolarSystem } from '../../../entities/solar_system';
+import { calculateStellarLuminosityW, StellarArchitecture, StellarBody } from '../../../entities/stellar_body';
 
 const SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
@@ -32,6 +33,36 @@ function findSystem(predicate: (system: SolarSystem) => boolean): SolarSystem {
     }
   }
   throw new Error('Expected representative generated system.');
+}
+
+function testStar(id: StellarBody['id'], starType: string, angle: number = 0): StellarBody {
+  const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
+  return {
+    id,
+    name: `Wide ${id}`,
+    starType,
+    massKg: starInfo.mass,
+    radiusM: starInfo.radius,
+    luminosityW: calculateStellarLuminosityW(starType),
+    systemX: 0,
+    systemY: 0,
+    orbit: id === 'A' ? null : { center: 'barycenter', radius: 0, angle, periodSeconds: 0 },
+    environment: { starType, ageGyr: 5.2, metallicityFeH: 0.15 },
+  };
+}
+
+function manualSystem(architecture: StellarArchitecture, seed: string = 'manual-wide-architecture'): SolarSystem {
+  const props: SystemBasicProperties = {
+    exists: true,
+    starType: architecture.stars[0]?.starType ?? 'G',
+    name: 'Wide Test',
+    hasStarbase: false,
+    ageGyr: 5.2,
+    metallicityFeH: 0.15,
+    architecture,
+    objectKind: 'stellar',
+  };
+  return new SolarSystem(props, 17, -23, new PRNG(seed));
 }
 
 describe('SolarSystem orbital velocities', () => {
@@ -117,5 +148,51 @@ describe('SolarSystem orbital velocities', () => {
     expect(close.tidallyLocked).toBe(true);
     expect(close.rotationPeriodHours).toBeCloseTo(keplerPeriodSeconds(0.03 * AU_IN_METERS, SOLAR_MASS_KG) / 3600, 0);
     expect(distant.tidallyLocked).toBe(false);
+  });
+
+  it('allows local planets around dynamically wide companion stars', () => {
+    const architecture: StellarArchitecture = {
+      kind: 'triple',
+      stars: [testStar('A', 'G'), testStar('B', 'K', Math.PI), testStar('C', 'M', Math.PI / 2)],
+      primaryStarId: 'A',
+      binarySeparation: 12 * AU_IN_METERS,
+      outerSeparation: 45 * AU_IN_METERS,
+      habitableLabel: 'A',
+    };
+    const system = manualSystem(architecture, 'wide-companion-local-planets');
+    const secondaryPlanet = system.planets.find(
+      (planet) => planet?.orbitHost.kind === 'circumstellar' && planet.orbitHost.starId !== 'A'
+    );
+
+    expect(secondaryPlanet).toBeTruthy();
+    expect((system as any).getSecondaryCircumstellarPlanetHosts().map((star: StellarBody) => star.id)).toContain(
+      secondaryPlanet!.orbitHost.starId
+    );
+
+    const host = system.stars.find((star) => star.id === secondaryPlanet!.orbitHost.starId)!;
+    const stableZone = (system as any).getCircumstellarStableZone(host);
+    expect(secondaryPlanet!.orbitDistance).toBeLessThanOrEqual(stableZone.maxOrbit_m);
+    expect(secondaryPlanet!.orbitDistance).toBeGreaterThanOrEqual(stableZone.minOrbit_m);
+
+    system.updateOrbits(1);
+    const hostDistance = Math.hypot(secondaryPlanet!.systemX - host.systemX, secondaryPlanet!.systemY - host.systemY);
+    expect(hostDistance).toBeCloseTo(secondaryPlanet!.orbitDistance, -5);
+  });
+
+  it('does not assign local planets to close companion stars without a stable zone', () => {
+    const architecture: StellarArchitecture = {
+      kind: 'binary',
+      stars: [testStar('A', 'G'), testStar('B', 'K', Math.PI)],
+      primaryStarId: 'A',
+      binarySeparation: 1.2 * AU_IN_METERS,
+      outerSeparation: 0,
+      habitableLabel: 'AB',
+    };
+    const system = manualSystem(architecture, 'close-binary-no-local-planets');
+
+    expect((system as any).getSecondaryCircumstellarPlanetHosts()).toHaveLength(0);
+    expect(system.planets.some((planet) => planet?.orbitHost.kind === 'circumstellar' && planet.orbitHost.starId === 'B')).toBe(
+      false
+    );
   });
 });
