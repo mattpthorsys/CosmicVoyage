@@ -177,6 +177,8 @@ export class Game {
   private orbitAlert: string = '';
   private orbitElapsedSeconds: number = 0;
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
+  private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
+  private gameClockElapsedSeconds: number = 0;
   private currentTargetIndex: number = 0;
   private currentTargetSignature: string = '';
   private approachTargetSignature: string | null = null;
@@ -2276,6 +2278,9 @@ export class Game {
   // --- Game State Update ---
   private _update(deltaTime: number): void {
     let blockGameUpdates = false;
+    if (!this.isGameClockPaused()) {
+      this.gameClockElapsedSeconds += deltaTime * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
+    }
 
     // --- Update Popup Animation ---
     switch (this.popupState) {
@@ -3082,6 +3087,7 @@ export class Game {
     const cargo = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
     this.roverMenuSelection = clampIndex(this.roverMenuSelection, items.length);
     return {
+      dateTime: this.getGameDateTimeLabel(),
       notifications: this.surfaceNotifications.length > 0 ? this.surfaceNotifications : [this.statusMessage].filter(Boolean),
       deployed: this.player.terrainVehicle.deployed,
       moving: this.player.terrainVehicle.moving,
@@ -3105,6 +3111,16 @@ export class Game {
       atShip: this.isAtParkedShip(),
       altitudeBand: this.getCurrentSurfaceAltitudeBand(),
     };
+  }
+
+  private getGameDateTimeLabel(): string {
+    const date = new Date(Game.GAME_START_UTC_MS + Math.floor(this.gameClockElapsedSeconds) * 1000);
+    const day = date.getUTCDate().toString().padStart(2, '0');
+    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][date.getUTCMonth()];
+    const year = date.getUTCFullYear();
+    const hours = date.getUTCHours().toString().padStart(2, '0');
+    const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+    return `${day} ${month} ${year} AD ${hours}:${minutes}`;
   }
 
   private formatCargoAmount(value: number): string {
@@ -4298,7 +4314,9 @@ export class Game {
     const currentState = this.stateManager.state;
     try {
       const directCanvasOverlayVisible =
-        (!this.shipMenuOpen && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) || this.profilerVisible;
+        (!this.shipMenuOpen && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) ||
+        this.isTravelDateTimeHudVisible() ||
+        this.profilerVisible;
       const mainRenderSignature = this.getMainRenderSignature();
       if (this.canSkipMainRender(currentState, directCanvasOverlayVisible, mainRenderSignature)) {
         return;
@@ -4413,6 +4431,7 @@ export class Game {
       this.lastMainRenderSignature = mainRenderSignature;
 
       const overlayStart = performance.now();
+      this.renderTravelDateTimeHud();
       if (!this.shouldSuppressHudForeground()) {
         this.astrometricOverlay.render(
           this.renderer.getContext(),
@@ -4445,6 +4464,52 @@ export class Game {
     return this.shipMenuOpen || this.targetMenuOpen;
   }
 
+  private isTravelDateTimeHudVisible(): boolean {
+    return (
+      this.stateManager.state === 'hyperspace' ||
+      this.stateManager.state === 'system' ||
+      this.stateManager.state === 'orbit' ||
+      this.stateManager.state === 'starbase'
+    ) && !this.shouldSuppressHudForeground();
+  }
+
+  private renderTravelDateTimeHud(): void {
+    if (!this.isTravelDateTimeHudVisible()) return;
+    const label = this.getGameDateTimeLabel();
+    const ctx = this.renderer.getContext();
+    const canvas = this.renderer.getCanvas();
+    const charHeight = this.renderer.getCharHeightPx();
+    ctx.save();
+    ctx.font = `${charHeight * 0.86}px ${CONFIG.THIN_FONT_FAMILY}`;
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = TEXT_PALETTE.greenBright;
+    ctx.shadowBlur = 5;
+    const width = ctx.measureText(label).width;
+    const x = Math.max(0, (canvas.width - width) / 2);
+    const y = Math.max(0, charHeight * 0.18);
+    ctx.fillStyle = CONFIG.DEFAULT_BG_COLOUR;
+    ctx.globalAlpha = 0.72;
+    ctx.fillRect(Math.max(0, x - charHeight * 0.35), 0, width + charHeight * 0.7, charHeight * 1.1);
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = TEXT_PALETTE.cyanSignal;
+    ctx.fillText(label, x, y);
+    ctx.restore();
+  }
+
+  private isGameClockPaused(): boolean {
+    return (
+      this.stateManager.state === 'starbase' ||
+      this.popupState !== 'inactive' ||
+      this.targetMenuOpen ||
+      this.shipMenuOpen ||
+      this.roverCargoOpen ||
+      this.surfaceLegendOpen ||
+      Boolean(this.quantitySelector) ||
+      Boolean(this.surfaceExtractionSelector) ||
+      Boolean(this.jettisonConfirmation)
+    );
+  }
+
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
     if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) return false;
     if (state === 'starbase' && this.starbaseAlert) return false;
@@ -4461,6 +4526,7 @@ export class Game {
           this.player.position.worldX,
           this.player.position.worldY,
           this.player.render.char,
+          this.getGameDateTimeLabel(),
         ].join('|');
       case 'planet':
         return [
@@ -4470,6 +4536,7 @@ export class Game {
           this.player.position.surfaceY,
           this.player.render.char,
           this.stateManager.currentPlanet?.scanned ? 'scanned' : 'unscanned',
+          this.getGameDateTimeLabel(),
           this.player.terrainVehicle.deployed ? 'rover' : 'ship',
           this.player.terrainVehicle.available ? 'available' : 'lost',
           this.player.terrainVehicle.onFoot ? 'foot' : 'notfoot',

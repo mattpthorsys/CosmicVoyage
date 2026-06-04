@@ -59,6 +59,7 @@ interface SolidTextureSample {
 }
 
 export interface SurfaceVehicleOverlayModel {
+  dateTime: string;
   notifications: string[];
   deployed: boolean;
   moving: boolean;
@@ -1751,6 +1752,8 @@ export class SceneRenderer {
     this.drawingContext.drawBox(x - 1, viewport.y - 1, width + 2, height, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
     this.screenBuffer.drawString('SURFACE TELEMETRY', x + 1, viewport.y - 1, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     let row = viewport.y + 1;
+    this.screenBuffer.drawString(model.dateTime.slice(0, width), x, row++, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+    row++;
     if (model.shipDistance) {
       const km = model.shipDistance.distanceKm >= 100 ? model.shipDistance.distanceKm.toFixed(0) : model.shipDistance.distanceKm.toFixed(1);
       this.screenBuffer.drawString(`SHIP ${km} km`.slice(0, width), x, row++, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);

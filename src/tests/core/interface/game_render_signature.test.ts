@@ -7,6 +7,7 @@ function createRenderGateHarness(): any {
     popupState: 'inactive',
     starbaseAlert: '',
     lastMainRenderSignature: '',
+    gameClockElapsedSeconds: 0,
     stateManager: { state: 'hyperspace' },
     player: {
       position: {
@@ -27,7 +28,7 @@ describe('Game main render signatures', () => {
     const first = game.getMainRenderSignature();
     const second = game.getMainRenderSignature();
 
-    expect(first).toBe('hyperspace|12|-7|@');
+    expect(first).toBe('hyperspace|12|-7|@|01 Jan 3015 AD 00:00');
     expect(second).toBe(first);
   });
 
@@ -47,6 +48,14 @@ describe('Game main render signatures', () => {
 
     expect(game.canSkipMainRender('hyperspace', false, signature)).toBe(true);
     expect(game.canSkipMainRender('hyperspace', true, signature)).toBe(false);
+  });
+
+  it('formats the in-game clock from 3015 AD', () => {
+    const game = createRenderGateHarness();
+    expect(game.getGameDateTimeLabel()).toBe('01 Jan 3015 AD 00:00');
+
+    game.gameClockElapsedSeconds = 90 * 60;
+    expect(game.getGameDateTimeLabel()).toBe('01 Jan 3015 AD 01:30');
   });
 
   it('advances orbital globe phase by simulated time over body rotation period', () => {
@@ -79,5 +88,47 @@ describe('Game main render signatures', () => {
     game.targetMenuOpen = false;
     game.shipMenuOpen = true;
     expect(game.shouldSuppressHudForeground()).toBe(true);
+  });
+
+  it('shows the travel clock HUD only in unobstructed travel states', () => {
+    const game = createRenderGateHarness();
+    game.targetMenuOpen = false;
+    game.shipMenuOpen = false;
+    expect(game.isTravelDateTimeHudVisible()).toBe(true);
+
+    game.stateManager.state = 'orbit';
+    expect(game.isTravelDateTimeHudVisible()).toBe(true);
+
+    game.stateManager.state = 'starbase';
+    expect(game.isTravelDateTimeHudVisible()).toBe(true);
+
+    game.targetMenuOpen = true;
+    expect(game.isTravelDateTimeHudVisible()).toBe(false);
+
+    game.targetMenuOpen = false;
+    game.stateManager.state = 'planet';
+    expect(game.isTravelDateTimeHudVisible()).toBe(false);
+  });
+
+  it('pauses the game clock in menus and starbase but not orbit', () => {
+    const game = createRenderGateHarness();
+    game.popupState = 'inactive';
+    game.targetMenuOpen = false;
+    game.shipMenuOpen = false;
+    game.roverCargoOpen = false;
+    game.surfaceLegendOpen = false;
+    game.quantitySelector = null;
+    game.surfaceExtractionSelector = null;
+    game.jettisonConfirmation = null;
+
+    game.stateManager.state = 'orbit';
+    expect(game.isGameClockPaused()).toBe(false);
+
+    game.stateManager.state = 'starbase';
+    expect(game.isGameClockPaused()).toBe(true);
+
+    game.stateManager.state = 'system';
+    game.targetMenuOpen = true;
+    expect(game.isGameClockPaused()).toBe(true);
   });
 });
