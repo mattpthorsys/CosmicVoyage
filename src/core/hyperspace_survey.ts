@@ -5,6 +5,13 @@ import {
   SystemDataGenerator,
   SystemMapProperties,
 } from '../generation/system_data_generator';
+import {
+  getHyperspaceSurveyCellProvider,
+  HyperspaceSurveyCellData,
+  HyperspaceSurveyCellProvider,
+  LocalHyperspaceSurveyCellProvider,
+} from './hyperspace_survey_cell_provider';
+import { logger } from '../utils/logger';
 
 export interface HyperspaceSurveyCell {
   worldX: number;
@@ -49,32 +56,29 @@ interface ContactRadii {
   overlayRadius: number;
 }
 
-const EMPTY_PHENOMENON: DeepSpacePhenomenonProperties = {
-  exists: false,
-  type: null,
-  name: null,
-  classification: null,
-  signal: null,
-  char: null,
-  colour: null,
-  rarity: null,
-};
-
 export class HyperspaceSurveyService {
   private readonly systemDataGenerator: SystemDataGenerator;
+  private readonly cellProvider: HyperspaceSurveyCellProvider;
   private cellCache: Map<string, Omit<HyperspaceSurveyCell, 'rangeCells'>> = new Map();
+  private readonly pendingPrefetchKeys = new Set<string>();
   private surveyCache: HyperspaceSurvey | null = null;
   private overlayContactsCache: { signature: string; contacts: HyperspaceSurveyContact[] } | null = null;
   private readonly maxCellCacheSize = 80000;
 
-  constructor(systemDataGenerator: SystemDataGenerator) {
+  constructor(
+    systemDataGenerator: SystemDataGenerator,
+    cellProvider: HyperspaceSurveyCellProvider | null = getHyperspaceSurveyCellProvider()
+  ) {
     this.systemDataGenerator = systemDataGenerator;
+    this.cellProvider = cellProvider ?? new LocalHyperspaceSurveyCellProvider(systemDataGenerator);
   }
 
   clearCache(): void {
     this.cellCache.clear();
+    this.pendingPrefetchKeys.clear();
     this.surveyCache = null;
     this.overlayContactsCache = null;
+    this.cellProvider.clearCache();
   }
 
   getSurvey(worldX: number, worldY: number, cols: number, rows: number): HyperspaceSurvey {
@@ -109,6 +113,7 @@ export class HyperspaceSurveyService {
     }
 
     const scanRadius = Math.max(detectionRadius, Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier));
+    this.prefetchSurveyCells(startWorldX, startWorldY, safeCols, safeRows, scanRadius);
     const nearestSystemContact = this.findNearestSystemContact(worldX, worldY, scanRadius, medium.sensorRangeMultiplier);
     const contacts = nearestSystemContact ? [nearestSystemContact] : [];
 
@@ -219,18 +224,95 @@ export class HyperspaceSurveyService {
     const key = `${worldX},${worldY}`;
     let cached = this.cellCache.get(key);
     if (!cached) {
-      const system = this.systemDataGenerator.getSystemMapProperties(worldX, worldY);
-      const phenomenon = system.exists
-        ? EMPTY_PHENOMENON
-        : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
-      cached = { worldX, worldY, system, phenomenon };
-      if (this.cellCache.size >= this.maxCellCacheSize) {
-        const firstKey = this.cellCache.keys().next().value;
-        if (firstKey !== undefined) this.cellCache.delete(firstKey);
-      }
-      this.cellCache.set(key, cached);
+      cached = this.cacheCellData(this.cellProvider.getCellData(worldX, worldY));
     }
     return { ...cached, rangeCells };
+  }
+
+  private prefetchSurveyCells(
+    startWorldX: number,
+    startWorldY: number,
+    cols: number,
+    rows: number,
+    scanRadius: number
+  ): void {
+    const availableCacheSlots = this.maxCellCacheSize - this.cellCache.size - this.pendingPrefetchKeys.size;
+    if (availableCacheSlots <= 0) return;
+
+    const requests: Array<{ worldX: number; worldY: number }> = [];
+    const margin = Math.max(3, Math.min(scanRadius, 8));
+    collectView:
+    for (let y = -margin; y < rows + margin; y++) {
+      for (let x = -margin; x < cols + margin; x++) {
+        if (this.queuePrefetchCell(startWorldX + x, startWorldY + y, requests, availableCacheSlots)) {
+          break collectView;
+        }
+      }
+    }
+
+    const centerWorldX = startWorldX + Math.floor(cols / 2);
+    const centerWorldY = startWorldY + Math.floor(rows / 2);
+    const prefetchScanRadius = scanRadius + 2;
+    collectScan:
+    for (let radius = 0; radius <= prefetchScanRadius; radius++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+          if (Math.hypot(dx, dy) > prefetchScanRadius) continue;
+          if (this.queuePrefetchCell(centerWorldX + dx, centerWorldY + dy, requests, availableCacheSlots)) {
+            break collectScan;
+          }
+        }
+      }
+    }
+
+    if (requests.length === 0) return;
+    void this.cellProvider.getCellDataBatchAsync(requests).then((cells) => {
+      for (const cell of cells) {
+        this.pendingPrefetchKeys.delete(this.getCellKey(cell.worldX, cell.worldY));
+        if (!this.cellCache.has(this.getCellKey(cell.worldX, cell.worldY))) {
+          this.cacheCellData(cell);
+        }
+      }
+    }).catch((error) => {
+      for (const request of requests) {
+        this.pendingPrefetchKeys.delete(this.getCellKey(request.worldX, request.worldY));
+      }
+      logger.debug(`[HyperspaceSurveyService.prefetchSurveyCells] Survey prefetch failed: ${error}`);
+    });
+  }
+
+  private queuePrefetchCell(
+    worldX: number,
+    worldY: number,
+    requests: Array<{ worldX: number; worldY: number }>,
+    availableCacheSlots: number
+  ): boolean {
+    const key = this.getCellKey(worldX, worldY);
+    if (this.cellCache.has(key) || this.pendingPrefetchKeys.has(key)) return false;
+    this.pendingPrefetchKeys.add(key);
+    requests.push({ worldX, worldY });
+    return requests.length >= availableCacheSlots;
+  }
+
+  private cacheCellData(cell: HyperspaceSurveyCellData): Omit<HyperspaceSurveyCell, 'rangeCells'> {
+    const key = this.getCellKey(cell.worldX, cell.worldY);
+    const cached = {
+      worldX: cell.worldX,
+      worldY: cell.worldY,
+      system: cell.system,
+      phenomenon: cell.phenomenon,
+    };
+    if (this.cellCache.size >= this.maxCellCacheSize) {
+      const firstKey = this.cellCache.keys().next().value;
+      if (firstKey !== undefined) this.cellCache.delete(firstKey);
+    }
+    this.cellCache.set(key, cached);
+    return cached;
+  }
+
+  private getCellKey(worldX: number, worldY: number): string {
+    return `${worldX},${worldY}`;
   }
 
   private compareContacts(a: HyperspaceSurveyContact, b: HyperspaceSurveyContact): number {

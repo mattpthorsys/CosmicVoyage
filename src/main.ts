@@ -12,6 +12,8 @@ import { setSurfaceGenerationProvider } from './entities/planet/surface_generati
 import { WorkerSurfaceGenerationProvider } from './entities/planet/surface_generation_worker_client';
 import { setNebulaColourProvider } from './rendering/nebula_colour_provider';
 import { WorkerNebulaColourProvider } from './rendering/nebula_generation_worker_client';
+import { setHyperspaceSurveyCellProvider } from './core/hyperspace_survey_cell_provider';
+import { WorkerHyperspaceSurveyCellProvider } from './core/hyperspace_survey_worker_client';
 
 logger.info("main.ts executing...");
 
@@ -19,6 +21,8 @@ setSurfaceGenerationProvider(new WorkerSurfaceGenerationProvider());
 logger.info("Surface generation worker provider registered.");
 setNebulaColourProvider(new WorkerNebulaColourProvider());
 logger.info("Nebula generation worker provider registered.");
+setHyperspaceSurveyCellProvider(new WorkerHyperspaceSurveyCellProvider(CONFIG.SEED));
+logger.info("Hyperspace survey worker provider registered.");
 
 function renderFatalInitializationError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);

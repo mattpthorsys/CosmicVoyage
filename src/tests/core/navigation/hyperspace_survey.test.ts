@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { SystemDataGenerator, SystemMapProperties } from '../../../generation/system_data_generator';
 import { HyperspaceSurveyService } from '../../../core/hyperspace_survey';
+import {
+  HyperspaceSurveyCellData,
+  HyperspaceSurveyCellProvider,
+} from '../../../core/hyperspace_survey_cell_provider';
 
 const emptySystem: SystemMapProperties = {
   exists: false,
@@ -129,5 +133,64 @@ describe('HyperspaceSurveyService', () => {
     expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Near-2');
     expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Brown-28');
     expect(service.getOverlayContacts(survey)).toBe(overlayContacts);
+  });
+
+  it('prefetches nearby survey cells into the shared coordinate cache', async () => {
+    class AsyncProvider implements HyperspaceSurveyCellProvider {
+      syncCalls = 0;
+      asyncCalls = 0;
+
+      getCellData(worldX: number, worldY: number): HyperspaceSurveyCellData {
+        this.syncCalls++;
+        return {
+          worldX,
+          worldY,
+          system: worldX === 2 && worldY === 0
+            ? { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' }
+            : emptySystem,
+          phenomenon: { exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null },
+        };
+      }
+
+      getCellDataBatchAsync(requests: readonly { worldX: number; worldY: number }[]): Promise<HyperspaceSurveyCellData[]> {
+        this.asyncCalls++;
+        return Promise.resolve(requests.map(({ worldX, worldY }) => ({
+          worldX,
+          worldY,
+          system: worldX === 2 && worldY === 0
+            ? { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' }
+            : emptySystem,
+          phenomenon: { exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null },
+        })));
+      }
+
+      clearCache(): void {}
+    }
+
+    const generator = {
+      getInterstellarMediumProperties: () => ({
+        kind: 'diffuse-hydrogen',
+        label: 'diffuse neutral hydrogen',
+        summary: 'ordinary low-density interstellar hydrogen',
+        density: 1,
+        electronDensity: 0.03,
+        dustExtinction: 0,
+        radiation: 0.04,
+        gravitationalShear: 0,
+        sensorRangeMultiplier: 1,
+        driftBiasX: 0,
+        driftBiasY: 0,
+      }),
+    } as unknown as SystemDataGenerator;
+    const provider = new AsyncProvider();
+    const service = new HyperspaceSurveyService(generator, provider);
+
+    service.getSurvey(0, 0, 5, 5);
+    const syncAfterFirstSurvey = provider.syncCalls;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    service.getSurvey(1, 0, 5, 5);
+
+    expect(provider.asyncCalls).toBeGreaterThan(0);
+    expect(provider.syncCalls).toBe(syncAfterFirstSurvey);
   });
 });
