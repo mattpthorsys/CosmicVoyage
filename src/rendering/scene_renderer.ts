@@ -1148,16 +1148,28 @@ export class SceneRenderer {
           ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, lat, z)
           : light.brightness;
         const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
-        const finalColour = solidSample?.liquid && solidSample.reflectiveColour
+        let finalColour = solidSample?.liquid && solidSample.reflectiveColour
           ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, lat, z) * light.glyph)
           : baseColour;
-        const char = light.glyph < 0.22 ? GLYPHS.SHADE_DARK : light.glyph < 0.48 ? GLYPHS.SHADE_MEDIUM : light.glyph < 0.72 ? GLYPHS.SHADE_LIGHT : GLYPHS.BLOCK;
+        finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
+        const atmosphericTwilight = this.calculateAtmosphericGlobeTwilight(planet, light.glyph);
+        if (atmosphericTwilight > 0) {
+          finalColour = interpolateColour(
+            finalColour,
+            this.hexToRgbFallback(this.getAtmosphericScatteringBaseColour(
+              Object.entries(planet.atmosphere?.composition ?? {}).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '',
+              planet.atmosphere?.density ?? ''
+            )),
+            atmosphericTwilight
+          );
+        }
+        const finalHex = rgbToHex(finalColour.r, finalColour.g, finalColour.b);
         this.screenBuffer.drawScaledChar(
-          char,
+          GLYPHS.BLOCK,
           cx + dx * detailScale,
           cy + dy * detailScale,
-          rgbToHex(finalColour.r, finalColour.g, finalColour.b),
-          CONFIG.DEFAULT_BG_COLOUR,
+          finalHex,
+          finalHex,
           detailScale,
           detailScale
         );
@@ -1363,6 +1375,35 @@ export class SceneRenderer {
     const haze = dayMask * (1 - mu) * 0.08 * atmosphereStrength + nightMask * 0.025 * atmosphereStrength * (1 - mu);
     const brightness = Math.max(0.07, Math.min(1.16, 0.07 + day * limb * 0.99 + haze));
     return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu) + haze)) };
+  }
+
+  private capAtmosphericGlobeHighlight(planet: Planet, colour: RgbColour, lightGlyph: number): RgbColour {
+    const atmosphere = planet.atmosphere;
+    if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return colour;
+    const pressure = Math.max(0, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
+    const highlight = this.smoothstep(0.72, 1, lightGlyph);
+    if (highlight <= 0) return colour;
+
+    const luminance = colour.r * 0.2126 + colour.g * 0.7152 + colour.b * 0.0722;
+    const targetLuminance = 174 + pressure * 18;
+    if (luminance <= targetLuminance) return colour;
+
+    const compression = 1 - Math.min(0.24, ((luminance - targetLuminance) / 255) * highlight * (0.55 + pressure * 0.35));
+    return adjustBrightness(colour, compression);
+  }
+
+  private calculateAtmosphericGlobeTwilight(planet: Planet, lightGlyph: number): number {
+    const atmosphere = planet.atmosphere;
+    if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return 0;
+    const pressure = Math.max(0, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
+    const enteringDay = this.smoothstep(0.08, 0.42, lightGlyph);
+    const leavingTerminator = 1 - this.smoothstep(0.48, 0.86, lightGlyph);
+    return Math.max(0, Math.min(0.18, enteringDay * leavingTerminator * pressure * 0.16));
+  }
+
+  private smoothstep(edge0: number, edge1: number, value: number): number {
+    const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(0.0001, edge1 - edge0)));
+    return t * t * (3 - 2 * t);
   }
 
   private sampleSolidPlanetTexture(

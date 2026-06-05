@@ -751,6 +751,63 @@ describe('SceneRenderer visual regressions', () => {
     expect(deepNightRimCalls.length).toBe(0);
   });
 
+  it('renders orbital globe samples as solid colour mini-cells instead of shade glyph bands', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer);
+    const planet = createAtmosphericOrbitPlanet();
+    renderer.drawOrbitInterface({
+      title: 'Orbital Operations',
+      subtitle: 'Regression Orbit I local space',
+      parentPlanet: planet,
+      selectedBody: planet,
+      bodies: [{ label: 'Primary', planet, selected: true }],
+      mode: 'overview',
+      stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
+      rotationPhase: 0.35,
+      illuminationPhase: 0.2,
+      landingCursorX: 12,
+      landingCursorY: 18,
+      mapSize: 32,
+      description: ['Regression solid globe.'],
+      telemetry: ['Body Regression Orbit I'],
+      footer: ['Esc closes orbit.'],
+    });
+
+    const globeCalls = drawCalls.filter(
+      (call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
+    );
+    const shadeGlobeCalls = drawCalls.filter(
+      (call) =>
+        [GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK].includes(call.char ?? '') &&
+        call.scaleX === 0.5 &&
+        call.scaleY === 0.5 &&
+        call.fg === call.bg
+    );
+
+    expect(globeCalls.length).toBeGreaterThan(200);
+    expect(shadeGlobeCalls).toHaveLength(0);
+  });
+
+  it('compresses atmospheric globe highlights without affecting airless worlds', () => {
+    const { buffer } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer) as unknown as {
+      capAtmosphericGlobeHighlight: (planet: Planet, colour: { r: number; g: number; b: number }, lightGlyph: number) => { r: number; g: number; b: number };
+    };
+    const atmosphericPlanet = createAtmosphericOrbitPlanet();
+    const airlessPlanet = createOrbitPlanet();
+    Object.defineProperty(airlessPlanet, 'atmosphere', {
+      value: { density: 'None', pressure: 0, composition: {} },
+    });
+    const bright = { r: 245, g: 235, b: 220 };
+
+    const atmospheric = renderer.capAtmosphericGlobeHighlight(atmosphericPlanet, bright, 0.98);
+    const airless = renderer.capAtmosphericGlobeHighlight(airlessPlanet, bright, 0.98);
+
+    expect(atmospheric.r).toBeLessThan(bright.r);
+    expect(atmospheric.g).toBeLessThan(bright.g);
+    expect(airless).toEqual(bright);
+  });
+
   it('changes visible globe texture as the orbital viewing phase advances', () => {
     const renderSignatureAtPhase = (illuminationPhase: number) => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
@@ -773,7 +830,10 @@ describe('SceneRenderer visual regressions', () => {
         telemetry: ['Body Regression Orbit I'],
         footer: ['Esc closes orbit.'],
       });
-      return createRenderSignature(drawCalls);
+      return drawCalls
+        .filter((call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg)
+        .map((call) => `${call.x.toFixed(1)},${call.y.toFixed(1)}:${call.fg}`)
+        .slice(0, 400);
     };
 
     expect(renderSignatureAtPhase(0.1)).not.toEqual(renderSignatureAtPhase(0.35));
