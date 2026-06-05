@@ -10,25 +10,20 @@ import { GLYPHS, SPECTRAL_TYPES, PLANET_TYPES, ELEMENTS, AU_IN_METERS } from '..
 import { logger } from '../utils/logger';
 import { adjustBrightness, interpolateColour, rgbToHex, RgbColour } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
-import { createSystemTravelStarfield, getRenderedStarCell } from './starfield';
+import { createSystemTravelStarfield } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { TextDashboardLine, TextMenuSection, TextModalTableModel, TextTableModel, TextTableRow, TextTone } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
+import { HyperspaceTileProvider } from './hyperspace_tile_provider';
 
 interface VisiblePlanetMarker {
   planet: Planet;
   viewX: number;
   viewY: number;
   marker: string;
-}
-
-interface HyperspaceTile {
-  bg: string;
-  starChar: string | null;
-  starColor: string | null;
 }
 
 interface HyperspaceFrameCache {
@@ -88,9 +83,8 @@ export class SceneRenderer {
   private nebulaRenderer: NebulaRenderer;
   private systemDataGenerator: SystemDataGenerator;
   private hyperspaceSurveyService: HyperspaceSurveyService | null;
-  private hyperspaceTileCache: Map<string, HyperspaceTile> = new Map();
+  private hyperspaceTileProvider: HyperspaceTileProvider;
   private hyperspaceFrameCache: HyperspaceFrameCache | null = null;
-  private readonly maxHyperspaceTileCacheSize = 60000;
 
   constructor(
     screenBuffer: ScreenBuffer,
@@ -104,11 +98,12 @@ export class SceneRenderer {
     this.nebulaRenderer = nebulaRenderer;
     this.systemDataGenerator = systemDataGenerator;
     this.hyperspaceSurveyService = hyperspaceSurveyService;
+    this.hyperspaceTileProvider = new HyperspaceTileProvider(nebulaRenderer, systemDataGenerator);
     logger.debug('[SceneRenderer] Instance created.');
   }
 
   clearCaches(): void {
-    this.hyperspaceTileCache.clear();
+    this.hyperspaceTileProvider.clearCache();
     this.hyperspaceFrameCache = null;
   }
 
@@ -122,7 +117,7 @@ export class SceneRenderer {
     const viewCenterY = Math.floor(rows / 2);
     const startWorldX = player.position.worldX - viewCenterX;
     const startWorldY = player.position.worldY - viewCenterY;
-    this.nebulaRenderer.prefetchRegion(startWorldX, startWorldY, cols, rows, 6);
+    this.hyperspaceTileProvider.prefetchBackgroundRegion(startWorldX, startWorldY, cols, rows, 6);
 
     this.screenBuffer.clear(false);
     if (
@@ -166,8 +161,8 @@ export class SceneRenderer {
         const worldY = surveyCell?.worldY ?? startWorldY + viewY;
         const rangeCells = surveyCell?.rangeCells ?? Math.hypot(viewX - viewCenterX, viewY - viewCenterY);
         const tile = surveyCell
-          ? this.getHyperspaceTileFromSurveyCell(surveyCell)
-          : this.getHyperspaceTile(worldX, worldY, rangeCells);
+          ? this.hyperspaceTileProvider.getTileFromSurveyCell(surveyCell)
+          : this.hyperspaceTileProvider.getTile(worldX, worldY, rangeCells);
         const index = viewY * cols + viewX;
 
         if (tile.starChar) {
@@ -215,7 +210,7 @@ export class SceneRenderer {
 
         const worldX = startWorldX + viewX;
         const worldY = startWorldY + viewY;
-        const tile = this.getHyperspaceTile(worldX, worldY, Math.hypot(viewX - viewCenterX, viewY - viewCenterY));
+        const tile = this.hyperspaceTileProvider.getTile(worldX, worldY, Math.hypot(viewX - viewCenterX, viewY - viewCenterY));
         cells[index] = tile.starChar
           ? this.createCell(tile.starChar, tile.starColor, CONFIG.TRANSPARENT_COLOUR, true)
           : this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
@@ -254,89 +249,6 @@ export class SceneRenderer {
       bg: isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : (bg || CONFIG.DEFAULT_BG_COLOUR),
       isTransparentBg,
     };
-  }
-
-  private getHyperspaceTile(worldX: number, worldY: number, rangeCells: number): HyperspaceTile {
-    const key = `${worldX},${worldY}|${Math.floor(rangeCells)}`;
-    const cached = this.hyperspaceTileCache.get(key);
-    if (cached) return cached;
-
-    const bg = this.nebulaRenderer.getBackgroundColor(worldX, worldY);
-    const systemProps = this.systemDataGenerator.getSystemMapProperties(worldX, worldY);
-    const phenomenon = systemProps.exists
-      ? null
-      : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
-    const tile = this.createHyperspaceTile(bg, systemProps, phenomenon, worldX, worldY, rangeCells);
-
-    if (this.hyperspaceTileCache.size >= this.maxHyperspaceTileCacheSize) {
-      const firstKey = this.hyperspaceTileCache.keys().next().value;
-      if (firstKey !== undefined) this.hyperspaceTileCache.delete(firstKey);
-    }
-    this.hyperspaceTileCache.set(key, tile);
-    return tile;
-  }
-
-  private getHyperspaceTileFromSurveyCell(cell: HyperspaceSurveyCell): HyperspaceTile {
-    const key = `${cell.worldX},${cell.worldY}|${Math.floor(cell.rangeCells)}`;
-    const cached = this.hyperspaceTileCache.get(key);
-    if (cached) return cached;
-
-    const bg = this.nebulaRenderer.getBackgroundColor(cell.worldX, cell.worldY);
-    const tile = this.createHyperspaceTile(bg, cell.system, cell.phenomenon, cell.worldX, cell.worldY, cell.rangeCells);
-    if (this.hyperspaceTileCache.size >= this.maxHyperspaceTileCacheSize) {
-      const firstKey = this.hyperspaceTileCache.keys().next().value;
-      if (firstKey !== undefined) this.hyperspaceTileCache.delete(firstKey);
-    }
-    this.hyperspaceTileCache.set(key, tile);
-    return tile;
-  }
-
-  private createHyperspaceTile(
-    bg: string,
-    systemProps: { exists: boolean; starType: string | null; objectKind: 'stellar' | 'brown-dwarf' | null },
-    phenomenon: { exists: boolean; char: string | null; colour: string | null; type: string | null } | null,
-    worldX: number,
-    worldY: number,
-    rangeCells: number
-  ): HyperspaceTile {
-    let tile: HyperspaceTile;
-    if (systemProps.exists) {
-      const starInfo = SPECTRAL_TYPES[systemProps.starType!];
-      if (starInfo) {
-        const isBrownDwarf = systemProps.objectKind === 'brown-dwarf';
-        if (isBrownDwarf && rangeCells > CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS) {
-          tile = { bg, starChar: null, starColor: null };
-        } else {
-          const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
-          tile = {
-            bg,
-            starChar: star.char,
-            starColor: isBrownDwarf ? this.dimHexColour(star.color, rangeCells <= 12 ? 0.75 : 0.42) : star.color,
-          };
-        }
-      } else {
-        logger.error(`[SceneRenderer.drawHyperspace] Could not find star info for final determined type "${systemProps.starType}" at [${worldX}, ${worldY}].`);
-        tile = { bg, starChar: '?', starColor: '#FF00FF' };
-      }
-    } else {
-      if (phenomenon?.exists && phenomenon.char && phenomenon.colour && rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) {
-        const dimFactor = phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
-        tile = { bg, starChar: phenomenon.char, starColor: this.dimHexColour(phenomenon.colour, dimFactor) };
-      } else {
-        tile = { bg, starChar: null, starColor: null };
-      }
-    }
-    return tile;
-  }
-
-  private dimHexColour(hex: string, factor: number): string {
-    const normalized = hex.replace('#', '');
-    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return hex;
-    const r = parseInt(normalized.slice(0, 2), 16);
-    const g = parseInt(normalized.slice(2, 4), 16);
-    const b = parseInt(normalized.slice(4, 6), 16);
-    const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value * factor)));
-    return `#${clamp(r).toString(16).padStart(2, '0')}${clamp(g).toString(16).padStart(2, '0')}${clamp(b).toString(16).padStart(2, '0')}`.toUpperCase();
   }
 
   private drawSystemTravelStarfield(player: Player): void {
