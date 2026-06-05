@@ -3,6 +3,7 @@
 import { RenderStats, ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
+import { getNebulaColourProvider } from './nebula_colour_provider';
 import { SceneRenderer, SurfaceVehicleOverlayModel } from './scene_renderer';
 import { StatusBarUpdater as ImportedStatusBarUpdater } from './status_bar_updater'; // Keep alias
 import { CommandStripUpdater } from './command_strip_updater';
@@ -70,7 +71,7 @@ export class RendererFacade {
     // Initialize components (same as before)
     this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false);
     this.drawingContext = new DrawingContext(this.screenBuffer);
-    this.nebulaRenderer = new NebulaRenderer();
+    this.nebulaRenderer = new NebulaRenderer(getNebulaColourProvider());
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
     this.commandStripUpdater = commandStripElement ? new CommandStripUpdater(commandStripElement) : null;
     this.sceneRenderer = new SceneRenderer(

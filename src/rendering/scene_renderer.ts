@@ -122,6 +122,7 @@ export class SceneRenderer {
     const viewCenterY = Math.floor(rows / 2);
     const startWorldX = player.position.worldX - viewCenterX;
     const startWorldY = player.position.worldY - viewCenterY;
+    this.nebulaRenderer.prefetchRegion(startWorldX, startWorldY, cols, rows, 6);
 
     this.screenBuffer.clear(false);
     if (

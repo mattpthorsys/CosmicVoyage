@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../../config';
 import { hexToRgb } from '../../rendering/colour';
+import { LocalNebulaColourProvider } from '../../rendering/nebula_colour_provider';
+import { NebulaColourProvider } from '../../rendering/nebula_colour_provider';
+import { NebulaColourSampler } from '../../rendering/nebula_colour_sampler';
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 
 function luminance(hex: string): number {
@@ -19,6 +22,54 @@ function colourDistance(first: string, second: string): number {
 }
 
 describe('NebulaRenderer', () => {
+  it('matches the worker-safe nebula sampler exactly', () => {
+    const renderer = new NebulaRenderer(new LocalNebulaColourProvider());
+    const sampler = new NebulaColourSampler();
+    const coordinates = [
+      [-120.25, -48.75],
+      [-32.5, 84.125],
+      [0, 0],
+      [73.25, -91.5],
+      [156.875, 210.25],
+    ];
+
+    for (const [x, y] of coordinates) {
+      expect(renderer.getBackgroundColor(x, y)).toBe(sampler.sample(x, y));
+    }
+  });
+
+  it('can prefetch nebula colours through an async provider', async () => {
+    class CountingProvider implements NebulaColourProvider {
+      syncCalls = 0;
+      asyncCalls = 0;
+
+      getBackgroundColor(): string {
+        this.syncCalls++;
+        return '#101010';
+      }
+
+      getBackgroundColorsAsync(requests: readonly { worldX: number; worldY: number }[]) {
+        this.asyncCalls++;
+        return Promise.resolve(requests.map(({ worldX, worldY }) => ({
+          worldX,
+          worldY,
+          colour: '#123456',
+        })));
+      }
+
+      clearCache(): void {}
+    }
+
+    const provider = new CountingProvider();
+    const renderer = new NebulaRenderer(provider);
+    renderer.prefetchRegion(10, 20, 2, 2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(provider.asyncCalls).toBe(1);
+    expect(renderer.getBackgroundColor(10, 20)).toBe('#123456');
+    expect(provider.syncCalls).toBe(0);
+  });
+
   it('renders deterministic, sparse nebula fields', () => {
     const first = new NebulaRenderer();
     const second = new NebulaRenderer();
