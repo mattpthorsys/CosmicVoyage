@@ -536,6 +536,7 @@ describe('SceneRenderer visual regressions', () => {
       selectedBody: planet,
       bodies: [{ label: 'Primary', planet, selected: true }],
       mode: 'landing',
+      stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
       rotationPhase: 0.35,
       illuminationPhase: 0.35,
       landingCursorX: 12,
@@ -552,6 +553,149 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === '+')).toBe(true);
     expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK)).toBe(true);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
+  });
+
+  it('shows stellar sources as a clipped distant light source in orbital view', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer);
+    const planet = createOrbitPlanet();
+
+    renderer.drawOrbitInterface({
+      title: 'Orbital Operations',
+      subtitle: 'Regression Orbit I local space',
+      parentPlanet: planet,
+      selectedBody: planet,
+      bodies: [{ label: 'Primary', planet, selected: true }],
+      mode: 'overview',
+      stellarSources: [
+        { id: 'A', primary: true, brightness: 1 },
+        { id: 'B', primary: false, brightness: 0.4 },
+      ],
+      rotationPhase: 0.35,
+      illuminationPhase: 0.555,
+      landingCursorX: 12,
+      landingCursorY: 18,
+      mapSize: 32,
+      description: ['Regression limb marker.'],
+      telemetry: ['Body Regression Orbit I'],
+      footer: ['Esc closes orbit.'],
+    });
+
+    expect(drawCalls.some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(true);
+    expect(drawCalls.some((call) => call.char === GLYPHS.STAR_BRIGHT)).toBe(false);
+    expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(true);
+    expect(renderTextRows(drawCalls).some((line) => line.includes('SUN'))).toBe(false);
+  });
+
+  it('moves the orbital stellar marker between opposite horizons', () => {
+    const renderAtPhase = (illuminationPhase: number): DrawCall[] => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const renderer = createSceneRenderer(buffer);
+      const planet = createOrbitPlanet();
+      renderer.drawOrbitInterface({
+        title: 'Orbital Operations',
+        subtitle: 'Regression Orbit I local space',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [{ label: 'Primary', planet, selected: true }],
+        mode: 'overview',
+        stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+        rotationPhase: 0.35,
+        illuminationPhase,
+        landingCursorX: 12,
+        landingCursorY: 18,
+        mapSize: 32,
+        description: ['Regression horizon marker.'],
+        telemetry: ['Body Regression Orbit I'],
+        footer: ['Esc closes orbit.'],
+      });
+      return drawCalls;
+    };
+
+    const leftMarker = renderAtPhase(0.27).find((call) => call.char === GLYPHS.STELLAR_SOURCE);
+    const rightMarker = renderAtPhase(0.555).find((call) => call.char === GLYPHS.STELLAR_SOURCE);
+
+    expect(leftMarker).toBeDefined();
+    expect(rightMarker).toBeDefined();
+    expect(leftMarker!.x).toBeLessThan(rightMarker!.x);
+  });
+
+  it('hides the orbital stellar source when it is behind the viewer or planet', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer);
+    const planet = createOrbitPlanet();
+
+    const drawAtPhase = (illuminationPhase: number): DrawCall[] => {
+      const { buffer: phaseBuffer, drawCalls: phaseDrawCalls } = createMockScreenBuffer(132, 58);
+      const phaseRenderer = createSceneRenderer(phaseBuffer);
+      phaseRenderer.drawOrbitInterface({
+        title: 'Orbital Operations',
+        subtitle: 'Regression Orbit I local space',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [{ label: 'Primary', planet, selected: true }],
+        mode: 'overview',
+        stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+        rotationPhase: 0.35,
+        illuminationPhase,
+        landingCursorX: 12,
+        landingCursorY: 18,
+        mapSize: 32,
+        description: ['Regression occultation marker.'],
+        telemetry: ['Body Regression Orbit I'],
+        footer: ['Esc closes orbit.'],
+      });
+      return phaseDrawCalls;
+    };
+
+    renderer.drawOrbitInterface({
+      title: 'Orbital Operations',
+      subtitle: 'Regression Orbit I local space',
+      parentPlanet: planet,
+      selectedBody: planet,
+      bodies: [{ label: 'Primary', planet, selected: true }],
+      mode: 'overview',
+      stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+      rotationPhase: 0.35,
+      illuminationPhase: 0,
+      landingCursorX: 12,
+      landingCursorY: 18,
+      mapSize: 32,
+      description: ['Regression occultation marker.'],
+      telemetry: ['Body Regression Orbit I'],
+      footer: ['Esc closes orbit.'],
+    });
+
+    expect(drawCalls.some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(false);
+    expect(drawAtPhase(0.4).some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(false);
+  });
+
+  it('changes visible globe texture as the orbital viewing phase advances', () => {
+    const renderSignatureAtPhase = (illuminationPhase: number) => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const renderer = createSceneRenderer(buffer);
+      const planet = createOrbitPlanet();
+      renderer.drawOrbitInterface({
+        title: 'Orbital Operations',
+        subtitle: 'Regression Orbit I local space',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [{ label: 'Primary', planet, selected: true }],
+        mode: 'overview',
+        stellarSources: [],
+        rotationPhase: 0,
+        illuminationPhase,
+        landingCursorX: 12,
+        landingCursorY: 18,
+        mapSize: 32,
+        description: ['Regression moving hemisphere.'],
+        telemetry: ['Body Regression Orbit I'],
+        footer: ['Esc closes orbit.'],
+      });
+      return createRenderSignature(drawCalls);
+    };
+
+    expect(renderSignatureAtPhase(0.1)).not.toEqual(renderSignatureAtPhase(0.35));
   });
 
   it('places ocean glint near the specular star-view alignment', () => {

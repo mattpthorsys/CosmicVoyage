@@ -11,6 +11,12 @@ export interface OrbitBodyOption {
   selected: boolean;
 }
 
+export interface OrbitStellarSource {
+  id: string;
+  primary: boolean;
+  brightness: number;
+}
+
 export interface OrbitScreenModel {
   title: string;
   subtitle: string;
@@ -18,6 +24,7 @@ export interface OrbitScreenModel {
   selectedBody: Planet;
   bodies: OrbitBodyOption[];
   mode: OrbitInteractionMode;
+  stellarSources: OrbitStellarSource[];
   rotationPhase: number;
   illuminationPhase: number;
   landingCursorX: number;
@@ -38,6 +45,7 @@ export function createOrbitScreenModel(args: {
   landingCursorY: number;
   rotationPhase: number;
   illuminationPhase: number;
+  stellarSources?: OrbitStellarSource[];
   alert?: string;
 }): OrbitScreenModel {
   const selected = args.selectedBody;
@@ -80,6 +88,7 @@ export function createOrbitScreenModel(args: {
     selectedBody: selected,
     bodies,
     mode: args.mode,
+    stellarSources: args.stellarSources ?? [],
     rotationPhase: args.rotationPhase,
     illuminationPhase: args.illuminationPhase,
     landingCursorX: ((Math.floor(args.landingCursorX) % mapSize) + mapSize) % mapSize,

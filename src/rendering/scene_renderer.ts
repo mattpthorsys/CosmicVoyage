@@ -1098,6 +1098,7 @@ export class SceneRenderer {
     this.drawingContext.drawBox(panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
     this.screenBuffer.drawString(' ORBITAL VIEW ', panelX + 5, contentTop, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     this.drawRotatingPlanetSphere(model, sphereCx, sphereCy, sphereRadius);
+    this.drawOrbitSunReference(model, sphereCx, sphereCy, sphereRadius, panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight);
     this.drawOrbitViewReadout(model, panelX + 5, contentTop + sphereBoxHeight - 3, leftColumnWidth - 4);
 
     const mapWidth = Math.max(20, Math.min(32, Math.floor(panelWidth * 0.25)));
@@ -1141,8 +1142,10 @@ export class SceneRenderer {
 
   private drawRotatingPlanetSphere(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
     const planet = model.selectedBody;
-    const texturePhase = model.rotationPhase * Math.PI * 2;
-    const illuminationPhase = model.illuminationPhase * Math.PI * 2;
+    const orbitPhase = model.illuminationPhase * Math.PI * 2;
+    // The orbit phase changes the viewing longitude; physical rotation adds a slower
+    // surface drift so the same orbital pass does not become a static light cycle.
+    const texturePhase = (model.illuminationPhase + model.rotationPhase) * Math.PI * 2;
     const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
     const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightLevelColors;
     const detailScale = 0.5;
@@ -1156,7 +1159,7 @@ export class SceneRenderer {
         const z = Math.sqrt(Math.max(0, 1 - d));
         const viewLongitude = Math.atan2(nx, z);
         const textureLongitude = viewLongitude + texturePhase;
-        const illuminationLongitude = viewLongitude + illuminationPhase;
+        const illuminationLongitude = viewLongitude + orbitPhase;
         const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
         const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
         const textureY = this.mercatorTextureY(lat);
@@ -1184,6 +1187,66 @@ export class SceneRenderer {
         );
       }
     }
+  }
+
+  private drawOrbitSunReference(
+    model: OrbitScreenModel,
+    cx: number,
+    cy: number,
+    radius: number,
+    viewX: number,
+    viewY: number,
+    viewWidth: number,
+    viewHeight: number
+  ): void {
+    const sun = this.getGlobeSunVector(model.illuminationPhase * Math.PI * 2);
+    if (sun.z >= -0.02 || model.stellarSources.length === 0) return;
+
+    const focalLength = radius * 0.95;
+    const projectedX = Math.round(cx + (sun.x / -sun.z) * focalLength);
+    const projectedY = Math.round(cy - (sun.y / -sun.z) * focalLength);
+    if (
+      projectedX <= viewX ||
+      projectedX >= viewX + viewWidth - 1 ||
+      projectedY <= viewY ||
+      projectedY >= viewY + viewHeight - 1
+    ) return;
+
+    const planetMaskRadius = radius + 1;
+    if (Math.hypot(projectedX - cx, projectedY - cy) <= planetMaskRadius) return;
+
+    const side = projectedX < cx ? -1 : 1;
+    const primary = model.stellarSources.find((source) => source.primary) ?? model.stellarSources[0];
+    const primaryColour = primary.brightness > 1.1
+      ? TEXT_PALETTE.amber
+      : TEXT_PALETTE.amberDim;
+
+    this.screenBuffer.drawChar(GLYPHS.STELLAR_SOURCE, projectedX, projectedY, primaryColour, CONFIG.DEFAULT_BG_COLOUR);
+
+    model.stellarSources
+      .filter((source) => source.id !== primary.id)
+      .slice(0, 2)
+      .forEach((source, index) => {
+        const offsetX = side > 0 ? 1 + index : -1 - index;
+        const offsetY = index === 0 ? -1 : 1;
+        const companionX = projectedX + offsetX;
+        const companionY = projectedY + offsetY;
+        if (
+          companionX <= viewX ||
+          companionX >= viewX + viewWidth - 1 ||
+          companionY <= viewY ||
+          companionY >= viewY + viewHeight - 1 ||
+          Math.hypot(companionX - cx, companionY - cy) <= planetMaskRadius
+        ) return;
+        const colour = source.brightness > 0.7 ? TEXT_PALETTE.amberDim : TEXT_PALETTE.textMuted;
+        this.screenBuffer.drawChar(
+          GLYPHS.STAR_DIM,
+          companionX,
+          companionY,
+          colour,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
+      });
   }
 
   private calculateGlobeLighting(planet: Planet, longitude: number, latitude: number, viewNormalZ: number): { brightness: number; glyph: number } {
@@ -1290,38 +1353,37 @@ export class SceneRenderer {
   }
 
   private calculateLiquidGlint(longitude: number, latitude: number, viewNormalZ: number): number {
-    const subsolarLongitude = -0.55;
-    const subsolarLatitude = 0.12;
     const cosLat = Math.cos(latitude);
     const surfaceNormal = {
       x: cosLat * Math.sin(longitude),
       y: Math.sin(latitude),
       z: cosLat * Math.cos(longitude),
     };
+    const sunVector = this.getGlobeSunVector(0);
+    const incidence = surfaceNormal.x * sunVector.x + surfaceNormal.y * sunVector.y + surfaceNormal.z * sunVector.z;
+    const sunVisible = Math.max(0, incidence);
+    const viewVisible = Math.max(0, viewNormalZ);
+    const reflected = {
+      x: 2 * incidence * surfaceNormal.x - sunVector.x,
+      y: 2 * incidence * surfaceNormal.y - sunVector.y,
+      z: 2 * incidence * surfaceNormal.z - sunVector.z,
+    };
+    const reflectedLength = Math.hypot(reflected.x, reflected.y, reflected.z);
+    if (reflectedLength <= 0) return 0;
+    const specularAlignment = Math.max(0, reflected.z / reflectedLength);
+    const limbFade = Math.min(1, viewVisible / 0.28);
+    return Math.pow(specularAlignment, 70) * Math.pow(sunVisible, 0.9) * limbFade;
+  }
+
+  private getGlobeSunVector(illuminationPhaseRadians: number): { x: number; y: number; z: number } {
+    const subsolarLongitude = -0.55 - illuminationPhaseRadians;
+    const subsolarLatitude = 0.12;
     const cosSunLat = Math.cos(subsolarLatitude);
-    const sunVector = {
+    return {
       x: cosSunLat * Math.sin(subsolarLongitude),
       y: Math.sin(subsolarLatitude),
       z: cosSunLat * Math.cos(subsolarLongitude),
     };
-    const incidence =
-      Math.sin(latitude) * Math.sin(subsolarLatitude) +
-      Math.cos(latitude) * Math.cos(subsolarLatitude) * Math.cos(longitude - subsolarLongitude);
-    const sunVisible = Math.max(0, incidence);
-    const viewVisible = Math.max(0, viewNormalZ);
-    const halfVectorLength = Math.hypot(sunVector.x, sunVector.y, sunVector.z + 1);
-    if (halfVectorLength <= 0) return 0;
-    const halfVector = {
-      x: sunVector.x / halfVectorLength,
-      y: sunVector.y / halfVectorLength,
-      z: (sunVector.z + 1) / halfVectorLength,
-    };
-    const specularAlignment = Math.max(
-      0,
-      surfaceNormal.x * halfVector.x + surfaceNormal.y * halfVector.y + surfaceNormal.z * halfVector.z
-    );
-    const limbFade = Math.min(1, viewVisible / 0.28);
-    return Math.pow(specularAlignment, 42) * Math.pow(sunVisible, 0.8) * limbFade;
   }
 
   private mercatorTextureY(latitudeRad: number): number {

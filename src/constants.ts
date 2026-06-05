@@ -13,6 +13,7 @@ export const GLYPHS = {
     STAR_DIM: '\u00B7',
     STAR_MEDIUM: '\u2022',
     STAR_BRIGHT: '*',
+    STELLAR_SOURCE: '\u263C',
     PLANET_ICON: 'O', // Used? Maybe for minimap? Keep for now. [cite: 412]
     SHIP_NORTH: '^',
     SHIP_SOUTH: 'v',

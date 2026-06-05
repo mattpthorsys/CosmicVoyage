@@ -4944,8 +4944,29 @@ export class Game {
       landingCursorY: this.orbitLandingY,
       rotationPhase: this.getOrbitGlobeRotationPhase(selectedBody),
       illuminationPhase: this.getOrbitGlobeIlluminationPhase(),
+      stellarSources: this.getOrbitStellarSources(selectedBody),
       alert: this.orbitAlert || this.statusMessage,
     });
+  }
+
+  private getOrbitStellarSources(selectedBody: Planet): Array<{ id: string; primary: boolean; brightness: number }> {
+    const system = this.stateManager.currentSystem;
+    if (!system || system.stars.length === 0) return [];
+    const starsByDistance = system.stars
+      .map((star) => ({
+        star,
+        distanceSq:
+          Math.pow((star.systemX ?? 0) - (selectedBody.systemX ?? 0), 2) +
+          Math.pow((star.systemY ?? 0) - (selectedBody.systemY ?? 0), 2),
+      }))
+      .sort((a, b) => a.distanceSq - b.distanceSq);
+    const nearestId = starsByDistance[0]?.star.id;
+    const baselineLuminosity = Math.max(1, starsByDistance[0]?.star.luminosityW ?? 1);
+    return starsByDistance.slice(0, 3).map(({ star }) => ({
+      id: star.id,
+      primary: star.id === nearestId,
+      brightness: Math.max(0.12, Math.min(1.5, Math.sqrt(Math.max(0.01, star.luminosityW) / baselineLuminosity))),
+    }));
   }
 
   private getOrbitGlobeRotationPhase(body: Planet): number {
