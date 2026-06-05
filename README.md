@@ -104,6 +104,34 @@ npm run dev
 
 Open the local Vite URL shown in the terminal, usually `http://localhost:5173`.
 
+## Docker
+
+Docker support is provided for reproducible development, testing, and production builds.
+
+Run the Vite development server in a container:
+
+```bash
+docker compose up dev
+```
+
+Open `http://localhost:5173`.
+
+Run the same verification pipeline used by the Docker test image:
+
+```bash
+docker compose --profile test build test
+```
+
+Build and serve the production bundle:
+
+```bash
+docker compose --profile prod up --build app
+```
+
+Open `http://localhost:8080`.
+
+The Docker setup is intentionally limited to packaging and repeatable execution. Gameplay generation still runs in the browser; future worker or WASM migration should keep deterministic inputs and outputs stable.
+
 ## Build
 
 ```bash
