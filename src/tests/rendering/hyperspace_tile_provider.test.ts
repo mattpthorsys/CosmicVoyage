@@ -11,6 +11,10 @@ function createNebulaRenderer(): NebulaRenderer {
   } as unknown as NebulaRenderer;
 }
 
+function nextTask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('HyperspaceTileProvider', () => {
   it('hides brown dwarfs beyond their detection radius', () => {
     const generator = {
@@ -61,5 +65,32 @@ describe('HyperspaceTileProvider', () => {
     expect(near.starChar).toBe('?');
     expect(near.starColor).toBe('#288077');
     expect(distant.starChar).toBeNull();
+  });
+
+  it('warms whole hyperspace tiles asynchronously without blocking the current call', async () => {
+    let mapCalls = 0;
+    const generator = {
+      getSystemMapProperties: () => {
+        mapCalls++;
+        return {
+          exists: false,
+          starType: null,
+          name: null,
+          hasStarbase: false,
+          objectKind: null,
+        };
+      },
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator);
+
+    provider.prefetchTileRegion(100, 200, 3, 3, 1, 1);
+
+    expect(mapCalls).toBe(0);
+    await nextTask();
+    expect(mapCalls).toBe(9);
+
+    provider.getTile(101, 201, 0);
+    expect(mapCalls).toBe(9);
   });
 });

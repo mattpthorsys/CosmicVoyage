@@ -155,6 +155,7 @@ export class SceneRenderer {
     const startWorldY = player.position.worldY - viewCenterY;
     const prefetchStart = performance.now();
     this.hyperspaceTileProvider.prefetchBackgroundRegion(startWorldX, startWorldY, cols, rows, 6);
+    this.hyperspaceTileProvider.prefetchTileRegion(startWorldX, startWorldY, cols, rows, viewCenterX, viewCenterY, 4);
     stats.prefetchMs = performance.now() - prefetchStart;
 
     this.screenBuffer.clear(false);

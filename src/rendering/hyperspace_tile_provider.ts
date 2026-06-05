@@ -22,7 +22,12 @@ type TilePhenomenonProps = Pick<DeepSpacePhenomenonProperties, 'exists' | 'char'
 /** Builds and caches complete hyperspace cells from survey, nebula, and starfield data. */
 export class HyperspaceTileProvider {
   private readonly tileCache: Map<string, HyperspaceTile> = new Map();
+  private readonly pendingTilePrefetchKeys = new Set<string>();
   private readonly maxTileCacheSize = 60000;
+  private prefetchGeneration = 0;
+  private tilePrefetchScheduled = false;
+  private readonly tilePrefetchQueue: Array<{ worldX: number; worldY: number; rangeCells: number }> = [];
+  private readonly maxTilePrefetchChunkSize = 192;
 
   constructor(
     private readonly nebulaRenderer: NebulaRenderer,
@@ -31,10 +36,46 @@ export class HyperspaceTileProvider {
 
   clearCache(): void {
     this.tileCache.clear();
+    this.pendingTilePrefetchKeys.clear();
+    this.tilePrefetchQueue.length = 0;
+    this.tilePrefetchScheduled = false;
+    this.prefetchGeneration++;
   }
 
   prefetchBackgroundRegion(startWorldX: number, startWorldY: number, cols: number, rows: number, margin = 0): void {
     this.nebulaRenderer.prefetchRegion(startWorldX, startWorldY, cols, rows, margin);
+  }
+
+  prefetchTileRegion(
+    startWorldX: number,
+    startWorldY: number,
+    cols: number,
+    rows: number,
+    viewCenterX: number,
+    viewCenterY: number,
+    margin = 0
+  ): void {
+    const availableCacheSlots = this.maxTileCacheSize - this.tileCache.size - this.pendingTilePrefetchKeys.size;
+    if (availableCacheSlots <= 0) return;
+
+    let queued = 0;
+    collect:
+    for (let y = -margin; y < rows + margin; y++) {
+      for (let x = -margin; x < cols + margin; x++) {
+        const worldX = startWorldX + x;
+        const worldY = startWorldY + y;
+        const rangeCells = Math.hypot(x - viewCenterX, y - viewCenterY);
+        const key = this.getTileKey(worldX, worldY, rangeCells);
+        if (this.tileCache.has(key) || this.pendingTilePrefetchKeys.has(key)) continue;
+
+        this.pendingTilePrefetchKeys.add(key);
+        this.tilePrefetchQueue.push({ worldX, worldY, rangeCells });
+        queued++;
+        if (queued >= availableCacheSlots) break collect;
+      }
+    }
+
+    this.scheduleTilePrefetch();
   }
 
   getTile(worldX: number, worldY: number, rangeCells: number): HyperspaceTile {
@@ -60,6 +101,29 @@ export class HyperspaceTileProvider {
       key,
       this.createTile(bg, cell.system, cell.phenomenon, cell.worldX, cell.worldY, cell.rangeCells)
     );
+  }
+
+  private scheduleTilePrefetch(): void {
+    if (this.tilePrefetchScheduled || this.tilePrefetchQueue.length === 0) return;
+    this.tilePrefetchScheduled = true;
+    const generation = this.prefetchGeneration;
+    setTimeout(() => this.processTilePrefetchChunk(generation), 0);
+  }
+
+  private processTilePrefetchChunk(generation: number): void {
+    this.tilePrefetchScheduled = false;
+    if (generation !== this.prefetchGeneration) return;
+
+    const chunk = this.tilePrefetchQueue.splice(0, this.maxTilePrefetchChunkSize);
+    for (const item of chunk) {
+      const key = this.getTileKey(item.worldX, item.worldY, item.rangeCells);
+      this.pendingTilePrefetchKeys.delete(key);
+      if (!this.tileCache.has(key)) {
+        this.getTile(item.worldX, item.worldY, item.rangeCells);
+      }
+    }
+
+    this.scheduleTilePrefetch();
   }
 
   private createTile(
@@ -116,4 +180,3 @@ export class HyperspaceTileProvider {
     return `${worldX},${worldY}|${Math.floor(rangeCells)}`;
   }
 }
-
