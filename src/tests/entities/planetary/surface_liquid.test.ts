@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SurfaceGenerator } from '../../../entities/planet/surface_generator';
+import { generateSurfaceDataFromRequest, SurfaceGenerator } from '../../../entities/planet/surface_generator';
 import { createSurfaceLiquidOverlay, isLiquidCovered } from '../../../entities/planet/surface_liquid';
 import { MineralRichness } from '../../../constants';
 import { PRNG } from '../../../utils/prng';
@@ -54,5 +54,33 @@ describe('surface liquid overlays', () => {
 
     expect(submergedMinerals).toBe(0);
     expect(dryMinerals).toBeGreaterThan(0);
+  });
+
+  it('keeps worker-safe surface requests deterministic with the legacy generator path', () => {
+    const atmosphere = {
+      density: 'Standard',
+      pressure: 1,
+      composition: { Nitrogen: 80, Oxygen: 20 },
+    };
+    const abundance = { IRON: 100, SILICON: 80, DEUTERIUM: 20 };
+    const profile = {
+      mineralRichness: MineralRichness.ULTRA_RICH,
+      baseMinerals: 120,
+      metallicityFeH: 0.4,
+      surfaceTemp: 288,
+      hydrosphere: 'Global Saline Ocean',
+    };
+    const legacy = new SurfaceGenerator('Oceanic', 'worker-compat-test', new PRNG('worker-compat-test'), atmosphere)
+      .generateSurfaceData(abundance, profile);
+    const request = generateSurfaceDataFromRequest({
+      planetType: 'Oceanic',
+      mapSeed: 'worker-compat-test',
+      prngSeed: 'worker-compat-test',
+      atmosphere,
+      planetAbundance: abundance,
+      profile,
+    });
+
+    expect(request).toEqual(legacy);
   });
 });

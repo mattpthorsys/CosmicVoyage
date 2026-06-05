@@ -4935,6 +4935,7 @@ export class Game {
     const parentPlanet = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
     const selectedBody = this.getSelectedOrbitBody();
     if (!selectedBody.scanned) selectedBody.scan();
+    selectedBody.prepareSurfaceInBackground();
     return createOrbitScreenModel({
       parentPlanet,
       selectedBody,

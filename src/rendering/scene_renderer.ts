@@ -1147,8 +1147,9 @@ export class SceneRenderer {
     // The orbit phase changes the viewing longitude; physical rotation adds a slower
     // surface drift so the same orbital pass does not become a static light cycle.
     const texturePhase = (model.illuminationPhase + model.rotationPhase) * Math.PI * 2;
-    const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightmap;
-    const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : planet.heightLevelColors;
+    const cachedSurface = this.getCachedSolidSurfaceData(planet);
+    const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightmap ?? null;
+    const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
     for (let dy = -detailRadius; dy <= detailRadius; dy++) {
@@ -1165,9 +1166,13 @@ export class SceneRenderer {
         const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
         const textureY = this.mercatorTextureY(lat);
         const solidSample = solidMap && solidColours
-          ? this.sampleSolidPlanetTexture(planet, textureX, textureY)
+          ? this.sampleSolidPlanetTexture(solidMap, solidColours, cachedSurface?.liquidOverlay ?? null, textureX, textureY)
           : null;
-        const colour = solidSample?.colour ?? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, lat, texturePhase);
+        const colour = solidSample?.colour ?? (
+          planet.type === 'GasGiant' || planet.type === 'IceGiant'
+            ? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, lat, texturePhase)
+            : this.samplePendingSolidPlanetTexture(planet, textureX, textureY)
+        );
         const light = this.calculateGlobeLighting(planet, illuminationLongitude, lat, z);
         const brightness = solidSample?.liquid
           ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, lat, z)
@@ -1390,15 +1395,18 @@ export class SceneRenderer {
     return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu) + haze)) };
   }
 
-  private sampleSolidPlanetTexture(planet: Planet, u: number, v: number): SolidTextureSample {
-    const heightmap = planet.heightmap;
-    const heightColours = planet.heightLevelColors;
+  private sampleSolidPlanetTexture(
+    heightmap: number[][] | null,
+    heightColours: string[] | null,
+    liquid: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    u: number,
+    v: number
+  ): SolidTextureSample {
     if (!heightmap || !heightColours) return { colour: '#88BBBB', liquid: false };
     const mapSize = heightmap.length;
     if (mapSize <= 0) return { colour: '#88BBBB', liquid: false };
     const sample = this.sampleWrappedHeight(heightmap, u, v);
     const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height)));
-    const liquid = this.getPlanetLiquidOverlay(planet);
     if (liquid && height <= liquid.seaLevel) {
       return {
         colour: liquid.colour,
@@ -1407,6 +1415,41 @@ export class SceneRenderer {
       };
     }
     return { colour: this.sampleHeightColour(heightColours, sample.height), liquid: false };
+  }
+
+  private getCachedSolidSurfaceData(planet: Planet): {
+    heightmap: number[][] | null;
+    heightLevelColors: string[] | null;
+    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null;
+  } | null {
+    const cached = planet.getSurfaceDataIfReady?.() ?? null;
+    if (cached) return cached;
+
+    // Regression tests often use plain object fixtures with own data properties.
+    // Real Planet instances use accessors, which are intentionally not invoked here.
+    if (
+      Object.prototype.hasOwnProperty.call(planet, 'heightmap') ||
+      Object.prototype.hasOwnProperty.call(planet, 'heightLevelColors')
+    ) {
+      const fixture = planet as unknown as {
+        heightmap?: number[][] | null;
+        heightLevelColors?: string[] | null;
+        surfaceLiquid?: { seaLevel: number; colour: string; reflectiveColour: string } | null;
+      };
+      return {
+        heightmap: fixture.heightmap ?? null,
+        heightLevelColors: fixture.heightLevelColors ?? null,
+        liquidOverlay: Object.prototype.hasOwnProperty.call(planet, 'surfaceLiquid') ? fixture.surfaceLiquid ?? null : null,
+      };
+    }
+
+    return null;
+  }
+
+  private samplePendingSolidPlanetTexture(planet: Planet, u: number, v: number): string {
+    const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#476A6A', '#5E8585', '#8CB0AA', '#B0CBC2'];
+    const index = Math.max(0, Math.min(palette.length - 1, Math.floor((u * 0.45 + v * 0.55) * palette.length)));
+    return palette[index] ?? '#88BBBB';
   }
 
   private sampleWrappedHeight(heightmap: number[][], u: number, v: number): { height: number; x: number; y: number } {
@@ -1542,8 +1585,9 @@ export class SceneRenderer {
   private drawOrbitLandingMap(model: OrbitScreenModel, x: number, y: number, width: number, height: number): void {
     const planet = model.selectedBody;
     const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
-    const map = isGiant ? null : planet.heightmap;
-    const colours = planet.heightLevelColors;
+    const cachedSurface = this.getCachedSolidSurfaceData(planet);
+    const map = isGiant ? null : cachedSurface?.heightmap ?? null;
+    const colours = cachedSurface?.heightLevelColors ?? null;
     const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#4A7777', '#6A9999', '#9FCCCC'];
     const detailScale = 0.5;
     const detailWidth = Math.max(1, Math.floor(width / detailScale));
@@ -1558,7 +1602,7 @@ export class SceneRenderer {
         if (map && colours) {
           const sample = this.sampleWrappedHeight(map, u, v);
           const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height)));
-          const liquid = this.getPlanetLiquidOverlay(planet);
+          const liquid = cachedSurface?.liquidOverlay ?? null;
           colour = liquid && heightValue <= liquid.seaLevel
             ? liquid.colour
             : this.sampleHeightColour(colours, sample.height);

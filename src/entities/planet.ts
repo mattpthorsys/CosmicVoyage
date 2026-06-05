@@ -9,7 +9,8 @@ import { generatePlanetCharacteristics, PlanetCharacteristics, PlanetGenerationO
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import { OrbitHost } from './stellar_body';
 // Import the generator and data interface
-import { SurfaceGenerator, SurfaceData } from './planet/surface_generator';
+import { SurfaceData, SurfaceGenerationRequest } from './planet/surface_generator';
+import { getSurfaceGenerationProvider } from './planet/surface_generation_provider';
 import { isLiquidCovered, SurfaceLiquidOverlay } from './planet/surface_liquid';
 // Re-export needed types if they aren't in a shared file
 export type AtmosphereComposition = Record<string, number>;
@@ -100,7 +101,7 @@ export class Planet {
 
   // Surface Data (Lazy Loaded/Cached)
   private _surfaceData: SurfaceData | null = null; // Holds heightmap, colors, AND element map
-  private _surfaceGenerator: SurfaceGenerator | null = null; //
+  private _surfaceGenerationPromise: Promise<void> | null = null;
 
   // Moons (Placeholder)
   public moons: Planet[] = []; //
@@ -236,6 +237,10 @@ export class Planet {
     return this._surfaceData?.liquidOverlay ?? null;
   }
 
+  getSurfaceDataIfReady(): SurfaceData | null {
+    return this._surfaceData;
+  }
+
   isSubmergedSurface(x: number, y: number): boolean {
     const map = this.heightmap;
     const liquid = this.surfaceLiquid;
@@ -255,60 +260,95 @@ export class Planet {
     }
 
     logger.info(`[Planet:${this.name}] ensureSurfaceReady: Generating surface data...`); //
-    if (!this._surfaceGenerator) {
-      //
-      // Pass necessary generated characteristics to the SurfaceGenerator
-      this._surfaceGenerator = new SurfaceGenerator(this.type, this.mapSeed, this.systemPRNG, this.atmosphere); //
-    }
-
     try {
       //
-      // Pass the planet's overall abundance map to the generator
-      this._surfaceData = this._surfaceGenerator.generateSurfaceData(this.elementAbundance, {
-        mineralRichness: this.mineralRichness,
-        baseMinerals: this.baseMinerals,
-        metallicityFeH: this.stellarEnvironment.metallicityFeH,
-        surfaceTemp: this.surfaceTemp,
-        hydrosphere: this.hydrosphere,
-      }); //
-      if (!this._surfaceData) {
-        // Check if generator returned null
-        throw new Error('Surface generator returned null data.'); //
-      }
-
-      // Robust check: Ensure required data exists and is non-empty if expected
-      const isSolid = this.type !== 'GasGiant' && this.type !== 'IceGiant'; //
-      if (
-        isSolid &&
-        (!this._surfaceData.heightmap ||
-          this._surfaceData.heightmap.length === 0 || // Check map exists and has rows
-          !this._surfaceData.heightLevelColors ||
-          this._surfaceData.heightLevelColors.length === 0 || // Check colors exist and have entries
-          !this._surfaceData.surfaceElementMap ||
-          this._surfaceData.surfaceElementMap.length === 0) // Check element map exists and has rows
-      ) {
-        const missing = [];
-        if (!this._surfaceData.heightmap || this._surfaceData.heightmap.length === 0) missing.push('heightmap');
-        if (!this._surfaceData.heightLevelColors || this._surfaceData.heightLevelColors.length === 0)
-          missing.push('heightLevelColors');
-        if (!this._surfaceData.surfaceElementMap || this._surfaceData.surfaceElementMap.length === 0)
-          missing.push('surfaceElementMap');
-        throw new Error(
-          `Surface generator returned incomplete data for solid planet (missing/empty: ${missing.join(', ')}).`
-        ); // Updated error message
-      }
-      // Check gas giant data (only palette needed)
-      if (!isSolid && (!this._surfaceData.rgbPaletteCache || this._surfaceData.rgbPaletteCache.length === 0)) {
-        // Check palette exists and has entries
-        throw new Error('Surface generator returned incomplete data for gas/ice giant (missing/empty palette).'); //
-      }
-
+      this._surfaceData = getSurfaceGenerationProvider().generateSurfaceData(this.createSurfaceGenerationRequest()); //
+      this.validateSurfaceData();
       logger.info(`[Planet:${this.name}] Surface data generated successfully.`); //
     } catch (error) {
       //
       logger.error(`[Planet:${this.name}] Surface data generation failed: ${error}`); //
       this._surfaceData = null; // Ensure it's null on failure
       throw error; // Re-throw after logging
+    }
+  }
+
+  async prepareSurfaceReady(): Promise<void> {
+    if (this._surfaceData) return;
+    if (this._surfaceGenerationPromise) return this._surfaceGenerationPromise;
+
+    const provider = getSurfaceGenerationProvider();
+    if (!provider.generateSurfaceDataAsync) {
+      this.ensureSurfaceReady();
+      return;
+    }
+
+    this._surfaceGenerationPromise = provider.generateSurfaceDataAsync(this.createSurfaceGenerationRequest())
+      .then((data) => {
+        this._surfaceData = data;
+        this.validateSurfaceData();
+        logger.info(`[Planet:${this.name}] Surface data generated asynchronously.`);
+      })
+      .catch((error) => {
+        this._surfaceData = null;
+        logger.error(`[Planet:${this.name}] Async surface data generation failed: ${error}`);
+        throw error;
+      })
+      .finally(() => {
+        this._surfaceGenerationPromise = null;
+      });
+    return this._surfaceGenerationPromise;
+  }
+
+  prepareSurfaceInBackground(): void {
+    const provider = getSurfaceGenerationProvider();
+    if (!provider.generateSurfaceDataAsync || this._surfaceData || this._surfaceGenerationPromise) return;
+    void this.prepareSurfaceReady().catch((error) => {
+      logger.warn(`[Planet:${this.name}] Background surface preparation failed: ${error}`);
+    });
+  }
+
+  private createSurfaceGenerationRequest(): SurfaceGenerationRequest {
+    return {
+      planetType: this.type,
+      mapSeed: this.mapSeed,
+      prngSeed: this.systemPRNG.getInitialSeed(),
+      atmosphere: this.atmosphere,
+      planetAbundance: this.elementAbundance,
+      profile: {
+        mineralRichness: this.mineralRichness,
+        baseMinerals: this.baseMinerals,
+        metallicityFeH: this.stellarEnvironment.metallicityFeH,
+        surfaceTemp: this.surfaceTemp,
+        hydrosphere: this.hydrosphere,
+      },
+    };
+  }
+
+  private validateSurfaceData(): void {
+    if (!this._surfaceData) {
+      throw new Error('Surface generator returned null data.');
+    }
+    const isSolid = this.type !== 'GasGiant' && this.type !== 'IceGiant';
+    if (
+      isSolid &&
+      (!this._surfaceData.heightmap ||
+        this._surfaceData.heightmap.length === 0 ||
+        !this._surfaceData.heightLevelColors ||
+        this._surfaceData.heightLevelColors.length === 0 ||
+        !this._surfaceData.surfaceElementMap ||
+        this._surfaceData.surfaceElementMap.length === 0)
+    ) {
+      const missing = [];
+      if (!this._surfaceData.heightmap || this._surfaceData.heightmap.length === 0) missing.push('heightmap');
+      if (!this._surfaceData.heightLevelColors || this._surfaceData.heightLevelColors.length === 0)
+        missing.push('heightLevelColors');
+      if (!this._surfaceData.surfaceElementMap || this._surfaceData.surfaceElementMap.length === 0)
+        missing.push('surfaceElementMap');
+      throw new Error(`Surface generator returned incomplete data for solid planet (missing/empty: ${missing.join(', ')}).`);
+    }
+    if (!isSolid && (!this._surfaceData.rgbPaletteCache || this._surfaceData.rgbPaletteCache.length === 0)) {
+      throw new Error('Surface generator returned incomplete data for gas/ice giant (missing/empty palette).');
     }
   }
 

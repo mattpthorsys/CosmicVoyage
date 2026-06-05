@@ -8,8 +8,13 @@ import { logger } from './utils/logger';
 // Import other necessary modules
 import { Game } from './core/game';
 import { CONFIG } from './config'; // CONFIG needed for seed reporting
+import { setSurfaceGenerationProvider } from './entities/planet/surface_generation_provider';
+import { WorkerSurfaceGenerationProvider } from './entities/planet/surface_generation_worker_client';
 
 logger.info("main.ts executing...");
+
+setSurfaceGenerationProvider(new WorkerSurfaceGenerationProvider());
+logger.info("Surface generation worker provider registered.");
 
 function renderFatalInitializationError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);

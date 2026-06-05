@@ -18,6 +18,27 @@ export interface SurfaceData {
   liquidOverlay: SurfaceLiquidOverlay | null;
 }
 
+export interface SurfaceGenerationRequest {
+  planetType: string;
+  mapSeed: string;
+  prngSeed: string;
+  atmosphere: Atmosphere;
+  planetAbundance: Record<string, number>;
+  profile?: SurfaceElementGenerationProfile;
+}
+
+/** Worker-safe pure surface generation entry point. */
+export function generateSurfaceDataFromRequest(request: SurfaceGenerationRequest): SurfaceData {
+  return generateSurfaceDataInternal(
+    request.planetType,
+    request.mapSeed,
+    new PRNG(request.prngSeed),
+    request.atmosphere,
+    request.planetAbundance,
+    request.profile ?? {}
+  );
+}
+
 /** Generates surface data (heightmap, colours, palettes, element map) for a planet. */
 export class SurfaceGenerator {
   private prng: PRNG;
@@ -36,81 +57,93 @@ export class SurfaceGenerator {
 
   /** Generates all necessary surface data based on planet type. */
   generateSurfaceData(planetAbundance: Record<string, number>, profile: SurfaceElementGenerationProfile = {}): SurfaceData {
-    logger.info(`[SurfaceGen:${this.planetType}] Generating surface data...`);
-    let heightmap: number[][] | null = null;
-    let heightLevelColors: string[] | null = null;
-    let rgbPaletteCache: RgbColour[] | null = null;
-    let surfaceElementMap: string[][] | null = null;
-    let liquidOverlay: SurfaceLiquidOverlay | null = null;
-
-    rgbPaletteCache = generateRgbPaletteCache(this.planetType);
-
-    // --- Handle Gas Giants/Ice Giants (Palette Cache Only) ---
-    if (this.planetType === 'GasGiant' || this.planetType === 'IceGiant') {
-      if (!rgbPaletteCache) {
-        logger.error(`[SurfaceGen:${this.planetType}] Failed to generate RGB palette.`);
-      } else {
-        logger.info(`[SurfaceGen:${this.planetType}] Generated RGB palette cache.`);
-      }
-    }
-    // --- Handle Solid Planets (Heightmap, Colors, Element Map) ---
-    else {
-      heightmap = generateHeightmap(this.mapSeed, this.planetType, this.atmosphere);
-
-      if (heightmap) {
-        liquidOverlay = createSurfaceLiquidOverlay({
-          planetType: this.planetType,
-          hydrosphere: profile.hydrosphere ?? '',
-          surfaceTemp: profile.surfaceTemp ?? 288,
-          atmosphere: this.atmosphere,
-          heightmap,
-        });
-
-        // Generate Element Map using overall planet abundance and heightmap
-        surfaceElementMap = generateSurfaceElementMap(
-          this.planetType, // Pass necessary context
-          this.mapSeed,
-          this.prng,
-          planetAbundance,
-          heightmap,
-          profile
-        );
-
-        if (!surfaceElementMap) {
-          logger.error(`[SurfaceGen:${this.planetType}] Surface element map generation failed.`);
-        } else if (liquidOverlay) {
-          surfaceElementMap = maskSubmergedElements(surfaceElementMap, heightmap, liquidOverlay);
-        }
-
-        // Generate colours based on the final heightmap
-        if (rgbPaletteCache) {
-          heightLevelColors = generateHeightLevelColors(this.planetType, rgbPaletteCache);
-          if (heightLevelColors) {
-            logger.info(
-              `[SurfaceGen:${this.planetType}] Generated heightmap (${heightmap.length}x${heightmap.length}), element map, and height level colours.`
-            );
-          } else {
-            logger.error(`[SurfaceGen:${this.planetType}] Failed to generate height level colours.`);
-          }
-        } else {
-          logger.error(
-            `[SurfaceGen:${this.planetType}] Failed to generate RGB palette, cannot generate height level colours.`
-          );
-          heightLevelColors = null;
-        }
-      } else {
-        logger.error(
-          `[SurfaceGen:${this.planetType}] Heightmap generation failed. Cannot generate colours or element map.`
-        );
-        heightLevelColors = null;
-        rgbPaletteCache = null;
-        surfaceElementMap = null;
-      }
-    }
-
-    return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay };
+    return generateSurfaceDataInternal(
+      this.planetType,
+      this.mapSeed,
+      this.prng,
+      this.atmosphere,
+      planetAbundance,
+      profile
+    );
   }
 } // End SurfaceGenerator class
+
+function generateSurfaceDataInternal(
+  planetType: string,
+  mapSeed: string,
+  prng: PRNG,
+  atmosphere: Atmosphere,
+  planetAbundance: Record<string, number>,
+  profile: SurfaceElementGenerationProfile = {}
+): SurfaceData {
+  logger.info(`[SurfaceGen:${planetType}] Generating surface data...`);
+  let heightmap: number[][] | null = null;
+  let heightLevelColors: string[] | null = null;
+  let rgbPaletteCache: RgbColour[] | null = null;
+  let surfaceElementMap: string[][] | null = null;
+  let liquidOverlay: SurfaceLiquidOverlay | null = null;
+
+  rgbPaletteCache = generateRgbPaletteCache(planetType);
+
+  // --- Handle Gas Giants/Ice Giants (Palette Cache Only) ---
+  if (planetType === 'GasGiant' || planetType === 'IceGiant') {
+    if (!rgbPaletteCache) {
+      logger.error(`[SurfaceGen:${planetType}] Failed to generate RGB palette.`);
+    } else {
+      logger.info(`[SurfaceGen:${planetType}] Generated RGB palette cache.`);
+    }
+  }
+  // --- Handle Solid Planets (Heightmap, Colors, Element Map) ---
+  else {
+    heightmap = generateHeightmap(mapSeed, planetType, atmosphere);
+
+    if (heightmap) {
+      liquidOverlay = createSurfaceLiquidOverlay({
+        planetType,
+        hydrosphere: profile.hydrosphere ?? '',
+        surfaceTemp: profile.surfaceTemp ?? 288,
+        atmosphere,
+        heightmap,
+      });
+
+      surfaceElementMap = generateSurfaceElementMap(
+        planetType,
+        mapSeed,
+        prng,
+        planetAbundance,
+        heightmap,
+        profile
+      );
+
+      if (!surfaceElementMap) {
+        logger.error(`[SurfaceGen:${planetType}] Surface element map generation failed.`);
+      } else if (liquidOverlay) {
+        surfaceElementMap = maskSubmergedElements(surfaceElementMap, heightmap, liquidOverlay);
+      }
+
+      if (rgbPaletteCache) {
+        heightLevelColors = generateHeightLevelColors(planetType, rgbPaletteCache);
+        if (heightLevelColors) {
+          logger.info(
+            `[SurfaceGen:${planetType}] Generated heightmap (${heightmap.length}x${heightmap.length}), element map, and height level colours.`
+          );
+        } else {
+          logger.error(`[SurfaceGen:${planetType}] Failed to generate height level colours.`);
+        }
+      } else {
+        logger.error(`[SurfaceGen:${planetType}] Failed to generate RGB palette, cannot generate height level colours.`);
+        heightLevelColors = null;
+      }
+    } else {
+      logger.error(`[SurfaceGen:${planetType}] Heightmap generation failed. Cannot generate colours or element map.`);
+      heightLevelColors = null;
+      rgbPaletteCache = null;
+      surfaceElementMap = null;
+    }
+  }
+
+  return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay };
+}
 
 function maskSubmergedElements(
   elementMap: string[][],
