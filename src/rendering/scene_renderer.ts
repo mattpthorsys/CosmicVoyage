@@ -1217,11 +1217,17 @@ export class SceneRenderer {
 
     const side = projectedX < cx ? -1 : 1;
     const primary = model.stellarSources.find((source) => source.primary) ?? model.stellarSources[0];
-    const primaryColour = primary.brightness > 1.1
-      ? TEXT_PALETTE.amber
-      : TEXT_PALETTE.amberDim;
+    const primaryColour = this.getOrbitStellarSourceColour(primary.colour, primary.brightness);
 
-    this.screenBuffer.drawChar(GLYPHS.STELLAR_SOURCE, projectedX, projectedY, primaryColour, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawScaledChar(
+      GLYPHS.STELLAR_SOURCE,
+      projectedX,
+      projectedY,
+      primaryColour,
+      CONFIG.DEFAULT_BG_COLOUR,
+      0.5,
+      0.5
+    );
 
     model.stellarSources
       .filter((source) => source.id !== primary.id)
@@ -1238,15 +1244,24 @@ export class SceneRenderer {
           companionY >= viewY + viewHeight - 1 ||
           Math.hypot(companionX - cx, companionY - cy) <= planetMaskRadius
         ) return;
-        const colour = source.brightness > 0.7 ? TEXT_PALETTE.amberDim : TEXT_PALETTE.textMuted;
-        this.screenBuffer.drawChar(
+        const colour = this.getOrbitStellarSourceColour(source.colour, source.brightness * 0.72);
+        this.screenBuffer.drawScaledChar(
           GLYPHS.STAR_DIM,
           companionX,
           companionY,
           colour,
-          CONFIG.DEFAULT_BG_COLOUR
+          CONFIG.DEFAULT_BG_COLOUR,
+          0.5,
+          0.5
         );
       });
+  }
+
+  private getOrbitStellarSourceColour(colour: string | undefined, brightness: number): string {
+    const base = this.hexToRgbFallback(colour ?? TEXT_PALETTE.amber);
+    const boost = Math.max(1.08, Math.min(1.62, 1.22 + brightness * 0.24));
+    const brightened = adjustBrightness(base, boost);
+    return rgbToHex(brightened.r, brightened.g, brightened.b);
   }
 
   private calculateGlobeLighting(planet: Planet, longitude: number, latitude: number, viewNormalZ: number): { brightness: number; glyph: number } {

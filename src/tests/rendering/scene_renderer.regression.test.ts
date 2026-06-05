@@ -19,6 +19,8 @@ type DrawCall = {
   y: number;
   fg: string | null | undefined;
   bg: string | null | undefined;
+  scaleX?: number;
+  scaleY?: number;
 };
 
 function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuffer; drawCalls: DrawCall[]; stagedFrames: readonly unknown[][] } {
@@ -32,8 +34,8 @@ function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuf
     drawChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
       drawCalls.push({ char, x, y, fg, bg });
     }),
-    drawScaledChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
-      drawCalls.push({ char, x, y, fg, bg });
+    drawScaledChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null, scaleX?: number, scaleY?: number) => {
+      drawCalls.push({ char, x, y, fg, bg, scaleX, scaleY });
     }),
     drawString: vi.fn((text: string, x: number, y: number, fg?: string | null, bg?: string | null) => {
       for (let index = 0; index < text.length; index++) {
@@ -536,7 +538,7 @@ describe('SceneRenderer visual regressions', () => {
       selectedBody: planet,
       bodies: [{ label: 'Primary', planet, selected: true }],
       mode: 'landing',
-      stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+      stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
       rotationPhase: 0.35,
       illuminationPhase: 0.35,
       landingCursorX: 12,
@@ -568,8 +570,8 @@ describe('SceneRenderer visual regressions', () => {
       bodies: [{ label: 'Primary', planet, selected: true }],
       mode: 'overview',
       stellarSources: [
-        { id: 'A', primary: true, brightness: 1 },
-        { id: 'B', primary: false, brightness: 0.4 },
+        { id: 'A', primary: true, brightness: 1, colour: '#FFFACD' },
+        { id: 'B', primary: false, brightness: 0.4, colour: '#FFC864' },
       ],
       rotationPhase: 0.35,
       illuminationPhase: 0.555,
@@ -581,7 +583,10 @@ describe('SceneRenderer visual regressions', () => {
       footer: ['Esc closes orbit.'],
     });
 
-    expect(drawCalls.some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(true);
+    const stellarSource = drawCalls.find((call) => call.char === GLYPHS.STELLAR_SOURCE);
+    expect(stellarSource).toBeDefined();
+    expect(stellarSource?.scaleX).toBe(0.5);
+    expect(stellarSource?.scaleY).toBe(0.5);
     expect(drawCalls.some((call) => call.char === GLYPHS.STAR_BRIGHT)).toBe(false);
     expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(true);
     expect(renderTextRows(drawCalls).some((line) => line.includes('SUN'))).toBe(false);
@@ -599,7 +604,7 @@ describe('SceneRenderer visual regressions', () => {
         selectedBody: planet,
         bodies: [{ label: 'Primary', planet, selected: true }],
         mode: 'overview',
-        stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+        stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
         rotationPhase: 0.35,
         illuminationPhase,
         landingCursorX: 12,
@@ -635,7 +640,7 @@ describe('SceneRenderer visual regressions', () => {
         selectedBody: planet,
         bodies: [{ label: 'Primary', planet, selected: true }],
         mode: 'overview',
-        stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+        stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
         rotationPhase: 0.35,
         illuminationPhase,
         landingCursorX: 12,
@@ -655,7 +660,7 @@ describe('SceneRenderer visual regressions', () => {
       selectedBody: planet,
       bodies: [{ label: 'Primary', planet, selected: true }],
       mode: 'overview',
-      stellarSources: [{ id: 'A', primary: true, brightness: 1 }],
+      stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
       rotationPhase: 0.35,
       illuminationPhase: 0,
       landingCursorX: 12,

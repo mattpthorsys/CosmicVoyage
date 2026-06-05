@@ -15,6 +15,7 @@ export interface OrbitStellarSource {
   id: string;
   primary: boolean;
   brightness: number;
+  colour: string;
 }
 
 export interface OrbitScreenModel {

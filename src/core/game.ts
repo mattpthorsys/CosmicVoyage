@@ -4949,7 +4949,7 @@ export class Game {
     });
   }
 
-  private getOrbitStellarSources(selectedBody: Planet): Array<{ id: string; primary: boolean; brightness: number }> {
+  private getOrbitStellarSources(selectedBody: Planet): Array<{ id: string; primary: boolean; brightness: number; colour: string }> {
     const system = this.stateManager.currentSystem;
     if (!system || system.stars.length === 0) return [];
     const starsByDistance = system.stars
@@ -4966,6 +4966,7 @@ export class Game {
       id: star.id,
       primary: star.id === nearestId,
       brightness: Math.max(0.12, Math.min(1.5, Math.sqrt(Math.max(0.01, star.luminosityW) / baselineLuminosity))),
+      colour: SPECTRAL_TYPES[star.starType]?.colour ?? SPECTRAL_TYPES.G.colour,
     }));
   }
 
