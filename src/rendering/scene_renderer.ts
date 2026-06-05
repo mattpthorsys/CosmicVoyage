@@ -34,6 +34,16 @@ interface HyperspaceFrameCache {
   cells: CellState[];
 }
 
+export interface HyperspaceRenderStats {
+  mode: 'fresh' | 'cached' | 'shifted' | 'skipped';
+  prefetchMs: number;
+  surveyMs: number;
+  buildMs: number;
+  shiftMs: number;
+  stageMs: number;
+  cells: number;
+}
+
 type GiantAtmosphereSample = {
   colour: string;
   brightness: number;
@@ -85,6 +95,15 @@ export class SceneRenderer {
   private hyperspaceSurveyService: HyperspaceSurveyService | null;
   private hyperspaceTileProvider: HyperspaceTileProvider;
   private hyperspaceFrameCache: HyperspaceFrameCache | null = null;
+  private lastHyperspaceRenderStats: HyperspaceRenderStats = {
+    mode: 'skipped',
+    prefetchMs: 0,
+    surveyMs: 0,
+    buildMs: 0,
+    shiftMs: 0,
+    stageMs: 0,
+    cells: 0,
+  };
 
   constructor(
     screenBuffer: ScreenBuffer,
@@ -107,17 +126,36 @@ export class SceneRenderer {
     this.hyperspaceFrameCache = null;
   }
 
+  getLastHyperspaceRenderStats(): HyperspaceRenderStats {
+    return { ...this.lastHyperspaceRenderStats };
+  }
+
   /** Draws the hyperspace view (stars, nebulae). */
   drawHyperspace(player: Player): void {
+    const stats: HyperspaceRenderStats = {
+      mode: 'skipped',
+      prefetchMs: 0,
+      surveyMs: 0,
+      buildMs: 0,
+      shiftMs: 0,
+      stageMs: 0,
+      cells: 0,
+    };
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
-    if (cols <= 0 || rows <= 0) return;
+    if (cols <= 0 || rows <= 0) {
+      this.lastHyperspaceRenderStats = stats;
+      return;
+    }
+    stats.cells = cols * rows;
 
     const viewCenterX = Math.floor(cols / 2);
     const viewCenterY = Math.floor(rows / 2);
     const startWorldX = player.position.worldX - viewCenterX;
     const startWorldY = player.position.worldY - viewCenterY;
+    const prefetchStart = performance.now();
     this.hyperspaceTileProvider.prefetchBackgroundRegion(startWorldX, startWorldY, cols, rows, 6);
+    stats.prefetchMs = performance.now() - prefetchStart;
 
     this.screenBuffer.clear(false);
     if (
@@ -127,21 +165,39 @@ export class SceneRenderer {
       this.hyperspaceFrameCache.startWorldX === startWorldX &&
       this.hyperspaceFrameCache.startWorldY === startWorldY
     ) {
+      const stageStart = performance.now();
       this.stageHyperspaceCells(this.hyperspaceFrameCache.cells, viewCenterX, viewCenterY, player);
+      stats.stageMs = performance.now() - stageStart;
+      stats.mode = 'cached';
+      this.lastHyperspaceRenderStats = stats;
       return;
     }
 
+    const shiftStart = performance.now();
     const shiftedCells = this.tryShiftHyperspaceFrame(startWorldX, startWorldY, cols, rows, viewCenterX, viewCenterY);
+    stats.shiftMs = performance.now() - shiftStart;
     if (shiftedCells) {
       this.hyperspaceFrameCache = { cols, rows, startWorldX, startWorldY, cells: shiftedCells };
+      const stageStart = performance.now();
       this.stageHyperspaceCells(shiftedCells, viewCenterX, viewCenterY, player);
+      stats.stageMs = performance.now() - stageStart;
+      stats.mode = 'shifted';
+      this.lastHyperspaceRenderStats = stats;
       return;
     }
 
+    const surveyStart = performance.now();
     const survey = this.hyperspaceSurveyService?.getSurvey(player.position.worldX, player.position.worldY, cols, rows);
+    stats.surveyMs = performance.now() - surveyStart;
+    const buildStart = performance.now();
     const cells = this.createHyperspaceBackgroundCells(cols, rows, startWorldX, startWorldY, viewCenterX, viewCenterY, survey?.visibleCells);
+    stats.buildMs = performance.now() - buildStart;
     this.hyperspaceFrameCache = { cols, rows, startWorldX, startWorldY, cells };
+    const stageStart = performance.now();
     this.stageHyperspaceCells(cells, viewCenterX, viewCenterY, player);
+    stats.stageMs = performance.now() - stageStart;
+    stats.mode = 'fresh';
+    this.lastHyperspaceRenderStats = stats;
   }
 
   private createHyperspaceBackgroundCells(

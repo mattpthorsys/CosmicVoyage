@@ -4,7 +4,7 @@ import { RenderStats, ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
 import { getNebulaColourProvider } from './nebula_colour_provider';
-import { SceneRenderer, SurfaceVehicleOverlayModel } from './scene_renderer';
+import { HyperspaceRenderStats, SceneRenderer, SurfaceVehicleOverlayModel } from './scene_renderer';
 import { StatusBarUpdater as ImportedStatusBarUpdater } from './status_bar_updater'; // Keep alias
 import { CommandStripUpdater } from './command_strip_updater';
 import { Player } from '../core/player';
@@ -201,6 +201,10 @@ export class RendererFacade {
 
   getLastRenderStats(): RenderStats {
     return this.screenBuffer.getLastRenderStats();
+  }
+
+  getLastHyperspaceRenderStats(): HyperspaceRenderStats {
+    return this.sceneRenderer.getLastHyperspaceRenderStats();
   }
 
   /** Updates the text content of the status bar element. (This method is now primarily called internally via event) */

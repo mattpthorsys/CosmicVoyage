@@ -4596,6 +4596,13 @@ export class Game {
       `PREP ${this.lastFrameProfile.renderPrepMs.toFixed(1)}  OVERLAY ${this.lastFrameProfile.overlayMs.toFixed(1)}  CANVAS ${stats.durationMs.toFixed(1)}ms`,
       `${stats.mode.toUpperCase()} CELLS ${stats.cellsDrawn}  BG ${stats.backgroundsDrawn}  GLYPHS ${stats.glyphsDrawn}`,
     ];
+    if (this.stateManager.state === 'hyperspace') {
+      const hyper = this.renderer.getLastHyperspaceRenderStats();
+      lines.push(
+        `HYPER ${hyper.mode.toUpperCase()} ${hyper.cells} CELLS  SURVEY ${hyper.surveyMs.toFixed(1)}  BUILD ${hyper.buildMs.toFixed(1)}ms`,
+        `PREF ${hyper.prefetchMs.toFixed(1)}  SHIFT ${hyper.shiftMs.toFixed(1)}  STAGE ${hyper.stageMs.toFixed(1)}ms`
+      );
+    }
     const widthChars = lines.reduce((max, line) => Math.max(max, line.length), 0) + 2;
     const x = charWidth;
     const y = charHeight;

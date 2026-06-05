@@ -230,9 +230,11 @@ describe('SceneRenderer visual regressions', () => {
     const player = new Player();
 
     renderer.drawHyperspace(player);
+    const firstStats = renderer.getLastHyperspaceRenderStats();
     const callsAfterFirstFrame = mapCalls;
     player.position.worldX += 1;
     renderer.drawHyperspace(player);
+    const shiftedStats = renderer.getLastHyperspaceRenderStats();
 
     const shiftedCalls = mapCalls - callsAfterFirstFrame;
     const lastFrame = stagedFrames[stagedFrames.length - 1] as Array<{ char: string | null }>;
@@ -240,6 +242,9 @@ describe('SceneRenderer visual regressions', () => {
     const centerCell = lastFrame[2 * 7 + 3];
 
     expect(callsAfterFirstFrame).toBe(35);
+    expect(firstStats.mode).toBe('fresh');
+    expect(firstStats.cells).toBe(35);
+    expect(shiftedStats.mode).toBe('shifted');
     expect(shiftedCalls).toBeLessThanOrEqual(5);
     expect(playerGlyphs).toHaveLength(1);
     expect(centerCell.char).toBe(player.render.char);
