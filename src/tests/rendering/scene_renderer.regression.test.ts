@@ -119,6 +119,18 @@ function createOrbitPlanet(): Planet {
   return planet;
 }
 
+function createAtmosphericOrbitPlanet(): Planet {
+  const planet = createOrbitPlanet();
+  Object.defineProperty(planet, 'atmosphere', {
+    value: {
+      density: 'Dense',
+      pressure: 1.1,
+      composition: { Nitrogen: 72, Oxygen: 21, Argon: 4, 'Water Vapor': 3 },
+    },
+  });
+  return planet;
+}
+
 function createSystem(): SolarSystem {
   return {
     name: 'Regression',
@@ -587,6 +599,7 @@ describe('SceneRenderer visual regressions', () => {
     expect(stellarSource).toBeDefined();
     expect(stellarSource?.scaleX).toBe(0.5);
     expect(stellarSource?.scaleY).toBe(0.5);
+    expect(Number.isInteger(stellarSource?.x)).toBe(false);
     expect(drawCalls.some((call) => call.char === GLYPHS.STAR_BRIGHT)).toBe(false);
     expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(true);
     expect(renderTextRows(drawCalls).some((line) => line.includes('SUN'))).toBe(false);
@@ -673,6 +686,64 @@ describe('SceneRenderer visual regressions', () => {
 
     expect(drawCalls.some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(false);
     expect(drawAtPhase(0.4).some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(false);
+  });
+
+  it('adds a fading atmospheric horizon glow near orbital sunrise and sunset', () => {
+    const renderAtPhase = (illuminationPhase: number): DrawCall[] => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const renderer = createSceneRenderer(buffer);
+      const planet = createAtmosphericOrbitPlanet();
+      renderer.drawOrbitInterface({
+        title: 'Orbital Operations',
+        subtitle: 'Regression Orbit I local space',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [{ label: 'Primary', planet, selected: true }],
+        mode: 'overview',
+        stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
+        rotationPhase: 0.35,
+        illuminationPhase,
+        landingCursorX: 12,
+        landingCursorY: 18,
+        mapSize: 32,
+        description: ['Regression atmospheric horizon.'],
+        telemetry: ['Body Regression Orbit I'],
+        footer: ['Esc closes orbit.'],
+      });
+      return drawCalls;
+    };
+
+    const rimCalls = renderAtPhase(0.278).filter(
+      (call) =>
+        (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
+        call.scaleX === 0.5 &&
+        call.scaleY === 0.5 &&
+        call.y >= 15 &&
+        call.y <= 39 &&
+        call.x < 12
+    );
+    const deepNightRimCalls = renderAtPhase(0.4).filter(
+      (call) =>
+        (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
+        call.scaleX === 0.5 &&
+        call.scaleY === 0.5 &&
+        call.y >= 15 &&
+        call.y <= 39 &&
+        (call.x < 12 || call.x > 36)
+    );
+    const broadCrescentRimCalls = renderAtPhase(0.31).filter(
+      (call) =>
+        (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
+        call.scaleX === 0.5 &&
+        call.scaleY === 0.5 &&
+        call.y >= 15 &&
+        call.y <= 39 &&
+        (call.x < 12 || call.x > 36)
+    );
+
+    expect(rimCalls.length).toBeGreaterThan(2);
+    expect(broadCrescentRimCalls.length).toBe(0);
+    expect(deepNightRimCalls.length).toBe(0);
   });
 
   it('changes visible globe texture as the orbital viewing phase advances', () => {

@@ -1098,6 +1098,7 @@ export class SceneRenderer {
     this.drawingContext.drawBox(panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
     this.screenBuffer.drawString(' ORBITAL VIEW ', panelX + 5, contentTop, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
     this.drawRotatingPlanetSphere(model, sphereCx, sphereCy, sphereRadius);
+    this.drawOrbitAtmosphericHorizon(model, sphereCx, sphereCy, sphereRadius);
     this.drawOrbitSunReference(model, sphereCx, sphereCy, sphereRadius, panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight);
     this.drawOrbitViewReadout(model, panelX + 5, contentTop + sphereBoxHeight - 3, leftColumnWidth - 4);
 
@@ -1203,8 +1204,8 @@ export class SceneRenderer {
     if (sun.z >= -0.02 || model.stellarSources.length === 0) return;
 
     const focalLength = radius * 0.95;
-    const projectedX = Math.round(cx + (sun.x / -sun.z) * focalLength);
-    const projectedY = Math.round(cy - (sun.y / -sun.z) * focalLength);
+    const projectedX = cx + (sun.x / -sun.z) * focalLength;
+    const projectedY = cy - (sun.y / -sun.z) * focalLength;
     if (
       projectedX <= viewX ||
       projectedX >= viewX + viewWidth - 1 ||
@@ -1262,6 +1263,91 @@ export class SceneRenderer {
     const boost = Math.max(1.08, Math.min(1.62, 1.22 + brightness * 0.24));
     const brightened = adjustBrightness(base, boost);
     return rgbToHex(brightened.r, brightened.g, brightened.b);
+  }
+
+  private drawOrbitAtmosphericHorizon(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
+    const atmosphere = model.selectedBody.atmosphere;
+    if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return;
+
+    const sun = this.getGlobeSunVector(model.illuminationPhase * Math.PI * 2);
+    if (sun.z >= -0.02) return;
+
+    const focalLength = radius * 0.95;
+    const projectedX = cx + (sun.x / -sun.z) * focalLength;
+    const projectedY = cy - (sun.y / -sun.z) * focalLength;
+    const planetMaskRadius = radius + 1;
+    const projectedDistance = Math.hypot(projectedX - cx, projectedY - cy);
+    const edgeDistance = Math.abs(projectedDistance - planetMaskRadius);
+    const edgeStrength = 1 - Math.min(1, edgeDistance / 2.25);
+    if (edgeStrength <= 0.02) return;
+
+    const pressureStrength = Math.max(0.22, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
+    const strength = edgeStrength * pressureStrength;
+    if (strength <= 0.08) return;
+
+    const source = model.stellarSources.find((candidate) => candidate.primary) ?? model.stellarSources[0];
+    const colour = this.getAtmosphericHorizonColour(model.selectedBody, source?.colour, strength);
+    const side = projectedX < cx ? -1 : 1;
+    const detailScale = 0.5;
+    const detailRadius = radius / detailScale;
+    const denseRim = atmosphere.pressure >= 0.45 || atmosphere.density === 'Dense' || atmosphere.density === 'Thick' || atmosphere.density === 'Superdense';
+
+    for (let dy = -detailRadius; dy <= detailRadius; dy++) {
+      const ny = dy / detailRadius;
+      if (Math.abs(ny) > 0.96) continue;
+      const verticalFade = Math.sqrt(Math.max(0, 1 - ny * ny));
+      if (verticalFade * strength < 0.12) continue;
+      if (strength < 0.44 && Math.abs(dy) % 3 === 1) continue;
+
+      const edgeX = side * Math.sqrt(Math.max(0, 1 - ny * ny)) * radius;
+      const screenY = cy + dy * detailScale;
+      const outsideX = cx + edgeX + side * 0.08;
+      this.screenBuffer.drawScaledChar(
+        GLYPHS.SHADE_LIGHT,
+        outsideX,
+        screenY,
+        colour,
+        CONFIG.DEFAULT_BG_COLOUR,
+        detailScale,
+        detailScale
+      );
+
+      if (denseRim && verticalFade * strength > 0.5) {
+        this.screenBuffer.drawScaledChar(
+          GLYPHS.SHADE_MEDIUM,
+          cx + edgeX - side * 0.42,
+          screenY,
+          colour,
+          CONFIG.DEFAULT_BG_COLOUR,
+          detailScale,
+          detailScale
+        );
+      }
+    }
+  }
+
+  private getAtmosphericHorizonColour(planet: Planet, starColour: string | undefined, strength: number): string {
+    const composition = planet.atmosphere?.composition ?? {};
+    const dominantGas = Object.entries(composition).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '';
+    const scatteringHex = this.getAtmosphericScatteringBaseColour(dominantGas, planet.atmosphere?.density ?? '');
+    const scattering = this.hexToRgbFallback(scatteringHex);
+    const star = this.hexToRgbFallback(starColour ?? '#FFFACD');
+    const starMix = Math.max(0.22, Math.min(0.48, 0.28 + strength * 0.16));
+    const mixed = interpolateColour(scattering, star, starMix);
+    const brightened = adjustBrightness(mixed, 1.05 + strength * 0.58);
+    return rgbToHex(brightened.r, brightened.g, brightened.b);
+  }
+
+  private getAtmosphericScatteringBaseColour(dominantGas: string, density: string): string {
+    if (dominantGas.includes('Methane') || dominantGas.includes('Hydrogen Cyanide')) return '#5BD6C8';
+    if (dominantGas.includes('Sulfur') || dominantGas.includes('Hydrogen Sulfide')) return '#FFB04A';
+    if (dominantGas.includes('Carbon Dioxide') || dominantGas.includes('Carbon Monoxide')) return '#FF8F62';
+    if (dominantGas.includes('Hydrogen') || dominantGas.includes('Helium')) return '#B9D8FF';
+    if (dominantGas.includes('Ammonia')) return '#D5E7BE';
+    if (dominantGas.includes('Water')) return '#91D7FF';
+    if (dominantGas.includes('Oxygen') || dominantGas.includes('Ozone')) return '#74A9FF';
+    if (density === 'Trace' || density === 'Thin') return '#7DB7FF';
+    return '#6EA8FF';
   }
 
   private calculateGlobeLighting(planet: Planet, longitude: number, latitude: number, viewNormalZ: number): { brightness: number; glyph: number } {
