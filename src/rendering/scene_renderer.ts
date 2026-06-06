@@ -56,6 +56,11 @@ type GiantVisualFamily = 'jovian' | 'saturnian' | 'uranian' | 'neptunian' | 'hot
 
 type GiantStormTone = 'bright' | 'warm' | 'dark';
 
+type GiantCloudRibbonSample = {
+  strength: number;
+  tint: RgbColour;
+};
+
 interface GiantVisualProfile {
   family: GiantVisualFamily;
   palette: RgbColour[];
@@ -823,6 +828,11 @@ export class SceneRenderer {
       base = adjustBrightness(base, 1 + streak);
     }
 
+    const ribbon = this.sampleGiantCloudRibbons(planet, shearedLon, lat, profile, phase01, turbulence);
+    if (ribbon.strength > 0.001) {
+      base = interpolateColour(base, ribbon.tint, ribbon.strength);
+    }
+
     const storm = this.sampleGiantStormField(planet, shearedLon, lat, phase01, turbulence, profile);
     const mottling =
       Math.sin(shearedLon * Math.PI * (30 + profile.streakDensity * 18) + lat * Math.PI * 11 - phase * 0.16) * 0.026 +
@@ -838,7 +848,7 @@ export class SceneRenderer {
     }
 
     const final = adjustBrightness(base, Math.max(0.5, Math.min(1.38, brightness)));
-    const texture = Math.abs(fineWave) + bandEdge * 0.45 + Math.abs(streak) * 1.8 + Math.max(0, storm) * 0.85 + turbulence * Math.abs(mottling) * 5;
+    const texture = Math.abs(fineWave) + bandEdge * 0.45 + Math.abs(streak) * 1.8 + ribbon.strength * 1.4 + Math.max(0, storm) * 0.85 + turbulence * Math.abs(mottling) * 5;
     return {
       colour: rgbToHex(final.r, final.g, final.b),
       brightness,
@@ -901,6 +911,74 @@ export class SceneRenderer {
     const latEnvelope = 1 - Math.min(1, Math.abs(latitude01 - 0.5) * (profile.family === 'uranian' ? 2.8 : 1.7));
     const sign = this.hashUnit(seed + ':light') > 0.45 ? 1 : -1;
     return sign * gate * profile.streakContrast * profile.streakDensity * Math.max(0.15, latEnvelope);
+  }
+
+  private sampleGiantCloudRibbons(
+    planet: Planet,
+    longitude01: number,
+    latitude01: number,
+    profile: GiantVisualProfile,
+    phase01: number,
+    turbulence: number
+  ): GiantCloudRibbonSample {
+    const heatBias = this.getGiantHeatBias(planet);
+    const isIceGiant = planet.type === 'IceGiant';
+    const baseCount =
+      profile.family === 'hot' ? 5 :
+      profile.family === 'saturnian' ? 4 :
+      profile.family === 'jovian' || profile.family === 'neptunian' ? 3 :
+      2;
+    const ribbonCount = baseCount + (heatBias > 0.62 ? 1 : 0);
+    let strongest = 0;
+    let tint = isIceGiant ? { r: 218, g: 246, b: 255 } : { r: 246, g: 239, b: 220 };
+
+    for (let index = 0; index < ribbonCount; index++) {
+      const seed = `${planet.name}:${profile.family}:cloud-ribbon:${index}`;
+      const baseLatitude = 0.12 + this.hashUnit(seed + ':lat') * 0.76;
+      const width = 0.0028 + this.hashUnit(seed + ':width') * (isIceGiant ? 0.006 : 0.008);
+      const direction = index % 2 === 0 ? 1 : -1;
+      const drift = direction * phase01 * (0.004 + turbulence * 0.008);
+      const warpedLatitude =
+        baseLatitude +
+        Math.sin((longitude01 + drift) * Math.PI * (2 + this.hashUnit(seed + ':wave') * 4) + this.hashUnit(seed + ':phase') * Math.PI * 2) *
+          width *
+          (0.35 + turbulence * 0.9);
+      const latDistance = Math.abs(latitude01 - warpedLatitude);
+      if (latDistance > width * 2.4) continue;
+
+      const centreLongitude = this.wrapUnit(this.hashUnit(seed + ':lon') + drift);
+      const arcRadius = 0.12 + this.hashUnit(seed + ':length') * 0.34;
+      const longitudeDistance = Math.abs(this.shortestUnitDelta(longitude01, centreLongitude));
+      const arcEnvelope = 1 - this.smoothstep(arcRadius * 0.72, arcRadius, longitudeDistance);
+      if (arcEnvelope <= 0) continue;
+
+      const longitudinalBreaks =
+        0.68 +
+        0.32 * Math.sin(longitude01 * Math.PI * (8 + this.hashUnit(seed + ':segments') * 14) + this.hashUnit(seed + ':break-phase') * Math.PI * 2);
+      const latitudeEnvelope = Math.exp(-Math.pow(latDistance / Math.max(0.0001, width), 2) * 2.6);
+      const weatherVisibility = 0.42 + turbulence * 0.24 + heatBias * 0.22;
+      const strength = Math.min(0.42, latitudeEnvelope * arcEnvelope * longitudinalBreaks * weatherVisibility);
+      if (strength <= strongest) continue;
+
+      strongest = strength;
+      if (isIceGiant) {
+        const blueBias = this.hashUnit(seed + ':tint');
+        tint = {
+          r: Math.round(210 + blueBias * 28),
+          g: Math.round(238 + blueBias * 15),
+          b: 255,
+        };
+      } else {
+        const tone = this.hashUnit(seed + ':tint');
+        tint = tone < 0.34
+          ? { r: 250, g: 246, b: 230 }
+          : tone < 0.67
+            ? { r: 244, g: 224, b: 188 }
+            : { r: 232, g: 205, b: 174 };
+      }
+    }
+
+    return { strength: strongest, tint };
   }
 
   private getGiantVisualProfile(planet: Planet, fallbackPalette: RgbColour[]): GiantVisualProfile {

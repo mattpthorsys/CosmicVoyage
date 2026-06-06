@@ -10,7 +10,7 @@ import { SolarSystem } from '../../entities/solar_system';
 import { SystemDataGenerator } from '../../generation/system_data_generator';
 import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
-import { GLYPHS } from '../../constants';
+import { AU_IN_METERS, GLYPHS } from '../../constants';
 import { TEXT_PALETTE } from '../../rendering/text_palette';
 
 type DrawCall = {
@@ -97,7 +97,7 @@ function createGasGiantPlanet(): Planet {
   return planet;
 }
 
-function createIceGiantPlanet(name = 'Regression Ice Giant', surfaceTemp = 78): Planet {
+function createIceGiantPlanet(name = 'Regression Ice Giant', surfaceTemp = 78, orbitDistance = 2.9e12): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
     name: { value: name },
@@ -111,7 +111,7 @@ function createIceGiantPlanet(name = 'Regression Ice Giant', surfaceTemp = 78): 
       ],
     },
     surfaceTemp: { value: surfaceTemp },
-    orbitDistance: { value: 2.9e12 },
+    orbitDistance: { value: orbitDistance },
     gravity: { value: 1.1 },
     orbitAngle: { value: 0.7 },
     systemPRNG: { value: new PRNG(`${name}-seed`) },
@@ -379,6 +379,43 @@ describe('SceneRenderer visual regressions', () => {
     expect(average(gasSamples, 'r')).toBeGreaterThan(average(gasSamples, 'b'));
     expect(average(iceSamples, 'b')).toBeGreaterThan(average(iceSamples, 'r'));
     expect(channelRange(gasSamples, 'r') + channelRange(gasSamples, 'g')).toBeGreaterThan(channelRange(iceSamples, 'r') + channelRange(iceSamples, 'g'));
+  });
+
+  it('adds sparse narrow cloud ribbons whose visibility responds to giant-planet weather energy', () => {
+    const { buffer } = createMockScreenBuffer(100, 54);
+    const renderer = createSceneRenderer(buffer) as any;
+    const cold = createIceGiantPlanet('Cold Ribbon Giant', 68);
+    const warm = createIceGiantPlanet('Warm Ribbon Giant', 230, 0.55 * AU_IN_METERS);
+    const coldProfile = renderer.getGiantVisualProfile(cold, cold.rgbPaletteCache);
+    const warmProfile = renderer.getGiantVisualProfile(warm, warm.rgbPaletteCache);
+    const sampleField = (planet: Planet, profile: unknown): { peak: number; mean: number } => {
+      let peak = 0;
+      let total = 0;
+      let samples = 0;
+      for (let y = 0; y <= 500; y++) {
+        for (let x = 0; x <= 80; x++) {
+          const strength = renderer.sampleGiantCloudRibbons(
+            planet,
+            x / 80,
+            y / 500,
+            profile,
+            0.2,
+            renderer.getGasGiantTurbulenceFactor(planet)
+          ).strength;
+          peak = Math.max(peak, strength);
+          total += strength;
+          samples++;
+        }
+      }
+      return { peak, mean: total / samples };
+    };
+
+    const coldField = sampleField(cold, coldProfile);
+    const warmField = sampleField(warm, warmProfile);
+
+    expect(coldField.peak).toBeGreaterThan(0.08);
+    expect(coldField.peak).toBeLessThanOrEqual(0.42);
+    expect(warmField.mean).toBeGreaterThan(coldField.mean);
   });
 
   it('keeps starbase interiors free of background star effects', () => {
