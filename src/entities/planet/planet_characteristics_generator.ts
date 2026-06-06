@@ -38,6 +38,20 @@ export interface PlanetGenerationOptions {
     rotationPeriodHours?: number;
 }
 
+export function generateAxialTiltRad(prng: PRNG, tidallyLocked = false, outlierChance = 0.12): number {
+    if (tidallyLocked) return prng.random(0, Math.PI / 36);
+
+    const roll = prng.random();
+    if (roll < outlierChance) {
+        // Uranus-like obliquity from major impacts or late dynamical disturbance.
+        return prng.random((62 * Math.PI) / 180, (98 * Math.PI) / 180);
+    }
+    if (roll < outlierChance + 0.18) {
+        return prng.random((28 * Math.PI) / 180, (55 * Math.PI) / 180);
+    }
+    return Math.pow(prng.random(), 1.35) * (28 * Math.PI) / 180;
+}
+
 /** Main function to generate all characteristics. */
 export function generatePlanetCharacteristics(
     planetType: string,
@@ -69,8 +83,8 @@ export function generatePlanetCharacteristics(
     // 4. Generate Atmosphere (NOW pass escape velocity)
     const atmosphere = generateAtmosphere(planetPRNG, planetType, gravity, escapeVelocity, parentStarType, orbitDistance, environment);
 
-    const axialTilt = planetPRNG.random(0, Math.PI / 4);
     const tidallyLocked = options.tidallyLocked ?? false;
+    const axialTilt = generateAxialTiltRad(planetPRNG, tidallyLocked);
     const orbitalInclination = planetPRNG.random(0, Math.PI / 18);
 
     // 5. Calculate Final Surface Temperature (uses atmosphere and physical state)

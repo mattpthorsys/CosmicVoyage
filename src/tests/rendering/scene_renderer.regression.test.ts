@@ -966,6 +966,63 @@ describe('SceneRenderer visual regressions', () => {
     expect(renderSignatureAtPhase(0.1)).not.toEqual(renderSignatureAtPhase(0.35));
   });
 
+  it('moves the visible poles through the orbit without rotating the screen frame', () => {
+    const { buffer } = createMockScreenBuffer(80, 40);
+    const renderer = createSceneRenderer(buffer) as unknown as {
+      transformOrbitViewNormalToBodyFrame: (
+        x: number,
+        y: number,
+        z: number,
+        axialTilt: number,
+        orbitPhase: number
+      ) => { x: number; y: number; z: number };
+    };
+
+    const untiltedQuarterOrbit = renderer.transformOrbitViewNormalToBodyFrame(
+      0,
+      0,
+      1,
+      0,
+      Math.PI / 2
+    );
+    expect(untiltedQuarterOrbit.x).toBeCloseTo(1, 8);
+    expect(untiltedQuarterOrbit.y).toBeCloseTo(0, 8);
+    expect(untiltedQuarterOrbit.z).toBeCloseTo(0, 8);
+
+    const northPoleView = renderer.transformOrbitViewNormalToBodyFrame(
+      0,
+      0,
+      1,
+      Math.PI / 4,
+      0
+    );
+    expect(northPoleView.x).toBeCloseTo(0, 8);
+    expect(northPoleView.y).toBeCloseTo(Math.SQRT1_2, 8);
+    expect(northPoleView.z).toBeCloseTo(Math.SQRT1_2, 8);
+
+    const southPoleView = renderer.transformOrbitViewNormalToBodyFrame(
+      0,
+      0,
+      1,
+      Math.PI / 4,
+      Math.PI
+    );
+    expect(southPoleView.x).toBeCloseTo(0, 8);
+    expect(southPoleView.y).toBeCloseTo(-Math.SQRT1_2, 8);
+    expect(southPoleView.z).toBeCloseTo(-Math.SQRT1_2, 8);
+
+    const equatorialView = renderer.transformOrbitViewNormalToBodyFrame(
+      0,
+      0,
+      1,
+      Math.PI / 4,
+      Math.PI / 2
+    );
+    expect(equatorialView.x).toBeCloseTo(1, 8);
+    expect(equatorialView.y).toBeCloseTo(0, 8);
+    expect(equatorialView.z).toBeCloseTo(0, 8);
+  });
+
   it('places ocean glint near the specular star-view alignment', () => {
     const { buffer } = createMockScreenBuffer(80, 40);
     const renderer = createSceneRenderer(buffer) as any;

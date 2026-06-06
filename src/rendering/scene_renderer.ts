@@ -1217,9 +1217,9 @@ export class SceneRenderer {
   private drawRotatingPlanetSphere(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
     const planet = model.selectedBody;
     const orbitPhase = model.illuminationPhase * Math.PI * 2;
-    // The orbit phase changes the viewing longitude; physical rotation adds a slower
-    // surface drift so the same orbital pass does not become a static light cycle.
-    const texturePhase = (model.illuminationPhase + model.rotationPhase) * Math.PI * 2;
+    // Orbital motion is handled by the camera-to-body transform. Texture phase is
+    // reserved for the body's own rotation.
+    const texturePhase = model.rotationPhase * Math.PI * 2;
     const cachedSurface = this.getCachedSolidSurfaceData(planet);
     const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightmap ?? null;
     const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
@@ -1343,26 +1343,34 @@ export class SceneRenderer {
     if (d > 1) return null;
     const z = Math.sqrt(Math.max(0, 1 - d));
     const viewLongitude = Math.atan2(nx, z);
-    const textureLongitude = viewLongitude + texturePhase;
     const illuminationLongitude = viewLongitude + orbitPhase;
-    const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
+    const viewLatitude = Math.asin(Math.max(-1, Math.min(1, -ny)));
+    const bodyNormal = this.transformOrbitViewNormalToBodyFrame(
+      nx,
+      -ny,
+      z,
+      planet.axialTilt ?? 0,
+      orbitPhase
+    );
+    const bodyLatitude = Math.asin(Math.max(-1, Math.min(1, bodyNormal.y)));
+    const textureLongitude = Math.atan2(bodyNormal.x, bodyNormal.z) + texturePhase;
     const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
-    const textureY = this.mercatorTextureY(lat);
+    const textureY = this.mercatorTextureY(bodyLatitude);
     const solidSample = solidMap && solidColours
       ? this.sampleSolidPlanetTexture(solidMap, solidColours, liquidOverlay, textureX, textureY)
       : null;
     const colour = solidSample?.colour ?? (
       planet.type === 'GasGiant' || planet.type === 'IceGiant'
-        ? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, lat, texturePhase)
+        ? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, bodyLatitude, texturePhase)
         : this.samplePendingSolidPlanetTexture(planet, textureX, textureY)
     );
-    const light = this.calculateGlobeLighting(planet, illuminationLongitude, lat, z);
+    const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z);
     const brightness = solidSample?.liquid
-      ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, lat, z)
+      ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, viewLatitude, z)
       : light.brightness;
     const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
     let finalColour = solidSample?.liquid && solidSample.reflectiveColour
-      ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, lat, z) * light.glyph)
+      ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph)
       : baseColour;
     finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
     const atmosphericTwilight = this.calculateAtmosphericGlobeTwilight(planet, light.glyph);
@@ -1377,6 +1385,36 @@ export class SceneRenderer {
       );
     }
     return finalColour;
+  }
+
+  private transformOrbitViewNormalToBodyFrame(
+    x: number,
+    y: number,
+    z: number,
+    axialTilt: number,
+    orbitPhase: number
+  ): { x: number; y: number; z: number } {
+    const phase = Number.isFinite(orbitPhase) ? orbitPhase : 0;
+    const tilt = Number.isFinite(axialTilt) ? axialTilt : 0;
+    const cosPhase = Math.cos(phase);
+    const sinPhase = Math.sin(phase);
+    const cosTilt = Math.cos(tilt);
+    const sinTilt = Math.sin(tilt);
+
+    // Move the visible normal into the fixed orbital frame. The observer travels
+    // around the orbital plane while screen-up remains parallel to its normal.
+    const worldX = x * cosPhase + z * sinPhase;
+    const worldY = y;
+    const worldZ = -x * sinPhase + z * cosPhase;
+
+    // The body's north pole is inclined within that orbital frame. Projecting the
+    // world normal onto this fixed body basis makes alternating poles become
+    // visible over an orbit without tilting the screen or the terminator.
+    return {
+      x: worldX,
+      y: worldY * cosTilt + worldZ * sinTilt,
+      z: -worldY * sinTilt + worldZ * cosTilt,
+    };
   }
 
   private drawOrbitSunReference(
@@ -1483,7 +1521,7 @@ export class SceneRenderer {
     const cachedSurface = this.getCachedSolidSurfaceData(model.selectedBody);
     const solidMap = model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant' ? null : cachedSurface?.heightmap ?? null;
     const solidColours = model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
-    const texturePhase = (model.illuminationPhase + model.rotationPhase) * Math.PI * 2;
+    const texturePhase = model.rotationPhase * Math.PI * 2;
     const orbitPhase = model.illuminationPhase * Math.PI * 2;
 
     for (let dy = -detailRadius; dy <= detailRadius; dy++) {

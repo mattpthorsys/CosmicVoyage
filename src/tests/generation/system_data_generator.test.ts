@@ -506,6 +506,27 @@ describe('SystemDataGenerator', () => {
     expect(checkedCapturedLikeMoon).toBe(true);
   });
 
+  it('allows rare Uranus-like high-obliquity planets while keeping most planets modestly tilted', () => {
+    const seed = new PRNG('haunting beauty');
+    const generator = new SystemDataGenerator(seed);
+    const tilts: number[] = [];
+
+    for (let y = -40; y <= 40; y++) {
+      for (let x = -40; x <= 40; x++) {
+        const props = generator.getSystemProperties(x, y);
+        if (!props.exists) continue;
+        const system = new SolarSystem(props, x, y, seed);
+        system.planets.forEach((planet) => {
+          if (planet && !planet.tidallyLocked) tilts.push((planet.axialTilt * 180) / Math.PI);
+        });
+      }
+    }
+
+    expect(tilts.length).toBeGreaterThan(50);
+    expect(tilts.some((tilt) => tilt >= 62)).toBe(true);
+    expect(tilts.filter((tilt) => tilt <= 28).length).toBeGreaterThan(tilts.length * 0.45);
+  });
+
   it('creates explorable starless systems for rogue planetary-mass objects', () => {
     const seed = new PRNG('haunting beauty');
     const generator = new SystemDataGenerator(seed);

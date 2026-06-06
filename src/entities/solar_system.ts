@@ -17,6 +17,7 @@ import { logger } from '../utils/logger';
 import { calculateGravity } from '../entities/planet/physical_generator';
 import {
   generateRotationPeriodHours,
+  generateAxialTiltRad,
   generatePlanetCharacteristics,
   PlanetCharacteristics,
 } from '../entities/planet/planet_characteristics_generator';
@@ -652,7 +653,7 @@ export class SolarSystem {
         : planetType === 'IceGiant'
           ? { density: 'Superdense', pressure: prng.random(80, 700), composition: { Hydrogen: 0.52, Helium: 0.18, Methane: 0.18, Ammonia: 0.12 } }
           : { density: 'Trace', pressure: prng.random(0.001, 0.08), composition: { Nitrogen: 0.35, Methane: 0.28, 'Carbon Dioxide': 0.22, Argon: 0.15 } };
-    const axialTilt = prng.random(0, Math.PI / 3);
+    const axialTilt = generateAxialTiltRad(prng, false);
     const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, planetType, atmosphere, {
       diameterKm: physical.diameter,
       densityGcm3: physical.density,
@@ -766,7 +767,7 @@ export class SolarSystem {
       pressure: surfaceTemp > 35 ? prng.random(0.001, 0.03) : 0,
       composition: { Nitrogen: 0.45, Methane: 0.35, Argon: 0.2 },
     };
-    const axialTilt = tidallyLocked ? prng.random(0, Math.PI / 60) : prng.random(0, Math.PI / 3);
+    const axialTilt = tidallyLocked ? prng.random(0, Math.PI / 60) : generateAxialTiltRad(prng, false, 0.08);
     const rotationPeriodHours = tidallyLocked
       ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass) / 3600
       : generateRotationPeriodHours(prng, moonType, diameter, density, moonOrbit_m, false);
@@ -1182,7 +1183,7 @@ export class SolarSystem {
       ? prng.random(0, Math.PI / 90)
       : tidallyLocked
         ? prng.random(0, Math.PI / 45)
-        : prng.random(Math.PI / 36, Math.PI / 3);
+        : generateAxialTiltRad(prng, false, isGiantParent ? 0.16 : 0.1);
     const orbitalInclination = isRegularGiantMoon
       ? prng.random(0, Math.PI / 180)
       : isGiantParent
