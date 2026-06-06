@@ -304,9 +304,9 @@ exports[`SceneRenderer visual regressions > renders the orbital operations scree
     "┐": 5,
     "└": 5,
     "┘": 5,
-    "█": 4272,
+    "█": 4364,
   },
-  "totalCalls": 21574,
+  "totalCalls": 21666,
 }
 `;
 

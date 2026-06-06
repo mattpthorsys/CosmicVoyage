@@ -1122,47 +1122,41 @@ export class SceneRenderer {
     const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
-    for (let dy = -detailRadius; dy <= detailRadius; dy++) {
-      for (let dx = -detailRadius; dx <= detailRadius; dx++) {
-        const nx = dx / detailRadius;
-        const ny = dy / detailRadius;
-        const d = nx * nx + ny * ny;
-        if (d > 1) continue;
-        const z = Math.sqrt(Math.max(0, 1 - d));
-        const viewLongitude = Math.atan2(nx, z);
-        const textureLongitude = viewLongitude + texturePhase;
-        const illuminationLongitude = viewLongitude + orbitPhase;
-        const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
-        const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
-        const textureY = this.mercatorTextureY(lat);
-        const solidSample = solidMap && solidColours
-          ? this.sampleSolidPlanetTexture(solidMap, solidColours, cachedSurface?.liquidOverlay ?? null, textureX, textureY)
-          : null;
-        const colour = solidSample?.colour ?? (
-          planet.type === 'GasGiant' || planet.type === 'IceGiant'
-            ? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, lat, texturePhase)
-            : this.samplePendingSolidPlanetTexture(planet, textureX, textureY)
-        );
-        const light = this.calculateGlobeLighting(planet, illuminationLongitude, lat, z);
-        const brightness = solidSample?.liquid
-          ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, lat, z)
-          : light.brightness;
-        const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
-        let finalColour = solidSample?.liquid && solidSample.reflectiveColour
-          ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, lat, z) * light.glyph)
-          : baseColour;
-        finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
-        const atmosphericTwilight = this.calculateAtmosphericGlobeTwilight(planet, light.glyph);
-        if (atmosphericTwilight > 0) {
-          finalColour = interpolateColour(
-            finalColour,
-            this.hexToRgbFallback(this.getAtmosphericScatteringBaseColour(
-              Object.entries(planet.atmosphere?.composition ?? {}).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '',
-              planet.atmosphere?.density ?? ''
-            )),
-            atmosphericTwilight
+    const rimThicknessPixels = 2;
+    const rimSamplesPerAxis = 4;
+    const drawRadius = detailRadius + rimThicknessPixels;
+    for (let dy = -drawRadius; dy <= drawRadius; dy++) {
+      for (let dx = -drawRadius; dx <= drawRadius; dx++) {
+        const distance = Math.hypot(dx, dy);
+        let finalColour: RgbColour | null = null;
+        if (distance <= detailRadius - rimThicknessPixels) {
+          finalColour = this.sampleOrbitGlobeColour(
+            planet,
+            solidMap,
+            solidColours,
+            cachedSurface?.liquidOverlay ?? null,
+            texturePhase,
+            orbitPhase,
+            dx,
+            dy,
+            detailRadius
+          );
+        } else if (distance <= detailRadius + rimThicknessPixels) {
+          finalColour = this.sampleOrbitGlobeRimColour(
+            planet,
+            solidMap,
+            solidColours,
+            cachedSurface?.liquidOverlay ?? null,
+            texturePhase,
+            orbitPhase,
+            dx,
+            dy,
+            detailRadius,
+            rimSamplesPerAxis,
+            TEXT_PALETTE.background
           );
         }
+        if (!finalColour) continue;
         const finalHex = rgbToHex(finalColour.r, finalColour.g, finalColour.b);
         this.screenBuffer.drawScaledChar(
           GLYPHS.BLOCK,
@@ -1175,6 +1169,111 @@ export class SceneRenderer {
         );
       }
     }
+  }
+
+  private sampleOrbitGlobeRimColour(
+    planet: Planet,
+    solidMap: number[][] | null,
+    solidColours: string[] | null,
+    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    texturePhase: number,
+    orbitPhase: number,
+    dx: number,
+    dy: number,
+    detailRadius: number,
+    samplesPerAxis: number,
+    backgroundColour: string
+  ): RgbColour | null {
+    const background = this.hexToRgbFallback(backgroundColour);
+    const step = 1 / Math.max(1, samplesPerAxis);
+    let coveredSamples = 0;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (let sy = 0; sy < samplesPerAxis; sy++) {
+      for (let sx = 0; sx < samplesPerAxis; sx++) {
+        const sampleDx = dx + (sx + 0.5) * step - 0.5;
+        const sampleDy = dy + (sy + 0.5) * step - 0.5;
+        const sample = this.sampleOrbitGlobeColour(
+          planet,
+          solidMap,
+          solidColours,
+          liquidOverlay,
+          texturePhase,
+          orbitPhase,
+          sampleDx,
+          sampleDy,
+          detailRadius
+        );
+        if (!sample) continue;
+        coveredSamples++;
+        r += sample.r;
+        g += sample.g;
+        b += sample.b;
+      }
+    }
+    if (coveredSamples === 0) return null;
+    const totalSamples = samplesPerAxis * samplesPerAxis;
+    const coverage = coveredSamples / totalSamples;
+    const planetColour = {
+      r: r / coveredSamples,
+      g: g / coveredSamples,
+      b: b / coveredSamples,
+    };
+    return interpolateColour(background, planetColour, coverage);
+  }
+
+  private sampleOrbitGlobeColour(
+    planet: Planet,
+    solidMap: number[][] | null,
+    solidColours: string[] | null,
+    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    texturePhase: number,
+    orbitPhase: number,
+    dx: number,
+    dy: number,
+    detailRadius: number
+  ): RgbColour | null {
+    const nx = dx / detailRadius;
+    const ny = dy / detailRadius;
+    const d = nx * nx + ny * ny;
+    if (d > 1) return null;
+    const z = Math.sqrt(Math.max(0, 1 - d));
+    const viewLongitude = Math.atan2(nx, z);
+    const textureLongitude = viewLongitude + texturePhase;
+    const illuminationLongitude = viewLongitude + orbitPhase;
+    const lat = Math.asin(Math.max(-1, Math.min(1, -ny)));
+    const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
+    const textureY = this.mercatorTextureY(lat);
+    const solidSample = solidMap && solidColours
+      ? this.sampleSolidPlanetTexture(solidMap, solidColours, liquidOverlay, textureX, textureY)
+      : null;
+    const colour = solidSample?.colour ?? (
+      planet.type === 'GasGiant' || planet.type === 'IceGiant'
+        ? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, lat, texturePhase)
+        : this.samplePendingSolidPlanetTexture(planet, textureX, textureY)
+    );
+    const light = this.calculateGlobeLighting(planet, illuminationLongitude, lat, z);
+    const brightness = solidSample?.liquid
+      ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, lat, z)
+      : light.brightness;
+    const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
+    let finalColour = solidSample?.liquid && solidSample.reflectiveColour
+      ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, lat, z) * light.glyph)
+      : baseColour;
+    finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
+    const atmosphericTwilight = this.calculateAtmosphericGlobeTwilight(planet, light.glyph);
+    if (atmosphericTwilight > 0) {
+      finalColour = interpolateColour(
+        finalColour,
+        this.hexToRgbFallback(this.getAtmosphericScatteringBaseColour(
+          Object.entries(planet.atmosphere?.composition ?? {}).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '',
+          planet.atmosphere?.density ?? ''
+        )),
+        atmosphericTwilight
+      );
+    }
+    return finalColour;
   }
 
   private drawOrbitSunReference(
@@ -1680,10 +1779,13 @@ export class SceneRenderer {
 
   private hexToRgbFallback(hex: string): { r: number; g: number; b: number } {
     const clean = hex.replace('#', '').slice(0, 6).padEnd(6, '8');
+    const r = Number.parseInt(clean.slice(0, 2), 16);
+    const g = Number.parseInt(clean.slice(2, 4), 16);
+    const b = Number.parseInt(clean.slice(4, 6), 16);
     return {
-      r: Number.parseInt(clean.slice(0, 2), 16) || 128,
-      g: Number.parseInt(clean.slice(2, 4), 16) || 128,
-      b: Number.parseInt(clean.slice(4, 6), 16) || 128,
+      r: Number.isNaN(r) ? 128 : r,
+      g: Number.isNaN(g) ? 128 : g,
+      b: Number.isNaN(b) ? 128 : b,
     };
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ScreenBuffer } from '../../rendering/screen_buffer';
+import { GLYPHS } from '../../constants';
 
 function createBuffer(cols: number, rows: number): {
   buffer: ScreenBuffer;
@@ -94,5 +95,16 @@ describe('ScreenBuffer rendering', () => {
     expect(ctx.translate).toHaveBeenCalledWith(4, 0);
     expect(ctx.scale).toHaveBeenCalledWith(1, 1);
     expect(ctx.fillText).toHaveBeenCalledWith('@', 0, 0);
+  });
+
+  it('renders scaled full blocks as exact rectangles instead of antialiased text glyphs', () => {
+    const { buffer, ctx } = createBuffer(2, 1);
+
+    buffer.clear(true);
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0.5, 0, '#204060', '#000000', 0.5, 0.5);
+    buffer.renderFull();
+
+    expect(ctx.fillRect).toHaveBeenCalledWith(4, 0, 4, 4);
+    expect(ctx.fillText).not.toHaveBeenCalledWith(GLYPHS.BLOCK, 0, 0);
   });
 });

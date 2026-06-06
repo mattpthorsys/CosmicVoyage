@@ -2,6 +2,7 @@
 // src/rendering/screen_buffer.ts (Added copyBufferFrom method)
 
 import { CONFIG } from '../config';
+import { GLYPHS } from '../constants';
 import { logger } from '../utils/logger';
 
 /** Represents the state of a single character cell on the screen buffer. */
@@ -533,6 +534,11 @@ export class ScreenBuffer {
         this.ctx.fillRect(px, py, width, height);
       }
       if (charToDraw === ' ') continue;
+      if (charToDraw === GLYPHS.BLOCK) {
+        this.ctx.fillStyle = glyph.fg || this.defaultFgColor;
+        this.ctx.fillRect(px, py, width, height);
+        continue;
+      }
       this.ctx.save();
       this.ctx.translate(px, py);
       this.ctx.font = `${this.charHeightPx * glyph.scaleY}px ${CONFIG.FONT_FAMILY}`;

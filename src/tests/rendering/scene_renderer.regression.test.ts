@@ -131,6 +131,27 @@ function createAtmosphericOrbitPlanet(): Planet {
   return planet;
 }
 
+function createFeaturelessOrbitPlanet(colour: string = '#B8B8B8'): Planet {
+  const planet = Object.create(Planet.prototype) as Planet;
+  Object.defineProperties(planet, {
+    name: { value: 'Featureless Regression' },
+    type: { value: 'Rock' },
+    heightmap: { value: Array.from({ length: 32 }, () => Array.from({ length: 32 }, () => 4)) },
+    heightLevelColors: { value: Array.from({ length: CONFIG.PLANET_HEIGHT_LEVELS }, () => colour) },
+    diameter: { value: 11000 },
+    density: { value: 5.1 },
+    gravity: { value: 0.95 },
+    surfaceTemp: { value: 288 },
+    axialTilt: { value: 0.23 },
+    orbitalInclination: { value: 0.03 },
+    tidallyLocked: { value: false },
+    moons: { value: [] },
+    atmosphere: { value: { density: 'None', pressure: 0, composition: {} } },
+    getCurrentTemperature: { value: () => 291 },
+  });
+  return planet;
+}
+
 function createSystem(): SolarSystem {
   return {
     name: 'Regression',
@@ -213,6 +234,15 @@ function renderTextRows(drawCalls: DrawCall[]): string[] {
       for (let x = 0; x <= maxX; x++) line += row.get(x) ?? ' ';
       return line.trimEnd();
     });
+}
+
+function hexLuma(hex: string | null | undefined): number {
+  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '');
+  if (!match) return 0;
+  const r = parseInt(match[1], 16);
+  const g = parseInt(match[2], 16);
+  const b = parseInt(match[3], 16);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 describe('SceneRenderer visual regressions', () => {
@@ -786,6 +816,58 @@ describe('SceneRenderer visual regressions', () => {
 
     expect(globeCalls.length).toBeGreaterThan(200);
     expect(shadeGlobeCalls).toHaveLength(0);
+  });
+
+  it('preserves true black when decoding fallback RGB colours', () => {
+    const { buffer } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer) as unknown as {
+      hexToRgbFallback: (hex: string) => { r: number; g: number; b: number };
+    };
+
+    expect(renderer.hexToRgbFallback('#000000')).toEqual({ r: 0, g: 0, b: 0 });
+    expect(renderer.hexToRgbFallback('#00000F')).toEqual({ r: 0, g: 0, b: 15 });
+  });
+
+  it('anti-aliases only the orbital globe rim by blending covered planet samples to black', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+    const renderer = createSceneRenderer(buffer);
+    const planet = createFeaturelessOrbitPlanet('#D8D8D8');
+    renderer.drawOrbitInterface({
+      title: 'Orbital Operations',
+      subtitle: 'Featureless Regression local space',
+      parentPlanet: planet,
+      selectedBody: planet,
+      bodies: [{ label: 'Primary', planet, selected: true }],
+      mode: 'overview',
+      stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
+      rotationPhase: 0,
+      illuminationPhase: 0.2,
+      landingCursorX: 12,
+      landingCursorY: 18,
+      mapSize: 32,
+      description: ['Featureless globe edge regression.'],
+      telemetry: ['Body Featureless Regression'],
+      footer: ['Esc closes orbit.'],
+    });
+
+    const sphereCx = 24;
+    const sphereCy = 27;
+    const sphereRadius = 12;
+    const globeCalls = drawCalls
+      .filter((call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg)
+      .map((call) => ({
+        radius: Math.hypot(call.x - sphereCx, call.y - sphereCy),
+        luma: hexLuma(call.fg),
+      }))
+      .filter((sample) => sample.radius <= sphereRadius + 2.01);
+    const interior = globeCalls.filter((sample) => sample.radius <= sphereRadius - 3);
+    const rim = globeCalls.filter((sample) => sample.radius > sphereRadius && sample.radius <= sphereRadius + 1.5);
+    const innerRim = globeCalls.filter((sample) => sample.radius >= sphereRadius - 1.5 && sample.radius <= sphereRadius);
+
+    expect(interior.length).toBeGreaterThan(100);
+    expect(rim.length).toBeGreaterThan(4);
+    expect(Math.max(...rim.map((sample) => sample.luma))).toBeLessThan(Math.max(...interior.map((sample) => sample.luma)) * 0.65);
+    expect(Math.max(...innerRim.map((sample) => sample.luma))).toBeGreaterThan(Math.max(...rim.map((sample) => sample.luma)));
   });
 
   it('compresses atmospheric globe highlights without affecting airless worlds', () => {
