@@ -1361,10 +1361,10 @@ export class SceneRenderer {
     const focalLength = radius * 0.95;
     const projectedX = cx + (sun.x / -sun.z) * focalLength;
     const projectedY = cy - (sun.y / -sun.z) * focalLength;
-    const planetMaskRadius = radius + 1;
+    const planetMaskRadius = radius;
     const projectedDistance = Math.hypot(projectedX - cx, projectedY - cy);
     const edgeDistance = Math.abs(projectedDistance - planetMaskRadius);
-    const edgeStrength = 1 - Math.min(1, edgeDistance / 2.25);
+    const edgeStrength = 1 - Math.min(1, edgeDistance / 1.6);
     if (edgeStrength <= 0.02) return;
 
     const pressureStrength = Math.max(0.22, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
@@ -1372,44 +1372,128 @@ export class SceneRenderer {
     if (strength <= 0.08) return;
 
     const source = model.stellarSources.find((candidate) => candidate.primary) ?? model.stellarSources[0];
-    const colour = this.getAtmosphericHorizonColour(model.selectedBody, source?.colour, strength);
+    const colour = this.hexToRgbFallback(this.getAtmosphericHorizonColour(model.selectedBody, source?.colour, strength));
     const side = projectedX < cx ? -1 : 1;
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
     const denseRim = atmosphere.pressure >= 0.45 || atmosphere.density === 'Dense' || atmosphere.density === 'Thick' || atmosphere.density === 'Superdense';
+    const cachedSurface = this.getCachedSolidSurfaceData(model.selectedBody);
+    const solidMap = model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant' ? null : cachedSurface?.heightmap ?? null;
+    const solidColours = model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
+    const texturePhase = (model.illuminationPhase + model.rotationPhase) * Math.PI * 2;
+    const orbitPhase = model.illuminationPhase * Math.PI * 2;
 
     for (let dy = -detailRadius; dy <= detailRadius; dy++) {
       const ny = dy / detailRadius;
-      if (Math.abs(ny) > 0.96) continue;
+      if (Math.abs(ny) > 0.985) continue;
       const verticalFade = Math.sqrt(Math.max(0, 1 - ny * ny));
       if (verticalFade * strength < 0.12) continue;
       if (strength < 0.44 && Math.abs(dy) % 3 === 1) continue;
 
-      const edgeX = side * Math.sqrt(Math.max(0, 1 - ny * ny)) * radius;
-      const screenY = cy + dy * detailScale;
-      const outsideX = cx + edgeX + side * 0.08;
-      this.screenBuffer.drawScaledChar(
-        GLYPHS.SHADE_LIGHT,
-        outsideX,
-        screenY,
+      const edgeDx = side * Math.sqrt(Math.max(0, 1 - ny * ny)) * detailRadius;
+      const alpha = Math.min(0.42, (denseRim ? 0.38 : 0.26) * strength * (0.35 + verticalFade * 0.65));
+      const outer = this.sampleAtmosphericHorizonPixel(
+        model.selectedBody,
+        solidMap,
+        solidColours,
+        cachedSurface?.liquidOverlay ?? null,
+        texturePhase,
+        orbitPhase,
+        edgeDx + side * 0.18,
+        dy,
+        detailRadius,
         colour,
-        CONFIG.DEFAULT_BG_COLOUR,
-        detailScale,
-        detailScale
+        alpha,
+        4
       );
-
-      if (denseRim && verticalFade * strength > 0.5) {
+      if (outer) {
         this.screenBuffer.drawScaledChar(
-          GLYPHS.SHADE_MEDIUM,
-          cx + edgeX - side * 0.42,
-          screenY,
-          colour,
-          CONFIG.DEFAULT_BG_COLOUR,
+          GLYPHS.BLOCK,
+          cx + (edgeDx + side * 0.18) * detailScale,
+          cy + dy * detailScale,
+          outer,
+          outer,
           detailScale,
           detailScale
         );
       }
+
+      if (!denseRim || verticalFade * strength <= 0.5) continue;
+      const inner = this.sampleAtmosphericHorizonPixel(
+        model.selectedBody,
+        solidMap,
+        solidColours,
+        cachedSurface?.liquidOverlay ?? null,
+        texturePhase,
+        orbitPhase,
+        edgeDx - side * 0.62,
+        dy,
+        detailRadius,
+        colour,
+        alpha * 0.65,
+        4
+      );
+      if (!inner) continue;
+      this.screenBuffer.drawScaledChar(
+        GLYPHS.BLOCK,
+        cx + (edgeDx - side * 0.62) * detailScale,
+        cy + dy * detailScale,
+        inner,
+        inner,
+        detailScale,
+        detailScale
+      );
     }
+  }
+
+  private sampleAtmosphericHorizonPixel(
+    planet: Planet,
+    solidMap: number[][] | null,
+    solidColours: string[] | null,
+    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    texturePhase: number,
+    orbitPhase: number,
+    dx: number,
+    dy: number,
+    detailRadius: number,
+    glowColour: RgbColour,
+    alpha: number,
+    samplesPerAxis: number
+  ): string | null {
+    const background = this.hexToRgbFallback(TEXT_PALETTE.background);
+    const step = 1 / Math.max(1, samplesPerAxis);
+    let coveredSamples = 0;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (let sy = 0; sy < samplesPerAxis; sy++) {
+      for (let sx = 0; sx < samplesPerAxis; sx++) {
+        const sampleDx = dx + (sx + 0.5) * step - 0.5;
+        const sampleDy = dy + (sy + 0.5) * step - 0.5;
+        const base = this.sampleOrbitGlobeColour(
+          planet,
+          solidMap,
+          solidColours,
+          liquidOverlay,
+          texturePhase,
+          orbitPhase,
+          sampleDx,
+          sampleDy,
+          detailRadius
+        );
+        if (!base) continue;
+        coveredSamples++;
+        const blended = interpolateColour(base, glowColour, alpha);
+        r += blended.r;
+        g += blended.g;
+        b += blended.b;
+      }
+    }
+    if (coveredSamples === 0) return null;
+    const coverage = coveredSamples / (samplesPerAxis * samplesPerAxis);
+    const average = { r: r / coveredSamples, g: g / coveredSamples, b: b / coveredSamples };
+    const final = interpolateColour(background, average, coverage);
+    return rgbToHex(final.r, final.g, final.b);
   }
 
   private getAtmosphericHorizonColour(planet: Planet, starColour: string | undefined, strength: number): string {

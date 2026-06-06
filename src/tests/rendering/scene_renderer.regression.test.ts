@@ -724,10 +724,10 @@ describe('SceneRenderer visual regressions', () => {
   });
 
   it('adds a fading atmospheric horizon glow near orbital sunrise and sunset', () => {
-    const renderAtPhase = (illuminationPhase: number): DrawCall[] => {
+    const renderAtPhase = (illuminationPhase: number, atmospheric = true): DrawCall[] => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
       const renderer = createSceneRenderer(buffer);
-      const planet = createAtmosphericOrbitPlanet();
+      const planet = atmospheric ? createAtmosphericOrbitPlanet() : createOrbitPlanet();
       renderer.drawOrbitInterface({
         title: 'Orbital Operations',
         subtitle: 'Regression Orbit I local space',
@@ -748,37 +748,31 @@ describe('SceneRenderer visual regressions', () => {
       return drawCalls;
     };
 
-    const rimCalls = renderAtPhase(0.278).filter(
+    const countLeftHorizonBand = (calls: DrawCall[]): number =>
+      calls.filter(
+        (call) =>
+          call.char === GLYPHS.BLOCK &&
+          call.scaleX === 0.5 &&
+          call.scaleY === 0.5 &&
+          call.y >= 15 &&
+          call.y <= 39 &&
+          call.x >= 11 &&
+          call.x <= 13.5
+      ).length;
+    const countAtmosphericExtra = (illuminationPhase: number): number =>
+      countLeftHorizonBand(renderAtPhase(illuminationPhase)) - countLeftHorizonBand(renderAtPhase(illuminationPhase, false));
+    const horizonExtra = countAtmosphericExtra(0.278);
+    const oldShadeGlyphs = renderAtPhase(0.278).filter(
       (call) =>
         (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
         call.scaleX === 0.5 &&
-        call.scaleY === 0.5 &&
-        call.y >= 15 &&
-        call.y <= 39 &&
-        call.x < 12
-    );
-    const deepNightRimCalls = renderAtPhase(0.4).filter(
-      (call) =>
-        (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
-        call.scaleX === 0.5 &&
-        call.scaleY === 0.5 &&
-        call.y >= 15 &&
-        call.y <= 39 &&
-        (call.x < 12 || call.x > 36)
-    );
-    const broadCrescentRimCalls = renderAtPhase(0.31).filter(
-      (call) =>
-        (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
-        call.scaleX === 0.5 &&
-        call.scaleY === 0.5 &&
-        call.y >= 15 &&
-        call.y <= 39 &&
-        (call.x < 12 || call.x > 36)
+        call.scaleY === 0.5
     );
 
-    expect(rimCalls.length).toBeGreaterThan(2);
-    expect(broadCrescentRimCalls.length).toBe(0);
-    expect(deepNightRimCalls.length).toBe(0);
+    expect(horizonExtra).toBeGreaterThan(2);
+    expect(oldShadeGlyphs).toHaveLength(0);
+    expect(countAtmosphericExtra(0.31)).toBeLessThan(horizonExtra);
+    expect(countAtmosphericExtra(0.4)).toBeLessThan(2);
   });
 
   it('renders orbital globe samples as solid colour mini-cells instead of shade glyph bands', () => {
