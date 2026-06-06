@@ -97,6 +97,28 @@ function createGasGiantPlanet(): Planet {
   return planet;
 }
 
+function createIceGiantPlanet(name = 'Regression Ice Giant', surfaceTemp = 78): Planet {
+  const planet = Object.create(Planet.prototype) as Planet;
+  Object.defineProperties(planet, {
+    name: { value: name },
+    type: { value: 'IceGiant' },
+    rgbPaletteCache: {
+      value: [
+        { r: 74, g: 142, b: 160 },
+        { r: 112, g: 190, b: 205 },
+        { r: 170, g: 228, b: 230 },
+        { r: 92, g: 168, b: 190 },
+      ],
+    },
+    surfaceTemp: { value: surfaceTemp },
+    orbitDistance: { value: 2.9e12 },
+    gravity: { value: 1.1 },
+    orbitAngle: { value: 0.7 },
+    systemPRNG: { value: new PRNG(`${name}-seed`) },
+  });
+  return planet;
+}
+
 function createOrbitPlanet(): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
@@ -245,6 +267,16 @@ function hexLuma(hex: string | null | undefined): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+function hexRgb(hex: string): { r: number; g: number; b: number } {
+  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!match) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(match[1], 16),
+    g: parseInt(match[2], 16),
+    b: parseInt(match[3], 16),
+  };
+}
+
 describe('SceneRenderer visual regressions', () => {
   it('shifts hyperspace frames by one-cell movement without rebuilding the full viewport', () => {
     const { buffer, stagedFrames } = createMockScreenBuffer(7, 5);
@@ -328,6 +360,25 @@ describe('SceneRenderer visual regressions', () => {
     expect(uniqueColours.size).toBeGreaterThan(30);
     expect(shadedCells.length).toBeGreaterThan(200);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
+  });
+
+  it('uses distinct realistic texture profiles for gas and ice giants', () => {
+    const { buffer } = createMockScreenBuffer(100, 54);
+    const renderer = createSceneRenderer(buffer) as unknown as {
+      sampleGiantPlanetTexture: (planet: Planet, u: number, v: number, lon: number, lat: number, phase: number) => string;
+    };
+    const gas = createGasGiantPlanet();
+    const ice = createIceGiantPlanet('Regression Uranian', 72);
+    const gasSamples = [0.18, 0.34, 0.5, 0.66, 0.82].map((u) => hexRgb(renderer.sampleGiantPlanetTexture(gas, u, 0.5, u, 0, 0.2)));
+    const iceSamples = [0.18, 0.34, 0.5, 0.66, 0.82].map((u) => hexRgb(renderer.sampleGiantPlanetTexture(ice, u, 0.5, u, 0, 0.2)));
+    const average = (samples: { r: number; g: number; b: number }[], channel: 'r' | 'g' | 'b'): number =>
+      samples.reduce((sum, sample) => sum + sample[channel], 0) / samples.length;
+    const channelRange = (samples: { r: number; g: number; b: number }[], channel: 'r' | 'g' | 'b'): number =>
+      Math.max(...samples.map((sample) => sample[channel])) - Math.min(...samples.map((sample) => sample[channel]));
+
+    expect(average(gasSamples, 'r')).toBeGreaterThan(average(gasSamples, 'b'));
+    expect(average(iceSamples, 'b')).toBeGreaterThan(average(iceSamples, 'r'));
+    expect(channelRange(gasSamples, 'r') + channelRange(gasSamples, 'g')).toBeGreaterThan(channelRange(iceSamples, 'r') + channelRange(iceSamples, 'g'));
   });
 
   it('keeps starbase interiors free of background star effects', () => {

@@ -52,6 +52,25 @@ type GiantAtmosphereSample = {
   edge: number;
 };
 
+type GiantVisualFamily = 'jovian' | 'saturnian' | 'uranian' | 'neptunian' | 'hot' | 'cold';
+
+type GiantStormTone = 'bright' | 'warm' | 'dark';
+
+interface GiantVisualProfile {
+  family: GiantVisualFamily;
+  palette: RgbColour[];
+  bandCount: number;
+  bandSharpness: number;
+  edgeRaggedness: number;
+  streakDensity: number;
+  streakContrast: number;
+  stormCount: number;
+  stormTint: RgbColour;
+  stormTone: GiantStormTone;
+  contrast: number;
+  haze: number;
+}
+
 interface TextTableLayout {
   model: TextTableModel;
   tableWidth: number;
@@ -768,49 +787,58 @@ export class SceneRenderer {
     latitude01: number,
     phase01: number
   ): GiantAtmosphereSample {
-    const safePalette = palette.length > 0 ? palette : [{ r: 96, g: 128, b: 128 }];
+    const profile = this.getGiantVisualProfile(planet, palette);
+    const safePalette = profile.palette;
     const turbulence = this.getGasGiantTurbulenceFactor(planet);
     const isIceGiant = planet.type === 'IceGiant';
-    const bandCount = isIceGiant ? 8 : 16;
+    const bandCount = profile.bandCount;
     const lat = Math.max(0, Math.min(1, latitude01));
     const lon = this.wrapUnit(longitude01);
     const equatorDistance = Math.abs(lat - 0.5) * 2;
-    const jetStrength = (1 - equatorDistance * 0.35) * turbulence;
+    const jetStrength = (1 - equatorDistance * 0.35) * turbulence * profile.edgeRaggedness;
     const phase = phase01 * Math.PI * 2;
-    const differentialDrift = (0.018 + turbulence * 0.028) * Math.sin((lat - 0.5) * Math.PI * 3);
-    const shearedLon = this.wrapUnit(lon + differentialDrift + phase01 * (0.08 + jetStrength * 0.04));
+    const textureDrift = phase01 * (0.025 + turbulence * 0.035);
+    const shearedLon = this.wrapUnit(lon + textureDrift);
 
-    const wave1 = Math.sin(lat * Math.PI * bandCount + Math.sin(shearedLon * Math.PI * 2 + phase) * jetStrength * 0.55);
-    const wave2 = Math.sin(lat * Math.PI * (bandCount * 0.52 + 2.3) + shearedLon * Math.PI * 3.2 - phase * 0.4);
+    const boundaryNoise =
+      Math.sin(shearedLon * Math.PI * (2.2 + profile.edgeRaggedness * 1.6) + phase * 0.18) * 0.7 +
+      Math.sin(shearedLon * Math.PI * (7.5 + profile.streakDensity * 3.5) + lat * Math.PI * 2.3) * 0.3;
+    const wave1 = Math.sin(lat * Math.PI * bandCount + boundaryNoise * jetStrength * 0.62);
+    const wave2 = Math.sin(lat * Math.PI * (bandCount * 0.5 + 1.7) + shearedLon * Math.PI * 2.4 - phase * 0.14);
     const fineWave =
-      Math.sin(shearedLon * Math.PI * 18 + lat * Math.PI * 19 + phase * 0.7) *
+      Math.sin(shearedLon * Math.PI * (18 + profile.streakDensity * 22) + lat * Math.PI * 19 + phase * 0.18) *
       Math.sin(lat * Math.PI * (bandCount + 5)) *
-      turbulence;
-    const bandDisplacement = wave1 * 0.018 + wave2 * 0.01 + fineWave * (isIceGiant ? 0.006 : 0.011);
+      turbulence * profile.edgeRaggedness;
+    const bandDisplacement = wave1 * (0.008 + profile.edgeRaggedness * 0.011) + wave2 * 0.007 + fineWave * (isIceGiant ? 0.004 : 0.009);
     const bandPosition = Math.max(0, Math.min(0.999, lat + bandDisplacement));
     const colourFloat = bandPosition * (safePalette.length - 1);
     const index1 = Math.max(0, Math.min(safePalette.length - 1, Math.floor(colourFloat)));
     const index2 = Math.max(0, Math.min(safePalette.length - 1, index1 + 1));
     const bandEdge = Math.abs(wave1);
-    const colourMix = Math.max(0, Math.min(1, colourFloat - index1 + fineWave * 0.09));
+    const colourMix = Math.max(0, Math.min(1, colourFloat - index1 + fineWave * 0.07));
     let base = interpolateColour(safePalette[index1], safePalette[index2], colourMix);
 
-    const storm = this.sampleGiantStormField(planet, shearedLon, lat, phase01, turbulence);
-    const mottling =
-      Math.sin(shearedLon * Math.PI * 34 + lat * Math.PI * 11 - phase * 0.9) * 0.035 +
-      Math.sin(shearedLon * Math.PI * 71 + lat * Math.PI * 41 + phase * 1.3) * 0.02;
-    const polarDimming = isIceGiant ? equatorDistance * 0.06 : equatorDistance * 0.1;
-    const bandContrast = (isIceGiant ? 0.07 : 0.12) * Math.sin(lat * Math.PI * bandCount);
-    let brightness = 0.93 + bandContrast + mottling * turbulence - polarDimming;
-    brightness += storm * (isIceGiant ? 0.16 : 0.24);
-
-    if (storm > 0.08) {
-      const stormTint = isIceGiant ? { r: 200, g: 245, b: 255 } : { r: 255, g: 238, b: 205 };
-      base = interpolateColour(base, stormTint, Math.min(0.42, storm * 0.5));
+    const streak = this.sampleGiantCloudStreaks(planet, shearedLon, lat, profile, phase01);
+    if (Math.abs(streak) > 0.001) {
+      base = adjustBrightness(base, 1 + streak);
     }
 
-    const final = adjustBrightness(base, Math.max(0.54, Math.min(1.42, brightness)));
-    const texture = Math.abs(fineWave) + bandEdge * 0.45 + Math.max(0, storm) * 0.85 + turbulence * Math.abs(mottling) * 5;
+    const storm = this.sampleGiantStormField(planet, shearedLon, lat, phase01, turbulence, profile);
+    const mottling =
+      Math.sin(shearedLon * Math.PI * (30 + profile.streakDensity * 18) + lat * Math.PI * 11 - phase * 0.16) * 0.026 +
+      Math.sin(shearedLon * Math.PI * (65 + profile.edgeRaggedness * 24) + lat * Math.PI * 41 + phase * 0.21) * 0.016;
+    const polarDimming = equatorDistance * (isIceGiant ? 0.04 : 0.08);
+    const bandContrast = profile.contrast * Math.sin(lat * Math.PI * bandCount);
+    let brightness = 0.96 + bandContrast + mottling * turbulence * profile.edgeRaggedness - polarDimming;
+    brightness += storm * (profile.stormTone === 'dark' ? -0.2 : isIceGiant ? 0.11 : 0.18);
+    brightness = brightness * (1 - profile.haze * 0.18) + (1 + profile.haze * 0.04) * profile.haze * 0.18;
+
+    if (storm > 0.08) {
+      base = interpolateColour(base, profile.stormTint, Math.min(0.5, storm * (profile.stormTone === 'dark' ? 0.32 : 0.48)));
+    }
+
+    const final = adjustBrightness(base, Math.max(0.5, Math.min(1.38, brightness)));
+    const texture = Math.abs(fineWave) + bandEdge * 0.45 + Math.abs(streak) * 1.8 + Math.max(0, storm) * 0.85 + turbulence * Math.abs(mottling) * 5;
     return {
       colour: rgbToHex(final.r, final.g, final.b),
       brightness,
@@ -825,21 +853,22 @@ export class SceneRenderer {
     longitude01: number,
     latitude01: number,
     phase01: number,
-    turbulence: number
+    turbulence: number,
+    profile: GiantVisualProfile
   ): number {
     const isIceGiant = planet.type === 'IceGiant';
-    const stormCount = isIceGiant ? 3 : 7;
+    const stormCount = profile.stormCount;
     let field = 0;
     for (let index = 0; index < stormCount; index++) {
       const seed = `${planet.name}:${planet.type}:storm:${index}`;
       const baseLon = this.hashUnit(seed + ':lon');
-      const baseLat = 0.16 + this.hashUnit(seed + ':lat') * 0.68;
+      const baseLat = 0.12 + this.hashUnit(seed + ':lat') * 0.76;
       const direction = index % 2 === 0 ? 1 : -1;
-      const drift = direction * phase01 * (0.015 + this.hashUnit(seed + ':drift') * 0.025);
+      const drift = direction * phase01 * (0.006 + this.hashUnit(seed + ':drift') * 0.016);
       const stormLon = this.wrapUnit(baseLon + drift);
-      const stormLat = baseLat + Math.sin(phase01 * Math.PI * 2 + index) * turbulence * 0.012;
-      const rx = (isIceGiant ? 0.055 : 0.07) + this.hashUnit(seed + ':rx') * (isIceGiant ? 0.045 : 0.08);
-      const ry = (isIceGiant ? 0.012 : 0.018) + this.hashUnit(seed + ':ry') * (isIceGiant ? 0.018 : 0.035);
+      const stormLat = baseLat + Math.sin(phase01 * Math.PI * 2 + index) * turbulence * 0.006;
+      const rx = (isIceGiant ? 0.035 : 0.055) + this.hashUnit(seed + ':rx') * (isIceGiant ? 0.04 : 0.085);
+      const ry = (isIceGiant ? 0.009 : 0.014) + this.hashUnit(seed + ':ry') * (isIceGiant ? 0.014 : 0.03);
       const lonDelta = this.shortestUnitDelta(longitude01, stormLon) / rx;
       const latDelta = (latitude01 - stormLat) / ry;
       const oval = Math.max(0, 1 - lonDelta * lonDelta - latDelta * latDelta);
@@ -847,10 +876,84 @@ export class SceneRenderer {
 
       const spiral = Math.sin(lonDelta * 5.4 + latDelta * 2.2 + this.hashUnit(seed + ':spin') * Math.PI * 2);
       const eye = Math.max(0, 1 - lonDelta * lonDelta * 8 - latDelta * latDelta * 8);
-      const strength = (0.35 + this.hashUnit(seed + ':strength') * 0.65) * turbulence;
+      const strength = (0.35 + this.hashUnit(seed + ':strength') * 0.65) * turbulence * (0.65 + profile.edgeRaggedness * 0.45);
       field += Math.pow(oval, 1.8) * strength * (0.55 + spiral * 0.18) - eye * strength * 0.18;
     }
     return Math.max(-0.15, Math.min(1, field));
+  }
+
+  private sampleGiantCloudStreaks(
+    planet: Planet,
+    longitude01: number,
+    latitude01: number,
+    profile: GiantVisualProfile,
+    phase01: number
+  ): number {
+    if (profile.streakDensity <= 0.04) return 0;
+    const latSeed = Math.floor(latitude01 * profile.bandCount * 2.4);
+    const seed = `${planet.name}:${profile.family}:streak:${latSeed}`;
+    const broken = this.hashUnit(seed + ':break');
+    const segment =
+      Math.sin((longitude01 + phase01 * 0.012) * Math.PI * (18 + broken * 30) + broken * Math.PI * 2) *
+      Math.sin(longitude01 * Math.PI * (5 + profile.streakDensity * 8) + this.hashUnit(seed + ':phase') * Math.PI * 2);
+    const gate = this.smoothstep(0.42 + profile.streakDensity * 0.16, 0.94, Math.abs(segment));
+    if (gate <= 0) return 0;
+    const latEnvelope = 1 - Math.min(1, Math.abs(latitude01 - 0.5) * (profile.family === 'uranian' ? 2.8 : 1.7));
+    const sign = this.hashUnit(seed + ':light') > 0.45 ? 1 : -1;
+    return sign * gate * profile.streakContrast * profile.streakDensity * Math.max(0.15, latEnvelope);
+  }
+
+  private getGiantVisualProfile(planet: Planet, fallbackPalette: RgbColour[]): GiantVisualProfile {
+    const family = this.getGiantVisualFamily(planet);
+    const palette = this.getGiantVisualPalette(family, fallbackPalette);
+    const hotBias = this.getGiantHeatBias(planet);
+    switch (family) {
+      case 'hot':
+        return { family, palette, bandCount: 11, bandSharpness: 0.72, edgeRaggedness: 0.62, streakDensity: 0.54, streakContrast: 0.16, stormCount: 4, stormTint: { r: 210, g: 190, b: 170 }, stormTone: 'warm', contrast: 0.08, haze: 0.38 };
+      case 'saturnian':
+        return { family, palette, bandCount: 22, bandSharpness: 0.48, edgeRaggedness: 0.34, streakDensity: 0.62, streakContrast: 0.08, stormCount: 3, stormTint: { r: 255, g: 244, b: 210 }, stormTone: 'bright', contrast: 0.055, haze: 0.32 };
+      case 'uranian':
+        return { family, palette, bandCount: 7, bandSharpness: 0.28, edgeRaggedness: 0.16, streakDensity: 0.08, streakContrast: 0.035, stormCount: 1, stormTint: { r: 210, g: 250, b: 255 }, stormTone: 'bright', contrast: 0.025, haze: 0.62 };
+      case 'neptunian':
+        return { family, palette, bandCount: 10, bandSharpness: 0.44, edgeRaggedness: 0.32, streakDensity: 0.28, streakContrast: 0.09, stormCount: 3, stormTint: { r: 34, g: 52, b: 90 }, stormTone: 'dark', contrast: 0.055, haze: 0.32 };
+      case 'cold':
+        return { family, palette, bandCount: planet.type === 'IceGiant' ? 8 : 13, bandSharpness: 0.34, edgeRaggedness: 0.22, streakDensity: 0.16, streakContrast: 0.055, stormCount: planet.type === 'IceGiant' ? 1 : 2, stormTint: planet.type === 'IceGiant' ? { r: 200, g: 238, b: 250 } : { r: 230, g: 222, b: 200 }, stormTone: 'bright', contrast: 0.045, haze: 0.45 };
+      case 'jovian':
+      default:
+        return { family, palette, bandCount: 15 + Math.round(hotBias * 3), bandSharpness: 0.72, edgeRaggedness: 0.68, streakDensity: 0.48, streakContrast: 0.14, stormCount: 6, stormTint: { r: 255, g: 232, b: 190 }, stormTone: 'warm', contrast: 0.105, haze: 0.18 };
+    }
+  }
+
+  private getGiantVisualFamily(planet: Planet): GiantVisualFamily {
+    const heatBias = this.getGiantHeatBias(planet);
+    if (heatBias > 0.72) return 'hot';
+    if (planet.type === 'IceGiant') {
+      const neptuneBias = (planet.surfaceTemp ?? 0) > 95 || this.hashUnit(`${planet.name}:ice-family`) > 0.52;
+      return neptuneBias ? 'neptunian' : 'uranian';
+    }
+    if ((planet.surfaceTemp ?? 0) < 105 && this.hashUnit(`${planet.name}:cold-family`) > 0.35) return 'cold';
+    return this.hashUnit(`${planet.name}:gas-family`) > 0.58 ? 'saturnian' : 'jovian';
+  }
+
+  private getGiantHeatBias(planet: Planet): number {
+    const temp = Number.isFinite(planet.surfaceTemp) ? planet.surfaceTemp : 140;
+    const orbitAu = Number.isFinite(planet.orbitDistance) && planet.orbitDistance > 0 ? planet.orbitDistance / AU_IN_METERS : 5;
+    const tempBias = Math.max(0, Math.min(1, (temp - 115) / 520));
+    const orbitBias = Math.max(0, Math.min(1, (1.4 - orbitAu) / 1.2));
+    return Math.max(tempBias, orbitBias);
+  }
+
+  private getGiantVisualPalette(family: GiantVisualFamily, fallbackPalette: RgbColour[]): RgbColour[] {
+    const hexPalette: Record<GiantVisualFamily, string[]> = {
+      jovian: ['#5B3A28', '#A36B3A', '#E0B067', '#F1DCA8', '#B37C48', '#6C4633'],
+      saturnian: ['#796442', '#BCA66C', '#E2D098', '#EFE2B8', '#C9AA67', '#8B754E'],
+      uranian: ['#7ABEC2', '#9FD9D5', '#C3ECE7', '#8BD0CF', '#63AEB9'],
+      neptunian: ['#1A3D78', '#245CAA', '#2E7AC8', '#75B8E0', '#1E4B95'],
+      hot: ['#4A3A35', '#7C5744', '#B47A4E', '#C89C70', '#8C6A5C', '#3D3A3D'],
+      cold: ['#4F5F70', '#7C8790', '#A99F88', '#D0C29D', '#8D7D64'],
+    };
+    const selected = hexPalette[family].map((colour) => this.hexToRgbFallback(colour));
+    return selected.length > 0 ? selected : fallbackPalette.length > 0 ? fallbackPalette : [{ r: 96, g: 128, b: 128 }];
   }
 
   private getGiantAtmosphereGlyph(sample: GiantAtmosphereSample): string {
