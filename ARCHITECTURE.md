@@ -167,7 +167,9 @@ Determinism rule:
 Game tick
   |
   v
-Game chooses screen by GameState
+Game creates immutable SceneViewModel
+  player position/render/resources are
+  copied into a readonly frame snapshot
   |
   v
 RendererFacade
@@ -243,6 +245,11 @@ Reusable UI pieces:
 - `command_bar.ts`: bottom command strip buttons and tones.
 - `available_actions.ts`: contextual action discovery.
 - `help_reference.ts`: current help panel content.
+
+Only one modal interface may be active at a time. `InterfaceModeController`
+stores a discriminated union for popups, navigation, ship operations, rover
+cargo, legends, quantity controls, extraction selection, and confirmations.
+Opening one interface atomically replaces the previous interface state.
 
 ## Core Data Objects
 

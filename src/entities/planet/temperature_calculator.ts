@@ -149,7 +149,7 @@ export function calculateTemperatureProfile(
     let greenhouseFactor = 1.0;
     let greenhouseDesc = "None";
     if (atmosphere && atmosphere.density && atmosphere.density !== 'None') {
-        let pressureFactor = Math.max(0, atmosphere.pressure); // Use pressure >= 0
+        const pressureFactor = Math.max(0, atmosphere.pressure); // Use pressure >= 0
         if (atmosphere.density === 'Thin') {
             greenhouseFactor = 1.0 + (pressureFactor / 0.5) * 0.05; // Reduced base effect
             greenhouseDesc = "Slight";

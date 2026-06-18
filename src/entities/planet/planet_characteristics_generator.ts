@@ -1,7 +1,7 @@
 // src/entities/planet/planet_characteristics_generator.ts
 import { PRNG } from '../../utils/prng';
-import { BOLTZMANN_CONSTANT_K, GRAVITATIONAL_CONSTANT_G } from '../../constants/physics';
-import { ELEMENTS, MineralRichness } from '../../constants/resources';
+import { GRAVITATIONAL_CONSTANT_G } from '../../constants/physics';
+import { MineralRichness } from '../../constants/resources';
 import { generatePhysicalBase, calculateGravity } from './physical_generator';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet';

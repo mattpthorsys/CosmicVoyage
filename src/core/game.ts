@@ -49,7 +49,6 @@ import { createHelpReferenceLines } from './help_reference';
 import {
   createOrbitScreenModel,
   getPlanetMapSize,
-  OrbitInteractionMode,
   OrbitScreenModel,
 } from './orbit_ui';
 import {
@@ -88,9 +87,11 @@ import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } fro
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 import { createShipStatusDashboard } from './ship_status_dashboard';
 import { TEXT_PALETTE } from '../rendering/text_palette';
+import { createPlayerViewSnapshot, createSceneViewModel } from '../rendering/scene_view_model';
 import {
   OrbitModeController,
   GameModeDispatcher,
+  InterfaceModeController,
   ShipMenuSection,
   ShipOperationsController,
   StarbaseModeController,
@@ -181,6 +182,11 @@ export class Game {
   private _starbaseMode?: StarbaseModeController;
   private _shipOperations?: ShipOperationsController;
   private _modeDispatcher?: GameModeDispatcher;
+  private _interfaceMode?: InterfaceModeController<
+    QuantitySelectorState<QuantityOperation>,
+    SurfaceExtractionSelectorState,
+    JettisonConfirmationState
+  >;
   private acceptedMissionIds: Set<string> = new Set();
   private completedMissionIds: Set<string> = new Set();
   private activeMissions: Record<string, StarbaseMission> = {};
@@ -188,9 +194,6 @@ export class Game {
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
   private gameClockElapsedSeconds: number = 0;
   private currentShipCompartmentId: string = 'bridge';
-  private quantitySelector: QuantitySelectorState<QuantityOperation> | null = null;
-  private surfaceExtractionSelector: SurfaceExtractionSelectorState | null = null;
-  private jettisonConfirmation: JettisonConfirmationState | null = null;
   private autoScannedSystemName: string | null = null;
   private tutorialHintsShown: Set<string> = new Set();
 
@@ -261,6 +264,14 @@ export class Game {
     return (this._modeDispatcher ??= new GameModeDispatcher());
   }
 
+  private get interfaceMode(): InterfaceModeController<
+    QuantitySelectorState<QuantityOperation>,
+    SurfaceExtractionSelectorState,
+    JettisonConfirmationState
+  > {
+    return (this._interfaceMode ??= new InterfaceModeController());
+  }
+
   // Transitional aliases for isolated harnesses and save/debug tooling. Production
   // code uses the mode controllers directly; these preserve one source of truth.
   private get travelCommandMoving(): boolean { return this.travelMode.commandMoving; }
@@ -269,8 +280,11 @@ export class Game {
   private set travelCommandSelection(value: number) { this.travelMode.commandSelection = value; }
   private get travelObserveCursor(): TravelObserveCursor | null { return this.travelMode.observeCursor; }
   private set travelObserveCursor(value: TravelObserveCursor | null) { this.travelMode.observeCursor = value; }
-  private get targetMenuOpen(): boolean { return this.travelMode.targetMenuOpen; }
-  private set targetMenuOpen(value: boolean) { this.travelMode.targetMenuOpen = value; }
+  private get targetMenuOpen(): boolean { return this.interfaceMode.is('target-menu'); }
+  private set targetMenuOpen(value: boolean) {
+    if (value) this.interfaceMode.open('target-menu');
+    else this.interfaceMode.close('target-menu');
+  }
   private get targetMenuSelection(): number { return this.travelMode.targetMenuSelection; }
   private set targetMenuSelection(value: number) { this.travelMode.targetMenuSelection = value; }
   private get targetMenuOffset(): number { return this.travelMode.targetMenuOffset; }
@@ -283,8 +297,11 @@ export class Game {
   private set approachTargetSignature(value: string | null) { this.travelMode.approachTargetSignature = value; }
   private get orbitElapsedSeconds(): number { return this.orbitModeState.elapsedSeconds; }
   private set orbitElapsedSeconds(value: number) { this.orbitModeState.elapsedSeconds = value; }
-  private get shipMenuOpen(): boolean { return this.shipOperations.open; }
-  private set shipMenuOpen(value: boolean) { this.shipOperations.open = value; }
+  private get shipMenuOpen(): boolean { return this.interfaceMode.is('ship-menu'); }
+  private set shipMenuOpen(value: boolean) {
+    if (value) this.interfaceMode.open('ship-menu');
+    else this.interfaceMode.close('ship-menu');
+  }
   private get shipMenuSection(): ShipMenuSection { return this.shipOperations.section; }
   private set shipMenuSection(value: ShipMenuSection) { this.shipOperations.section = value; }
   private get shipMenuSelection(): number { return this.shipOperations.selection; }
@@ -309,16 +326,22 @@ export class Game {
   private set tradeSelectionIndex(value: number) { this.starbaseMode.tradeSelectionIndex = value; }
   private get roverMenuSelection(): number { return this.surfaceMode.roverMenuSelection; }
   private set roverMenuSelection(value: number) { this.surfaceMode.roverMenuSelection = value; }
-  private get roverCargoOpen(): boolean { return this.surfaceMode.roverCargoOpen; }
-  private set roverCargoOpen(value: boolean) { this.surfaceMode.roverCargoOpen = value; }
+  private get roverCargoOpen(): boolean { return this.interfaceMode.is('rover-cargo'); }
+  private set roverCargoOpen(value: boolean) {
+    if (value) this.interfaceMode.open('rover-cargo');
+    else this.interfaceMode.close('rover-cargo');
+  }
   private get roverCargoSelection(): number { return this.surfaceMode.roverCargoSelection; }
   private set roverCargoSelection(value: number) { this.surfaceMode.roverCargoSelection = value; }
   private get roverCargoOffset(): number { return this.surfaceMode.roverCargoOffset; }
   private set roverCargoOffset(value: number) { this.surfaceMode.roverCargoOffset = value; }
   private get surfaceMapExpanded(): boolean { return this.surfaceMode.mapExpanded; }
   private set surfaceMapExpanded(value: boolean) { this.surfaceMode.mapExpanded = value; }
-  private get surfaceLegendOpen(): boolean { return this.surfaceMode.legendOpen; }
-  private set surfaceLegendOpen(value: boolean) { this.surfaceMode.legendOpen = value; }
+  private get surfaceLegendOpen(): boolean { return this.interfaceMode.is('surface-legend'); }
+  private set surfaceLegendOpen(value: boolean) {
+    if (value) this.interfaceMode.open('surface-legend');
+    else this.interfaceMode.close('surface-legend');
+  }
   private get surfaceLegendSelection(): number { return this.surfaceMode.legendSelection; }
   private set surfaceLegendSelection(value: number) { this.surfaceMode.legendSelection = value; }
   private get surfaceLegendOffset(): number { return this.surfaceMode.legendOffset; }
@@ -327,6 +350,21 @@ export class Game {
   private set surfaceScanCursor(value: { dx: number; dy: number } | null) { this.surfaceMode.scanCursor = value; }
   private get surfaceNotifications(): string[] { return this.surfaceMode.notifications; }
   private set surfaceNotifications(value: string[]) { this.surfaceMode.notifications = value; }
+  private get quantitySelector(): QuantitySelectorState<QuantityOperation> | null { return this.interfaceMode.quantity; }
+  private set quantitySelector(value: QuantitySelectorState<QuantityOperation> | null) {
+    if (value) this.interfaceMode.openQuantity(value);
+    else this.interfaceMode.close('quantity');
+  }
+  private get surfaceExtractionSelector(): SurfaceExtractionSelectorState | null { return this.interfaceMode.surfaceExtraction; }
+  private set surfaceExtractionSelector(value: SurfaceExtractionSelectorState | null) {
+    if (value) this.interfaceMode.openSurfaceExtraction(value);
+    else this.interfaceMode.close('surface-extraction');
+  }
+  private get jettisonConfirmation(): JettisonConfirmationState | null { return this.interfaceMode.jettisonConfirmation; }
+  private set jettisonConfirmation(value: JettisonConfirmationState | null) {
+    if (value) this.interfaceMode.openJettisonConfirmation(value);
+    else this.interfaceMode.close('jettison-confirmation');
+  }
 
   constructor(canvasId: string, statusBarId: string, seed?: string | number) {
     logger.info('[Game] Constructing instance...');
@@ -380,6 +418,7 @@ export class Game {
     this.travelMode.resetForState(newState);
     this.shipOperations.close();
     this.surfaceMode.closeTransientInterfaces();
+    this.interfaceMode.close();
     if (newState === 'starbase') {
       this.starbaseMode.reset();
     }
@@ -400,6 +439,7 @@ export class Game {
     if (this.popupState !== 'inactive') {
       this.popupState = 'inactive';
       this.popupContent = null;
+      this.interfaceMode.close('popup');
       logger.debug('[Game] Closing active popup due to game state change.');
     }
     if (newState === 'planet') {
@@ -425,7 +465,7 @@ export class Game {
 
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
-    if (this.popupState !== 'inactive' || this.travelMode.targetMenuOpen || this.shipOperations.open || this.surfaceMode.roverCargoOpen || this.surfaceMode.legendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) {
+    if (this.popupState !== 'inactive' || this.targetMenuOpen || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) {
       this.statusMessage = 'Command bar unavailable while another interface is active.';
       this.forceFullRender = true;
       this._publishStatusUpdate();
@@ -843,7 +883,7 @@ export class Game {
   }
 
   private _handleTargetMenuInput(): boolean {
-    if (!this.travelMode.targetMenuOpen) return false;
+    if (!this.targetMenuOpen) return false;
 
     const targets = this.getTargetMenuTargets();
     const visibleRows = this.getTargetMenuVisibleRows();
@@ -896,7 +936,7 @@ export class Game {
         return true;
       }
       this.selectNavigationTarget(selected, true);
-      this.travelMode.targetMenuOpen = false;
+      this.targetMenuOpen = false;
       this.forceFullRender = true;
       return true;
     }
@@ -905,11 +945,11 @@ export class Game {
   }
 
   private _handleRoverCargoInput(): boolean {
-    if (!this.surfaceMode.roverCargoOpen) return false;
+    if (!this.roverCargoOpen) return false;
     const rows = this.getRoverCargoRows();
     const visibleRows = 8;
     if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') || this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.surfaceMode.roverCargoOpen = false;
+      this.roverCargoOpen = false;
       this.statusMessage = 'Terrain vehicle cargo closed.';
       this.forceFullRender = true;
       return true;
@@ -950,7 +990,7 @@ export class Game {
   }
 
   private _handleSurfaceLegendInput(): boolean {
-    if (!this.surfaceMode.legendOpen) return false;
+    if (!this.surfaceLegendOpen) return false;
     const rows = this.getSurfaceLegendRows();
     const visibleRows = this.getSurfaceLegendVisibleRows();
     if (
@@ -959,7 +999,7 @@ export class Game {
       this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
       this.inputManager.wasActionJustPressed('MOVE_RIGHT')
     ) {
-      this.surfaceMode.legendOpen = false;
+      this.surfaceLegendOpen = false;
       this.statusMessage = 'Surface icon legend closed.';
       this.forceFullRender = true;
       return true;
@@ -996,7 +1036,7 @@ export class Game {
   }
 
   private _handleShipMenuInput(): boolean {
-    if (!this.shipOperations.open) return false;
+    if (!this.shipMenuOpen) return false;
 
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
@@ -1592,13 +1632,13 @@ export class Game {
     const viewport = moveSelection(selectedIndex >= 0 ? selectedIndex : 0, 0, targets.length, visibleRows, this.travelMode.targetMenuOffset);
     this.travelMode.targetMenuSelection = viewport.selectedIndex;
     this.travelMode.targetMenuOffset = viewport.viewOffset;
-    this.travelMode.targetMenuOpen = true;
+    this.targetMenuOpen = true;
     this.forceFullRender = true;
     this.statusMessage = 'Select navigation target.';
   }
 
   private closeTargetMenu(message: string = ''): void {
-    this.travelMode.targetMenuOpen = false;
+    this.targetMenuOpen = false;
     this.forceFullRender = true;
     this.statusMessage = message;
   }
@@ -1642,6 +1682,7 @@ export class Game {
     const lines = createHelpReferenceLines(this.stateManager.state, actions);
     this.popupContent = lines;
     this.popupState = 'opening';
+    this.interfaceMode.open('popup');
     this.popupOpenCloseProgress = 0;
     this.popupTextProgress = 0;
     this.popupTotalChars = lines.reduce((sum, line) => sum + line.length + 1, 0);
@@ -1693,7 +1734,7 @@ export class Game {
       if ((currentState === 'hyperspace' || currentState === 'system') && !this.travelMode.commandMoving) {
         return;
       }
-      if (currentState === 'planet' && (this.surfaceMode.mapExpanded || this.surfaceMode.legendOpen)) {
+      if (currentState === 'planet' && (this.surfaceMode.mapExpanded || this.surfaceLegendOpen)) {
         return;
       }
 
@@ -2364,6 +2405,7 @@ export class Game {
           this.popupOpenCloseProgress = 0;
           this.popupState = 'inactive';
           this.popupContent = null; // Clear content when closed
+          this.interfaceMode.close('popup');
           logger.debug('[Game:_update] Popup finished closing.');
         }
         this.forceFullRender = true; // Need render update during animation
@@ -2375,7 +2417,7 @@ export class Game {
     }
 
     // --- Update Terminal Overlay ---
-    if (!this.shipOperations.open) {
+    if (!this.shipMenuOpen) {
       this.terminalOverlay.update(deltaTime); // Update typing/fading
       this.astrometricOverlay.update(
         {
@@ -2720,7 +2762,7 @@ export class Game {
       this.statusMessage = 'Ship menu unavailable while another interface is active.';
       return;
     }
-    this.shipOperations.open = true;
+    this.shipMenuOpen = true;
     this.shipOperations.selectionBySection = {};
     this.shipOperations.offsetBySection = {};
     this.openShipMenuSection('main');
@@ -2733,9 +2775,9 @@ export class Game {
       this.stateManager.state !== 'starbase' &&
       this.stateManager.state !== 'orbit' &&
       this.popupState === 'inactive' &&
-      !this.travelMode.targetMenuOpen &&
-      !this.surfaceMode.roverCargoOpen &&
-      !this.surfaceMode.legendOpen &&
+      !this.targetMenuOpen &&
+      !this.roverCargoOpen &&
+      !this.surfaceLegendOpen &&
       !this.quantitySelector &&
       !this.surfaceExtractionSelector &&
       !this.jettisonConfirmation
@@ -2744,6 +2786,7 @@ export class Game {
 
   private closeShipMenu(message: string = ''): void {
     this.shipOperations.close();
+    this.interfaceMode.close('ship-menu');
     this.statusMessage = message;
     this.forceFullRender = true;
   }
@@ -3166,7 +3209,7 @@ export class Game {
   }
 
   private openRoverCargo(): void {
-    this.surfaceMode.roverCargoOpen = true;
+    this.roverCargoOpen = true;
     this.surfaceMode.roverCargoSelection = 0;
     this.surfaceMode.roverCargoOffset = 0;
     this.player.terrainVehicle.moving = false;
@@ -3367,7 +3410,7 @@ export class Game {
         this.dockTerrainVehicle();
         break;
       case 'icon':
-        this.surfaceMode.legendOpen = true;
+        this.surfaceLegendOpen = true;
         this.surfaceMode.legendSelection = 0;
         this.surfaceMode.legendOffset = 0;
         this.player.terrainVehicle.moving = false;
@@ -3401,7 +3444,7 @@ export class Game {
     this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
     this.surfaceMode.roverMenuSelection = 1;
     this.surfaceMode.mapExpanded = false;
-    this.surfaceMode.legendOpen = false;
+    this.surfaceLegendOpen = false;
     this.surfaceMode.notifications = this.describePlanetSurfaceForDisembark(this.stateManager.currentPlanet);
     this.statusMessage = 'Disembarked. Surface operations online.';
     this.addSurfaceNotification(this.statusMessage);
@@ -3435,7 +3478,7 @@ export class Game {
       this.statusMessage = 'Launch requires being aboard the parked ship.';
       return;
     }
-    this.shipOperations.open = false;
+    this.shipMenuOpen = false;
     this.shipOperations.section = 'main';
     this.stateManager.launchFromSurfaceToOrbit();
     if (this.stateManager.statusMessage) {
@@ -3447,7 +3490,7 @@ export class Game {
 
   private openSurfaceLandingOperationsMenu(): void {
     if (this.stateManager.state !== 'planet') return;
-    this.shipOperations.open = true;
+    this.shipMenuOpen = true;
     this.shipOperations.section = 'main';
     this.shipOperations.selection = this.getShipMenuRows().findIndex((row) => row.id === 'rover');
     if (this.shipOperations.selection < 0) this.shipOperations.selection = 0;
@@ -4348,7 +4391,7 @@ export class Game {
     const currentState = this.stateManager.state;
     try {
       const directCanvasOverlayVisible =
-        (!this.shipOperations.open && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) ||
+        (!this.shipMenuOpen && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) ||
         this.isTravelDateTimeHudVisible() ||
         this.profilerVisible;
       const mainRenderSignature = this.getMainRenderSignature();
@@ -4362,14 +4405,22 @@ export class Game {
       // Draw main content layer based on state
       switch (currentState) {
         case 'hyperspace':
-          this.renderer.drawHyperspace(this.player);
+          this.renderer.drawScene(createSceneViewModel({
+            kind: 'hyperspace',
+            player: createPlayerViewSnapshot(this.player),
+          }));
           this.drawTravelObserveCursor();
           break;
         case 'system':
           const system = this.stateManager.currentSystem;
           if (system) {
             const currentViewScale = this.getCurrentViewScale();
-            this.renderer.drawSolarSystem(this.player, system, currentViewScale);
+            this.renderer.drawScene(createSceneViewModel({
+              kind: 'system',
+              player: createPlayerViewSnapshot(this.player),
+              system,
+              viewScale: currentViewScale,
+            }));
             this.drawTravelObserveCursor();
           } else {
             this._renderError('System data missing for render!');
@@ -4378,7 +4429,10 @@ export class Game {
         case 'orbit':
           const orbitPlanet = this.stateManager.currentPlanet;
           if (orbitPlanet) {
-            this.renderer.drawOrbitInterface(this.createCurrentOrbitScreen());
+            this.renderer.drawScene(createSceneViewModel({
+              kind: 'orbit',
+              model: this.createCurrentOrbitScreen(),
+            }));
           } else {
             this._renderError('Orbit data missing for render!');
           }
@@ -4389,7 +4443,12 @@ export class Game {
             try {
               // Ensure surface data is ready (lazy loading)
               planet.ensureSurfaceReady();
-              this.renderer.drawPlanetSurface(this.player, planet, this.createSurfaceVehicleOverlayModel());
+              this.renderer.drawScene(createSceneViewModel({
+                kind: 'surface',
+                player: createPlayerViewSnapshot(this.player),
+                body: planet,
+                overlay: this.createSurfaceVehicleOverlayModel(),
+              }));
             } catch (surfaceError) {
               logger.error(`[Game:_render] Error ensuring surface ready for ${planet.name}: ${surfaceError}`);
               this._renderError(`Surface Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`);
@@ -4404,7 +4463,12 @@ export class Game {
             try {
               // Starbases also need ensureSurfaceReady for placeholder data
               starbase.ensureSurfaceReady();
-              this.renderer.drawStarbaseInterface(this.player, starbase, this.createCurrentStarbaseScreen());
+              this.renderer.drawScene(createSceneViewModel({
+                kind: 'starbase',
+                player: createPlayerViewSnapshot(this.player),
+                starbase,
+                model: this.createCurrentStarbaseScreen(),
+              }));
             } catch (surfaceError) {
               logger.error(`[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`);
               this._renderError(`Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`);
@@ -4427,19 +4491,19 @@ export class Game {
         );
       }
 
-      if (this.travelMode.targetMenuOpen) {
+      if (this.targetMenuOpen) {
         this.renderer.drawTextModalTable(this.createTargetMenuModel());
       }
 
-      if (this.shipOperations.open) {
+      if (this.shipMenuOpen) {
         this.renderer.drawTextModalTable(this.createShipMenuModel());
       }
 
-      if (this.surfaceMode.roverCargoOpen) {
+      if (this.roverCargoOpen) {
         this.renderer.drawTextModalTable(this.createRoverCargoModel());
       }
 
-      if (this.surfaceMode.legendOpen) {
+      if (this.surfaceLegendOpen) {
         this.renderer.drawTextModalTable(this.createSurfaceLegendModel());
       }
 
@@ -4495,7 +4559,7 @@ export class Game {
   }
 
   private shouldSuppressHudForeground(): boolean {
-    return this.shipOperations.open || this.travelMode.targetMenuOpen;
+    return this.shipMenuOpen || this.targetMenuOpen;
   }
 
   private isTravelDateTimeHudVisible(): boolean {
@@ -4534,10 +4598,10 @@ export class Game {
     return (
       this.stateManager.state === 'starbase' ||
       this.popupState !== 'inactive' ||
-      this.travelMode.targetMenuOpen ||
-      this.shipOperations.open ||
-      this.surfaceMode.roverCargoOpen ||
-      this.surfaceMode.legendOpen ||
+      this.targetMenuOpen ||
+      this.shipMenuOpen ||
+      this.roverCargoOpen ||
+      this.surfaceLegendOpen ||
       Boolean(this.quantitySelector) ||
       Boolean(this.surfaceExtractionSelector) ||
       Boolean(this.jettisonConfirmation)
@@ -4545,7 +4609,7 @@ export class Game {
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
-    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipOperations.open || this.surfaceMode.roverCargoOpen || this.surfaceMode.legendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) return false;
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) return false;
     if (state === 'starbase' && this.starbaseMode.alert) return false;
     if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
@@ -4578,9 +4642,9 @@ export class Game {
           this.player.terrainVehicle.shipSurfaceX,
           this.player.terrainVehicle.shipSurfaceY,
           this.surfaceMode.roverMenuSelection,
-          this.surfaceMode.roverCargoOpen ? 'cargo' : 'nocargo',
+          this.roverCargoOpen ? 'cargo' : 'nocargo',
           this.surfaceMode.mapExpanded ? 'map' : 'local',
-          this.surfaceMode.legendOpen ? 'legend' : 'nolegend',
+          this.surfaceLegendOpen ? 'legend' : 'nolegend',
           this.surfaceMode.scanCursor ? `${this.surfaceMode.scanCursor.dx},${this.surfaceMode.scanCursor.dy}` : 'noscan',
           Math.floor(performance.now() / 450),
           this.player.terrainVehicle.fuel.toFixed(1),
@@ -5568,7 +5632,7 @@ export class Game {
     }
 
     let totalCreditsEarned = 0;
-    let soldItemsLog: string[] = [];
+    const soldItemsLog: string[] = [];
     for (const itemKey in currentCargo) {
       const amount = currentCargo[itemKey];
       const itemInfo = this.getTradeItemInfo(itemKey);

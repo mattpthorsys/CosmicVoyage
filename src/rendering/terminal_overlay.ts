@@ -16,7 +16,6 @@ const MARKERS = {
   EMERGENCY_START: '<e>',
   EMERGENCY_END: '</e>',
 } as const;
-type MarkerKey = keyof typeof MARKERS;
 
 // -- Type for coloured text segments -- (remains the same)
 interface TextSegment {
@@ -211,8 +210,6 @@ export class TerminalOverlay {
     let currentColor = this.fgColorDefault; // Use the currently set themed default
     let i = 0;
     let displayedChars = 0;
-    const max = maxChars === undefined ? rawText.length : Infinity;
-
     while (i < rawText.length) {
       if (maxChars !== undefined && displayedChars >= maxChars) {
         break;

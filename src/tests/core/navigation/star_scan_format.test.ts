@@ -24,7 +24,7 @@ describe('Game star scan formatting', () => {
       },
     });
 
-    const massLine = lines.find((line) => line.startsWith('Mass: <hl>~'));
+    const massLine = lines.find((line: string) => line.startsWith('Mass: <hl>~'));
 
     expect(massLine).toMatch(/^Mass: <hl>~\d+\.\d{2} Solar Masses<\/hl>$/);
     expect(massLine).not.toMatch(/\d+\.\d Solar Masses/);

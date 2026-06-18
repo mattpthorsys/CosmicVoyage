@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GameModeDispatcher,
+  InterfaceModeController,
   OrbitModeController,
   ShipOperationsController,
   SurfaceModeController,
@@ -11,12 +12,10 @@ describe('game mode controllers', () => {
   it('resets travel and orbital interaction state at mode boundaries', () => {
     const travel = new TravelModeController();
     travel.currentTargetIndex = 4;
-    travel.targetMenuOpen = true;
     travel.commandMoving = false;
     travel.resetForState('system');
 
     expect(travel.currentTargetIndex).toBe(0);
-    expect(travel.targetMenuOpen).toBe(false);
     expect(travel.commandMoving).toBe(true);
 
     const orbit = new OrbitModeController();
@@ -32,24 +31,30 @@ describe('game mode controllers', () => {
 
   it('closes transient surface and ship interfaces as coherent units', () => {
     const surface = new SurfaceModeController();
-    surface.roverCargoOpen = true;
-    surface.legendOpen = true;
     surface.scanCursor = { dx: 2, dy: -1 };
     surface.closeTransientInterfaces();
 
-    expect(surface.roverCargoOpen).toBe(false);
-    expect(surface.legendOpen).toBe(false);
     expect(surface.scanCursor).toBeNull();
 
     const ship = new ShipOperationsController();
-    ship.open = true;
     ship.section = 'cargo';
     ship.selectionBySection.cargo = 3;
     ship.close();
 
-    expect(ship.open).toBe(false);
     expect(ship.section).toBe('main');
     expect(ship.selectionBySection).toEqual({});
+
+    const interfaces = new InterfaceModeController<number, string, boolean>();
+    interfaces.open('ship-menu');
+    expect(interfaces.kind).toBe('ship-menu');
+    interfaces.openQuantity(4);
+    expect(interfaces.quantity).toBe(4);
+    expect(interfaces.is('ship-menu')).toBe(false);
+    interfaces.openSurfaceExtraction('deposit');
+    expect(interfaces.quantity).toBeNull();
+    expect(interfaces.surfaceExtraction).toBe('deposit');
+    interfaces.close();
+    expect(interfaces.kind).toBe('none');
   });
 
   it('dispatches update work through the active game mode only', () => {

@@ -131,7 +131,7 @@ export class MovementSystem {
        const oldY = position.systemY;
 
        // Calculate move scale in meters per tick
-       let moveScale = CONFIG.SYSTEM_MOVE_INCREMENT // Base meters per tick from config
+       const moveScale = CONFIG.SYSTEM_MOVE_INCREMENT // Base meters per tick from config
                      * (isFineControl ? CONFIG.FINE_CONTROL_FACTOR : 1) // Apply fine control factor
                      * speedMultiplier; // <<< Apply zoom speed factor >>>
 

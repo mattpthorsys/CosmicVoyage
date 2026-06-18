@@ -1,14 +1,12 @@
 import { CellState, ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
-import { Player } from '../core/player';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
 import { PLANET_TYPES } from '../constants/planetary';
-import { ELEMENTS } from '../constants/resources';
 import { SPECTRAL_TYPES } from '../constants/stellar';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
@@ -17,11 +15,12 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
-import { TextDashboardLine, TextMenuSection, TextModalTableModel, TextTableModel, TextTableRow, TextTone } from '../core/text_ui';
+import { TextDashboardLine, TextMenuSection, TextModalTableModel, TextTableModel, TextTone } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
 import { HyperspaceTileProvider } from './hyperspace_tile_provider';
+import { PlayerViewSnapshot } from './scene_view_model';
 import {
   GiantAtmosphereRenderer,
   GiantAtmosphereSample,
@@ -132,7 +131,7 @@ export class SceneRenderer {
   }
 
   /** Draws the hyperspace view (stars, nebulae). */
-  drawHyperspace(player: Player): void {
+  drawHyperspace(player: PlayerViewSnapshot): void {
     const stats: HyperspaceRenderStats = {
       mode: 'skipped',
       prefetchMs: 0,
@@ -288,7 +287,7 @@ export class SceneRenderer {
     backgroundCells: readonly CellState[],
     viewCenterX: number,
     viewCenterY: number,
-    player: Player
+    player: PlayerViewSnapshot
   ): void {
     const cells = backgroundCells.slice();
     cells[viewCenterY * this.screenBuffer.getCols() + viewCenterX] = this.createCell(
@@ -309,7 +308,7 @@ export class SceneRenderer {
     };
   }
 
-  private drawSystemTravelStarfield(player: Player): void {
+  private drawSystemTravelStarfield(player: PlayerViewSnapshot): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols <= 0 || rows <= 0) return;
@@ -321,7 +320,7 @@ export class SceneRenderer {
 
   // --- drawSolarSystem (Refactored) ---
   /** Draws the solar system view, including moons, using the specified view scale. */
-  drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
+  drawSolarSystem(player: PlayerViewSnapshot, system: SolarSystem, currentViewScale: number): void {
     logger.debug(`[SceneRenderer.drawSolarSystem] Drawing system: ${system.name} (Scale: ${currentViewScale.toExponential(1)} m/cell)`);
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
@@ -449,7 +448,7 @@ export class SceneRenderer {
     return '123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[index] ?? '?';
   }
 
-  private _drawMoonBody(moon: Planet, moonViewX: number, moonViewY: number, viewScale: number): void {
+  private _drawMoonBody(moon: Planet, moonViewX: number, moonViewY: number, _viewScale: number): void {
       // Moons are only drawn if visible and not exactly overlapping parent (checked in caller)
       // Determine moon glyph based on zoom? For now, always '.'
       const moonGlyph = '.';
@@ -471,7 +470,7 @@ export class SceneRenderer {
       }
   }
 
-  private drawSystemPlanetHud(system: SolarSystem, player: Player, visiblePlanets: VisiblePlanetMarker[]): void {
+  private drawSystemPlanetHud(system: SolarSystem, player: PlayerViewSnapshot, visiblePlanets: VisiblePlanetMarker[]): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols < 46 || rows < 14 || visiblePlanets.length === 0) return;
@@ -507,7 +506,7 @@ export class SceneRenderer {
     return `${vertical}${horizontal}` || 'HERE';
   }
 
-  private drawSystemMinimap(system: SolarSystem, player: Player): void {
+  private drawSystemMinimap(system: SolarSystem, player: PlayerViewSnapshot): void {
     const cols = this.screenBuffer.getCols();
     const mapWidth = Math.floor(cols * CONFIG.MINIMAP_SIZE_FACTOR);
     const mapHeight = mapWidth;
@@ -590,7 +589,7 @@ export class SceneRenderer {
   }
 
   /** Draws the surface view for planets or starbases. */
-  drawPlanetSurface(player: Player, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  drawPlanetSurface(player: PlayerViewSnapshot, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
     this.screenBuffer.clear(false);
     if (landedObject instanceof Planet) {
       if (landedObject.type === 'GasGiant' || landedObject.type === 'IceGiant') {
@@ -607,7 +606,7 @@ export class SceneRenderer {
   }
 
   /** Draws the surface of a solid planet. */
-  private drawSolidPlanetSurface(player: Player, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  private drawSolidPlanetSurface(player: PlayerViewSnapshot, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
     logger.debug(`[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`);
     const map = planet.heightmap;
     const heightColors = planet.heightLevelColors;
@@ -709,7 +708,7 @@ export class SceneRenderer {
   }
 
   /** Draws the "surface" view for a gas giant. */
-  private drawGasGiantSurface(player: Player, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  private drawGasGiantSurface(player: PlayerViewSnapshot, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
     logger.debug(`[SceneRenderer.drawGasGiantSurface] Drawing atmospheric view: ${planet.name}`);
     const palette = planet.rgbPaletteCache;
     if (!palette || palette.length < 1) {
@@ -768,7 +767,7 @@ export class SceneRenderer {
   }
 
   /** Draws the view when docked inside a starbase. */
-  private drawStarbaseInterior(player: Player, starbase: Starbase): void {
+  private drawStarbaseInterior(player: PlayerViewSnapshot, starbase: Starbase): void {
     this.drawStarbaseInterface(player, starbase, {
       stationName: starbase.name,
       sectionId: 'overview',
@@ -785,7 +784,7 @@ export class SceneRenderer {
     });
   }
 
-  drawStarbaseInterface(player: Player, starbase: Starbase, model: StarbaseScreenModel): void {
+  drawStarbaseInterface(player: PlayerViewSnapshot, starbase: Starbase, model: Readonly<StarbaseScreenModel>): void {
     logger.debug(`[SceneRenderer.drawStarbaseInterior] Drawing interior: ${starbase.name}`);
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
@@ -1962,7 +1961,7 @@ export class SceneRenderer {
   }
 
   private drawSurfaceHud(
-    player: Player,
+    player: PlayerViewSnapshot,
     planet: Planet,
     viewport: { x: number; y: number; width: number; height: number }
   ): void {

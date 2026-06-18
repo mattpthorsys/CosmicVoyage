@@ -1,9 +1,7 @@
 // FILE: src/systems/cargo_system.ts
 
-import { Player } from '../core/player';
 import { CargoComponent } from '../core/components'; // Import component
 import { logger } from '../utils/logger';
-import { ELEMENTS } from '../constants/resources';
 
 export class CargoSystem {
 
@@ -76,7 +74,6 @@ export class CargoSystem {
     clearAllItems(cargoHold: CargoComponent): Record<string, number> {
         const removedCargo = { ...cargoHold.items }; // Copy before clearing
         cargoHold.items = {}; // Modify component data
-        const totalRemoved = Object.values(removedCargo).reduce((s, q) => s + q, 0);
          // Logging handled by caller (e.g., _handleTradeRequest)
         // if (totalRemoved > 0) { logger.info(`[CargoSystem] Cleared ${totalRemoved} units.`); }
         return removedCargo;

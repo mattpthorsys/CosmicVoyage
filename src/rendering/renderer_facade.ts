@@ -20,6 +20,7 @@ import { OrbitScreenModel } from '../core/orbit_ui';
 import { HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TextModalTableModel } from '../core/text_ui';
 import { TEXT_PALETTE } from './text_palette';
+import { createPlayerViewSnapshot, SceneViewModel } from './scene_view_model';
 
 /**
  * Facade class for the rendering system.
@@ -223,19 +224,39 @@ export class RendererFacade {
     this.screenBuffer.drawChar(char, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
   }
 
+  drawScene(scene: SceneViewModel): void {
+    switch (scene.kind) {
+      case 'hyperspace':
+        this.sceneRenderer.drawHyperspace(scene.player);
+        return;
+      case 'system':
+        this.sceneRenderer.drawSolarSystem(scene.player, scene.system, scene.viewScale);
+        return;
+      case 'orbit':
+        this.sceneRenderer.drawOrbitInterface(scene.model);
+        return;
+      case 'surface':
+        this.sceneRenderer.drawPlanetSurface(scene.player, scene.body, scene.overlay);
+        return;
+      case 'starbase':
+        this.sceneRenderer.drawStarbaseInterface(scene.player, scene.starbase, scene.model);
+        return;
+    }
+  }
+
   // --- Scene Drawing Method Delegation (Remains the same) ---
   drawHyperspace(player: Player): void {
-    this.sceneRenderer.drawHyperspace(player);
+    this.sceneRenderer.drawHyperspace(createPlayerViewSnapshot(player));
   }
   drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
     //const currentViewScale = CONFIG.DEFAULT_VIEW_SCALE; // Use the newly added property
-    this.sceneRenderer.drawSolarSystem(player, system, currentViewScale);
+    this.sceneRenderer.drawSolarSystem(createPlayerViewSnapshot(player), system, currentViewScale);
   }
   drawPlanetSurface(player: Player, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
-    this.sceneRenderer.drawPlanetSurface(player, landedObject, surfaceOverlay);
+    this.sceneRenderer.drawPlanetSurface(createPlayerViewSnapshot(player), landedObject, surfaceOverlay);
   }
   drawStarbaseInterface(player: Player, starbase: Starbase, model: StarbaseScreenModel): void {
-    this.sceneRenderer.drawStarbaseInterface(player, starbase, model);
+    this.sceneRenderer.drawStarbaseInterface(createPlayerViewSnapshot(player), starbase, model);
   }
   drawOrbitInterface(model: OrbitScreenModel): void {
     this.sceneRenderer.drawOrbitInterface(model);
@@ -319,7 +340,7 @@ export class RendererFacade {
         const isCloseLine = line === '← Close →'; // Check if it's the special close line
 
         // Calculate starting X for centering the close line
-        let textStartX = isCloseLine ? startX + Math.floor((currentWidth - line.length) / 2) : textStartXBase;
+        const textStartX = isCloseLine ? startX + Math.floor((currentWidth - line.length) / 2) : textStartXBase;
 
         for (let charIndex = 0; charIndex < line.length; charIndex++) {
           if (charactersDrawn >= textProgress) break; // Stop drawing characters for this frame

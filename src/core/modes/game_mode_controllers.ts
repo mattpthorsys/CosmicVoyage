@@ -22,7 +22,6 @@ export class TravelModeController {
   commandMoving = true;
   commandSelection = 0;
   observeCursor: TravelObserveCursor | null = null;
-  targetMenuOpen = false;
   targetMenuSelection = 0;
   targetMenuOffset = 0;
 
@@ -31,7 +30,6 @@ export class TravelModeController {
     this.currentTargetSignature = '';
     this.approachTargetSignature = null;
     this.observeCursor = null;
-    this.targetMenuOpen = false;
     if (state === 'hyperspace' || state === 'system') {
       this.commandMoving = true;
       this.commandSelection = 0;
@@ -59,20 +57,16 @@ export class OrbitModeController {
 
 export class SurfaceModeController {
   roverMenuSelection = 0;
-  roverCargoOpen = false;
   roverCargoSelection = 0;
   roverCargoOffset = 0;
   mapExpanded = false;
-  legendOpen = false;
   legendSelection = 0;
   legendOffset = 0;
   scanCursor: { dx: number; dy: number } | null = null;
   notifications: string[] = [];
 
   closeTransientInterfaces(): void {
-    this.roverCargoOpen = false;
     this.mapExpanded = false;
-    this.legendOpen = false;
     this.scanCursor = null;
   }
 
@@ -96,7 +90,6 @@ export class StarbaseModeController {
 }
 
 export class ShipOperationsController {
-  open = false;
   section: ShipMenuSection = 'main';
   selection = 0;
   offset = 0;
@@ -105,13 +98,72 @@ export class ShipOperationsController {
   jettisonItemKey: string | null = null;
 
   close(): void {
-    this.open = false;
     this.section = 'main';
     this.selection = 0;
     this.offset = 0;
     this.selectionBySection = {};
     this.offsetBySection = {};
     this.jettisonItemKey = null;
+  }
+}
+
+export type ActiveInterface<Quantity, Extraction, Confirmation> =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'popup' }
+  | { readonly kind: 'target-menu' }
+  | { readonly kind: 'ship-menu' }
+  | { readonly kind: 'rover-cargo' }
+  | { readonly kind: 'surface-legend' }
+  | { readonly kind: 'quantity'; readonly state: Quantity }
+  | { readonly kind: 'surface-extraction'; readonly state: Extraction }
+  | { readonly kind: 'jettison-confirmation'; readonly state: Confirmation };
+
+export class InterfaceModeController<Quantity, Extraction, Confirmation> {
+  private _active: ActiveInterface<Quantity, Extraction, Confirmation> = Object.freeze({ kind: 'none' });
+
+  get active(): ActiveInterface<Quantity, Extraction, Confirmation> {
+    return this._active;
+  }
+
+  get kind(): ActiveInterface<Quantity, Extraction, Confirmation>['kind'] {
+    return this._active.kind;
+  }
+
+  is(kind: ActiveInterface<Quantity, Extraction, Confirmation>['kind']): boolean {
+    return this._active.kind === kind;
+  }
+
+  open(kind: Exclude<ActiveInterface<Quantity, Extraction, Confirmation>['kind'], 'none' | 'quantity' | 'surface-extraction' | 'jettison-confirmation'>): void {
+    this._active = Object.freeze({ kind }) as ActiveInterface<Quantity, Extraction, Confirmation>;
+  }
+
+  openQuantity(state: Quantity): void {
+    this._active = Object.freeze({ kind: 'quantity', state });
+  }
+
+  openSurfaceExtraction(state: Extraction): void {
+    this._active = Object.freeze({ kind: 'surface-extraction', state });
+  }
+
+  openJettisonConfirmation(state: Confirmation): void {
+    this._active = Object.freeze({ kind: 'jettison-confirmation', state });
+  }
+
+  close(kind?: ActiveInterface<Quantity, Extraction, Confirmation>['kind']): void {
+    if (kind && this._active.kind !== kind) return;
+    this._active = Object.freeze({ kind: 'none' });
+  }
+
+  get quantity(): Quantity | null {
+    return this._active.kind === 'quantity' ? this._active.state : null;
+  }
+
+  get surfaceExtraction(): Extraction | null {
+    return this._active.kind === 'surface-extraction' ? this._active.state : null;
+  }
+
+  get jettisonConfirmation(): Confirmation | null {
+    return this._active.kind === 'jettison-confirmation' ? this._active.state : null;
   }
 }
 

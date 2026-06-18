@@ -61,7 +61,7 @@ export function generateMilkyWayMetallicityFeH(ageGyr: number, starType: string,
   const isOldCoolPopulation = (spectralClass === 'K' || spectralClass === 'M' || spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y') && ageGyr > 8;
 
   // Disk stars cluster around solar metallicity, with older populations trending metal-poor.
-  let meanFeH = 0.16 - ageFraction * 0.55;
+  const meanFeH = 0.16 - ageFraction * 0.55;
   let scatter = prng.random(-0.24, 0.24) + prng.random(-0.12, 0.12);
 
   if (isOldCoolPopulation && prng.random() < 0.16) {

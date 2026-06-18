@@ -89,22 +89,22 @@ describe('Game main render signatures', () => {
 
   it('suppresses HUD foreground while modal navigation menus are open', () => {
     const game = createRenderGateHarness();
-    game.shipOperations.open = false;
-    game.travelMode.targetMenuOpen = false;
+    game.shipMenuOpen = false;
+    game.targetMenuOpen = false;
     expect(game.shouldSuppressHudForeground()).toBe(false);
 
-    game.travelMode.targetMenuOpen = true;
+    game.targetMenuOpen = true;
     expect(game.shouldSuppressHudForeground()).toBe(true);
 
-    game.travelMode.targetMenuOpen = false;
-    game.shipOperations.open = true;
+    game.targetMenuOpen = false;
+    game.shipMenuOpen = true;
     expect(game.shouldSuppressHudForeground()).toBe(true);
   });
 
   it('shows the travel clock HUD only in unobstructed travel states', () => {
     const game = createRenderGateHarness();
-    game.travelMode.targetMenuOpen = false;
-    game.shipOperations.open = false;
+    game.targetMenuOpen = false;
+    game.shipMenuOpen = false;
     expect(game.isTravelDateTimeHudVisible()).toBe(true);
 
     game.stateManager.state = 'orbit';
@@ -113,10 +113,10 @@ describe('Game main render signatures', () => {
     game.stateManager.state = 'starbase';
     expect(game.isTravelDateTimeHudVisible()).toBe(true);
 
-    game.travelMode.targetMenuOpen = true;
+    game.targetMenuOpen = true;
     expect(game.isTravelDateTimeHudVisible()).toBe(false);
 
-    game.travelMode.targetMenuOpen = false;
+    game.targetMenuOpen = false;
     game.stateManager.state = 'planet';
     expect(game.isTravelDateTimeHudVisible()).toBe(false);
   });
@@ -124,10 +124,10 @@ describe('Game main render signatures', () => {
   it('pauses the game clock in menus and starbase but not orbit', () => {
     const game = createRenderGateHarness();
     game.popupState = 'inactive';
-    game.travelMode.targetMenuOpen = false;
-    game.shipOperations.open = false;
-    game.surfaceMode.roverCargoOpen = false;
-    game.surfaceMode.legendOpen = false;
+    game.targetMenuOpen = false;
+    game.shipMenuOpen = false;
+    game.roverCargoOpen = false;
+    game.surfaceLegendOpen = false;
     game.quantitySelector = null;
     game.surfaceExtractionSelector = null;
     game.jettisonConfirmation = null;
@@ -139,7 +139,7 @@ describe('Game main render signatures', () => {
     expect(game.isGameClockPaused()).toBe(true);
 
     game.stateManager.state = 'system';
-    game.travelMode.targetMenuOpen = true;
+    game.targetMenuOpen = true;
     expect(game.isGameClockPaused()).toBe(true);
   });
 });

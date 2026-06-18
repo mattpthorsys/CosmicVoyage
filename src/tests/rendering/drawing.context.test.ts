@@ -12,7 +12,7 @@ vi.mock('./screen_buffer');
 describe('DrawingContext', () => {
   let mockScreenBuffer: ScreenBuffer;
   let drawingContext: DrawingContext;
-  let drawCharSpy: vi.Mock;
+  let drawCharSpy: ReturnType<typeof vi.fn>;
   const mockCols = 20;
   const mockRows = 10;
   const defaultFg = CONFIG.DEFAULT_FG_COLOUR; // Assuming default colour for checks

@@ -13,7 +13,7 @@ describe('HeightmapGenerator', () => {
     const roughness = CONFIG.PLANET_SURFACE_ROUGHNESS; // Use config value
     const heightLevels = CONFIG.PLANET_HEIGHT_LEVELS;
 
-    let mockRandomFn = vi.fn(); // Mock function for PRNG's random method
+    const mockRandomFn = vi.fn(); // Mock function for PRNG's random method
 
     beforeEach(() => {
         // Clear any previous mocks

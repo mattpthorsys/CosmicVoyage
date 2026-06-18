@@ -1,7 +1,6 @@
 // src/entities/planet.ts (Store Density)
 
 import { AU_IN_METERS } from '../constants/physics';
-import { PLANET_TYPES } from '../constants/planetary';
 import { ELEMENTS, MineralRichness } from '../constants/resources';
 import { PRNG } from '../utils/prng';
 import { RgbColour } from '../rendering/colour';
@@ -471,7 +470,7 @@ export class Planet {
     );
 
     // --- Atmosphere Details ---
-    let pressureText = this.atmosphere.pressure < 0.001 ? '~0' : this.atmosphere.pressure.toFixed(3);
+    const pressureText = this.atmosphere.pressure < 0.001 ? '~0' : this.atmosphere.pressure.toFixed(3);
     infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${pressureText} bar</hl>)`);
     let compStr = '<hl>None</hl>';
     const comp = this.atmosphere.composition;

@@ -4,7 +4,6 @@ import { GameStateManager } from '../core/game_state_manager';
 import { CargoSystem } from './cargo_systems'; // Assuming path is correct
 import { eventManager, GameEvents } from '../core/event_manager';
 import { logger } from '../utils/logger';
-import { CONFIG } from '../config';
 import { STATUS_MESSAGES } from '../constants/messages';
 import { ELEMENTS } from '../constants/resources';
 import { TerminalOverlay } from '@/rendering/terminal_overlay';

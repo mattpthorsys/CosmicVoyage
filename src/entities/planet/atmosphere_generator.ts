@@ -227,7 +227,7 @@ function _distributeSecondaryGases(
     const usedGases = new Set<string>([primaryGas]);
 
     // Filter available gases based on escape velocity
-    let availableGases = ATMOSPHERE_GASES.filter(g => {
+    const availableGases = ATMOSPHERE_GASES.filter(g => {
         if (usedGases.has(g)) return false;
         const gasMass = GAS_MOLECULAR_MASS_KG[g];
         if (!gasMass) {
@@ -301,7 +301,7 @@ function estimateAtmosphereTemperatureK(planetType: string, orbitDistance_m: num
 
 /** Normalizes composition percentages to sum roughly to 100 */
 function _normalizeComposition(composition: AtmosphereComposition, primaryGas: string): AtmosphereComposition {
-    let totalRaw = Object.values(composition).reduce((s, p) => s + p, 0);
+    const totalRaw = Object.values(composition).reduce((s, p) => s + p, 0);
     const finalComp: AtmosphereComposition = {};
 
     if (totalRaw > 0) {
@@ -429,7 +429,7 @@ export function generateAtmosphere(
     else if (densityRoll < 0.85) densityIndex = 2;  // Earth-like
     else densityIndex = 3;                          // Thick
 
-    let initialDensity = ATMOSPHERE_DENSITIES[densityIndex];
+    const initialDensity = ATMOSPHERE_DENSITIES[densityIndex];
     logger.debug(`[AtmoGen] Initial density roll: ${densityRoll.toFixed(2)} -> ${initialDensity}`);
 
     // Adjustments based on type and escape velocity

@@ -25,7 +25,7 @@ describe('quantity selector', () => {
     expect(model.title).toBe('Sell Cargo');
     expect(model.columns).toEqual(['AMOUNT', 'LIMIT', 'REMAINING', 'TRANSFER']);
     expect(model.rows[0].cells[0]).toBe('12 units');
-    expect(model.footer.join(' ')).toContain('Enter confirm');
+    expect(model.footer?.join(' ')).toContain('Enter confirm');
   });
 
   it('supports one-decimal selectors for fractional mineral deposits', () => {

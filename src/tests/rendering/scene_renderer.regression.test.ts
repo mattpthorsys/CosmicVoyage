@@ -12,7 +12,10 @@ import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
 import { AU_IN_METERS, GLYPHS } from '../../constants';
 import { TEXT_PALETTE } from '../../rendering/text_palette';
-import { GiantAtmosphereRenderer } from '../../rendering/scenes/giant_atmosphere_renderer';
+import {
+  GiantAtmosphereRenderer,
+  GiantVisualProfile,
+} from '../../rendering/scenes/giant_atmosphere_renderer';
 
 type DrawCall = {
   char: string | null;
@@ -26,7 +29,7 @@ type DrawCall = {
 
 function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuffer; drawCalls: DrawCall[]; stagedFrames: readonly unknown[][] } {
   const drawCalls: DrawCall[] = [];
-  const stagedFrames: readonly unknown[][] = [];
+  const stagedFrames: unknown[][] = [];
   const buffer = {
     clear: vi.fn(),
     stageCells: vi.fn((cells: readonly unknown[]) => {
@@ -354,9 +357,8 @@ describe('SceneRenderer visual regressions', () => {
 
     const atmosphericCells = drawCalls.filter((call) => call.bg && call.fg === call.bg);
     const uniqueColours = new Set(atmosphericCells.map((call) => call.bg));
-    const shadedCells = atmosphericCells.filter((call) =>
-      [GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK].includes(call.char ?? '')
-    );
+    const shadeGlyphs = new Set<string>([GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK]);
+    const shadedCells = atmosphericCells.filter((call) => shadeGlyphs.has(call.char ?? ''));
 
     expect(uniqueColours.size).toBeGreaterThan(30);
     expect(shadedCells.length).toBeGreaterThan(200);
@@ -386,9 +388,9 @@ describe('SceneRenderer visual regressions', () => {
     const renderer = new GiantAtmosphereRenderer();
     const cold = createIceGiantPlanet('Cold Ribbon Giant', 68);
     const warm = createIceGiantPlanet('Warm Ribbon Giant', 230, 0.55 * AU_IN_METERS);
-    const coldProfile = renderer.getProfile(cold, cold.rgbPaletteCache);
-    const warmProfile = renderer.getProfile(warm, warm.rgbPaletteCache);
-    const sampleField = (planet: Planet, profile: unknown): { peak: number; mean: number } => {
+    const coldProfile = renderer.getProfile(cold, cold.rgbPaletteCache ?? []);
+    const warmProfile = renderer.getProfile(warm, warm.rgbPaletteCache ?? []);
+    const sampleField = (planet: Planet, profile: GiantVisualProfile): { peak: number; mean: number } => {
       let peak = 0;
       let total = 0;
       let samples = 0;
@@ -888,9 +890,10 @@ describe('SceneRenderer visual regressions', () => {
     const globeCalls = drawCalls.filter(
       (call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
     );
+    const shadeGlyphs = new Set<string>([GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK]);
     const shadeGlobeCalls = drawCalls.filter(
       (call) =>
-        [GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK].includes(call.char ?? '') &&
+        shadeGlyphs.has(call.char ?? '') &&
         call.scaleX === 0.5 &&
         call.scaleY === 0.5 &&
         call.fg === call.bg

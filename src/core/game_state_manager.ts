@@ -423,7 +423,7 @@ export class GameStateManager {
       eventManager.publish(eventToPublish, eventData);
     }
     logger.info(
-      `[GameStateManager] State changed: '<span class="math-inline">\{oldState\}' \-\> '</span>{newState}' (Landed/Docked at ${targetObject.name})`
+      `[GameStateManager] State changed: '${oldState}' -> '${newState}' (Landed/Docked at ${targetObject.name})`
     );
     return newState; // Indicate success
   }
@@ -460,7 +460,7 @@ export class GameStateManager {
       this._currentOrbitReferencePlanet = null;
     }
     logger.debug(
-      `[GameStateManager._changeState] State changing: '<span class="math-inline">\{oldState\}' \-\> '</span>{newState}'`
+      `[GameStateManager._changeState] State changing: '${oldState}' -> '${newState}'`
     );
     eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state); // Publish notification
   }

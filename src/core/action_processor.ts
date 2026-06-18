@@ -3,13 +3,6 @@
 // Removed GameStateManager import
 import { Player } from './player';
 import { logger } from '../utils/logger';
-import { STATUS_MESSAGES } from '../constants/messages';
-import { ELEMENTS, MineralRichness } from '../constants/resources';
-import { CONFIG } from '../config';
-import { PRNG } from '../utils/prng';
-import { Planet } from '../entities/planet';
-import { Starbase } from '../entities/starbase';
-import { SolarSystem } from '@/entities/solar_system';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager
 import { GameState } from './game_state_manager'; // Import GameState for context
 import { GameStateManager } from './game_state_manager'; // Still need this for peekAtSystem
