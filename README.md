@@ -83,6 +83,12 @@ Key folders:
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for a chart-style overview of how the code works.
 
+AI agents and contributors should use
+[docs/ai-guide/README.md](docs/ai-guide/README.md) as the centralized
+development guide. It covers architecture, code ownership, commenting
+standards, change workflows, determinism, testing, game design, and visual
+style.
+
 ## Requirements
 
 - Node.js 20.5.1 or compatible

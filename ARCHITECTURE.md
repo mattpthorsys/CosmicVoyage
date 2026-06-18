@@ -111,7 +111,10 @@ Game
 Important state owners:
 
 - `GameStateManager` changes the actual mode and current object references.
-- Mode controllers in `core/modes/game_mode_controllers.ts` own travel, orbit, surface, starbase, and ship-operation interaction state.
+- Mode controllers in `core/modes/game_mode_controllers.ts` own travel, orbit,
+  surface, ship-operation, and shared modal interaction state.
+- `StarbaseController` owns starbase section navigation, scrolling, alerts, and
+  screen composition; `StarbaseCommerceService` owns market and refueling rules.
 - `Game` coordinates the loop, shared modal controls, controller actions, and transitions.
 - `Player.position` stores world, system, and surface coordinates. Direction of interstellar entry influences system-entry placement.
 
