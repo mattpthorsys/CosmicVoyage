@@ -3,10 +3,10 @@ import { Game } from '../../../core/game';
 import {
   OrbitModeController,
   ShipOperationsController,
-  StarbaseModeController,
   SurfaceModeController,
   TravelModeController,
 } from '../../../core/modes/game_mode_controllers';
+import { StarbaseController } from '../../../core/starbase_controller';
 
 function createRenderGateHarness(): any {
   return Object.assign(Object.create(Game.prototype), {
@@ -17,7 +17,7 @@ function createRenderGateHarness(): any {
     _travelMode: new TravelModeController(),
     _orbitModeState: new OrbitModeController(),
     _surfaceMode: new SurfaceModeController(),
-    _starbaseMode: new StarbaseModeController(),
+    _starbaseMode: new StarbaseController(),
     _shipOperations: new ShipOperationsController(),
     stateManager: { state: 'hyperspace' },
     player: {

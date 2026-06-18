@@ -34,7 +34,6 @@ import { StellarBody } from '../entities/stellar_body';
 import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
 import { commandButton, CommandBarButton, CommandBarModel } from './command_bar';
 import {
-  createStarbaseScreenModel,
   StarbaseScreenModel,
   StarbaseSectionId,
   StarbaseTableRow,
@@ -97,7 +96,6 @@ import {
   InterfaceModeController,
   ShipMenuSection,
   ShipOperationsController,
-  StarbaseModeController,
   SurfaceModeController,
   TravelModeController,
   TravelObserveCursor,
@@ -115,6 +113,7 @@ import {
   StarbaseCommerceService,
   TradeDepotItem,
 } from './starbase_commerce';
+import { StarbaseController } from './starbase_controller';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -186,7 +185,7 @@ export class Game {
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
   private _surfaceMode?: SurfaceModeController;
-  private _starbaseMode?: StarbaseModeController;
+  private _starbaseMode?: StarbaseController;
   private _shipOperations?: ShipOperationsController;
   private _modeDispatcher?: GameModeDispatcher;
   private _interfaceMode?: InterfaceModeController<
@@ -249,8 +248,8 @@ export class Game {
     return (this._surfaceMode ??= new SurfaceModeController());
   }
 
-  private get starbaseMode(): StarbaseModeController {
-    return (this._starbaseMode ??= new StarbaseModeController());
+  private get starbaseMode(): StarbaseController {
+    return (this._starbaseMode ??= new StarbaseController());
   }
 
   private get shipOperations(): ShipOperationsController {
@@ -706,42 +705,45 @@ export class Game {
     }
 
     const starbase = this.stateManager.currentStarbase;
-    const visibleRows = this.getStarbaseVisibleRowCount();
+    const visibleRows = this.starbaseMode.getVisibleRowCount(
+      this.renderer.getCanvas().height,
+      this.renderer.getCharHeightPx()
+    );
     const rows = this.getStarbaseRows(starbase, this.starbaseMode.sectionId);
-    const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
+    const selectedIndex = clampIndex(this.starbaseMode.getSelection(), rows.length);
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.moveStarbaseSelection(-1, rows.length, visibleRows);
+      this.starbaseMode.moveSelection(-1, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.moveStarbaseSelection(1, rows.length, visibleRows);
+      this.starbaseMode.moveSelection(1, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.switchStarbaseSection(-1);
+      this.starbaseMode.switchSection(-1);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
-      this.switchStarbaseSection(1);
+      this.starbaseMode.switchSection(1);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
-      this.moveStarbaseSelection(-visibleRows, rows.length, visibleRows);
+      this.starbaseMode.moveSelection(-visibleRows, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
-      this.moveStarbaseSelection(visibleRows, rows.length, visibleRows);
+      this.starbaseMode.moveSelection(visibleRows, rows.length, visibleRows);
       this.forceFullRender = true;
       return true;
     }
@@ -754,8 +756,7 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-      this.starbaseMode.sectionId = 'overview';
-      this.starbaseMode.alert = 'Cancelled current panel.';
+      this.starbaseMode.cancelPanel();
       this.forceFullRender = true;
       this._publishStatusUpdate();
       return true;
@@ -768,7 +769,7 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('TRADE')) {
-      this.starbaseMode.sectionId = 'buy';
+      this.starbaseMode.openSection('buy');
       this.forceFullRender = true;
       return true;
     }
@@ -4364,7 +4365,7 @@ export class Game {
     if (!starbase) {
       /* ... error handling ... */ return 'Starbase Error: Data missing.';
     }
-    const section = STARBASE_SECTIONS.find((candidate) => candidate.id === this.starbaseMode.sectionId)?.label ?? 'Operations';
+    const section = this.starbaseMode.getSectionLabel();
     return `Docked: ${starbase.name} | Panel: ${section} | Enter use, Esc cancel, L depart.`;
   }
 
@@ -5089,53 +5090,23 @@ export class Game {
 
   private createCurrentStarbaseScreen(): StarbaseScreenModel {
     const starbase = this.stateManager.currentStarbase!;
-    const visibleRowCount = this.getStarbaseVisibleRowCount();
     const rows = this.getStarbaseRows(starbase, this.starbaseMode.sectionId);
-    const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
-    const viewOffset = this.getStarbaseOffset();
-    const meta = this.getStarbaseSectionMeta(starbase, this.starbaseMode.sectionId);
-    return createStarbaseScreenModel({
+    return this.starbaseMode.createScreen({
       starbase,
       player: this.player,
-      sectionId: this.starbaseMode.sectionId,
-      selectedIndex,
-      viewOffset,
-      visibleRowCount,
       rows,
-      columns: meta.columns,
-      widths: meta.widths,
-      title: meta.title,
-      subtitle: meta.subtitle,
-      detailLineCount: this.starbaseMode.sectionId === 'overview' ? 2 : 1,
-      alert: this.starbaseMode.alert || this.statusMessage,
+      canvasHeight: this.renderer.getCanvas().height,
+      charHeight: this.renderer.getCharHeightPx(),
+      statusMessage: this.statusMessage,
     });
   }
 
-  private getStarbaseVisibleRowCount(): number {
-    const rows = Math.max(1, Math.floor(this.renderer.getCanvas().height / Math.max(1, this.renderer.getCharHeightPx())));
-    return Math.max(6, Math.min(18, rows - 18));
-  }
-
   private getStarbaseSelection(): number {
-    return this.starbaseMode.selectionBySection[this.starbaseMode.sectionId] ?? 0;
+    return this.starbaseMode.getSelection();
   }
 
   private getStarbaseOffset(): number {
-    return this.starbaseMode.offsetBySection[this.starbaseMode.sectionId] ?? 0;
-  }
-
-  private moveStarbaseSelection(delta: number, rowCount: number, visibleRows: number): void {
-    const viewport = moveSelection(this.getStarbaseSelection(), delta, rowCount, visibleRows, this.getStarbaseOffset());
-    this.starbaseMode.selectionBySection[this.starbaseMode.sectionId] = viewport.selectedIndex;
-    this.starbaseMode.offsetBySection[this.starbaseMode.sectionId] = viewport.viewOffset;
-    this.starbaseMode.alert = '';
-  }
-
-  private switchStarbaseSection(delta: number): void {
-    const currentIndex = STARBASE_SECTIONS.findIndex((section) => section.id === this.starbaseMode.sectionId);
-    const nextIndex = (currentIndex + delta + STARBASE_SECTIONS.length) % STARBASE_SECTIONS.length;
-    this.starbaseMode.sectionId = STARBASE_SECTIONS[nextIndex].id;
-    this.starbaseMode.alert = '';
+    return this.starbaseMode.getOffset();
   }
 
   private activateStarbaseSelection(starbase: Starbase, row: StarbaseTableRow | undefined): void {
@@ -5308,33 +5279,6 @@ export class Game {
     this.activeMissions[mission.id] = mission;
     this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objective.targetLabel}.`;
     this.statusMessage = this.starbaseMode.alert;
-  }
-
-  private getStarbaseSectionMeta(
-    starbase: Starbase,
-    sectionId: StarbaseSectionId
-  ): { title: string; subtitle: string; columns: string[]; widths: number[] } {
-    const baseSubtitle = `${starbase.name} | ${new Date(0).toISOString().slice(11, 16)} station time`;
-    switch (sectionId) {
-      case 'overview':
-        return { title: 'Starbase Operations', subtitle: baseSubtitle, columns: ['PORT SECTION', 'STATUS'], widths: [24, 18] };
-      case 'cargo':
-        return { title: 'Cargo Manifest', subtitle: 'All cargo currently aboard your vessel.', columns: ['ITEM', 'QTY', 'VALUE', 'CLASS'], widths: [26, 7, 9, 18] };
-      case 'buy':
-        return { title: 'Trade Depot - Buy', subtitle: 'Purchase selected depot stock with Enter.', columns: ['COMMODITY', 'STOCK', 'BUY CR', 'CLASS'], widths: [26, 7, 9, 20] };
-      case 'sell':
-        return { title: 'Trade Depot - Sell', subtitle: 'Sell selected cargo lots with Enter.', columns: ['CARGO', 'HELD', 'SELL CR', 'CLASS'], widths: [26, 7, 9, 20] };
-      case 'services':
-        return { title: 'Port Services', subtitle: 'Station services and ship logistics.', columns: ['SERVICE', 'COST', 'STATUS', 'NOTES'], widths: [22, 10, 14, 34] };
-      case 'notices':
-        return { title: 'Station Notices', subtitle: 'Local bulletins, advisories, and dockmaster traffic.', columns: ['DATE', 'PRIORITY', 'NOTICE'], widths: [10, 10, 58] };
-      case 'missions':
-        return { title: 'Mission Board', subtitle: 'Local contracts authorised by station offices.', columns: ['CONTRACT', 'PAY', 'RISK', 'STATUS', 'SUMMARY'], widths: [22, 9, 7, 10, 32] };
-      case 'shipyard':
-        return { title: 'Shipyard', subtitle: 'Superstructure slots, installed modules, and refit orders.', columns: ['BAY', 'QUOTE', 'ETA', 'WORK ORDER'], widths: [22, 10, 8, 48] };
-      case 'crew':
-        return { title: 'Crew Roster', subtitle: 'Recruitment, personnel records, and starbase training.', columns: ['NAME', 'ROLE', 'COST/PTS', 'PROFILE'], widths: [20, 16, 9, 39] };
-    }
   }
 
   private getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): StarbaseTableRow[] {

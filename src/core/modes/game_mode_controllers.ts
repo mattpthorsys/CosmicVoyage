@@ -1,6 +1,5 @@
 import { CONFIG } from '../../config';
 import { OrbitInteractionMode } from '../orbit_ui';
-import { StarbaseSectionId } from '../starbase_ui';
 
 export type TravelObserveCursor = { mode: 'hyperspace' | 'system'; dx: number; dy: number };
 
@@ -73,19 +72,6 @@ export class SurfaceModeController {
   resetForDeparture(): void {
     this.closeTransientInterfaces();
     this.notifications = [];
-  }
-}
-
-export class StarbaseModeController {
-  tradeSelectionIndex = 0;
-  sectionId: StarbaseSectionId = 'overview';
-  selectionBySection: Record<string, number> = {};
-  offsetBySection: Record<string, number> = {};
-  alert = '';
-
-  reset(): void {
-    this.sectionId = 'overview';
-    this.alert = '';
   }
 }
 
