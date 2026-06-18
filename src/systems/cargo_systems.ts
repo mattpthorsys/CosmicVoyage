@@ -3,7 +3,7 @@
 import { Player } from '../core/player';
 import { CargoComponent } from '../core/components'; // Import component
 import { logger } from '../utils/logger';
-import { ELEMENTS } from '../constants'; // Potentially needed for item info
+import { ELEMENTS } from '../constants/resources';
 
 export class CargoSystem {
 

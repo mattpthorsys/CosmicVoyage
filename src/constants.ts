@@ -1,36 +1,27 @@
 // src/constants.ts (Complete File - April 2025 Version with Expanded Star Types)
 
 import { RgbColour } from "./rendering/colour"; // Assuming colour utils are here
+import {
+    AU_IN_METERS,
+    BOLTZMANN_CONSTANT_K,
+    EARTH_RADIUS_KM,
+    GRAVITATIONAL_CONSTANT_G,
+    LIGHT_SPEED_M_PER_S,
+    SOLAR_MASS_KG,
+    SOLAR_RADIUS_M,
+} from './constants/physics';
+import { GLYPHS } from './constants/visual';
 
-// --- Glyphs ---
-// Using const assertion to make these string literal types
-export const GLYPHS = {
-    BOX: { H: '\u2500', V: '\u2502', TL: '\u250C', TR: '\u2510', BL: '\u2514', BR: '\u2518' },
-    BLOCK: '\u2588',
-    SHADE_LIGHT: '\u2591',
-    SHADE_MEDIUM: '\u2592',
-    SHADE_DARK: '\u2593',
-    STAR_DIM: '\u00B7',
-    STAR_MEDIUM: '\u2022',
-    STAR_BRIGHT: '*',
-    STELLAR_SOURCE: '\u263C',
-    PLANET_ICON: 'O', // Used? Maybe for minimap? Keep for now. [cite: 412]
-    SHIP_NORTH: '^',
-    SHIP_SOUTH: 'v',
-    SHIP_EAST: '>',
-    SHIP_WEST: '<',
-    ORBIT_CHAR: '.',
-    STARBASE_ICON: '#'
-} as const; // Make properties readonly and literal types [cite: 413]
-
-// --- Physical Constants (MKS Units) ---
-export const GRAVITATIONAL_CONSTANT_G = 6.67430e-11; // m^3 kg^-1 s^-2 [cite: 414]
-export const SOLAR_MASS_KG = 1.98847e30;            // kg
-export const AU_IN_METERS = 1.495978707e11;         // meters
-export const LIGHT_SPEED_M_PER_S = 299792458;       // meters per second
-export const EARTH_RADIUS_KM = 6371;                // km (Reference) - Can be converted to meters if needed elsewhere [cite: 415]
-export const SOLAR_RADIUS_M = 6.957e8;              // metres [cite: 416]
-export const BOLTZMANN_CONSTANT_K = 1.380649e-23;   // J/K (Joules per Kelvin)
+export {
+    AU_IN_METERS,
+    BOLTZMANN_CONSTANT_K,
+    EARTH_RADIUS_KM,
+    GLYPHS,
+    GRAVITATIONAL_CONSTANT_G,
+    LIGHT_SPEED_M_PER_S,
+    SOLAR_MASS_KG,
+    SOLAR_RADIUS_M,
+};
 
 // --- Mineral Richness ---
 // Using a string enum for type safety and readability

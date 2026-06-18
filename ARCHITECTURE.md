@@ -13,6 +13,14 @@ src/main.ts
   v
 Game
   |
+  +-- Mode controllers
+  |     travel, orbit, surface,
+  |     starbase, ship operations
+  |     own transient interaction state
+  |
+  +-- GameModeDispatcher
+  |     routes active-state update work
+  |
   +-- InputManager ----------------------+
   |     reads KeyboardEvent.key          |
   |     tracks active actions            |
@@ -46,9 +54,11 @@ Game
   +-- RendererFacade                     |
         |
         +-- SceneRenderer
-        |     draws hyperspace, systems,
-        |     orbit, surface, starbase,
-        |     popups and tables
+        |     coordinates scene drawing
+        |
+        +-- scenes/GiantAtmosphereRenderer
+        |     deterministic bands, storms,
+        |     cloud streaks and ribbons
         |
         +-- ScreenBuffer
         |     character cell staging,
@@ -101,7 +111,8 @@ Game
 Important state owners:
 
 - `GameStateManager` changes the actual mode and current object references.
-- `Game` owns transient interaction state such as selected target, command-strip movement, orbit cursor, starbase section, popups, surface scan cursor, and terrain vehicle menu selection.
+- Mode controllers in `core/modes/game_mode_controllers.ts` own travel, orbit, surface, starbase, and ship-operation interaction state.
+- `Game` coordinates the loop, shared modal controls, controller actions, and transitions.
 - `Player.position` stores world, system, and surface coordinates. Direction of interstellar entry influences system-entry placement.
 
 ## Generation Pipeline
@@ -184,6 +195,23 @@ Rendering conventions:
 - Use `ScreenBuffer.drawScaledChar` only where sub-cell detail is needed, such as orbital globes and landing maps.
 - Keep major UI surfaces in `SceneRenderer`; keep reusable table/menu data shapes in `core/text_ui.ts`, `core/starbase_ui.ts`, `core/command_bar.ts`, and related model builders.
 - Keep colours and glyphs aligned with `STYLE_GUIDE.md`, `src/config.ts`, and `src/constants.ts`.
+
+## Constant Domains
+
+Production modules import constants from focused entry points:
+
+```text
+src/constants
+  physics.ts    physical and astronomical units
+  visual.ts     CGA glyph definitions
+  stellar.ts    spectral data
+  planetary.ts planet and atmosphere definitions
+  resources.ts mineral and element data
+  trade.ts      station commodities
+  messages.ts   user-facing status messages
+```
+
+`src/constants.ts` remains a compatibility catalogue while data definitions are migrated incrementally. New code should use the focused domain entry points.
 
 ## Input And UI Flow
 

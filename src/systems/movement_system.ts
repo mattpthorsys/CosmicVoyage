@@ -5,7 +5,7 @@ import { Player } from '../core/player';
 import { GameState } from '../core/game_state_manager'; // Assuming GameState type is defined/imported here
 import { PositionComponent, RenderComponent } from '../core/components';
 import { CONFIG } from '../config';
-import { GLYPHS } from '../constants';
+import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from '../core/event_manager';
 import { getEngineFuelUseMultiplier } from '../core/ship_modifications';

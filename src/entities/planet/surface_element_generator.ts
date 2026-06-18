@@ -3,7 +3,7 @@
 
 import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
-import { ELEMENTS, MineralRichness } from '../../constants'; // Ensure ELEMENTS is imported
+import { ELEMENTS, MineralRichness } from '../../constants/resources';
 import { logger } from '../../utils/logger';
 import { PerlinNoise } from '../../generation/perlin';
 

@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import { SPECTRAL_TYPES } from '../constants';
+import { SPECTRAL_TYPES } from '../constants/stellar';
 import { HyperspaceSurveyCell } from '../core/hyperspace_survey';
 import {
   DeepSpacePhenomenonProperties,

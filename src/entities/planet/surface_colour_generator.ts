@@ -1,5 +1,5 @@
 // src/entities/planet/surface_colour_generator.ts
-import { PLANET_TYPES } from '../../constants';
+import { PLANET_TYPES } from '../../constants/planetary';
 import { CONFIG } from '../../config';
 import { RgbColour, hexToRgb, rgbToHex, interpolateColour } from '../../rendering/colour';
 import { logger } from '../../utils/logger';

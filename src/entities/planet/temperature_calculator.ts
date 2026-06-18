@@ -2,7 +2,8 @@
 // It replaces the existing calculateSurfaceTemp function.
 
 import { Atmosphere } from '../../entities/planet';
-import { PLANET_TYPES, SPECTRAL_TYPES } from '../../constants';
+import { PLANET_TYPES } from '../../constants/planetary';
+import { SPECTRAL_TYPES } from '../../constants/stellar';
 import { logger } from '../../utils/logger';
 import { StellarEnvironment, estimateEvolutionaryLuminosityFactor } from '../stellar_environment';
 

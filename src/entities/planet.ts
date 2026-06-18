@@ -1,6 +1,8 @@
 // src/entities/planet.ts (Store Density)
 
-import { AU_IN_METERS, MineralRichness, ELEMENTS, PLANET_TYPES } from '../constants';
+import { AU_IN_METERS } from '../constants/physics';
+import { PLANET_TYPES } from '../constants/planetary';
+import { ELEMENTS, MineralRichness } from '../constants/resources';
 import { PRNG } from '../utils/prng';
 import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';

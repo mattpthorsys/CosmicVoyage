@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import { MineralRichness } from '../constants';
+import { MineralRichness } from '../constants/planetary';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';

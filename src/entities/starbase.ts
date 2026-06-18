@@ -1,7 +1,7 @@
 // src/entities/starbase.ts (Enhanced Logging + Mutable Orbit Properties)
 
 import { CONFIG } from '../config';
-import { MineralRichness } from '../constants';
+import { MineralRichness } from '../constants/planetary';
 import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger'; // Import the logger
 

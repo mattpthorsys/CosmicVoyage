@@ -6,7 +6,8 @@ import { Starbase } from '../entities/starbase';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { GLYPHS, STATUS_MESSAGES } from '../constants';
+import { STATUS_MESSAGES } from '../constants/messages';
+import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
 import { SystemDataGenerator } from '../generation/system_data_generator';

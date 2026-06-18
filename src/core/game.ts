@@ -6,7 +6,12 @@ import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { SPECTRAL_TYPES, ELEMENTS, TRADE_COMMODITIES, STATUS_MESSAGES, GLYPHS, AU_IN_METERS } from '../constants';
+import { AU_IN_METERS } from '../constants/physics';
+import { ELEMENTS } from '../constants/resources';
+import { SPECTRAL_TYPES } from '../constants/stellar';
+import { TRADE_COMMODITIES } from '../constants/trade';
+import { STATUS_MESSAGES } from '../constants/messages';
+import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
@@ -83,13 +88,21 @@ import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } fro
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 import { createShipStatusDashboard } from './ship_status_dashboard';
 import { TEXT_PALETTE } from '../rendering/text_palette';
+import {
+  OrbitModeController,
+  GameModeDispatcher,
+  ShipMenuSection,
+  ShipOperationsController,
+  StarbaseModeController,
+  SurfaceModeController,
+  TravelModeController,
+  TravelObserveCursor,
+} from './modes/game_mode_controllers';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
-type TravelObserveCursor = { mode: 'hyperspace' | 'system'; dx: number; dy: number };
 type CargoAddResult = { added: number; addedItems: Record<string, number> };
-type ShipMenuSection = 'main' | 'deck' | 'stations' | 'cargo' | 'crew' | 'status' | 'log' | 'rover' | 'jettison';
 type RoverActionId = 'map' | 'move' | 'cargo' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'embark' | 'icon';
 type QuantityOperation =
   | { type: 'buy'; itemKey: string }
@@ -162,53 +175,22 @@ export class Game {
   private readonly astrometricOverlay: AstrometricOverlay;
   private readonly systemDataGenerator: SystemDataGenerator;
   private readonly hyperspaceSurveyService: HyperspaceSurveyService;
-  private tradeSelectionIndex: number = 0;
-  private starbaseSectionId: StarbaseSectionId = 'overview';
-  private starbaseSelectionBySection: Record<string, number> = {};
-  private starbaseOffsetBySection: Record<string, number> = {};
-  private starbaseAlert: string = '';
+  private _travelMode?: TravelModeController;
+  private _orbitModeState?: OrbitModeController;
+  private _surfaceMode?: SurfaceModeController;
+  private _starbaseMode?: StarbaseModeController;
+  private _shipOperations?: ShipOperationsController;
+  private _modeDispatcher?: GameModeDispatcher;
   private acceptedMissionIds: Set<string> = new Set();
   private completedMissionIds: Set<string> = new Set();
   private activeMissions: Record<string, StarbaseMission> = {};
-  private orbitSelectedBodyIndex: number = 0;
-  private orbitMode: OrbitInteractionMode = 'overview';
-  private orbitLandingX: number = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
-  private orbitLandingY: number = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
-  private orbitAlert: string = '';
-  private orbitElapsedSeconds: number = 0;
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
   private gameClockElapsedSeconds: number = 0;
-  private currentTargetIndex: number = 0;
-  private currentTargetSignature: string = '';
-  private approachTargetSignature: string | null = null;
-  private travelCommandMoving: boolean = true;
-  private travelCommandSelection: number = 0;
-  private travelObserveCursor: TravelObserveCursor | null = null;
-  private targetMenuOpen: boolean = false;
-  private targetMenuSelection: number = 0;
-  private targetMenuOffset: number = 0;
-  private shipMenuOpen: boolean = false;
-  private shipMenuSection: ShipMenuSection = 'main';
-  private shipMenuSelection: number = 0;
-  private shipMenuOffset: number = 0;
-  private shipMenuSelectionBySection: Partial<Record<ShipMenuSection, number>> = {};
-  private shipMenuOffsetBySection: Partial<Record<ShipMenuSection, number>> = {};
-  private shipMenuJettisonItemKey: string | null = null;
   private currentShipCompartmentId: string = 'bridge';
   private quantitySelector: QuantitySelectorState<QuantityOperation> | null = null;
   private surfaceExtractionSelector: SurfaceExtractionSelectorState | null = null;
   private jettisonConfirmation: JettisonConfirmationState | null = null;
-  private roverMenuSelection: number = 0;
-  private roverCargoOpen: boolean = false;
-  private roverCargoSelection: number = 0;
-  private roverCargoOffset: number = 0;
-  private surfaceMapExpanded: boolean = false;
-  private surfaceLegendOpen: boolean = false;
-  private surfaceLegendSelection: number = 0;
-  private surfaceLegendOffset: number = 0;
-  private surfaceScanCursor: { dx: number; dy: number } | null = null;
-  private surfaceNotifications: string[] = [];
   private autoScannedSystemName: string | null = null;
   private tutorialHintsShown: Set<string> = new Set();
 
@@ -254,6 +236,97 @@ export class Game {
   ];
   // Adjust default index if needed (Default 1x is now index 3)
   private currentZoomLevelIndex: number = 3; // Start at the default index (1x zoom)
+
+  private get travelMode(): TravelModeController {
+    return (this._travelMode ??= new TravelModeController());
+  }
+
+  private get orbitModeState(): OrbitModeController {
+    return (this._orbitModeState ??= new OrbitModeController());
+  }
+
+  private get surfaceMode(): SurfaceModeController {
+    return (this._surfaceMode ??= new SurfaceModeController());
+  }
+
+  private get starbaseMode(): StarbaseModeController {
+    return (this._starbaseMode ??= new StarbaseModeController());
+  }
+
+  private get shipOperations(): ShipOperationsController {
+    return (this._shipOperations ??= new ShipOperationsController());
+  }
+
+  private get modeDispatcher(): GameModeDispatcher {
+    return (this._modeDispatcher ??= new GameModeDispatcher());
+  }
+
+  // Transitional aliases for isolated harnesses and save/debug tooling. Production
+  // code uses the mode controllers directly; these preserve one source of truth.
+  private get travelCommandMoving(): boolean { return this.travelMode.commandMoving; }
+  private set travelCommandMoving(value: boolean) { this.travelMode.commandMoving = value; }
+  private get travelCommandSelection(): number { return this.travelMode.commandSelection; }
+  private set travelCommandSelection(value: number) { this.travelMode.commandSelection = value; }
+  private get travelObserveCursor(): TravelObserveCursor | null { return this.travelMode.observeCursor; }
+  private set travelObserveCursor(value: TravelObserveCursor | null) { this.travelMode.observeCursor = value; }
+  private get targetMenuOpen(): boolean { return this.travelMode.targetMenuOpen; }
+  private set targetMenuOpen(value: boolean) { this.travelMode.targetMenuOpen = value; }
+  private get targetMenuSelection(): number { return this.travelMode.targetMenuSelection; }
+  private set targetMenuSelection(value: number) { this.travelMode.targetMenuSelection = value; }
+  private get targetMenuOffset(): number { return this.travelMode.targetMenuOffset; }
+  private set targetMenuOffset(value: number) { this.travelMode.targetMenuOffset = value; }
+  private get currentTargetIndex(): number { return this.travelMode.currentTargetIndex; }
+  private set currentTargetIndex(value: number) { this.travelMode.currentTargetIndex = value; }
+  private get currentTargetSignature(): string { return this.travelMode.currentTargetSignature; }
+  private set currentTargetSignature(value: string) { this.travelMode.currentTargetSignature = value; }
+  private get approachTargetSignature(): string | null { return this.travelMode.approachTargetSignature; }
+  private set approachTargetSignature(value: string | null) { this.travelMode.approachTargetSignature = value; }
+  private get orbitElapsedSeconds(): number { return this.orbitModeState.elapsedSeconds; }
+  private set orbitElapsedSeconds(value: number) { this.orbitModeState.elapsedSeconds = value; }
+  private get shipMenuOpen(): boolean { return this.shipOperations.open; }
+  private set shipMenuOpen(value: boolean) { this.shipOperations.open = value; }
+  private get shipMenuSection(): ShipMenuSection { return this.shipOperations.section; }
+  private set shipMenuSection(value: ShipMenuSection) { this.shipOperations.section = value; }
+  private get shipMenuSelection(): number { return this.shipOperations.selection; }
+  private set shipMenuSelection(value: number) { this.shipOperations.selection = value; }
+  private get shipMenuOffset(): number { return this.shipOperations.offset; }
+  private set shipMenuOffset(value: number) { this.shipOperations.offset = value; }
+  private get shipMenuSelectionBySection(): Partial<Record<ShipMenuSection, number>> { return this.shipOperations.selectionBySection; }
+  private set shipMenuSelectionBySection(value: Partial<Record<ShipMenuSection, number>>) { this.shipOperations.selectionBySection = value; }
+  private get shipMenuOffsetBySection(): Partial<Record<ShipMenuSection, number>> { return this.shipOperations.offsetBySection; }
+  private set shipMenuOffsetBySection(value: Partial<Record<ShipMenuSection, number>>) { this.shipOperations.offsetBySection = value; }
+  private get shipMenuJettisonItemKey(): string | null { return this.shipOperations.jettisonItemKey; }
+  private set shipMenuJettisonItemKey(value: string | null) { this.shipOperations.jettisonItemKey = value; }
+  private get starbaseSectionId(): StarbaseSectionId { return this.starbaseMode.sectionId; }
+  private set starbaseSectionId(value: StarbaseSectionId) { this.starbaseMode.sectionId = value; }
+  private get starbaseSelectionBySection(): Record<string, number> { return this.starbaseMode.selectionBySection; }
+  private set starbaseSelectionBySection(value: Record<string, number>) { this.starbaseMode.selectionBySection = value; }
+  private get starbaseOffsetBySection(): Record<string, number> { return this.starbaseMode.offsetBySection; }
+  private set starbaseOffsetBySection(value: Record<string, number>) { this.starbaseMode.offsetBySection = value; }
+  private get starbaseAlert(): string { return this.starbaseMode.alert; }
+  private set starbaseAlert(value: string) { this.starbaseMode.alert = value; }
+  private get tradeSelectionIndex(): number { return this.starbaseMode.tradeSelectionIndex; }
+  private set tradeSelectionIndex(value: number) { this.starbaseMode.tradeSelectionIndex = value; }
+  private get roverMenuSelection(): number { return this.surfaceMode.roverMenuSelection; }
+  private set roverMenuSelection(value: number) { this.surfaceMode.roverMenuSelection = value; }
+  private get roverCargoOpen(): boolean { return this.surfaceMode.roverCargoOpen; }
+  private set roverCargoOpen(value: boolean) { this.surfaceMode.roverCargoOpen = value; }
+  private get roverCargoSelection(): number { return this.surfaceMode.roverCargoSelection; }
+  private set roverCargoSelection(value: number) { this.surfaceMode.roverCargoSelection = value; }
+  private get roverCargoOffset(): number { return this.surfaceMode.roverCargoOffset; }
+  private set roverCargoOffset(value: number) { this.surfaceMode.roverCargoOffset = value; }
+  private get surfaceMapExpanded(): boolean { return this.surfaceMode.mapExpanded; }
+  private set surfaceMapExpanded(value: boolean) { this.surfaceMode.mapExpanded = value; }
+  private get surfaceLegendOpen(): boolean { return this.surfaceMode.legendOpen; }
+  private set surfaceLegendOpen(value: boolean) { this.surfaceMode.legendOpen = value; }
+  private get surfaceLegendSelection(): number { return this.surfaceMode.legendSelection; }
+  private set surfaceLegendSelection(value: number) { this.surfaceMode.legendSelection = value; }
+  private get surfaceLegendOffset(): number { return this.surfaceMode.legendOffset; }
+  private set surfaceLegendOffset(value: number) { this.surfaceMode.legendOffset = value; }
+  private get surfaceScanCursor(): { dx: number; dy: number } | null { return this.surfaceMode.scanCursor; }
+  private set surfaceScanCursor(value: { dx: number; dy: number } | null) { this.surfaceMode.scanCursor = value; }
+  private get surfaceNotifications(): string[] { return this.surfaceMode.notifications; }
+  private set surfaceNotifications(value: string[]) { this.surfaceMode.notifications = value; }
 
   constructor(canvasId: string, statusBarId: string, seed?: string | number) {
     logger.info('[Game] Constructing instance...');
@@ -304,40 +377,24 @@ export class Game {
       this.currentZoomLevelIndex = 2; // Index of default zoom
       logger.info(`[Game] Resetting zoom to default level (${this.currentZoomLevelIndex}) due to state change.`);
     }
-    this.currentTargetIndex = 0;
-    this.currentTargetSignature = '';
-    this.approachTargetSignature = null;
-    this.travelObserveCursor = null;
-    if (newState === 'hyperspace' || newState === 'system') {
-      this.travelCommandMoving = true;
-      this.travelCommandSelection = 0;
-    }
-    this.targetMenuOpen = false;
-    this.shipMenuOpen = false;
-    this.roverCargoOpen = false;
-    this.surfaceMapExpanded = false;
-    this.surfaceLegendOpen = false;
-    this.surfaceScanCursor = null;
+    this.travelMode.resetForState(newState);
+    this.shipOperations.close();
+    this.surfaceMode.closeTransientInterfaces();
     if (newState === 'starbase') {
-      this.starbaseSectionId = 'overview';
-      this.starbaseAlert = '';
+      this.starbaseMode.reset();
     }
     if (newState === 'orbit') {
       const planet = this.stateManager.currentPlanet;
-      this.orbitMode = 'overview';
-      this.orbitAlert = '';
-      this.orbitElapsedSeconds = 0;
       if (planet) {
         const bodies = this.getOrbitBodies();
         const selectedIndex = bodies.indexOf(planet);
-        this.orbitSelectedBodyIndex = selectedIndex >= 0 ? selectedIndex : 0;
-        const mapSize = getPlanetMapSize(planet);
-        this.orbitLandingX = Math.floor(mapSize / 2);
-        this.orbitLandingY = Math.floor(mapSize / 2);
+        this.orbitModeState.reset(selectedIndex >= 0 ? selectedIndex : 0, getPlanetMapSize(planet));
+      } else {
+        this.orbitModeState.reset();
       }
     }
     if (newState !== 'planet') {
-      this.surfaceNotifications = [];
+      this.surfaceMode.notifications = [];
     }
     // Close popups on state change
     if (this.popupState !== 'inactive') {
@@ -345,9 +402,6 @@ export class Game {
       this.popupContent = null;
       logger.debug('[Game] Closing active popup due to game state change.');
     }
-    this.targetMenuOpen = false;
-    this.shipMenuOpen = false;
-    this.roverCargoOpen = false;
     if (newState === 'planet') {
       this.openSurfaceLandingOperationsMenu();
     }
@@ -371,7 +425,7 @@ export class Game {
 
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
-    if (this.popupState !== 'inactive' || this.targetMenuOpen || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) {
+    if (this.popupState !== 'inactive' || this.travelMode.targetMenuOpen || this.shipOperations.open || this.surfaceMode.roverCargoOpen || this.surfaceMode.legendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) {
       this.statusMessage = 'Command bar unavailable while another interface is active.';
       this.forceFullRender = true;
       this._publishStatusUpdate();
@@ -603,7 +657,7 @@ export class Game {
 
     const starbase = this.stateManager.currentStarbase;
     const visibleRows = this.getStarbaseVisibleRowCount();
-    const rows = this.getStarbaseRows(starbase, this.starbaseSectionId);
+    const rows = this.getStarbaseRows(starbase, this.starbaseMode.sectionId);
     const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
@@ -650,8 +704,8 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-      this.starbaseSectionId = 'overview';
-      this.starbaseAlert = 'Cancelled current panel.';
+      this.starbaseMode.sectionId = 'overview';
+      this.starbaseMode.alert = 'Cancelled current panel.';
       this.forceFullRender = true;
       this._publishStatusUpdate();
       return true;
@@ -664,14 +718,14 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('TRADE')) {
-      this.starbaseSectionId = 'buy';
+      this.starbaseMode.sectionId = 'buy';
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('REFUEL')) {
       this._handleRefuelRequest();
-      this.starbaseAlert = this.statusMessage;
+      this.starbaseMode.alert = this.statusMessage;
       this.forceFullRender = true;
       return true;
     }
@@ -683,7 +737,7 @@ export class Game {
     if (this.stateManager.state !== 'starbase') return;
     const departed = this.stateManager.liftOff();
     if (departed) {
-      this.starbaseAlert = '';
+      this.starbaseMode.alert = '';
       this.statusMessage = this.stateManager.statusMessage || 'Departed starbase.';
       this.stateManager.statusMessage = '';
     }
@@ -697,19 +751,19 @@ export class Game {
 
     const bodies = this.getOrbitBodies();
     if (bodies.length === 0) return false;
-    this.orbitSelectedBodyIndex = clampIndex(this.orbitSelectedBodyIndex, bodies.length);
-    const selectedBody = bodies[this.orbitSelectedBodyIndex];
+    this.orbitModeState.selectedBodyIndex = clampIndex(this.orbitModeState.selectedBodyIndex, bodies.length);
+    const selectedBody = bodies[this.orbitModeState.selectedBodyIndex];
     const mapSize = getPlanetMapSize(selectedBody);
 
-    if (this.orbitMode === 'overview') {
+    if (this.orbitModeState.mode === 'overview') {
       if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-        this.orbitSelectedBodyIndex = (this.orbitSelectedBodyIndex - 1 + bodies.length) % bodies.length;
+        this.orbitModeState.selectedBodyIndex = (this.orbitModeState.selectedBodyIndex - 1 + bodies.length) % bodies.length;
         this.resetOrbitLandingCursor();
         this.forceFullRender = true;
         return true;
       }
       if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') || this.inputManager.wasActionJustPressed('CYCLE_TARGET')) {
-        this.orbitSelectedBodyIndex = (this.orbitSelectedBodyIndex + 1) % bodies.length;
+        this.orbitModeState.selectedBodyIndex = (this.orbitModeState.selectedBodyIndex + 1) % bodies.length;
         this.resetOrbitLandingCursor();
         this.forceFullRender = true;
         return true;
@@ -720,11 +774,11 @@ export class Game {
         this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
       ) {
         if (selectedBody.type === 'GasGiant' || selectedBody.type === 'IceGiant') {
-          this.orbitAlert = 'No solid landing solution for giant-class atmosphere.';
+          this.orbitModeState.alert = 'No solid landing solution for giant-class atmosphere.';
         } else {
           selectedBody.ensureSurfaceReady();
-          this.orbitMode = 'landing';
-          this.orbitAlert = 'Select landing coordinates.';
+          this.orbitModeState.mode = 'landing';
+          this.orbitModeState.alert = 'Select landing coordinates.';
         }
         this.forceFullRender = true;
         return true;
@@ -743,30 +797,30 @@ export class Game {
 
     let moved = false;
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT') || this.inputManager.isActionActive('MOVE_LEFT')) {
-      this.orbitLandingX = (this.orbitLandingX - 1 + mapSize) % mapSize;
+      this.orbitModeState.landingX = (this.orbitModeState.landingX - 1 + mapSize) % mapSize;
       moved = true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') || this.inputManager.isActionActive('MOVE_RIGHT')) {
-      this.orbitLandingX = (this.orbitLandingX + 1) % mapSize;
+      this.orbitModeState.landingX = (this.orbitModeState.landingX + 1) % mapSize;
       moved = true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_UP') || this.inputManager.isActionActive('MOVE_UP')) {
-      this.orbitLandingY = Math.max(0, this.orbitLandingY - 1);
+      this.orbitModeState.landingY = Math.max(0, this.orbitModeState.landingY - 1);
       moved = true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN') || this.inputManager.isActionActive('MOVE_DOWN')) {
-      this.orbitLandingY = Math.min(mapSize - 1, this.orbitLandingY + 1);
+      this.orbitModeState.landingY = Math.min(mapSize - 1, this.orbitModeState.landingY + 1);
       moved = true;
     }
     if (moved) {
-      this.orbitAlert = '';
+      this.orbitModeState.alert = '';
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-      this.orbitMode = 'overview';
-      this.orbitAlert = 'Landing selection cancelled.';
+      this.orbitModeState.mode = 'overview';
+      this.orbitModeState.alert = 'Landing selection cancelled.';
       this.forceFullRender = true;
       return true;
     }
@@ -776,7 +830,7 @@ export class Game {
       this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
       this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
     ) {
-      this.stateManager.landFromOrbit(selectedBody, this.orbitLandingX, this.orbitLandingY);
+      this.stateManager.landFromOrbit(selectedBody, this.orbitModeState.landingX, this.orbitModeState.landingY);
       if (this.stateManager.statusMessage) {
         this.statusMessage = this.stateManager.statusMessage;
         this.stateManager.statusMessage = '';
@@ -789,7 +843,7 @@ export class Game {
   }
 
   private _handleTargetMenuInput(): boolean {
-    if (!this.targetMenuOpen) return false;
+    if (!this.travelMode.targetMenuOpen) return false;
 
     const targets = this.getTargetMenuTargets();
     const visibleRows = this.getTargetMenuVisibleRows();
@@ -804,45 +858,45 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      const viewport = moveSelection(this.targetMenuSelection, -1, targets.length, visibleRows, this.targetMenuOffset);
-      this.targetMenuSelection = viewport.selectedIndex;
-      this.targetMenuOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.travelMode.targetMenuSelection, -1, targets.length, visibleRows, this.travelMode.targetMenuOffset);
+      this.travelMode.targetMenuSelection = viewport.selectedIndex;
+      this.travelMode.targetMenuOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      const viewport = moveSelection(this.targetMenuSelection, 1, targets.length, visibleRows, this.targetMenuOffset);
-      this.targetMenuSelection = viewport.selectedIndex;
-      this.targetMenuOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.travelMode.targetMenuSelection, 1, targets.length, visibleRows, this.travelMode.targetMenuOffset);
+      this.travelMode.targetMenuSelection = viewport.selectedIndex;
+      this.travelMode.targetMenuOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
-      const viewport = moveSelection(this.targetMenuSelection, -visibleRows, targets.length, visibleRows, this.targetMenuOffset);
-      this.targetMenuSelection = viewport.selectedIndex;
-      this.targetMenuOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.travelMode.targetMenuSelection, -visibleRows, targets.length, visibleRows, this.travelMode.targetMenuOffset);
+      this.travelMode.targetMenuSelection = viewport.selectedIndex;
+      this.travelMode.targetMenuOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
-      const viewport = moveSelection(this.targetMenuSelection, visibleRows, targets.length, visibleRows, this.targetMenuOffset);
-      this.targetMenuSelection = viewport.selectedIndex;
-      this.targetMenuOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.travelMode.targetMenuSelection, visibleRows, targets.length, visibleRows, this.travelMode.targetMenuOffset);
+      this.travelMode.targetMenuSelection = viewport.selectedIndex;
+      this.travelMode.targetMenuOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM')) {
-      const selected = targets[this.targetMenuSelection];
+      const selected = targets[this.travelMode.targetMenuSelection];
       if (!selected) {
         this.closeTargetMenu('No target selected.');
         return true;
       }
       this.selectNavigationTarget(selected, true);
-      this.targetMenuOpen = false;
+      this.travelMode.targetMenuOpen = false;
       this.forceFullRender = true;
       return true;
     }
@@ -851,52 +905,52 @@ export class Game {
   }
 
   private _handleRoverCargoInput(): boolean {
-    if (!this.roverCargoOpen) return false;
+    if (!this.surfaceMode.roverCargoOpen) return false;
     const rows = this.getRoverCargoRows();
     const visibleRows = 8;
     if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM') || this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.roverCargoOpen = false;
+      this.surfaceMode.roverCargoOpen = false;
       this.statusMessage = 'Terrain vehicle cargo closed.';
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      const viewport = moveSelection(this.roverCargoSelection, -1, rows.length, visibleRows, this.roverCargoOffset);
-      this.roverCargoSelection = viewport.selectedIndex;
-      this.roverCargoOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.roverCargoSelection, -1, rows.length, visibleRows, this.surfaceMode.roverCargoOffset);
+      this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
+      this.surfaceMode.roverCargoOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      const viewport = moveSelection(this.roverCargoSelection, 1, rows.length, visibleRows, this.roverCargoOffset);
-      this.roverCargoSelection = viewport.selectedIndex;
-      this.roverCargoOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.roverCargoSelection, 1, rows.length, visibleRows, this.surfaceMode.roverCargoOffset);
+      this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
+      this.surfaceMode.roverCargoOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
-      const viewport = moveSelection(this.roverCargoSelection, -visibleRows, rows.length, visibleRows, this.roverCargoOffset);
-      this.roverCargoSelection = viewport.selectedIndex;
-      this.roverCargoOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.roverCargoSelection, -visibleRows, rows.length, visibleRows, this.surfaceMode.roverCargoOffset);
+      this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
+      this.surfaceMode.roverCargoOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
-      const viewport = moveSelection(this.roverCargoSelection, visibleRows, rows.length, visibleRows, this.roverCargoOffset);
-      this.roverCargoSelection = viewport.selectedIndex;
-      this.roverCargoOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.roverCargoSelection, visibleRows, rows.length, visibleRows, this.surfaceMode.roverCargoOffset);
+      this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
+      this.surfaceMode.roverCargoOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
-      this.dropSelectedRoverCargo(rows[this.roverCargoSelection]);
+      this.dropSelectedRoverCargo(rows[this.surfaceMode.roverCargoSelection]);
       return true;
     }
     return true;
   }
 
   private _handleSurfaceLegendInput(): boolean {
-    if (!this.surfaceLegendOpen) return false;
+    if (!this.surfaceMode.legendOpen) return false;
     const rows = this.getSurfaceLegendRows();
     const visibleRows = this.getSurfaceLegendVisibleRows();
     if (
@@ -905,36 +959,36 @@ export class Game {
       this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
       this.inputManager.wasActionJustPressed('MOVE_RIGHT')
     ) {
-      this.surfaceLegendOpen = false;
+      this.surfaceMode.legendOpen = false;
       this.statusMessage = 'Surface icon legend closed.';
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      const viewport = moveSelection(this.surfaceLegendSelection, -1, rows.length, visibleRows, this.surfaceLegendOffset);
-      this.surfaceLegendSelection = viewport.selectedIndex;
-      this.surfaceLegendOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.legendSelection, -1, rows.length, visibleRows, this.surfaceMode.legendOffset);
+      this.surfaceMode.legendSelection = viewport.selectedIndex;
+      this.surfaceMode.legendOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      const viewport = moveSelection(this.surfaceLegendSelection, 1, rows.length, visibleRows, this.surfaceLegendOffset);
-      this.surfaceLegendSelection = viewport.selectedIndex;
-      this.surfaceLegendOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.legendSelection, 1, rows.length, visibleRows, this.surfaceMode.legendOffset);
+      this.surfaceMode.legendSelection = viewport.selectedIndex;
+      this.surfaceMode.legendOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
-      const viewport = moveSelection(this.surfaceLegendSelection, -visibleRows, rows.length, visibleRows, this.surfaceLegendOffset);
-      this.surfaceLegendSelection = viewport.selectedIndex;
-      this.surfaceLegendOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.legendSelection, -visibleRows, rows.length, visibleRows, this.surfaceMode.legendOffset);
+      this.surfaceMode.legendSelection = viewport.selectedIndex;
+      this.surfaceMode.legendOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
-      const viewport = moveSelection(this.surfaceLegendSelection, visibleRows, rows.length, visibleRows, this.surfaceLegendOffset);
-      this.surfaceLegendSelection = viewport.selectedIndex;
-      this.surfaceLegendOffset = viewport.viewOffset;
+      const viewport = moveSelection(this.surfaceMode.legendSelection, visibleRows, rows.length, visibleRows, this.surfaceMode.legendOffset);
+      this.surfaceMode.legendSelection = viewport.selectedIndex;
+      this.surfaceMode.legendOffset = viewport.viewOffset;
       this.forceFullRender = true;
       return true;
     }
@@ -942,7 +996,7 @@ export class Game {
   }
 
   private _handleShipMenuInput(): boolean {
-    if (!this.shipMenuOpen) return false;
+    if (!this.shipOperations.open) return false;
 
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
@@ -951,7 +1005,7 @@ export class Game {
       return true;
     }
     if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-      const inMainSection = this.shipMenuSection === 'main';
+      const inMainSection = this.shipOperations.section === 'main';
       if (inMainSection) {
         if (this.isShipOperationsRequiredOnSurface()) {
           this.statusMessage = 'Choose Terrain Vehicle to disembark, or Launch to return to orbit.';
@@ -966,7 +1020,7 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      if (this.shipMenuSection === 'main') {
+      if (this.shipOperations.section === 'main') {
         if (this.isShipOperationsRequiredOnSurface()) {
           this.statusMessage = 'Landed ship operations remain open while embarked planetside.';
           this.forceFullRender = true;
@@ -977,12 +1031,12 @@ export class Game {
       return true;
     }
 
-    if (this.shipMenuSection === 'status') {
+    if (this.shipOperations.section === 'status') {
       return true;
     }
 
-    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') && this.shipMenuSection === 'main') {
-      this.activateShipMenuSelection(rows[this.shipMenuSelection]);
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT') && this.shipOperations.section === 'main') {
+      this.activateShipMenuSelection(rows[this.shipOperations.selection]);
       return true;
     }
 
@@ -1007,7 +1061,7 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
-      this.activateShipMenuSelection(rows[this.shipMenuSelection]);
+      this.activateShipMenuSelection(rows[this.shipOperations.selection]);
       return true;
     }
 
@@ -1025,44 +1079,44 @@ export class Game {
   private _handleSurfaceVehicleInput(): boolean {
     if (this.stateManager.state !== 'planet' || (!this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot)) return false;
 
-    if (this.surfaceMapExpanded) {
+    if (this.surfaceMode.mapExpanded) {
       if (
         this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
         this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
         this.inputManager.wasActionJustPressed('QUIT') ||
         this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')
       ) {
-        this.surfaceMapExpanded = false;
+        this.surfaceMode.mapExpanded = false;
         this.statusMessage = 'Surface map closed.';
         this.forceFullRender = true;
       }
       return true;
     }
 
-    if (this.surfaceScanCursor) {
+    if (this.surfaceMode.scanCursor) {
       const bounds = this.getSurfaceScanCursorBounds();
       if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-        this.surfaceScanCursor.dy = Math.max(-bounds.y, this.surfaceScanCursor.dy - 1);
+        this.surfaceMode.scanCursor.dy = Math.max(-bounds.y, this.surfaceMode.scanCursor.dy - 1);
         this.forceFullRender = true;
         return true;
       }
       if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-        this.surfaceScanCursor.dy = Math.min(bounds.y, this.surfaceScanCursor.dy + 1);
+        this.surfaceMode.scanCursor.dy = Math.min(bounds.y, this.surfaceMode.scanCursor.dy + 1);
         this.forceFullRender = true;
         return true;
       }
       if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-        this.surfaceScanCursor.dx = Math.max(-bounds.x, this.surfaceScanCursor.dx - 1);
+        this.surfaceMode.scanCursor.dx = Math.max(-bounds.x, this.surfaceMode.scanCursor.dx - 1);
         this.forceFullRender = true;
         return true;
       }
       if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
-        this.surfaceScanCursor.dx = Math.min(bounds.x, this.surfaceScanCursor.dx + 1);
+        this.surfaceMode.scanCursor.dx = Math.min(bounds.x, this.surfaceMode.scanCursor.dx + 1);
         this.forceFullRender = true;
         return true;
       }
       if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-        this.surfaceScanCursor = null;
+        this.surfaceMode.scanCursor = null;
         this.addSurfaceNotification('Surface scan cursor cancelled.');
         this.forceFullRender = true;
         return true;
@@ -1079,10 +1133,10 @@ export class Game {
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
       if (rover.moving) {
         rover.moving = false;
-        this.roverMenuSelection = this.getDefaultSurfaceVehicleMenuSelection();
+        this.surfaceMode.roverMenuSelection = this.getDefaultSurfaceVehicleMenuSelection();
         this.statusMessage = 'Terrain vehicle stopped.';
       } else {
-        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems()[this.roverMenuSelection]);
+        this.activateSurfaceVehicleAction(this.getSurfaceVehicleMenuItems()[this.surfaceMode.roverMenuSelection]);
       }
       this.forceFullRender = true;
       return true;
@@ -1092,22 +1146,22 @@ export class Game {
 
     const items = this.getSurfaceVehicleMenuItems();
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.roverMenuSelection = (this.roverMenuSelection - 1 + items.length) % items.length;
+      this.surfaceMode.roverMenuSelection = (this.surfaceMode.roverMenuSelection - 1 + items.length) % items.length;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.roverMenuSelection = (this.roverMenuSelection + 1) % items.length;
+      this.surfaceMode.roverMenuSelection = (this.surfaceMode.roverMenuSelection + 1) % items.length;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.roverMenuSelection = Math.max(0, this.roverMenuSelection - 1);
+      this.surfaceMode.roverMenuSelection = Math.max(0, this.surfaceMode.roverMenuSelection - 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
-      this.roverMenuSelection = Math.min(items.length - 1, this.roverMenuSelection + 1);
+      this.surfaceMode.roverMenuSelection = Math.min(items.length - 1, this.surfaceMode.roverMenuSelection + 1);
       this.forceFullRender = true;
       return true;
     }
@@ -1119,14 +1173,14 @@ export class Game {
     const state = this.stateManager.state;
     if (state !== 'hyperspace' && state !== 'system') return false;
 
-    if (this.travelCommandMoving) {
+    if (this.travelMode.commandMoving) {
       if (
         this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
         this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
         this.inputManager.wasActionJustPressed('QUIT')
       ) {
-        this.travelCommandMoving = false;
-        this.travelCommandSelection = this.getDefaultTravelCommandIndex();
+        this.travelMode.commandMoving = false;
+        this.travelMode.commandSelection = this.getDefaultTravelCommandIndex();
         this.statusMessage = `${state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement paused. Arrows select commands.`;
         this.forceFullRender = true;
         return true;
@@ -1139,29 +1193,29 @@ export class Game {
     }
 
     const commands = this.getSelectableTravelCommandButtons();
-    this.travelCommandSelection = clampIndex(this.travelCommandSelection, commands.length);
+    this.travelMode.commandSelection = clampIndex(this.travelMode.commandSelection, commands.length);
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.travelCommandSelection = Math.max(0, this.travelCommandSelection - 1);
+      this.travelMode.commandSelection = Math.max(0, this.travelMode.commandSelection - 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
-      this.travelCommandSelection = Math.min(commands.length - 1, this.travelCommandSelection + 1);
+      this.travelMode.commandSelection = Math.min(commands.length - 1, this.travelMode.commandSelection + 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.travelCommandSelection = (this.travelCommandSelection - 1 + commands.length) % commands.length;
+      this.travelMode.commandSelection = (this.travelMode.commandSelection - 1 + commands.length) % commands.length;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.travelCommandSelection = (this.travelCommandSelection + 1) % commands.length;
+      this.travelMode.commandSelection = (this.travelMode.commandSelection + 1) % commands.length;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('QUIT')) {
-      this.travelCommandMoving = true;
+      this.travelMode.commandMoving = true;
       this.statusMessage = `${state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement engaged.`;
       this.forceFullRender = true;
       return true;
@@ -1171,7 +1225,7 @@ export class Game {
       return true;
     }
     if (this.inputManager.wasActionJustPressed('ENTER_SYSTEM') || this.inputManager.wasActionJustPressed('PRIMARY_ACTION')) {
-      const selected = commands[this.travelCommandSelection];
+      const selected = commands[this.travelMode.commandSelection];
       if (selected) this.executeCommandBarAction(selected.action);
       return true;
     }
@@ -1179,36 +1233,36 @@ export class Game {
   }
 
   private _handleTravelObserveCursorInput(): boolean {
-    if (!this.travelObserveCursor) return false;
+    if (!this.travelMode.observeCursor) return false;
     const state = this.stateManager.state;
-    if (state !== this.travelObserveCursor.mode) {
-      this.travelObserveCursor = null;
+    if (state !== this.travelMode.observeCursor.mode) {
+      this.travelMode.observeCursor = null;
       return false;
     }
 
     const bounds = this.getTravelObserveCursorBounds();
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
-      this.travelObserveCursor.dy = Math.max(-bounds.y, this.travelObserveCursor.dy - 1);
+      this.travelMode.observeCursor.dy = Math.max(-bounds.y, this.travelMode.observeCursor.dy - 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
-      this.travelObserveCursor.dy = Math.min(bounds.y, this.travelObserveCursor.dy + 1);
+      this.travelMode.observeCursor.dy = Math.min(bounds.y, this.travelMode.observeCursor.dy + 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.travelObserveCursor.dx = Math.max(-bounds.x, this.travelObserveCursor.dx - 1);
+      this.travelMode.observeCursor.dx = Math.max(-bounds.x, this.travelMode.observeCursor.dx - 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
-      this.travelObserveCursor.dx = Math.min(bounds.x, this.travelObserveCursor.dx + 1);
+      this.travelMode.observeCursor.dx = Math.min(bounds.x, this.travelMode.observeCursor.dx + 1);
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('QUIT') || this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')) {
-      this.travelObserveCursor = null;
+      this.travelMode.observeCursor = null;
       this.statusMessage = 'Observation reticle cancelled.';
       this.forceFullRender = true;
       return true;
@@ -1353,7 +1407,7 @@ export class Game {
         break;
       case 'use-starbase-row':
         if (this.stateManager.currentStarbase) {
-          const rows = this.getStarbaseRows(this.stateManager.currentStarbase, this.starbaseSectionId);
+          const rows = this.getStarbaseRows(this.stateManager.currentStarbase, this.starbaseMode.sectionId);
           this.activateStarbaseSelection(this.stateManager.currentStarbase, rows[this.getStarbaseSelection()]);
         }
         break;
@@ -1372,7 +1426,7 @@ export class Game {
   private executeCommandBarAction(action: string): void {
     switch (action) {
       case 'TRAVEL_MOVE':
-        this.travelCommandMoving = true;
+        this.travelMode.commandMoving = true;
         this.statusMessage = `${this.stateManager.state === 'hyperspace' ? 'Interstellar' : 'Planetary'} movement engaged.`;
         return;
       case 'OPEN_SHIP_MENU':
@@ -1517,8 +1571,8 @@ export class Game {
       this.statusMessage = 'No targets in current view.';
       return;
     }
-    this.currentTargetIndex = (this.currentTargetIndex + 1) % targets.length;
-    this.selectNavigationTarget(targets[this.currentTargetIndex], false);
+    this.travelMode.currentTargetIndex = (this.travelMode.currentTargetIndex + 1) % targets.length;
+    this.selectNavigationTarget(targets[this.travelMode.currentTargetIndex], false);
   }
 
   private openTargetMenu(): void {
@@ -1535,16 +1589,16 @@ export class Game {
     const selectedSignature = selected ? this.getTargetSignature(selected) : '';
     const selectedIndex = targets.findIndex((target) => this.getTargetSignature(target) === selectedSignature);
     const visibleRows = this.getTargetMenuVisibleRows();
-    const viewport = moveSelection(selectedIndex >= 0 ? selectedIndex : 0, 0, targets.length, visibleRows, this.targetMenuOffset);
-    this.targetMenuSelection = viewport.selectedIndex;
-    this.targetMenuOffset = viewport.viewOffset;
-    this.targetMenuOpen = true;
+    const viewport = moveSelection(selectedIndex >= 0 ? selectedIndex : 0, 0, targets.length, visibleRows, this.travelMode.targetMenuOffset);
+    this.travelMode.targetMenuSelection = viewport.selectedIndex;
+    this.travelMode.targetMenuOffset = viewport.viewOffset;
+    this.travelMode.targetMenuOpen = true;
     this.forceFullRender = true;
     this.statusMessage = 'Select navigation target.';
   }
 
   private closeTargetMenu(message: string = ''): void {
-    this.targetMenuOpen = false;
+    this.travelMode.targetMenuOpen = false;
     this.forceFullRender = true;
     this.statusMessage = message;
   }
@@ -1553,9 +1607,9 @@ export class Game {
     const targets = this.getNavigationTargets();
     const signature = this.getTargetSignature(target);
     const index = targets.findIndex((candidate) => this.getTargetSignature(candidate) === signature);
-    this.currentTargetIndex = index >= 0 ? index : 0;
-    this.currentTargetSignature = signature;
-    this.approachTargetSignature = startApproach ? signature : null;
+    this.travelMode.currentTargetIndex = index >= 0 ? index : 0;
+    this.travelMode.currentTargetSignature = signature;
+    this.travelMode.approachTargetSignature = startApproach ? signature : null;
     if (startApproach) {
       this.setShipFacingTowardTarget(target);
       this.player.awardCrewExperience('navigation', 4);
@@ -1576,7 +1630,7 @@ export class Game {
       this.statusMessage = 'No navigation target selected.';
       return;
     }
-    this.approachTargetSignature = this.getTargetSignature(target);
+    this.travelMode.approachTargetSignature = this.getTargetSignature(target);
     this.setShipFacingTowardTarget(target);
     this.player.awardCrewExperience('navigation', 4);
     this.player.awardCrewExperience('piloting', 2);
@@ -1626,7 +1680,7 @@ export class Game {
     }
 
     if (dx !== 0 || dy !== 0) {
-      this.approachTargetSignature = null;
+      this.travelMode.approachTargetSignature = null;
       // Clear non-critical status messages when moving
       if (this.statusMessage && !/(error|fail|cannot|mined|sold|scan|purchased)/i.test(this.statusMessage)) {
         this.statusMessage = '';
@@ -1636,10 +1690,10 @@ export class Game {
       const isBoost = this.inputManager.isActionActive('BOOST');
       const useFine = isFine && !isBoost;
       const currentState = this.stateManager.state;
-      if ((currentState === 'hyperspace' || currentState === 'system') && !this.travelCommandMoving) {
+      if ((currentState === 'hyperspace' || currentState === 'system') && !this.travelMode.commandMoving) {
         return;
       }
-      if (currentState === 'planet' && (this.surfaceMapExpanded || this.surfaceLegendOpen)) {
+      if (currentState === 'planet' && (this.surfaceMode.mapExpanded || this.surfaceMode.legendOpen)) {
         return;
       }
 
@@ -1896,8 +1950,8 @@ export class Game {
         cursor.dy = Math.max(-bounds.y, Math.min(bounds.y, contact.dy));
       }
     }
-    this.travelObserveCursor = cursor;
-    this.travelCommandMoving = false;
+    this.travelMode.observeCursor = cursor;
+    this.travelMode.commandMoving = false;
     this.statusMessage = `${mode === 'hyperspace' ? 'Interstellar' : 'Planetary'} observation reticle active. Arrows aim; Enter scans; Esc cancels.`;
     this.forceFullRender = true;
   }
@@ -1918,7 +1972,7 @@ export class Game {
   }
 
   private confirmTravelObserveCursor(): void {
-    const cursor = this.travelObserveCursor;
+    const cursor = this.travelMode.observeCursor;
     if (!cursor) return;
     this.terminalOverlay.clear();
     if (cursor.mode === 'hyperspace') {
@@ -1926,7 +1980,7 @@ export class Game {
     } else {
       this.scanSystemObserveCursor(cursor);
     }
-    this.travelObserveCursor = null;
+    this.travelMode.observeCursor = null;
     this.forceFullRender = true;
   }
 
@@ -2321,7 +2375,7 @@ export class Game {
     }
 
     // --- Update Terminal Overlay ---
-    if (!this.shipMenuOpen) {
+    if (!this.shipOperations.open) {
       this.terminalOverlay.update(deltaTime); // Update typing/fading
       this.astrometricOverlay.update(
         {
@@ -2344,27 +2398,13 @@ export class Game {
         const currentState = this.stateManager.state;
         let stateUpdateStatus = ''; // Store status from state-specific updates
 
-        switch (currentState) {
-          case 'hyperspace':
-            stateUpdateStatus = this._updateHyperspace(deltaTime);
-            break;
-          case 'system':
-            stateUpdateStatus = this._updateSystem(deltaTime); // Includes orbit updates
-            break;
-          case 'orbit':
-            stateUpdateStatus = this._updateOrbit(deltaTime);
-            break;
-          case 'planet':
-            stateUpdateStatus = this._updatePlanet(deltaTime);
-            break;
-          case 'starbase':
-            stateUpdateStatus = this._updateStarbase(deltaTime);
-            break;
-          default:
-            // This should not happen if state management is correct
-            stateUpdateStatus = `Error: Unexpected state ${currentState}`;
-            logger.warn(stateUpdateStatus);
-        }
+        stateUpdateStatus = this.modeDispatcher.dispatch(currentState, {
+          hyperspace: () => this._updateHyperspace(deltaTime),
+          system: () => this._updateSystem(deltaTime),
+          orbit: () => this._updateOrbit(deltaTime),
+          planet: () => this._updatePlanet(deltaTime),
+          starbase: () => this._updateStarbase(deltaTime),
+        });
         // Update main status message ONLY if the state update provided one
         // AND the current message isn't an error/failure/important action result
         if (
@@ -2643,9 +2683,9 @@ export class Game {
     const system = this.stateManager.currentSystem;
     const targets = this.getTargetMenuTargets();
     const visibleRows = this.getTargetMenuVisibleRows();
-    const viewport = moveSelection(this.targetMenuSelection, 0, targets.length, visibleRows, this.targetMenuOffset);
-    this.targetMenuSelection = viewport.selectedIndex;
-    this.targetMenuOffset = viewport.viewOffset;
+    const viewport = moveSelection(this.travelMode.targetMenuSelection, 0, targets.length, visibleRows, this.travelMode.targetMenuOffset);
+    this.travelMode.targetMenuSelection = viewport.selectedIndex;
+    this.travelMode.targetMenuOffset = viewport.viewOffset;
 
     return {
       title: 'Navigation Targets',
@@ -2653,8 +2693,8 @@ export class Game {
       columns: ['TYPE', 'NAME', 'RANGE', 'BRG'],
       widths: [8, 24, 10, 5],
       rows: targets.map((target) => this.createTargetMenuRow(target, system)),
-      selectedIndex: this.targetMenuSelection,
-      viewOffset: this.targetMenuOffset,
+      selectedIndex: this.travelMode.targetMenuSelection,
+      viewOffset: this.travelMode.targetMenuOffset,
       visibleRowCount: visibleRows,
       footer: ['Up/Down select  Enter approach  Esc/Left/Right cancel'],
     };
@@ -2680,9 +2720,9 @@ export class Game {
       this.statusMessage = 'Ship menu unavailable while another interface is active.';
       return;
     }
-    this.shipMenuOpen = true;
-    this.shipMenuSelectionBySection = {};
-    this.shipMenuOffsetBySection = {};
+    this.shipOperations.open = true;
+    this.shipOperations.selectionBySection = {};
+    this.shipOperations.offsetBySection = {};
     this.openShipMenuSection('main');
     this.statusMessage = 'Ship operations menu opened.';
     this.forceFullRender = true;
@@ -2693,9 +2733,9 @@ export class Game {
       this.stateManager.state !== 'starbase' &&
       this.stateManager.state !== 'orbit' &&
       this.popupState === 'inactive' &&
-      !this.targetMenuOpen &&
-      !this.roverCargoOpen &&
-      !this.surfaceLegendOpen &&
+      !this.travelMode.targetMenuOpen &&
+      !this.surfaceMode.roverCargoOpen &&
+      !this.surfaceMode.legendOpen &&
       !this.quantitySelector &&
       !this.surfaceExtractionSelector &&
       !this.jettisonConfirmation
@@ -2703,40 +2743,34 @@ export class Game {
   }
 
   private closeShipMenu(message: string = ''): void {
-    this.shipMenuOpen = false;
-    this.shipMenuSection = 'main';
-    this.shipMenuSelection = 0;
-    this.shipMenuOffset = 0;
-    this.shipMenuSelectionBySection = {};
-    this.shipMenuOffsetBySection = {};
-    this.shipMenuJettisonItemKey = null;
+    this.shipOperations.close();
     this.statusMessage = message;
     this.forceFullRender = true;
   }
 
   private openShipMenuSection(section: ShipMenuSection): void {
-    this.shipMenuSelectionBySection[this.shipMenuSection] = this.shipMenuSelection;
-    this.shipMenuOffsetBySection[this.shipMenuSection] = this.shipMenuOffset;
-    this.shipMenuSection = section;
+    this.shipOperations.selectionBySection[this.shipOperations.section] = this.shipOperations.selection;
+    this.shipOperations.offsetBySection[this.shipOperations.section] = this.shipOperations.offset;
+    this.shipOperations.section = section;
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
     const viewport = moveSelectionInRows(
-      this.shipMenuSelectionBySection[section] ?? 0,
+      this.shipOperations.selectionBySection[section] ?? 0,
       0,
       rows,
       visibleRows,
-      this.shipMenuOffsetBySection[section] ?? 0
+      this.shipOperations.offsetBySection[section] ?? 0
     );
-    this.shipMenuSelection = viewport.selectedIndex;
-    this.shipMenuOffset = viewport.viewOffset;
-    if (section !== 'jettison') this.shipMenuJettisonItemKey = null;
+    this.shipOperations.selection = viewport.selectedIndex;
+    this.shipOperations.offset = viewport.viewOffset;
+    if (section !== 'jettison') this.shipOperations.jettisonItemKey = null;
     this.forceFullRender = true;
   }
 
   private moveShipMenuSelection(delta: number, rows: TextTableRow[], visibleRows: number): void {
-    const viewport = moveSelectionInRows(this.shipMenuSelection, delta, rows, visibleRows, this.shipMenuOffset);
-    this.shipMenuSelection = viewport.selectedIndex;
-    this.shipMenuOffset = viewport.viewOffset;
+    const viewport = moveSelectionInRows(this.shipOperations.selection, delta, rows, visibleRows, this.shipOperations.offset);
+    this.shipOperations.selection = viewport.selectedIndex;
+    this.shipOperations.offset = viewport.viewOffset;
     this.forceFullRender = true;
   }
 
@@ -2896,7 +2930,7 @@ export class Game {
     this.quantitySelector = null;
     const message = operation === 'mine' ? 'Mining cancelled.' : 'Transfer cancelled.';
     this.statusMessage = message;
-    if (this.stateManager.state === 'starbase') this.starbaseAlert = message;
+    if (this.stateManager.state === 'starbase') this.starbaseMode.alert = message;
     this.forceFullRender = true;
   }
 
@@ -2907,11 +2941,11 @@ export class Game {
     switch (context.type) {
       case 'buy':
         this.statusMessage = this.buyDepotItem(context.itemKey, value);
-        this.starbaseAlert = this.statusMessage;
+        this.starbaseMode.alert = this.statusMessage;
         break;
       case 'sell':
         this.statusMessage = this.sellDepotItem(context.itemKey, value);
-        this.starbaseAlert = this.statusMessage;
+        this.starbaseMode.alert = this.statusMessage;
         break;
       case 'jettison':
         this.openJettisonConfirmation(context.itemKey, value);
@@ -3060,7 +3094,7 @@ export class Game {
     const cargoLoad = this.formatCargoLoad(cargoTotal, this.player.terrainVehicle.cargoHold.capacity);
     const fuel = Math.max(0, this.player.terrainVehicle.fuel);
     const items: SurfaceVehicleMenuItem[] = [
-      { id: 'map', label: 'Map', status: this.surfaceMapExpanded ? 'expanded' : 'local' },
+      { id: 'map', label: 'Map', status: this.surfaceMode.mapExpanded ? 'expanded' : 'local' },
       { id: 'move', label: 'Move', status: fuel > 0 ? 'ready' : 'no fuel' },
       { id: 'cargo', label: 'Cargo', status: `${cargoLoad} m^3` },
       { id: 'pickup', label: 'Pick up', status: 'no local items' },
@@ -3085,10 +3119,10 @@ export class Game {
   private createSurfaceVehicleOverlayModel() {
     const items = this.getSurfaceVehicleMenuItems();
     const cargo = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
-    this.roverMenuSelection = clampIndex(this.roverMenuSelection, items.length);
+    this.surfaceMode.roverMenuSelection = clampIndex(this.surfaceMode.roverMenuSelection, items.length);
     return {
       dateTime: this.getGameDateTimeLabel(),
-      notifications: this.surfaceNotifications.length > 0 ? this.surfaceNotifications : [this.statusMessage].filter(Boolean),
+      notifications: this.surfaceMode.notifications.length > 0 ? this.surfaceMode.notifications : [this.statusMessage].filter(Boolean),
       deployed: this.player.terrainVehicle.deployed,
       moving: this.player.terrainVehicle.moving,
       available: this.player.terrainVehicle.available,
@@ -3097,11 +3131,11 @@ export class Game {
       maxFuel: this.player.terrainVehicle.maxFuel,
       cargo,
       cargoCapacity: this.player.terrainVehicle.cargoHold.capacity,
-      selectedIndex: this.roverMenuSelection,
+      selectedIndex: this.surfaceMode.roverMenuSelection,
       items: items.map((item) => ({ id: item.id, label: item.label, status: item.status, tone: item.id === 'embark' ? 'green' as const : 'normal' as const })),
-      mapExpanded: this.surfaceMapExpanded,
-      surfaceCellScale: this.surfaceMapExpanded ? 1 : CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE,
-      scanCursor: this.surfaceScanCursor ?? undefined,
+      mapExpanded: this.surfaceMode.mapExpanded,
+      surfaceCellScale: this.surfaceMode.mapExpanded ? 1 : CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE,
+      scanCursor: this.surfaceMode.scanCursor ?? undefined,
       crew: this.player.crew.map((member) => ({ name: member.name, hitPoints: member.hitPoints, maxHitPoints: member.maxHitPoints })),
       ship: {
         x: this.player.terrainVehicle.shipSurfaceX - this.player.position.surfaceX,
@@ -3132,9 +3166,9 @@ export class Game {
   }
 
   private openRoverCargo(): void {
-    this.roverCargoOpen = true;
-    this.roverCargoSelection = 0;
-    this.roverCargoOffset = 0;
+    this.surfaceMode.roverCargoOpen = true;
+    this.surfaceMode.roverCargoSelection = 0;
+    this.surfaceMode.roverCargoOffset = 0;
     this.player.terrainVehicle.moving = false;
     this.statusMessage = 'Terrain vehicle cargo opened.';
     this.forceFullRender = true;
@@ -3143,17 +3177,17 @@ export class Game {
   private createRoverCargoModel(): TextModalTableModel {
     const rows = this.getRoverCargoRows();
     const visibleRows = 8;
-    const viewport = moveSelection(this.roverCargoSelection, 0, rows.length, visibleRows, this.roverCargoOffset);
-    this.roverCargoSelection = viewport.selectedIndex;
-    this.roverCargoOffset = viewport.viewOffset;
+    const viewport = moveSelection(this.surfaceMode.roverCargoSelection, 0, rows.length, visibleRows, this.surfaceMode.roverCargoOffset);
+    this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
+    this.surfaceMode.roverCargoOffset = viewport.viewOffset;
     return {
       title: 'Terrain Vehicle Cargo',
       subtitle: 'Rover hold only. Enter drops selected cargo onto the planet surface.',
       columns: ['CARGO', 'QTY', 'VALUE', 'ACTION'],
       widths: [26, 7, 10, 36],
       rows,
-      selectedIndex: this.roverCargoSelection,
-      viewOffset: this.roverCargoOffset,
+      selectedIndex: this.surfaceMode.roverCargoSelection,
+      viewOffset: this.surfaceMode.roverCargoOffset,
       visibleRowCount: visibleRows,
       footer: ['Up/Down select  Enter drop stack  Esc/Left close'],
     };
@@ -3184,8 +3218,8 @@ export class Game {
     this.addSurfaceNotification(`Dropped ${this.formatCargoAmount(removed)} m^3 ${name} on the surface.`);
     this.statusMessage = `Dropped ${this.formatCargoAmount(removed)} m^3 ${name}.`;
     if (this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold) <= 0) {
-      this.roverCargoSelection = 0;
-      this.roverCargoOffset = 0;
+      this.surfaceMode.roverCargoSelection = 0;
+      this.surfaceMode.roverCargoOffset = 0;
     }
     this.forceFullRender = true;
   }
@@ -3197,17 +3231,17 @@ export class Game {
   private createSurfaceLegendModel(): TextModalTableModel {
     const rows = this.getSurfaceLegendRows();
     const visibleRows = this.getSurfaceLegendVisibleRows();
-    const viewport = moveSelection(this.surfaceLegendSelection, 0, rows.length, visibleRows, this.surfaceLegendOffset);
-    this.surfaceLegendSelection = viewport.selectedIndex;
-    this.surfaceLegendOffset = viewport.viewOffset;
+    const viewport = moveSelection(this.surfaceMode.legendSelection, 0, rows.length, visibleRows, this.surfaceMode.legendOffset);
+    this.surfaceMode.legendSelection = viewport.selectedIndex;
+    this.surfaceMode.legendOffset = viewport.viewOffset;
     return {
       title: 'Surface Icon Legend',
       subtitle: 'Planetary surface symbols and instrument marks.',
       columns: ['ICON', 'SIGNATURE', 'MEANING'],
       widths: [8, 18, 56],
       rows,
-      selectedIndex: this.surfaceLegendSelection,
-      viewOffset: this.surfaceLegendOffset,
+      selectedIndex: this.surfaceMode.legendSelection,
+      viewOffset: this.surfaceMode.legendOffset,
       visibleRowCount: visibleRows,
       footer: ['Up/Down inspect  PageUp/PageDown scroll  Esc/Left/Right close'],
     };
@@ -3232,7 +3266,7 @@ export class Game {
       return;
     }
     this.player.terrainVehicle.moving = false;
-    this.surfaceScanCursor = { dx: 0, dy: 0 };
+    this.surfaceMode.scanCursor = { dx: 0, dy: 0 };
     this.addSurfaceNotification('Surface scanner active. Move cursor within the view; Enter/Space confirms.');
     this.forceFullRender = true;
   }
@@ -3247,7 +3281,7 @@ export class Game {
 
   private confirmSurfaceCursorScan(): void {
     const planet = this.stateManager.currentPlanet;
-    const cursor = this.surfaceScanCursor;
+    const cursor = this.surfaceMode.scanCursor;
     if (!planet || !cursor) return;
     planet.ensureSurfaceReady();
     const map = planet.heightmap;
@@ -3262,7 +3296,7 @@ export class Game {
     const mined = planet.isMined(x, y);
     const lat = 90 - (y / Math.max(1, size - 1)) * 180;
     const lon = (x / size) * 360 - 180;
-    this.surfaceScanCursor = null;
+    this.surfaceMode.scanCursor = null;
     this.addSurfaceNotification(`Scan ${Math.round(Math.abs(lat))}${lat < 0 ? 'S' : 'N'} x ${Math.round(Math.abs(lon))}${lon < 0 ? 'W' : 'E'}: ${this.getSurfaceAltitudeLabel(altitude)} terrain.`);
     this.addSurfaceNotification(mined ? `${elementName} trace is depleted at this location.` : `Local return: ${elementName}. Altitude ${Math.round(altitude * 100)}%.`);
     this.addSurfaceNotification(`Temp ${planet.getCurrentTemperature()} K. Gravity ${planet.gravity.toFixed(2)}g. ${planet.atmosphere.density} atmosphere.`);
@@ -3272,7 +3306,7 @@ export class Game {
 
   private addSurfaceNotification(message: string): void {
     if (!message) return;
-    this.surfaceNotifications = [message, ...this.surfaceNotifications].slice(0, 4);
+    this.surfaceMode.notifications = [message, ...this.surfaceMode.notifications].slice(0, 4);
   }
 
   private getSurfaceAltitudeLabel(altitude: number): string {
@@ -3307,7 +3341,7 @@ export class Game {
     if (!item) return;
     switch (item.id) {
       case 'map':
-        this.surfaceMapExpanded = true;
+        this.surfaceMode.mapExpanded = true;
         this.player.terrainVehicle.moving = false;
         this.statusMessage = 'Surface map expanded. Enter/Space returns to local view.';
         this.forceFullRender = true;
@@ -3333,9 +3367,9 @@ export class Game {
         this.dockTerrainVehicle();
         break;
       case 'icon':
-        this.surfaceLegendOpen = true;
-        this.surfaceLegendSelection = 0;
-        this.surfaceLegendOffset = 0;
+        this.surfaceMode.legendOpen = true;
+        this.surfaceMode.legendSelection = 0;
+        this.surfaceMode.legendOffset = 0;
         this.player.terrainVehicle.moving = false;
         this.statusMessage = 'Surface icon legend opened.';
         this.forceFullRender = true;
@@ -3365,10 +3399,10 @@ export class Game {
     this.player.terrainVehicle.moving = false;
     this.player.terrainVehicle.onFoot = false;
     this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
-    this.roverMenuSelection = 1;
-    this.surfaceMapExpanded = false;
-    this.surfaceLegendOpen = false;
-    this.surfaceNotifications = this.describePlanetSurfaceForDisembark(this.stateManager.currentPlanet);
+    this.surfaceMode.roverMenuSelection = 1;
+    this.surfaceMode.mapExpanded = false;
+    this.surfaceMode.legendOpen = false;
+    this.surfaceMode.notifications = this.describePlanetSurfaceForDisembark(this.stateManager.currentPlanet);
     this.statusMessage = 'Disembarked. Surface operations online.';
     this.addSurfaceNotification(this.statusMessage);
     this.closeShipMenu('');
@@ -3401,8 +3435,8 @@ export class Game {
       this.statusMessage = 'Launch requires being aboard the parked ship.';
       return;
     }
-    this.shipMenuOpen = false;
-    this.shipMenuSection = 'main';
+    this.shipOperations.open = false;
+    this.shipOperations.section = 'main';
     this.stateManager.launchFromSurfaceToOrbit();
     if (this.stateManager.statusMessage) {
       this.statusMessage = this.stateManager.statusMessage;
@@ -3413,12 +3447,12 @@ export class Game {
 
   private openSurfaceLandingOperationsMenu(): void {
     if (this.stateManager.state !== 'planet') return;
-    this.shipMenuOpen = true;
-    this.shipMenuSection = 'main';
-    this.shipMenuSelection = this.getShipMenuRows().findIndex((row) => row.id === 'rover');
-    if (this.shipMenuSelection < 0) this.shipMenuSelection = 0;
-    this.shipMenuOffset = 0;
-    this.shipMenuJettisonItemKey = null;
+    this.shipOperations.open = true;
+    this.shipOperations.section = 'main';
+    this.shipOperations.selection = this.getShipMenuRows().findIndex((row) => row.id === 'rover');
+    if (this.shipOperations.selection < 0) this.shipOperations.selection = 0;
+    this.shipOperations.offset = 0;
+    this.shipOperations.jettisonItemKey = null;
     this.forceFullRender = true;
   }
 
@@ -3513,7 +3547,7 @@ export class Game {
 
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
-    if (this.shipMenuSection === 'main') {
+    if (this.shipOperations.section === 'main') {
       if (row.id === 'launch') {
         this.launchFromParkedShip();
         return;
@@ -3523,27 +3557,27 @@ export class Game {
       }
       return;
     }
-    if (this.shipMenuSection === 'rover') {
+    if (this.shipOperations.section === 'rover') {
       if (row.id === 'rover:deploy') this.disembarkTerrainVehicle();
       if (row.id === 'rover:embark') this.dockTerrainVehicle();
       if (row.id === 'rover:launch') this.launchFromParkedShip();
       return;
     }
-    if (this.shipMenuSection === 'deck' && row.id.startsWith('deck:')) {
+    if (this.shipOperations.section === 'deck' && row.id.startsWith('deck:')) {
       this.focusShipCompartment(row.id.slice('deck:'.length));
       return;
     }
-    if (this.shipMenuSection === 'stations' && row.id.startsWith('station:')) {
+    if (this.shipOperations.section === 'stations' && row.id.startsWith('station:')) {
       this.focusShipCompartment(row.id.slice('station:'.length));
       return;
     }
-    if (this.shipMenuSection === 'cargo') {
+    if (this.shipOperations.section === 'cargo') {
       if (row.id.startsWith('cargo:')) {
         this.openJettisonQuantitySelector(row.id.slice('cargo:'.length));
       }
       return;
     }
-    if (this.shipMenuSection === 'jettison') {
+    if (this.shipOperations.section === 'jettison') {
       this.activateJettisonSelection(row);
     }
   }
@@ -3561,7 +3595,7 @@ export class Game {
       this.statusMessage = 'Jettison cancelled.';
       return;
     }
-    const itemKey = this.shipMenuJettisonItemKey;
+    const itemKey = this.shipOperations.jettisonItemKey;
     if (!itemKey) {
       this.openShipMenuSection('cargo');
       this.statusMessage = 'No cargo selected.';
@@ -3605,16 +3639,16 @@ export class Game {
   }
 
   private getShipMenuVisibleRows(): number {
-    if (this.shipMenuSection === 'status') return 18;
+    if (this.shipOperations.section === 'status') return 18;
     return 12;
   }
 
   private createShipMenuModel(): TextModalTableModel {
     const rows = this.getShipMenuRows();
     const visibleRows = this.getShipMenuVisibleRows();
-    const viewport = moveSelectionInRows(this.shipMenuSelection, 0, rows, visibleRows, this.shipMenuOffset);
-    this.shipMenuSelection = viewport.selectedIndex;
-    this.shipMenuOffset = viewport.viewOffset;
+    const viewport = moveSelectionInRows(this.shipOperations.selection, 0, rows, visibleRows, this.shipOperations.offset);
+    this.shipOperations.selection = viewport.selectedIndex;
+    this.shipOperations.offset = viewport.viewOffset;
     const meta = this.getShipMenuMeta();
     return {
       title: meta.title,
@@ -3622,18 +3656,18 @@ export class Game {
       columns: meta.columns,
       widths: meta.widths,
       rows,
-      selectedIndex: this.shipMenuSelection,
-      viewOffset: this.shipMenuOffset,
+      selectedIndex: this.shipOperations.selection,
+      viewOffset: this.shipOperations.offset,
       visibleRowCount: visibleRows,
-      detailLineCount: this.shipMenuSection === 'main' ? 2 : 1,
+      detailLineCount: this.shipOperations.section === 'main' ? 2 : 1,
       footer: meta.footer,
-      dashboard: this.shipMenuSection === 'status' ? this.getShipStatusDashboard() : undefined,
+      dashboard: this.shipOperations.section === 'status' ? this.getShipStatusDashboard() : undefined,
     };
   }
 
   private getShipMenuMeta(): { title: string; subtitle: string; columns: string[]; widths: number[]; footer: string[] } {
-    const backHint = this.shipMenuSection === 'main' ? 'Esc/Left close' : 'Esc/Left back';
-    switch (this.shipMenuSection) {
+    const backHint = this.shipOperations.section === 'main' ? 'Esc/Left close' : 'Esc/Left back';
+    switch (this.shipOperations.section) {
       case 'deck':
         return { title: 'Ship Deck Plan', subtitle: `${getShipCompartment(this.currentShipCompartmentId).label} is the current internal focus.`, columns: ['DECK', 'COMPARTMENT', 'WATCH', 'STATE', 'READOUT'], widths: [6, 20, 17, 10, 35], footer: [`Up/Down select  Enter focus compartment  ${backHint}`] };
       case 'stations':
@@ -3657,7 +3691,7 @@ export class Game {
   }
 
   private getShipMenuRows(): TextTableRow[] {
-    switch (this.shipMenuSection) {
+    switch (this.shipOperations.section) {
       case 'deck':
         return this.getShipDeckMenuRows();
       case 'stations':
@@ -3963,7 +3997,7 @@ export class Game {
   }
 
   private getJettisonMenuRows(): TextTableRow[] {
-    const itemKey = this.shipMenuJettisonItemKey;
+    const itemKey = this.shipOperations.jettisonItemKey;
     const held = itemKey ? this.player.cargoHold.items[itemKey] || 0 : 0;
     const name = itemKey ? this.getTradeItemInfo(itemKey)?.name ?? itemKey : 'No cargo';
     if (!itemKey || held <= 0) {
@@ -4056,7 +4090,7 @@ export class Game {
       case 'hyperspace':
         return 'Drift';
       case 'system':
-        return this.approachTargetSignature ? 'Approach' : 'Local';
+        return this.travelMode.approachTargetSignature ? 'Approach' : 'Local';
       case 'planet':
         return 'Landed';
       default:
@@ -4089,14 +4123,14 @@ export class Game {
   private ensureSelectedTarget(): NavigationTarget | null {
     const targets = this.getNavigationTargets();
     if (targets.length === 0) {
-      this.currentTargetIndex = 0;
-      this.currentTargetSignature = '';
+      this.travelMode.currentTargetIndex = 0;
+      this.travelMode.currentTargetSignature = '';
       return null;
     }
 
-    const existingIndex = targets.findIndex((target) => this.getTargetSignature(target) === this.currentTargetSignature);
+    const existingIndex = targets.findIndex((target) => this.getTargetSignature(target) === this.travelMode.currentTargetSignature);
     if (existingIndex >= 0) {
-      this.currentTargetIndex = existingIndex;
+      this.travelMode.currentTargetIndex = existingIndex;
       return targets[existingIndex];
     }
 
@@ -4110,8 +4144,8 @@ export class Game {
         closestIndex = index;
       }
     });
-    this.currentTargetIndex = closestIndex;
-    this.currentTargetSignature = this.getTargetSignature(targets[closestIndex]);
+    this.travelMode.currentTargetIndex = closestIndex;
+    this.travelMode.currentTargetSignature = this.getTargetSignature(targets[closestIndex]);
     return targets[closestIndex];
   }
 
@@ -4119,7 +4153,7 @@ export class Game {
     if (this.stateManager.state !== 'system') return null;
     const targets = this.getNavigationTargets();
     if (targets.length === 0) return null;
-    const existingIndex = targets.findIndex((target) => this.getTargetSignature(target) === this.currentTargetSignature);
+    const existingIndex = targets.findIndex((target) => this.getTargetSignature(target) === this.travelMode.currentTargetSignature);
     if (existingIndex >= 0) return targets[existingIndex];
     return this.ensureSelectedTarget();
   }
@@ -4203,10 +4237,10 @@ export class Game {
   }
 
   private updateApproachAssist(_deltaTime: number): void {
-    if (this.stateManager.state !== 'system' || !this.approachTargetSignature) return;
+    if (this.stateManager.state !== 'system' || !this.travelMode.approachTargetSignature) return;
     const target = this.getSelectedTarget();
-    if (!target || this.getTargetSignature(target) !== this.approachTargetSignature) {
-      this.approachTargetSignature = null;
+    if (!target || this.getTargetSignature(target) !== this.travelMode.approachTargetSignature) {
+      this.travelMode.approachTargetSignature = null;
       return;
     }
 
@@ -4216,7 +4250,7 @@ export class Game {
     const distance = Math.sqrt(dx * dx + dy * dy);
     const desiredDistance = this.getTargetApproachDistance(target);
     if (distance <= desiredDistance) {
-      this.approachTargetSignature = null;
+      this.travelMode.approachTargetSignature = null;
       this.statusMessage = `Approach complete: ${this.getTargetName(target)}.`;
       return;
     }
@@ -4231,11 +4265,11 @@ export class Game {
   private _updateOrbit(deltaTime: number): string {
     const planet = this.stateManager.currentPlanet;
     if (!planet) return 'Orbit Error: Planet data missing.';
-    this.orbitElapsedSeconds += deltaTime;
+    this.orbitModeState.elapsedSeconds += deltaTime;
     const selectedBody = this.getSelectedOrbitBody();
     const mapSize = getPlanetMapSize(selectedBody);
-    this.orbitLandingX = ((Math.floor(this.orbitLandingX) % mapSize) + mapSize) % mapSize;
-    this.orbitLandingY = Math.max(0, Math.min(mapSize - 1, Math.floor(this.orbitLandingY)));
+    this.orbitModeState.landingX = ((Math.floor(this.orbitModeState.landingX) % mapSize) + mapSize) % mapSize;
+    this.orbitModeState.landingY = Math.max(0, Math.min(mapSize - 1, Math.floor(this.orbitModeState.landingY)));
     this.forceFullRender = true;
 
     const actions = createAvailableActions({
@@ -4247,7 +4281,7 @@ export class Game {
     });
     const orbitText = selectedBody.orbitDistance <= 0 ? 'none' : `${formatDistanceAu(selectedBody.orbitDistance)} from primary`;
     const signalText = selectedBody.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(selectedBody.orbitDistance);
-    return `Orbit: ${selectedBody.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.orbitMode} | Site ${this.orbitLandingX},${this.orbitLandingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
+    return `Orbit: ${selectedBody.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.orbitModeState.mode} | Site ${this.orbitModeState.landingX},${this.orbitModeState.landingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
   }
 
   private _updatePlanet(_deltaTime: number): string {
@@ -4287,12 +4321,12 @@ export class Game {
     if (!starbase) {
       /* ... error handling ... */ return 'Starbase Error: Data missing.';
     }
-    const section = STARBASE_SECTIONS.find((candidate) => candidate.id === this.starbaseSectionId)?.label ?? 'Operations';
+    const section = STARBASE_SECTIONS.find((candidate) => candidate.id === this.starbaseMode.sectionId)?.label ?? 'Operations';
     return `Docked: ${starbase.name} | Panel: ${section} | Enter use, Esc cancel, L depart.`;
   }
 
   private drawTravelObserveCursor(): void {
-    const cursor = this.travelObserveCursor;
+    const cursor = this.travelMode.observeCursor;
     if (!cursor || cursor.mode !== this.stateManager.state) return;
     const center = this.getTravelViewCenter();
     const x = center.x + cursor.dx;
@@ -4314,7 +4348,7 @@ export class Game {
     const currentState = this.stateManager.state;
     try {
       const directCanvasOverlayVisible =
-        (!this.shipMenuOpen && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) ||
+        (!this.shipOperations.open && (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) ||
         this.isTravelDateTimeHudVisible() ||
         this.profilerVisible;
       const mainRenderSignature = this.getMainRenderSignature();
@@ -4393,19 +4427,19 @@ export class Game {
         );
       }
 
-      if (this.targetMenuOpen) {
+      if (this.travelMode.targetMenuOpen) {
         this.renderer.drawTextModalTable(this.createTargetMenuModel());
       }
 
-      if (this.shipMenuOpen) {
+      if (this.shipOperations.open) {
         this.renderer.drawTextModalTable(this.createShipMenuModel());
       }
 
-      if (this.roverCargoOpen) {
+      if (this.surfaceMode.roverCargoOpen) {
         this.renderer.drawTextModalTable(this.createRoverCargoModel());
       }
 
-      if (this.surfaceLegendOpen) {
+      if (this.surfaceMode.legendOpen) {
         this.renderer.drawTextModalTable(this.createSurfaceLegendModel());
       }
 
@@ -4461,7 +4495,7 @@ export class Game {
   }
 
   private shouldSuppressHudForeground(): boolean {
-    return this.shipMenuOpen || this.targetMenuOpen;
+    return this.shipOperations.open || this.travelMode.targetMenuOpen;
   }
 
   private isTravelDateTimeHudVisible(): boolean {
@@ -4500,10 +4534,10 @@ export class Game {
     return (
       this.stateManager.state === 'starbase' ||
       this.popupState !== 'inactive' ||
-      this.targetMenuOpen ||
-      this.shipMenuOpen ||
-      this.roverCargoOpen ||
-      this.surfaceLegendOpen ||
+      this.travelMode.targetMenuOpen ||
+      this.shipOperations.open ||
+      this.surfaceMode.roverCargoOpen ||
+      this.surfaceMode.legendOpen ||
       Boolean(this.quantitySelector) ||
       Boolean(this.surfaceExtractionSelector) ||
       Boolean(this.jettisonConfirmation)
@@ -4511,8 +4545,8 @@ export class Game {
   }
 
   private canSkipMainRender(state: GameState, directCanvasOverlayVisible: boolean, signature: string): boolean {
-    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipMenuOpen || this.roverCargoOpen || this.surfaceLegendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) return false;
-    if (state === 'starbase' && this.starbaseAlert) return false;
+    if (this.forceFullRender || directCanvasOverlayVisible || this.popupState !== 'inactive' || this.shipOperations.open || this.surfaceMode.roverCargoOpen || this.surfaceMode.legendOpen || this.quantitySelector || this.surfaceExtractionSelector || this.jettisonConfirmation) return false;
+    if (state === 'starbase' && this.starbaseMode.alert) return false;
     if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
   }
@@ -4543,11 +4577,11 @@ export class Game {
           this.player.terrainVehicle.moving ? 'moving' : 'stopped',
           this.player.terrainVehicle.shipSurfaceX,
           this.player.terrainVehicle.shipSurfaceY,
-          this.roverMenuSelection,
-          this.roverCargoOpen ? 'cargo' : 'nocargo',
-          this.surfaceMapExpanded ? 'map' : 'local',
-          this.surfaceLegendOpen ? 'legend' : 'nolegend',
-          this.surfaceScanCursor ? `${this.surfaceScanCursor.dx},${this.surfaceScanCursor.dy}` : 'noscan',
+          this.surfaceMode.roverMenuSelection,
+          this.surfaceMode.roverCargoOpen ? 'cargo' : 'nocargo',
+          this.surfaceMode.mapExpanded ? 'map' : 'local',
+          this.surfaceMode.legendOpen ? 'legend' : 'nolegend',
+          this.surfaceMode.scanCursor ? `${this.surfaceMode.scanCursor.dx},${this.surfaceMode.scanCursor.dy}` : 'noscan',
           Math.floor(performance.now() / 450),
           this.player.terrainVehicle.fuel.toFixed(1),
           this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold),
@@ -4557,10 +4591,10 @@ export class Game {
         return [
           state,
           this.stateManager.currentStarbase?.name ?? '',
-          this.starbaseSectionId,
+          this.starbaseMode.sectionId,
           this.getStarbaseSelection(),
           this.getStarbaseOffset(),
-          this.starbaseAlert,
+          this.starbaseMode.alert,
           this.player.resources.credits,
           this.player.resources.fuel,
         ].join('|');
@@ -4732,8 +4766,8 @@ export class Game {
 
   private getSelectedTravelCommandId(): string {
     const commands = this.getSelectableTravelCommandButtons();
-    this.travelCommandSelection = clampIndex(this.travelCommandSelection, commands.length);
-    return commands[this.travelCommandSelection]?.id ?? 'move';
+    this.travelMode.commandSelection = clampIndex(this.travelMode.commandSelection, commands.length);
+    return commands[this.travelMode.commandSelection]?.id ?? 'move';
   }
 
   private activateRecommendedTravelCommand(): void {
@@ -4741,7 +4775,7 @@ export class Game {
       ? this.createSystemCommandBar(this.getCurrentAvailableActions(), false)
       : this.createHyperspaceCommandBar(this.getCurrentAvailableActions(), false);
     const commands = [...(model.leftButtons ?? []), ...model.buttons, ...(model.rightButtons ?? [])].filter((button) => button.enabled !== false);
-    const recommended = commands.find((button) => button.id === model.primaryButtonId) ?? commands[this.travelCommandSelection];
+    const recommended = commands.find((button) => button.id === model.primaryButtonId) ?? commands[this.travelMode.commandSelection];
     if (recommended) this.executeCommandBarAction(recommended.action);
     this.forceFullRender = true;
   }
@@ -4752,12 +4786,12 @@ export class Game {
       context: 'interstellar',
       targetName: this.getCommandStripTargetName(),
       primaryButtonId: enter?.id,
-      selectedButtonId: includeSelection && !this.travelCommandMoving ? this.getSelectedTravelCommandId() : undefined,
+      selectedButtonId: includeSelection && !this.travelMode.commandMoving ? this.getSelectedTravelCommandId() : undefined,
       leftButtons: enter
         ? [commandButton(enter.id, enter.label, enter.action, { key: enter.key, tone: 'green', detail: enter.targetName ? `Enter ${enter.targetName}` : 'Enter navigable contact' })]
         : [],
       buttons: [
-        commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows', detail: this.travelCommandMoving ? 'Movement engaged. Enter, Space, or Esc pauses command movement.' : 'Resume interstellar movement.' }),
+        commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows', detail: this.travelMode.commandMoving ? 'Movement engaged. Enter, Space, or Esc pauses command movement.' : 'Resume interstellar movement.' }),
         commandButton('scan-local', 'Scan', 'SCAN_SYSTEM_OBJECT', { key: CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT, detail: 'Scan the stellar or planemo contact at current coordinates.' }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', { key: CONFIG.KEY_BINDINGS.SHIP_MENU, detail: 'Open ship operations.' }),
         commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', { detail: 'Open a reticle for long-range contact observation.' }),
@@ -4774,12 +4808,12 @@ export class Game {
       context: 'planetary',
       targetName: this.getCommandStripTargetName(),
       primaryButtonId: primaryTravel?.id,
-      selectedButtonId: includeSelection && !this.travelCommandMoving ? this.getSelectedTravelCommandId() : undefined,
+      selectedButtonId: includeSelection && !this.travelMode.commandMoving ? this.getSelectedTravelCommandId() : undefined,
       leftButtons: primaryTravel
         ? [commandButton(primaryTravel.id, primaryTravel.label, primaryTravel.action, { key: primaryTravel.key, tone: 'green', detail: primaryTravel.targetName ? `${primaryTravel.label} ${primaryTravel.targetName}` : primaryTravel.label })]
         : [],
       buttons: [
-        commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows', detail: this.travelCommandMoving ? 'Movement engaged. Enter, Space, or Esc pauses command movement.' : 'Resume planetary movement.' }),
+        commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows', detail: this.travelMode.commandMoving ? 'Movement engaged. Enter, Space, or Esc pauses command movement.' : 'Resume planetary movement.' }),
         commandButton('scan-object', 'Scan', 'SCAN_SYSTEM_OBJECT', { key: CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT, detail: 'Scan a nearby star, planet, starbase, or selected close target.' }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', { key: CONFIG.KEY_BINDINGS.SHIP_MENU, detail: 'Open ship operations.' }),
         commandButton('observe', 'Observe', 'OBSERVE_SYSTEM_TARGET', { detail: 'Open a reticle and scan the selected local body.' }),
@@ -4808,7 +4842,7 @@ export class Game {
       context: 'terrain',
       targetName: this.stateManager.currentPlanet?.name,
       primaryButtonId: this.isAtParkedShip() ? 'embark' : undefined,
-      selectedButtonId: rover.moving ? undefined : this.getSurfaceVehicleMenuItems()[this.roverMenuSelection]?.id,
+      selectedButtonId: rover.moving ? undefined : this.getSurfaceVehicleMenuItems()[this.surfaceMode.roverMenuSelection]?.id,
       leftButtons: this.isAtParkedShip()
         ? [commandButton('embark', 'Embark', 'ROVER_EMBARK', { tone: 'green', detail: 'Board the parked ship.' })]
         : [],
@@ -4925,17 +4959,17 @@ export class Game {
     if (bodies.length === 0 || !parent) {
       throw new Error('No orbital body selected.');
     }
-    this.orbitSelectedBodyIndex = clampIndex(this.orbitSelectedBodyIndex, bodies.length);
-    return bodies[this.orbitSelectedBodyIndex];
+    this.orbitModeState.selectedBodyIndex = clampIndex(this.orbitModeState.selectedBodyIndex, bodies.length);
+    return bodies[this.orbitModeState.selectedBodyIndex];
   }
 
   private resetOrbitLandingCursor(): void {
     const selected = this.getSelectedOrbitBody();
     const mapSize = getPlanetMapSize(selected);
-    this.orbitLandingX = Math.floor(mapSize / 2);
-    this.orbitLandingY = Math.floor(mapSize / 2);
-    this.orbitMode = 'overview';
-    this.orbitAlert = '';
+    this.orbitModeState.landingX = Math.floor(mapSize / 2);
+    this.orbitModeState.landingY = Math.floor(mapSize / 2);
+    this.orbitModeState.mode = 'overview';
+    this.orbitModeState.alert = '';
   }
 
   private createCurrentOrbitScreen(): OrbitScreenModel {
@@ -4946,14 +4980,14 @@ export class Game {
     return createOrbitScreenModel({
       parentPlanet,
       selectedBody,
-      selectedIndex: this.orbitSelectedBodyIndex,
-      mode: this.orbitMode,
-      landingCursorX: this.orbitLandingX,
-      landingCursorY: this.orbitLandingY,
+      selectedIndex: this.orbitModeState.selectedBodyIndex,
+      mode: this.orbitModeState.mode,
+      landingCursorX: this.orbitModeState.landingX,
+      landingCursorY: this.orbitModeState.landingY,
       rotationPhase: this.getOrbitGlobeRotationPhase(selectedBody),
       illuminationPhase: this.getOrbitGlobeIlluminationPhase(),
       stellarSources: this.getOrbitStellarSources(selectedBody),
-      alert: this.orbitAlert || this.statusMessage,
+      alert: this.orbitModeState.alert || this.statusMessage,
     });
   }
 
@@ -4981,27 +5015,27 @@ export class Game {
   private getOrbitGlobeRotationPhase(body: Planet): number {
     const rotationPeriodSeconds = body.rotationPeriodHours * 60 * 60;
     if (!Number.isFinite(rotationPeriodSeconds) || rotationPeriodSeconds <= 0) {
-      return this.orbitElapsedSeconds * 0.006;
+      return this.orbitModeState.elapsedSeconds * 0.006;
     }
-    const simulatedSeconds = this.orbitElapsedSeconds * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
+    const simulatedSeconds = this.orbitModeState.elapsedSeconds * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
     return simulatedSeconds / rotationPeriodSeconds;
   }
 
   private getOrbitGlobeIlluminationPhase(): number {
-    return this.orbitElapsedSeconds * 0.06;
+    return this.orbitModeState.elapsedSeconds * 0.06;
   }
 
   private createCurrentStarbaseScreen(): StarbaseScreenModel {
     const starbase = this.stateManager.currentStarbase!;
     const visibleRowCount = this.getStarbaseVisibleRowCount();
-    const rows = this.getStarbaseRows(starbase, this.starbaseSectionId);
+    const rows = this.getStarbaseRows(starbase, this.starbaseMode.sectionId);
     const selectedIndex = clampIndex(this.getStarbaseSelection(), rows.length);
     const viewOffset = this.getStarbaseOffset();
-    const meta = this.getStarbaseSectionMeta(starbase, this.starbaseSectionId);
+    const meta = this.getStarbaseSectionMeta(starbase, this.starbaseMode.sectionId);
     return createStarbaseScreenModel({
       starbase,
       player: this.player,
-      sectionId: this.starbaseSectionId,
+      sectionId: this.starbaseMode.sectionId,
       selectedIndex,
       viewOffset,
       visibleRowCount,
@@ -5010,8 +5044,8 @@ export class Game {
       widths: meta.widths,
       title: meta.title,
       subtitle: meta.subtitle,
-      detailLineCount: this.starbaseSectionId === 'overview' ? 2 : 1,
-      alert: this.starbaseAlert || this.statusMessage,
+      detailLineCount: this.starbaseMode.sectionId === 'overview' ? 2 : 1,
+      alert: this.starbaseMode.alert || this.statusMessage,
     });
   }
 
@@ -5021,69 +5055,69 @@ export class Game {
   }
 
   private getStarbaseSelection(): number {
-    return this.starbaseSelectionBySection[this.starbaseSectionId] ?? 0;
+    return this.starbaseMode.selectionBySection[this.starbaseMode.sectionId] ?? 0;
   }
 
   private getStarbaseOffset(): number {
-    return this.starbaseOffsetBySection[this.starbaseSectionId] ?? 0;
+    return this.starbaseMode.offsetBySection[this.starbaseMode.sectionId] ?? 0;
   }
 
   private moveStarbaseSelection(delta: number, rowCount: number, visibleRows: number): void {
     const viewport = moveSelection(this.getStarbaseSelection(), delta, rowCount, visibleRows, this.getStarbaseOffset());
-    this.starbaseSelectionBySection[this.starbaseSectionId] = viewport.selectedIndex;
-    this.starbaseOffsetBySection[this.starbaseSectionId] = viewport.viewOffset;
-    this.starbaseAlert = '';
+    this.starbaseMode.selectionBySection[this.starbaseMode.sectionId] = viewport.selectedIndex;
+    this.starbaseMode.offsetBySection[this.starbaseMode.sectionId] = viewport.viewOffset;
+    this.starbaseMode.alert = '';
   }
 
   private switchStarbaseSection(delta: number): void {
-    const currentIndex = STARBASE_SECTIONS.findIndex((section) => section.id === this.starbaseSectionId);
+    const currentIndex = STARBASE_SECTIONS.findIndex((section) => section.id === this.starbaseMode.sectionId);
     const nextIndex = (currentIndex + delta + STARBASE_SECTIONS.length) % STARBASE_SECTIONS.length;
-    this.starbaseSectionId = STARBASE_SECTIONS[nextIndex].id;
-    this.starbaseAlert = '';
+    this.starbaseMode.sectionId = STARBASE_SECTIONS[nextIndex].id;
+    this.starbaseMode.alert = '';
   }
 
   private activateStarbaseSelection(starbase: Starbase, row: StarbaseTableRow | undefined): void {
     if (!row) {
-      this.starbaseAlert = 'No item selected.';
+      this.starbaseMode.alert = 'No item selected.';
       return;
     }
     const market = this.getTradeDepotManifest(starbase.name);
-    if (this.starbaseSectionId === 'overview') {
-      this.starbaseSectionId = (row.id as StarbaseSectionId) || 'buy';
+    if (this.starbaseMode.sectionId === 'overview') {
+      this.starbaseMode.sectionId = (row.id as StarbaseSectionId) || 'buy';
       return;
     }
-    if (this.starbaseSectionId === 'buy') {
-      this.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
+    if (this.starbaseMode.sectionId === 'buy') {
+      this.starbaseMode.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
       this.openBuyQuantitySelector(row.id);
       return;
     }
-    if (this.starbaseSectionId === 'sell') {
-      this.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
+    if (this.starbaseMode.sectionId === 'sell') {
+      this.starbaseMode.tradeSelectionIndex = Math.max(0, market.findIndex((item) => item.itemKey === row.id));
       this.openSellQuantitySelector(row.id);
       return;
     }
-    if (this.starbaseSectionId === 'services' && row.id === 'refuel') {
+    if (this.starbaseMode.sectionId === 'services' && row.id === 'refuel') {
       this._handleRefuelRequest();
-      this.starbaseAlert = this.statusMessage;
+      this.starbaseMode.alert = this.statusMessage;
       return;
     }
-    if (this.starbaseSectionId === 'missions') {
+    if (this.starbaseMode.sectionId === 'missions') {
       this.activateMissionSelection(starbase, row);
       return;
     }
-    if (this.starbaseSectionId === 'crew') {
+    if (this.starbaseMode.sectionId === 'crew') {
       this.activateCrewSelection(starbase, row);
       return;
     }
-    if (this.starbaseSectionId === 'shipyard' && row.id === 'terrain-vehicle') {
+    if (this.starbaseMode.sectionId === 'shipyard' && row.id === 'terrain-vehicle') {
       this.purchaseTerrainVehicle();
       return;
     }
-    if (this.starbaseSectionId === 'shipyard' && row.id.startsWith('shipyard:')) {
+    if (this.starbaseMode.sectionId === 'shipyard' && row.id.startsWith('shipyard:')) {
       this.purchaseShipyardUpgrade(row.id);
       return;
     }
-    this.starbaseAlert = row.detail || `${row.cells[0]} selected.`;
+    this.starbaseMode.alert = row.detail || `${row.cells[0]} selected.`;
   }
 
   private purchaseShipyardUpgrade(optionId: string): void {
@@ -5091,36 +5125,36 @@ export class Game {
     const profile = getStarbaseShipyardProfile(starbaseName);
     const option = createShipyardUpgradeOptions(this.player.ship, profile).find((candidate) => candidate.id === optionId);
     if (!option) {
-      this.starbaseAlert = 'Shipyard order unavailable.';
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = 'Shipyard order unavailable.';
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     if (option.disabled) {
-      this.starbaseAlert = option.detail;
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = option.detail;
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     if (this.player.resources.credits < option.cost) {
-      this.starbaseAlert = `Insufficient credits for ${option.label}. Required ${option.cost.toLocaleString()} Cr.`;
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = `Insufficient credits for ${option.label}. Required ${option.cost.toLocaleString()} Cr.`;
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     this.player.resources.credits -= option.cost;
-    this.starbaseAlert = `${installShipyardUpgrade(this.player.ship, optionId)} Cost ${option.cost.toLocaleString()} Cr.`;
-    this.statusMessage = this.starbaseAlert;
+    this.starbaseMode.alert = `${installShipyardUpgrade(this.player.ship, optionId)} Cost ${option.cost.toLocaleString()} Cr.`;
+    this.statusMessage = this.starbaseMode.alert;
     this.player.cargoHold.capacity = getShipCargoCapacity(this.player.ship);
   }
 
   private purchaseTerrainVehicle(): void {
     if (this.player.terrainVehicle.available) {
-      this.starbaseAlert = 'Terrain vehicle already aboard.';
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = 'Terrain vehicle already aboard.';
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     const cost = CONFIG.TERRAIN_VEHICLE_REPLACEMENT_COST;
     if (this.player.resources.credits < cost) {
-      this.starbaseAlert = `Insufficient credits for terrain vehicle replacement. Required ${cost.toLocaleString()} Cr.`;
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = `Insufficient credits for terrain vehicle replacement. Required ${cost.toLocaleString()} Cr.`;
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     this.player.resources.credits -= cost;
@@ -5129,8 +5163,8 @@ export class Game {
     this.player.terrainVehicle.moving = false;
     this.player.terrainVehicle.onFoot = false;
     this.player.terrainVehicle.fuel = this.player.terrainVehicle.maxFuel;
-    this.starbaseAlert = `Purchased replacement terrain vehicle for ${cost.toLocaleString()} Cr.`;
-    this.statusMessage = this.starbaseAlert;
+    this.starbaseMode.alert = `Purchased replacement terrain vehicle for ${cost.toLocaleString()} Cr.`;
+    this.statusMessage = this.starbaseMode.alert;
     eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
       newCredits: this.player.resources.credits,
       amountChanged: -cost,
@@ -5139,28 +5173,28 @@ export class Game {
 
   private activateCrewSelection(starbase: Starbase, row: StarbaseTableRow): void {
     if (row.disabled) {
-      this.starbaseAlert = row.detail || 'Crew record unavailable.';
+      this.starbaseMode.alert = row.detail || 'Crew record unavailable.';
       return;
     }
     if (row.id.startsWith('hire:')) {
       const recruitId = row.id.slice('hire:'.length);
       const recruit = this.getRecruitCandidates(starbase).find((candidate) => candidate.id === recruitId);
       if (!recruit) {
-        this.starbaseAlert = 'Recruit no longer available.';
+        this.starbaseMode.alert = 'Recruit no longer available.';
         return;
       }
       if (this.player.resources.credits < recruit.hireCost) {
-        this.starbaseAlert = `Insufficient credits to hire ${recruit.name}. Required ${recruit.hireCost} Cr.`;
+        this.starbaseMode.alert = `Insufficient credits to hire ${recruit.name}. Required ${recruit.hireCost} Cr.`;
         return;
       }
       if (this.player.crew.some((member) => member.id === recruit.id)) {
-        this.starbaseAlert = `${recruit.name} is already aboard.`;
+        this.starbaseMode.alert = `${recruit.name} is already aboard.`;
         return;
       }
       this.player.resources.credits -= recruit.hireCost;
       this.player.crew.push({ ...recruit, skills: { ...recruit.skills }, skillCaps: { ...recruit.skillCaps } });
-      this.starbaseAlert = `Hired ${recruit.name}, ${recruit.role}.`;
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = `Hired ${recruit.name}, ${recruit.role}.`;
+      this.statusMessage = this.starbaseMode.alert;
       eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
         newCredits: this.player.resources.credits,
         amountChanged: -recruit.hireCost,
@@ -5171,27 +5205,27 @@ export class Game {
       const [, memberId, skill] = row.id.split(':');
       const member = this.player.crew.find((candidate) => candidate.id === memberId);
       if (!member || !CREW_SKILLS.includes(skill as CrewSkill)) {
-        this.starbaseAlert = 'Training record unavailable.';
+        this.starbaseMode.alert = 'Training record unavailable.';
         return;
       }
       const result = trainCrewSkill(member, skill as CrewSkill);
-      this.starbaseAlert = result.message;
+      this.starbaseMode.alert = result.message;
       this.statusMessage = result.message;
       return;
     }
-    this.starbaseAlert = row.detail || 'Crew record selected.';
+    this.starbaseMode.alert = row.detail || 'Crew record selected.';
   }
 
   private activateMissionSelection(starbase: Starbase, row: StarbaseTableRow): void {
     const system = this.stateManager.currentSystem;
     if (!system) {
-      this.starbaseAlert = 'Mission board unavailable: local system record missing.';
+      this.starbaseMode.alert = 'Mission board unavailable: local system record missing.';
       return;
     }
 
     const mission = generateStarbaseMissions(starbase, system).find((candidate) => candidate.id === row.id);
     if (!mission) {
-      this.starbaseAlert = row.detail || 'No contract selected.';
+      this.starbaseMode.alert = row.detail || 'No contract selected.';
       return;
     }
 
@@ -5200,18 +5234,18 @@ export class Game {
       completedMissionIds: this.completedMissionIds,
     });
     if (status === 'COMPLETE') {
-      this.starbaseAlert = formatMissionDetail(mission, status);
+      this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
     }
     if (status === 'ACTIVE') {
-      this.starbaseAlert = formatMissionDetail(mission, status);
+      this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
     }
 
     this.acceptedMissionIds.add(mission.id);
     this.activeMissions[mission.id] = mission;
-    this.starbaseAlert = `Accepted: ${mission.title}. ${mission.objective.targetLabel}.`;
-    this.statusMessage = this.starbaseAlert;
+    this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objective.targetLabel}.`;
+    this.statusMessage = this.starbaseMode.alert;
   }
 
   private getStarbaseSectionMeta(
@@ -5617,8 +5651,8 @@ export class Game {
     if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
 
     for (let attempts = 0; attempts < market.length; attempts++) {
-      const item = market[this.tradeSelectionIndex % market.length];
-      this.tradeSelectionIndex++;
+      const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
+      this.starbaseMode.tradeSelectionIndex++;
       const unitsToBuy = this.getDepotPurchaseLimit(item.itemKey, Math.min(item.units, freeCargo));
       const totalCost = unitsToBuy * item.buyPrice;
       if (unitsToBuy > 0 && this.player.resources.credits >= totalCost) {
@@ -5685,20 +5719,20 @@ export class Game {
   private openBuyQuantitySelector(itemKey: string): void {
     const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
     if (!item) {
-      this.starbaseAlert = 'Depot item unavailable.';
+      this.starbaseMode.alert = 'Depot item unavailable.';
       return;
     }
     const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
     const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
     const max = this.getDepotPurchaseLimit(item.itemKey, Math.min(item.units, freeCargo, affordableUnits));
     if (freeCargo <= 0) {
-      this.starbaseAlert = 'Trade depot: cargo hold is full.';
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = 'Trade depot: cargo hold is full.';
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     if (max <= 0) {
-      this.starbaseAlert = `Insufficient credits for ${item.name}.`;
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = `Insufficient credits for ${item.name}.`;
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     this.openQuantitySelector(createQuantitySelector({
@@ -5719,8 +5753,8 @@ export class Game {
     const held = this.player.cargoHold.items[itemKey] || 0;
     const name = item?.name ?? this.getTradeItemInfo(itemKey)?.name ?? itemKey;
     if (held <= 0) {
-      this.starbaseAlert = `No ${name} in cargo.`;
-      this.statusMessage = this.starbaseAlert;
+      this.starbaseMode.alert = `No ${name} in cargo.`;
+      this.statusMessage = this.starbaseMode.alert;
       return;
     }
     this.openQuantitySelector(createQuantitySelector({
@@ -5778,7 +5812,7 @@ export class Game {
   }
 
   private buySelectedDepotItem(market: TradeDepotItem[]): string {
-    const item = market[this.tradeSelectionIndex % market.length];
+    const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
     const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
     if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
 
@@ -5799,7 +5833,7 @@ export class Game {
   }
 
   private sellSelectedDepotItem(market: TradeDepotItem[]): string {
-    const item = market[this.tradeSelectionIndex % market.length];
+    const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
     const amount = this.player.cargoHold.items[item.itemKey] || 0;
     if (amount <= 0) return `No ${item.name} in cargo.`;
 
@@ -5819,7 +5853,7 @@ export class Game {
   }
 
   private formatSelectedTradeLine(market: TradeDepotItem[]): string {
-    const item = market[this.tradeSelectionIndex % market.length];
+    const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
     const held = this.player.cargoHold.items[item.itemKey] || 0;
     return `Selected ${item.name}: buy ${item.buyPrice} Cr, sell ${item.sellPrice} Cr, stock ${item.units}, hold ${held}.`;
   }

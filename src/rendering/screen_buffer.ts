@@ -2,7 +2,7 @@
 // src/rendering/screen_buffer.ts (Added copyBufferFrom method)
 
 import { CONFIG } from '../config';
-import { GLYPHS } from '../constants';
+import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 
 /** Represents the state of a single character cell on the screen buffer. */

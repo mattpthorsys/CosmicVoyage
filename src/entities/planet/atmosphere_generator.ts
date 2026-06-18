@@ -4,7 +4,9 @@
 // UPDATED: April 2025 - Expanded GAS_MOLECULAR_MASS_KG with additional gases.
 
 import { PRNG } from '../../utils/prng';
-import { AU_IN_METERS, PLANET_TYPES, SPECTRAL_TYPES, ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, BOLTZMANN_CONSTANT_K, SOLAR_RADIUS_M } from '../../constants';
+import { AU_IN_METERS, BOLTZMANN_CONSTANT_K, SOLAR_RADIUS_M } from '../../constants/physics';
+import { ATMOSPHERE_DENSITIES, ATMOSPHERE_GASES, PLANET_TYPES } from '../../constants/planetary';
+import { SPECTRAL_TYPES } from '../../constants/stellar';
 import { logger } from '../../utils/logger';
 import { Atmosphere, AtmosphereComposition } from '../../entities/planet'; // Import types used/returned
 import {

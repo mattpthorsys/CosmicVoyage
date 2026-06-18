@@ -4,7 +4,7 @@
 import { PRNG } from '../../utils/prng';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet'; // Import dependent types
-import { AU_IN_METERS } from '../../constants';
+import { AU_IN_METERS } from '../../constants/physics';
 import { StellarEnvironment, estimateStellarActivity, getSpectralClass } from '../stellar_environment';
 
 export interface HydrosphereContext {

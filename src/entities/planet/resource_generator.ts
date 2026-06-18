@@ -3,7 +3,8 @@
 // REFACTORED: Extracted weight adjustment logic into helper functions.
 
 import { PRNG } from '../../utils/prng';
-import { MineralRichness, ELEMENTS, ElementInfo } from '../../constants';
+import { ELEMENTS, MineralRichness } from '../../constants/resources';
+import type { ElementInfo } from '../../constants/resources';
 import { logger } from '../../utils/logger';
 
 // --- Helper Functions for Weight Adjustment ---

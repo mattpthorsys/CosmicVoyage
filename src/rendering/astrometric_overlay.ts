@@ -1,5 +1,7 @@
 import { CONFIG } from '../config';
-import { AU_IN_METERS, PLANET_TYPES, SPECTRAL_TYPES } from '../constants';
+import { AU_IN_METERS } from '../constants/physics';
+import { PLANET_TYPES } from '../constants/planetary';
+import { SPECTRAL_TYPES } from '../constants/stellar';
 import { GameState } from '../core/game_state_manager';
 import { Player } from '../core/player';
 import {

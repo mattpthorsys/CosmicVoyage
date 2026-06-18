@@ -1,7 +1,7 @@
 // FILE: src/core/components.ts
 // Defines the interfaces for data components used in the ECS-lite pattern.
 
-import { GLYPHS } from "../constants"; // Import needed constants if defaults are used
+import { GLYPHS } from '../constants/visual';
 
 /** Component storing entity position across different game contexts. */
 export interface PositionComponent {

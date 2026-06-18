@@ -3,7 +3,8 @@
 import { PRNG } from '../utils/prng';
 import { fastHash } from '../utils/hash';
 import { CONFIG } from '../config';
-import { GLYPHS, SPECTRAL_TYPES, SPECTRAL_DISTRIBUTION } from '../constants';
+import { SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants/stellar';
+import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { PerlinNoise } from './perlin';
 import {

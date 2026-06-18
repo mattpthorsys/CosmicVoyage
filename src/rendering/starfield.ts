@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
-import { GLYPHS, SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants';
+import { SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants/stellar';
+import { GLYPHS } from '../constants/visual';
 import { fastHash } from '../utils/hash';
 import { adjustBrightness, hexToRgb, rgbToHex } from './colour';
 

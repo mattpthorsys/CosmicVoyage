@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
-import { AU_IN_METERS, ELEMENTS } from '../constants';
+import { AU_IN_METERS } from '../constants/physics';
+import { ELEMENTS } from '../constants/resources';
 import { describePlanetType, Planet } from '../entities/planet';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 

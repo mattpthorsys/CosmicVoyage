@@ -1,13 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../../../core/game';
+import {
+  OrbitModeController,
+  ShipOperationsController,
+  StarbaseModeController,
+  SurfaceModeController,
+  TravelModeController,
+} from '../../../core/modes/game_mode_controllers';
 
 function createRenderGateHarness(): any {
   return Object.assign(Object.create(Game.prototype), {
     forceFullRender: false,
     popupState: 'inactive',
-    starbaseAlert: '',
     lastMainRenderSignature: '',
     gameClockElapsedSeconds: 0,
+    _travelMode: new TravelModeController(),
+    _orbitModeState: new OrbitModeController(),
+    _surfaceMode: new SurfaceModeController(),
+    _starbaseMode: new StarbaseModeController(),
+    _shipOperations: new ShipOperationsController(),
     stateManager: { state: 'hyperspace' },
     player: {
       position: {
@@ -60,7 +71,7 @@ describe('Game main render signatures', () => {
 
   it('advances orbital globe phase by simulated time over body rotation period', () => {
     const game = createRenderGateHarness();
-    game.orbitElapsedSeconds = 40;
+    game.orbitModeState.elapsedSeconds = 40;
     const body = { rotationPeriodHours: 24 };
     const simulatedSecondsPerRealSecond = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
@@ -69,7 +80,7 @@ describe('Game main render signatures', () => {
 
   it('keeps orbital illumination cadence separate from physical globe rotation', () => {
     const game = createRenderGateHarness();
-    game.orbitElapsedSeconds = 40;
+    game.orbitModeState.elapsedSeconds = 40;
     const body = { rotationPeriodHours: 24 };
 
     expect(game.getOrbitGlobeIlluminationPhase()).toBeCloseTo(40 * 0.06);
@@ -78,22 +89,22 @@ describe('Game main render signatures', () => {
 
   it('suppresses HUD foreground while modal navigation menus are open', () => {
     const game = createRenderGateHarness();
-    game.shipMenuOpen = false;
-    game.targetMenuOpen = false;
+    game.shipOperations.open = false;
+    game.travelMode.targetMenuOpen = false;
     expect(game.shouldSuppressHudForeground()).toBe(false);
 
-    game.targetMenuOpen = true;
+    game.travelMode.targetMenuOpen = true;
     expect(game.shouldSuppressHudForeground()).toBe(true);
 
-    game.targetMenuOpen = false;
-    game.shipMenuOpen = true;
+    game.travelMode.targetMenuOpen = false;
+    game.shipOperations.open = true;
     expect(game.shouldSuppressHudForeground()).toBe(true);
   });
 
   it('shows the travel clock HUD only in unobstructed travel states', () => {
     const game = createRenderGateHarness();
-    game.targetMenuOpen = false;
-    game.shipMenuOpen = false;
+    game.travelMode.targetMenuOpen = false;
+    game.shipOperations.open = false;
     expect(game.isTravelDateTimeHudVisible()).toBe(true);
 
     game.stateManager.state = 'orbit';
@@ -102,10 +113,10 @@ describe('Game main render signatures', () => {
     game.stateManager.state = 'starbase';
     expect(game.isTravelDateTimeHudVisible()).toBe(true);
 
-    game.targetMenuOpen = true;
+    game.travelMode.targetMenuOpen = true;
     expect(game.isTravelDateTimeHudVisible()).toBe(false);
 
-    game.targetMenuOpen = false;
+    game.travelMode.targetMenuOpen = false;
     game.stateManager.state = 'planet';
     expect(game.isTravelDateTimeHudVisible()).toBe(false);
   });
@@ -113,10 +124,10 @@ describe('Game main render signatures', () => {
   it('pauses the game clock in menus and starbase but not orbit', () => {
     const game = createRenderGateHarness();
     game.popupState = 'inactive';
-    game.targetMenuOpen = false;
-    game.shipMenuOpen = false;
-    game.roverCargoOpen = false;
-    game.surfaceLegendOpen = false;
+    game.travelMode.targetMenuOpen = false;
+    game.shipOperations.open = false;
+    game.surfaceMode.roverCargoOpen = false;
+    game.surfaceMode.legendOpen = false;
     game.quantitySelector = null;
     game.surfaceExtractionSelector = null;
     game.jettisonConfirmation = null;
@@ -128,7 +139,7 @@ describe('Game main render signatures', () => {
     expect(game.isGameClockPaused()).toBe(true);
 
     game.stateManager.state = 'system';
-    game.targetMenuOpen = true;
+    game.travelMode.targetMenuOpen = true;
     expect(game.isGameClockPaused()).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
 import { AU_IN_METERS, GLYPHS } from '../../constants';
 import { TEXT_PALETTE } from '../../rendering/text_palette';
+import { GiantAtmosphereRenderer } from '../../rendering/scenes/giant_atmosphere_renderer';
 
 type DrawCall = {
   char: string | null;
@@ -382,25 +383,24 @@ describe('SceneRenderer visual regressions', () => {
   });
 
   it('adds sparse narrow cloud ribbons whose visibility responds to giant-planet weather energy', () => {
-    const { buffer } = createMockScreenBuffer(100, 54);
-    const renderer = createSceneRenderer(buffer) as any;
+    const renderer = new GiantAtmosphereRenderer();
     const cold = createIceGiantPlanet('Cold Ribbon Giant', 68);
     const warm = createIceGiantPlanet('Warm Ribbon Giant', 230, 0.55 * AU_IN_METERS);
-    const coldProfile = renderer.getGiantVisualProfile(cold, cold.rgbPaletteCache);
-    const warmProfile = renderer.getGiantVisualProfile(warm, warm.rgbPaletteCache);
+    const coldProfile = renderer.getProfile(cold, cold.rgbPaletteCache);
+    const warmProfile = renderer.getProfile(warm, warm.rgbPaletteCache);
     const sampleField = (planet: Planet, profile: unknown): { peak: number; mean: number } => {
       let peak = 0;
       let total = 0;
       let samples = 0;
       for (let y = 0; y <= 500; y++) {
         for (let x = 0; x <= 80; x++) {
-          const strength = renderer.sampleGiantCloudRibbons(
+          const strength = renderer.sampleCloudRibbons(
             planet,
             x / 80,
             y / 500,
             profile,
             0.2,
-            renderer.getGasGiantTurbulenceFactor(planet)
+            renderer.getTurbulenceFactor(planet)
           ).strength;
           peak = Math.max(peak, strength);
           total += strength;

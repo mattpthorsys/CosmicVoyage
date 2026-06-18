@@ -1,7 +1,7 @@
 // src/rendering/drawing_context.ts
 
 import { ScreenBuffer } from './screen_buffer';
-import { GLYPHS } from '../constants';
+import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { CONFIG } from '@/config';
 

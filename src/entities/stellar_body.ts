@@ -1,4 +1,5 @@
-import { SPECTRAL_TYPES, SOLAR_RADIUS_M } from '../constants';
+import { SOLAR_RADIUS_M } from '../constants/physics';
+import { SPECTRAL_TYPES } from '../constants/stellar';
 import { StellarEnvironment } from './stellar_environment';
 
 const STEFAN_BOLTZMANN_SIGMA = 5.670374419e-8;

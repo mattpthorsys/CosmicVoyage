@@ -3,7 +3,8 @@
 // Removed GameStateManager import
 import { Player } from './player';
 import { logger } from '../utils/logger';
-import { MineralRichness, ELEMENTS, STATUS_MESSAGES } from '../constants';
+import { STATUS_MESSAGES } from '../constants/messages';
+import { ELEMENTS, MineralRichness } from '../constants/resources';
 import { CONFIG } from '../config';
 import { PRNG } from '../utils/prng';
 import { Planet } from '../entities/planet';

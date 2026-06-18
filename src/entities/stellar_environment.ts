@@ -1,5 +1,6 @@
 import { PRNG } from '../utils/prng';
-import { SOLAR_MASS_KG, SPECTRAL_TYPES } from '../constants';
+import { SOLAR_MASS_KG } from '../constants/physics';
+import { SPECTRAL_TYPES } from '../constants/stellar';
 
 export interface StellarEnvironment {
   starType: string;

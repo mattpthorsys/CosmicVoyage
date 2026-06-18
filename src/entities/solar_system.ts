@@ -3,13 +3,9 @@
 
 import { CONFIG } from '../config';
 // Import constants including G and updated SPECTRAL_TYPES
-import {
-  SPECTRAL_TYPES,
-  GRAVITATIONAL_CONSTANT_G,
-  SOLAR_MASS_KG,
-  AU_IN_METERS,
-  MineralRichness,
-} from '../constants';
+import { AU_IN_METERS, GRAVITATIONAL_CONSTANT_G, SOLAR_MASS_KG } from '../constants/physics';
+import { MineralRichness } from '../constants/planetary';
+import { SPECTRAL_TYPES } from '../constants/stellar';
 import { PRNG } from '../utils/prng';
 import { Planet } from './planet'; // Assuming Planet class has mass, escapeVelocity, axialTilt, moons properties
 import { Starbase } from './starbase';

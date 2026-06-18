@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import { AU_IN_METERS, LIGHT_SPEED_M_PER_S } from '../constants';
+import { AU_IN_METERS, LIGHT_SPEED_M_PER_S } from '../constants/physics';
 
 const SECONDS_PER_YEAR = 365.25 * 24 * 60 * 60;
 

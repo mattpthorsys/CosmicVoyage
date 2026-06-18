@@ -1,0 +1,18 @@
+export const GLYPHS = {
+  BOX: { H: '\u2500', V: '\u2502', TL: '\u250C', TR: '\u2510', BL: '\u2514', BR: '\u2518' },
+  BLOCK: '\u2588',
+  SHADE_LIGHT: '\u2591',
+  SHADE_MEDIUM: '\u2592',
+  SHADE_DARK: '\u2593',
+  STAR_DIM: '\u00B7',
+  STAR_MEDIUM: '\u2022',
+  STAR_BRIGHT: '*',
+  STELLAR_SOURCE: '\u263C',
+  PLANET_ICON: 'O',
+  SHIP_NORTH: '^',
+  SHIP_SOUTH: 'v',
+  SHIP_EAST: '>',
+  SHIP_WEST: '<',
+  ORBIT_CHAR: '.',
+  STARBASE_ICON: '#',
+} as const;
