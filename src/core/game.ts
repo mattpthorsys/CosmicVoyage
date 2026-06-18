@@ -9,14 +9,12 @@ import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
 import { ELEMENTS } from '../constants/resources';
 import { SPECTRAL_TYPES } from '../constants/stellar';
-import { TRADE_COMMODITIES } from '../constants/trade';
 import { STATUS_MESSAGES } from '../constants/messages';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
 import { ActionProcessor, ActionProcessResult } from './action_processor';
-import { fastHash } from '../utils/hash';
 import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { SolarSystem } from '../entities/solar_system';
@@ -111,11 +109,16 @@ import {
   getSystemZoomFactor,
   SYSTEM_ZOOM_LEVELS,
 } from './system_zoom';
+import {
+  CommerceEffects,
+  getTradeItemInfo,
+  StarbaseCommerceService,
+  TradeDepotItem,
+} from './starbase_commerce';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
-type CargoAddResult = { added: number; addedItems: Record<string, number> };
 type RoverActionId = 'map' | 'move' | 'cargo' | 'pickup' | 'mine' | 'scan' | 'stun' | 'shoot' | 'embark' | 'icon';
 type QuantityOperation =
   | { type: 'buy'; itemKey: string }
@@ -134,16 +137,6 @@ interface JettisonConfirmationState {
   itemKey: string;
   amount: number;
   selectedIndex: number;
-}
-
-interface TradeDepotItem {
-  itemKey: string;
-  name: string;
-  description: string;
-  category: string;
-  units: number;
-  buyPrice: number;
-  sellPrice: number;
 }
 
 interface FrameProfile {
@@ -189,6 +182,7 @@ export class Game {
   private readonly systemDataGenerator: SystemDataGenerator;
   private readonly hyperspaceSurveyService: HyperspaceSurveyService;
   private readonly eventUnsubscribers: Unsubscribe[];
+  private _starbaseCommerce?: StarbaseCommerceService;
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
   private _surfaceMode?: SurfaceModeController;
@@ -273,6 +267,14 @@ export class Game {
     JettisonConfirmationState
   > {
     return (this._interfaceMode ??= new InterfaceModeController());
+  }
+
+  private get starbaseCommerce(): StarbaseCommerceService {
+    return (this._starbaseCommerce ??= new StarbaseCommerceService(
+      this.player,
+      this.cargoSystem,
+      this.gameSeedPRNG.seed
+    ));
   }
 
   // Transitional aliases for isolated harnesses and save/debug tooling. Production
@@ -5612,168 +5614,32 @@ export class Game {
       this.statusMessage = 'Trade requires docking at a starbase.';
       logger.warn('[Game:_handleTradeRequest] Trade attempted outside of starbase.');
       eventManager.publish(GameEvents.ACTION_FAILED, { action: 'TRADE', reason: 'Not docked' });
-      this._publishStatusUpdate(); // Update status bar
-      return;
-    }
-
-    const market = this.getTradeDepotManifest(this.stateManager.currentStarbase.name);
-    const currentCargo = { ...this.player.cargoHold.items };
-    const totalUnitsSold = this.cargoSystem.getTotalUnits(this.player.cargoHold);
-
-    if (totalUnitsSold <= 0) {
-      const purchaseMessage = this.buyNextDepotItem(market);
-      this.statusMessage = purchaseMessage ?? this.formatTradeDepotManifest(market);
       this._publishStatusUpdate();
       return;
     }
 
-    let totalCreditsEarned = 0;
-    const soldItemsLog: string[] = [];
-    for (const itemKey in currentCargo) {
-      const amount = currentCargo[itemKey];
-      const itemInfo = this.getTradeItemInfo(itemKey);
-      if (amount > 0 && itemInfo) {
-        const depotItem = market.find((item) => item.itemKey === itemKey);
-        const valuePerUnit = depotItem?.sellPrice ?? Math.max(1, Math.floor(itemInfo.baseValue * CONFIG.TRADE_SELL_MARKDOWN));
-        const creditsEarned = amount * valuePerUnit;
-        totalCreditsEarned += creditsEarned;
-        soldItemsLog.push(`${amount} ${itemInfo.name || itemKey}`);
-      } else {
-        logger.warn(`[Game:_handleTradeRequest] Skipping unknown or zero amount item in cargo: ${itemKey}`);
-      }
+    const totalUnitsSold = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    let result;
+    if (totalUnitsSold <= 0) {
+      result = this.starbaseCommerce.buyNext(
+        this.stateManager.currentStarbase.name,
+        this.starbaseMode.tradeSelectionIndex
+      );
+      this.starbaseMode.tradeSelectionIndex = result.nextSelectionIndex;
+    } else {
+      result = this.starbaseCommerce.sellAll(this.stateManager.currentStarbase.name);
     }
-
-    // Perform player state modifications
-    this.player.resources.credits += totalCreditsEarned;
-    const removedCargoData = this.cargoSystem.clearAllItems(this.player.cargoHold); // Use system method
-
-    // Set status and publish result event
-    this.statusMessage = STATUS_MESSAGES.STARBASE_TRADE_SUCCESS(
-      soldItemsLog.join(', '),
-      totalUnitsSold,
-      totalCreditsEarned
-    );
-    logger.info(
-      `[Game:_handleTradeRequest] Trade Complete: Sold ${totalUnitsSold} units for ${totalCreditsEarned} credits.`
-    );
-    eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, {
-      itemsSold: removedCargoData,
-      creditsEarned: totalCreditsEarned,
-      newCredits: this.player.resources.credits,
-    });
-    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-      newCredits: this.player.resources.credits,
-      amountChanged: totalCreditsEarned,
-    });
-    // Status bar will update automatically via _publishStatusUpdate in the next loop
+    this.statusMessage = result.message;
+    this.publishCommerceEffects(result.effects);
+    this._publishStatusUpdate();
   }
 
   private getTradeDepotManifest(starbaseName: string): TradeDepotItem[] {
-    const depotKeys = [
-      'WATER_ICE',
-      'HYDROGEN_SLUSH',
-      'HELIUM_3',
-      'DEUTERIUM_PELLETS',
-      'FUSION_FUEL_MIX',
-      'TITANIUM_TRUSS',
-      'SILICON_WAFERS',
-      'RARE_EARTH_MAGNETS',
-      'CATALYST_MESH',
-      'HYDROPONIC_CULTURES',
-      'MEDICAL_ISOTOPES',
-      'SURVEY_DRONES',
-      'NAV_BEACONS',
-      'VACUUM_COFFEE',
-      'CAPTAINS_SOCKS',
-    ].filter((key) => TRADE_COMMODITIES[key]);
-
-    const hashOffset = Math.abs(fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.gameSeedPRNG.seed));
-    return depotKeys
-      .filter((itemKey, index) => TRADE_COMMODITIES[itemKey].rarity > 0.1 || (hashOffset + index * 23) % 100 < 18)
-      .map((itemKey, index) => {
-      const commodity = TRADE_COMMODITIES[itemKey];
-      const localVariance = 0.9 + ((hashOffset + index * 17) % 34) / 100;
-      const units = Math.max(1, Math.floor((CONFIG.TRADE_DEPOT_STOCK_UNITS + ((hashOffset + index * 7) % 9)) * commodity.rarity));
-      return {
-        itemKey,
-        name: commodity.name,
-        description: commodity.description,
-        category: commodity.category,
-        units,
-        buyPrice: Math.max(1, Math.ceil(commodity.baseValue * CONFIG.TRADE_BUY_MARKUP * localVariance)),
-        sellPrice: Math.max(1, Math.floor(commodity.baseValue * CONFIG.TRADE_SELL_MARKDOWN * localVariance)),
-      };
-    });
-  }
-
-  private buyNextDepotItem(market: TradeDepotItem[]): string | null {
-    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
-    if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
-
-    for (let attempts = 0; attempts < market.length; attempts++) {
-      const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
-      this.starbaseMode.tradeSelectionIndex++;
-      const unitsToBuy = this.getDepotPurchaseLimit(item.itemKey, Math.min(item.units, freeCargo));
-      const totalCost = unitsToBuy * item.buyPrice;
-      if (unitsToBuy > 0 && this.player.resources.credits >= totalCost) {
-        const purchase = this.addPurchasedDepotCargo(item.itemKey, unitsToBuy);
-        const added = purchase.added;
-        this.player.resources.credits -= added * item.buyPrice;
-        eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.itemKey, amount: added, items: purchase.addedItems });
-        eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-          newCredits: this.player.resources.credits,
-          amountChanged: -added * item.buyPrice,
-        });
-        return `Purchased ${this.formatPurchasedDepotCargo(item.itemKey, purchase.addedItems)} for ${added * item.buyPrice} Cr.`;
-      }
-    }
-
-    return this.formatTradeDepotManifest(market);
-  }
-
-  private formatTradeDepotManifest(market: TradeDepotItem[]): string {
-    const offers = market
-      .slice(0, 6)
-      .map((item) => `${item.name} ${item.buyPrice}Cr`)
-      .join(', ');
-    return `Trade depot offers: ${offers}. Need cargo space and credits to buy.`;
+    return this.starbaseCommerce.getManifest(starbaseName);
   }
 
   private getDepotPurchaseLimit(itemKey: string, rawLimit: number): number {
-    const limit = Math.max(0, Math.floor(rawLimit));
-    if (itemKey !== 'FUSION_FUEL_MIX') return limit;
-    return Math.floor(limit / 2) * 2;
-  }
-
-  private addPurchasedDepotCargo(itemKey: string, amount: number): CargoAddResult {
-    const requested = Math.max(0, Math.floor(amount));
-    if (requested <= 0) return { added: 0, addedItems: {} };
-    if (itemKey !== 'FUSION_FUEL_MIX') {
-      const added = this.cargoSystem.addItem(this.player.cargoHold, itemKey, requested);
-      return { added, addedItems: added > 0 ? { [itemKey]: added } : {} };
-    }
-
-    const mixUnits = Math.floor(requested / 2) * 2;
-    if (mixUnits <= 0) return { added: 0, addedItems: {} };
-    const heliumUnits = mixUnits / 2;
-    const deuteriumUnits = mixUnits / 2;
-    const addedHelium = this.cargoSystem.addItem(this.player.cargoHold, 'HELIUM_3', heliumUnits);
-    const addedDeuterium = this.cargoSystem.addItem(this.player.cargoHold, 'DEUTERIUM_PELLETS', deuteriumUnits);
-    const addedItems: Record<string, number> = {};
-    if (addedHelium > 0) addedItems.HELIUM_3 = addedHelium;
-    if (addedDeuterium > 0) addedItems.DEUTERIUM_PELLETS = addedDeuterium;
-    return { added: addedHelium + addedDeuterium, addedItems };
-  }
-
-  private formatPurchasedDepotCargo(itemKey: string, addedItems: Record<string, number>): string {
-    if (itemKey === 'FUSION_FUEL_MIX') {
-      const helium = addedItems.HELIUM_3 || 0;
-      const deuterium = addedItems.DEUTERIUM_PELLETS || 0;
-      return `${helium} m^3 Helium-3 and ${deuterium} m^3 Deuterium`;
-    }
-    const [addedKey, amount] = Object.entries(addedItems)[0] ?? [itemKey, 0];
-    const info = this.getTradeItemInfo(addedKey);
-    return `${amount} m^3 ${info?.name ?? addedKey}`;
+    return this.starbaseCommerce.getPurchaseLimit(itemKey, rawLimit);
   }
 
   private openBuyQuantitySelector(itemKey: string): void {
@@ -5829,87 +5695,34 @@ export class Game {
   }
 
   private buyDepotItem(itemKey: string, amount: number): string {
-    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
-    if (!item) return 'Depot item unavailable.';
-    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
-    const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
-    const unitsToBuy = this.getDepotPurchaseLimit(item.itemKey, Math.min(item.units, freeCargo, affordableUnits, Math.max(1, Math.floor(amount))));
-    if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
-    if (unitsToBuy <= 0) return `Insufficient credits for ${item.name}.`;
-
-    const purchase = this.addPurchasedDepotCargo(item.itemKey, unitsToBuy);
-    const added = purchase.added;
-    const cost = added * item.buyPrice;
-    this.player.resources.credits -= cost;
-    eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.itemKey, amount: added, items: purchase.addedItems });
-    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-      newCredits: this.player.resources.credits,
-      amountChanged: -cost,
-    });
-    return `Bought ${this.formatPurchasedDepotCargo(item.itemKey, purchase.addedItems)} for ${cost} Cr.`;
+    const result = this.starbaseCommerce.buyItem(
+      this.stateManager.currentStarbase?.name ?? '',
+      itemKey,
+      amount
+    );
+    this.publishCommerceEffects(result.effects);
+    return result.message;
   }
 
   private sellDepotItem(itemKey: string, amount: number): string {
-    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find((candidate) => candidate.itemKey === itemKey);
-    if (!item) return 'Depot item unavailable.';
-    const held = this.player.cargoHold.items[item.itemKey] || 0;
-    const unitsToSell = Math.min(held, Math.max(1, Math.floor(amount)));
-    if (unitsToSell <= 0) return `No ${item.name} in cargo.`;
-
-    const removed = this.cargoSystem.removeItem(this.player.cargoHold, item.itemKey, unitsToSell);
-    const creditsEarned = removed * item.sellPrice;
-    this.player.resources.credits += creditsEarned;
-    eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, {
-      itemsSold: { [item.itemKey]: removed },
-      creditsEarned,
-      newCredits: this.player.resources.credits,
-    });
-    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-      newCredits: this.player.resources.credits,
-      amountChanged: creditsEarned,
-    });
-    return `Sold ${removed} m^3 ${item.name} for ${creditsEarned} Cr.`;
+    const result = this.starbaseCommerce.sellItem(
+      this.stateManager.currentStarbase?.name ?? '',
+      itemKey,
+      amount
+    );
+    this.publishCommerceEffects(result.effects);
+    return result.message;
   }
 
   private buySelectedDepotItem(market: TradeDepotItem[]): string {
     const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
-    const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
-    if (freeCargo <= 0) return 'Trade depot: cargo hold is full.';
-
-    const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
-    const unitsToBuy = this.getDepotPurchaseLimit(item.itemKey, Math.min(item.units, freeCargo, affordableUnits));
-    if (unitsToBuy <= 0) return `Insufficient credits for ${item.name}.`;
-
-    const purchase = this.addPurchasedDepotCargo(item.itemKey, unitsToBuy);
-    const added = purchase.added;
-    const cost = added * item.buyPrice;
-    this.player.resources.credits -= cost;
-    eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, { elementKey: item.itemKey, amount: added, items: purchase.addedItems });
-    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-      newCredits: this.player.resources.credits,
-      amountChanged: -cost,
-    });
-    return `Bought ${this.formatPurchasedDepotCargo(item.itemKey, purchase.addedItems)} for ${cost} Cr.`;
+    return this.buyDepotItem(item.itemKey, item.units);
   }
 
   private sellSelectedDepotItem(market: TradeDepotItem[]): string {
     const item = market[this.starbaseMode.tradeSelectionIndex % market.length];
     const amount = this.player.cargoHold.items[item.itemKey] || 0;
-    if (amount <= 0) return `No ${item.name} in cargo.`;
-
-    const creditsEarned = amount * item.sellPrice;
-    this.cargoSystem.removeItemType(this.player.cargoHold, item.itemKey);
-    this.player.resources.credits += creditsEarned;
-    eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, {
-      itemsSold: { [item.itemKey]: amount },
-      creditsEarned,
-      newCredits: this.player.resources.credits,
-    });
-    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-      newCredits: this.player.resources.credits,
-      amountChanged: creditsEarned,
-    });
-    return `Sold ${amount} ${item.name} for ${creditsEarned} Cr.`;
+    return this.sellDepotItem(item.itemKey, amount);
   }
 
   private formatSelectedTradeLine(market: TradeDepotItem[]): string {
@@ -5919,28 +5732,7 @@ export class Game {
   }
 
   private getTradeItemInfo(itemKey: string): { name: string; baseValue: number } | null {
-    const commodity = TRADE_COMMODITIES[itemKey];
-    if (commodity) return { name: commodity.name, baseValue: commodity.baseValue };
-    const element = ELEMENTS[itemKey];
-    if (element) return { name: element.name, baseValue: element.baseValue };
-    return null;
-  }
-
-  private getAvailableDeuteriumCargo(): number {
-    return (this.player.cargoHold.items.DEUTERIUM || 0) + (this.player.cargoHold.items.DEUTERIUM_PELLETS || 0);
-  }
-
-  private consumeFusionFuelCargo(pairUnits: number): { helium: number; deuterium: number; fuel: number } {
-    const pairs = Math.max(0, Math.floor(pairUnits));
-    if (pairs <= 0) return { helium: 0, deuterium: 0, fuel: 0 };
-    const helium = this.cargoSystem.removeItem(this.player.cargoHold, 'HELIUM_3', pairs);
-    let deuteriumNeeded = helium;
-    let deuterium = this.cargoSystem.removeItem(this.player.cargoHold, 'DEUTERIUM', deuteriumNeeded);
-    deuteriumNeeded -= deuterium;
-    if (deuteriumNeeded > 0) {
-      deuterium += this.cargoSystem.removeItem(this.player.cargoHold, 'DEUTERIUM_PELLETS', deuteriumNeeded);
-    }
-    return { helium, deuterium, fuel: Math.min(helium, deuterium) * 40 };
+    return getTradeItemInfo(itemKey);
   }
 
   /** Handles REFUEL_REQUESTED event */
@@ -5953,76 +5745,28 @@ export class Game {
       return;
     }
 
-    const fuelNeeded = this.player.resources.maxFuel - this.player.resources.fuel;
-    if (fuelNeeded <= 0) {
-      this.statusMessage = STATUS_MESSAGES.STARBASE_REFUEL_FULL;
-      this._publishStatusUpdate();
-      return;
-    }
+    const result = this.starbaseCommerce.refuel();
+    this.statusMessage = result.message;
+    this.publishCommerceEffects(result.effects);
+    this._publishStatusUpdate();
+  }
 
-    const oldFuel = this.player.resources.fuel;
-    const cargoFuelPairs = Math.min(
-      this.player.cargoHold.items.HELIUM_3 || 0,
-      this.getAvailableDeuteriumCargo(),
-      Math.ceil(fuelNeeded / 40)
-    );
-    const consumed = this.consumeFusionFuelCargo(cargoFuelPairs);
-    if (consumed.fuel > 0) {
-      this.player.addFuel(consumed.fuel);
-      this.player.awardCrewExperience('engineering', Math.max(2, Math.floor(consumed.fuel / 80)));
+  private publishCommerceEffects(effects: CommerceEffects): void {
+    if (effects.cargoAdded) {
+      eventManager.publish(GameEvents.PLAYER_CARGO_ADDED, effects.cargoAdded);
     }
-
-    const remainingFuelNeeded = this.player.resources.maxFuel - this.player.resources.fuel;
-    if (remainingFuelNeeded <= 0) {
-      this.statusMessage = `Loaded ${consumed.helium} m^3 He3 and ${consumed.deuterium} m^3 deuterium into the reactor. Tank full.`;
-      eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
-        newFuel: this.player.resources.fuel,
-        maxFuel: this.player.resources.maxFuel,
-        amountChanged: this.player.resources.fuel - oldFuel,
-      });
-      this._publishStatusUpdate();
-      return;
+    if (effects.cargoSold) {
+      eventManager.publish(GameEvents.PLAYER_CARGO_SOLD, effects.cargoSold);
     }
-
-    const creditsPerUnit = 1 / CONFIG.FUEL_PER_CREDIT;
-    const maxAffordableFuel = this.player.resources.credits * CONFIG.FUEL_PER_CREDIT;
-    const fuelToBuy = Math.floor(Math.min(remainingFuelNeeded, maxAffordableFuel));
-    const cost = Math.ceil(fuelToBuy * creditsPerUnit); // Use ceil to ensure player pays enough
-
-    if (fuelToBuy <= 0 || this.player.resources.credits < cost) {
-      this.statusMessage = consumed.fuel > 0
-        ? `Loaded cargo fuel, but credits are insufficient for station He3/deuterium top-off.`
-        : STATUS_MESSAGES.STARBASE_REFUEL_FAIL_CREDITS(creditsPerUnit, this.player.resources.credits);
-      eventManager.publish(GameEvents.ACTION_FAILED, { action: 'REFUEL', reason: 'Insufficient credits' });
-      if (consumed.fuel > 0) {
-        eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
-          newFuel: this.player.resources.fuel,
-          maxFuel: this.player.resources.maxFuel,
-          amountChanged: this.player.resources.fuel - oldFuel,
-        });
-      }
-    } else {
-      this.player.resources.credits -= cost;
-      this.player.addFuel(fuelToBuy); // Use player method for clamping and logging
-      this.player.awardCrewExperience('engineering', Math.max(2, Math.floor(fuelToBuy / 50)));
-      const cargoPrefix = consumed.fuel > 0 ? `Loaded ${consumed.helium} m^3 He3 + ${consumed.deuterium} m^3 deuterium, then ` : '';
-      this.statusMessage = `${cargoPrefix}purchased ${fuelToBuy} D/He3 reactor fuel for ${cost} Cr.`;
-      if (this.player.resources.fuel >= this.player.resources.maxFuel) {
-        this.statusMessage += ` Tank full!`;
-      }
-      logger.info(`[Game:_handleRefuelRequest] Refuel Complete: Bought ${fuelToBuy} fuel for ${cost} credits.`);
-      // Publish events
-      eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
-        newFuel: this.player.resources.fuel,
-        maxFuel: this.player.resources.maxFuel,
-        amountChanged: this.player.resources.fuel - oldFuel,
-      });
-      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-        newCredits: this.player.resources.credits,
-        amountChanged: -cost,
-      });
+    if (effects.fuelChanged) {
+      eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, effects.fuelChanged);
     }
-    this._publishStatusUpdate(); // Update status bar
+    if (effects.creditsChanged) {
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, effects.creditsChanged);
+    }
+    if (effects.actionFailed) {
+      eventManager.publish(GameEvents.ACTION_FAILED, effects.actionFailed);
+    }
   }
 } // End Game class
 
