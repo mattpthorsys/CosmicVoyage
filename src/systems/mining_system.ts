@@ -2,11 +2,10 @@
 import { Player } from '../core/player';
 import { GameStateManager } from '../core/game_state_manager';
 import { CargoSystem } from './cargo_systems'; // Assuming path is correct
-import { eventManager, GameEvents } from '../core/event_manager';
+import { eventManager, GameEvents, Unsubscribe } from '../core/event_manager';
 import { logger } from '../utils/logger';
 import { STATUS_MESSAGES } from '../constants/messages';
 import { ELEMENTS } from '../constants/resources';
-import { TerminalOverlay } from '@/rendering/terminal_overlay';
 import { Planet } from '../entities/planet';
 
 export interface MiningEstimate {
@@ -24,21 +23,20 @@ export type MiningSite = MiningEstimate & {
 };
 
 export class MiningSystem {
-
-  private readonly terminalOverlay: TerminalOverlay;
-
   private player: Player;
   private stateManager: GameStateManager;
   private cargoSystem: CargoSystem;
+  private readonly unsubscribeMineRequest: Unsubscribe;
 
   constructor(player: Player, stateManager: GameStateManager, cargoSystem: CargoSystem) {
     this.player = player;
     this.stateManager = stateManager;
     this.cargoSystem = cargoSystem;
-    this.terminalOverlay = new TerminalOverlay();
 
-    // Subscribe to the MINE_REQUESTED event
-    eventManager.subscribe(GameEvents.MINE_REQUESTED, this.handleMineRequest.bind(this));
+    this.unsubscribeMineRequest = eventManager.subscribe(
+      GameEvents.MINE_REQUESTED,
+      () => { this.handleMineRequest(); }
+    );
 
     logger.info('[MiningSystem] Initialized and subscribed to MINE_REQUESTED.');
   }
@@ -109,7 +107,7 @@ export class MiningSystem {
   }
 
   private mineSelectedSite(selectedSite: { x: number; y: number } | null, requestedAmount?: number): void {
-    logger.info(`!!!!!! [MiningSystem] handleMineRequest EXECUTION STARTED !!!!!!`); // Made it INFO level for visibility
+    logger.debug('[MiningSystem] Mine request started.');
 
     if (!this.stateManager) {
       logger.error('[MiningSystem] CRITICAL: stateManager is missing!');
@@ -218,7 +216,7 @@ export class MiningSystem {
     } else {
       logger.debug(`[MiningSystem] No status message set, skipping STATUS_UPDATE_NEEDED publish.`);
     }
-    logger.info(`!!!!!! [MiningSystem] handleMineRequest EXECUTION FINISHED !!!!!!`); // Changed to INFO
+    logger.debug('[MiningSystem] Mine request finished.');
   }
 
   private getMiningSiteByCoordinate(planet: Planet, x: number, y: number): MiningSite {
@@ -350,7 +348,7 @@ export class MiningSystem {
   /** Cleans up event listeners */
   destroy(): void {
     logger.info('[MiningSystem] Destroying and unsubscribing...');
-    eventManager.unsubscribe(GameEvents.MINE_REQUESTED, this.handleMineRequest.bind(this));
+    this.unsubscribeMineRequest();
   }
 } // End MiningSystem class
 

@@ -13,7 +13,13 @@ import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
-import { eventManager, GameEvents } from '../core/event_manager'; // Import Event Manager
+import {
+  CommandStripUpdateEvent,
+  eventManager,
+  GameEvents,
+  StatusUpdateEvent,
+  Unsubscribe,
+} from '../core/event_manager';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
@@ -36,6 +42,7 @@ export class RendererFacade {
   private sceneRenderer: SceneRenderer;
   private statusBarUpdater: ImportedStatusBarUpdater; // Use imported alias
   private commandStripUpdater: CommandStripUpdater | null = null;
+  private readonly eventUnsubscribers: Unsubscribe[];
 
   constructor(
     canvasId: string,
@@ -83,9 +90,10 @@ export class RendererFacade {
       hyperspaceSurveyService
     );
 
-    // *** Subscribe to Status Updates ***
-    eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
-    eventManager.subscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, this._handleCommandStripUpdate.bind(this));
+    this.eventUnsubscribers = [
+      eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, (data) => { this._handleStatusUpdate(data); }),
+      eventManager.subscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, (data) => { this._handleCommandStripUpdate(data); }),
+    ];
 
     logger.info('[RendererFacade] All components instantiated.');
     this.fitToScreen(); // Initial size calculation
@@ -117,23 +125,16 @@ export class RendererFacade {
   }
 
   /** Handler for the statusUpdateNeeded event. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _handleStatusUpdate(data: any): void {
-    logger.debug(`[RendererFacade:_handleStatusUpdate] Received STATUS_UPDATE_NEEDED with message: "${data?.message}"`);
-    if (data && typeof data.message === 'string' && typeof data.hasStarbase === 'boolean') {
-      // Directly call the StatusBarUpdater's method
-      this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
-    } else {
-      logger.warn('[RendererFacade] Received invalid data for statusUpdateNeeded event:', data);
-    }
+  private _handleStatusUpdate(data: StatusUpdateEvent): void {
+    logger.debug(`[RendererFacade:_handleStatusUpdate] Received STATUS_UPDATE_NEEDED with message: "${data.message}"`);
+    this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _handleCommandStripUpdate(data: any): void {
+  private _handleCommandStripUpdate(data: CommandStripUpdateEvent): void {
     if (!this.commandStripUpdater) return;
-    if (data?.commandBar) {
+    if (data.commandBar) {
       this.commandStripUpdater.update(data.commandBar);
-    } else if (data && Array.isArray(data.actions)) {
+    } else {
       this.commandStripUpdater.update(data.actions, data.primaryActionId, data.targetName);
     }
   }
@@ -384,8 +385,6 @@ export class RendererFacade {
   // Optional: Method to clean up listeners if the facade is ever destroyed
   destroy(): void {
     logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
-    eventManager.unsubscribe(GameEvents.STATUS_UPDATE_NEEDED, this._handleStatusUpdate.bind(this));
-    eventManager.unsubscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, this._handleCommandStripUpdate.bind(this));
-    // Unsubscribe from any other events if necessary
+    this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
   }
 } // End RendererFacade class

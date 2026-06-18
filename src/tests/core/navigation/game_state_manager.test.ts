@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GLYPHS, MineralRichness } from '../../../constants';
 import { Planet } from '../../../entities/planet';
 import { PlanetCharacteristics } from '../../../entities/planet/planet_characteristics_generator';
@@ -6,6 +6,7 @@ import { SystemDataGenerator } from '../../../generation/system_data_generator';
 import { PRNG } from '../../../utils/prng';
 import { GameStateManager } from '../../../core/game_state_manager';
 import { Player } from '../../../core/player';
+import { eventManager, GameEvents } from '../../../core/event_manager';
 
 function createCharacteristics(): PlanetCharacteristics {
   return {
@@ -57,6 +58,24 @@ function createManager() {
 }
 
 describe('GameStateManager orbital exits', () => {
+  it('publishes both sides of a location transition', () => {
+    const { manager, system } = createManager();
+    const listener = vi.fn();
+    const unsubscribe = eventManager.subscribe(GameEvents.GAME_STATE_CHANGED, listener);
+
+    try {
+      (manager as any)._changeState('system', system, null, null);
+
+      expect(listener).toHaveBeenCalledWith({
+        previousState: 'hyperspace',
+        state: 'system',
+      });
+    } finally {
+      unsubscribe();
+      manager.destroy();
+    }
+  });
+
   it('breaks orbit at the orbiting body current coordinates', () => {
     const { player, manager, system } = createManager();
     const planet = createOrbitingPlanet();

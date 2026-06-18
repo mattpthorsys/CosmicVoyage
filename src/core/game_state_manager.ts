@@ -9,7 +9,7 @@ import { CONFIG } from '../config';
 import { STATUS_MESSAGES } from '../constants/messages';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
-import { eventManager, GameEvents } from './event_manager'; // Import Event Manager and constants
+import { eventManager, GameEvents, Unsubscribe } from './event_manager';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 
 // Define GameState type here or import from a shared types file
@@ -29,6 +29,7 @@ export class GameStateManager {
   private player: Player;
   private gameSeedPRNG: PRNG;
   private systemDataGenerator: SystemDataGenerator;
+  private readonly eventUnsubscribers: Unsubscribe[];
 
   constructor(player: Player, gameSeedPRNG: PRNG, systemDataGenerator: SystemDataGenerator) {
     this._state = 'hyperspace'; // Initial state
@@ -37,11 +38,12 @@ export class GameStateManager {
     this.systemDataGenerator = systemDataGenerator;
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
 
-    // --- Subscribe to Action Request Events ---
-    eventManager.subscribe(GameEvents.ENTER_SYSTEM_REQUESTED, this.enterSystem.bind(this));
-    eventManager.subscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, this.leaveSystem.bind(this));
-    eventManager.subscribe(GameEvents.LAND_REQUESTED, this.landOnNearbyObject.bind(this));
-    eventManager.subscribe(GameEvents.LIFTOFF_REQUESTED, this.liftOff.bind(this));
+    this.eventUnsubscribers = [
+      eventManager.subscribe(GameEvents.ENTER_SYSTEM_REQUESTED, () => { this.enterSystem(); }),
+      eventManager.subscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, () => { this.leaveSystem(); }),
+      eventManager.subscribe(GameEvents.LAND_REQUESTED, () => { this.landOnNearbyObject(); }),
+      eventManager.subscribe(GameEvents.LIFTOFF_REQUESTED, () => { this.liftOff(); }),
+    ];
     logger.info('[GameStateManager] Subscribed to action request events.');
   }
 
@@ -383,7 +385,7 @@ export class GameStateManager {
 
     const oldState = this._state;
     let newState: GameState | null = null;
-    let eventToPublish: string | null = null;
+    let eventToPublish: typeof GameEvents.PLANET_LANDED | typeof GameEvents.STARBASE_DOCKED | null = null;
     let eventData: Planet | Starbase | null = null;
 
     if (targetObject instanceof Planet) {
@@ -462,7 +464,10 @@ export class GameStateManager {
     logger.debug(
       `[GameStateManager._changeState] State changing: '${oldState}' -> '${newState}'`
     );
-    eventManager.publish(GameEvents.GAME_STATE_CHANGED, this._state); // Publish notification
+    eventManager.publish(GameEvents.GAME_STATE_CHANGED, {
+      previousState: oldState,
+      state: this._state,
+    });
   }
 
   /**
@@ -498,9 +503,6 @@ export class GameStateManager {
   /** Cleans up event listeners */
   destroy(): void {
     logger.info('[GameStateManager] Destroying and unsubscribing from events...');
-    eventManager.unsubscribe(GameEvents.ENTER_SYSTEM_REQUESTED, this.enterSystem.bind(this));
-    eventManager.unsubscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, this.leaveSystem.bind(this));
-    eventManager.unsubscribe(GameEvents.LAND_REQUESTED, this.landOnNearbyObject.bind(this));
-    eventManager.unsubscribe(GameEvents.LIFTOFF_REQUESTED, this.liftOff.bind(this));
+    this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
   }
 } // End GameStateManager class

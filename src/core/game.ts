@@ -20,7 +20,12 @@ import { fastHash } from '../utils/hash';
 import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
 import { SolarSystem } from '../entities/solar_system';
-import { eventManager, GameEvents } from './event_manager';
+import {
+  eventManager,
+  GameEvents,
+  GameStateChangedEvent,
+  Unsubscribe,
+} from './event_manager';
 import { MovementSystem, MoveRequestData } from '../systems/movement_system';
 import { CargoSystem } from '../systems/cargo_systems';
 import { MiningSite, MiningSystem } from '../systems/mining_system';
@@ -99,6 +104,13 @@ import {
   TravelModeController,
   TravelObserveCursor,
 } from './modes/game_mode_controllers';
+import {
+  DEFAULT_SYSTEM_ZOOM_INDEX,
+  getSystemSimulationSpeedMultiplier,
+  getSystemViewScale,
+  getSystemZoomFactor,
+  SYSTEM_ZOOM_LEVELS,
+} from './system_zoom';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -176,6 +188,7 @@ export class Game {
   private readonly astrometricOverlay: AstrometricOverlay;
   private readonly systemDataGenerator: SystemDataGenerator;
   private readonly hyperspaceSurveyService: HyperspaceSurveyService;
+  private readonly eventUnsubscribers: Unsubscribe[];
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
   private _surfaceMode?: SurfaceModeController;
@@ -200,6 +213,7 @@ export class Game {
   // Game Loop State, Status, Flags
   private lastUpdateTime: number = 0;
   private isRunning: boolean = false;
+  private isDestroyed: boolean = false;
   private animationFrameId: number | null = null;
   private statusMessage: string = 'Initializing Systems...';
   private forceFullRender: boolean = true;
@@ -226,19 +240,8 @@ export class Game {
   private readonly popupTypingSpeed: number = 80; // Characters per second
 
   // --- Zoom State ---
-  private readonly zoomLevels: number[] = [
-    CONFIG.SYSTEM_VIEW_SCALE * 32, // Zoom Out 3x (~0.03x) - ~240 chars = 1 AU
-    CONFIG.SYSTEM_VIEW_SCALE * 8, // Zoom Out 2x (~0.125x) - 120 chars = 1 AU
-    CONFIG.SYSTEM_VIEW_SCALE * 4, // Zoom Out 1x (~0.25x) - 60 chars = 1 AU
-    CONFIG.SYSTEM_VIEW_SCALE, // Default (1x) - 30 chars = 1 AU
-    CONFIG.SYSTEM_VIEW_SCALE / 4, // Zoom In 1x (4x) - 7.5 chars = 1 AU
-    CONFIG.SYSTEM_VIEW_SCALE / 16, // Zoom In 2x (16x) - ~2 chars = 1 AU
-    CONFIG.SYSTEM_VIEW_SCALE / 64, // Zoom In 3x (64x) - Moons might be visible
-    CONFIG.SYSTEM_VIEW_SCALE / 256, // Zoom In 4x (256x) - Deeper moon view
-    CONFIG.SYSTEM_VIEW_SCALE / 1024, // Zoom In 5x (1024x) - Very close view
-  ];
-  // Adjust default index if needed (Default 1x is now index 3)
-  private currentZoomLevelIndex: number = 3; // Start at the default index (1x zoom)
+  private readonly zoomLevels = SYSTEM_ZOOM_LEVELS;
+  private currentZoomLevelIndex: number = DEFAULT_SYSTEM_ZOOM_INDEX;
 
   private get travelMode(): TravelModeController {
     return (this._travelMode ??= new TravelModeController());
@@ -385,18 +388,23 @@ export class Game {
     this.cargoSystem = new CargoSystem();
     this.miningSystem = new MiningSystem(this.player, this.stateManager, this.cargoSystem);
 
-    // Subscribe to events
-    eventManager.subscribe(GameEvents.GAME_STATE_CHANGED, this._handleGameStateChange.bind(this));
-    eventManager.subscribe(GameEvents.TRADE_REQUESTED, this._handleTradeRequest.bind(this));
-    eventManager.subscribe(GameEvents.REFUEL_REQUESTED, this._handleRefuelRequest.bind(this));
-    eventManager.subscribe(GameEvents.PLAYER_CARGO_ADDED, this._handleCargoUpdate.bind(this));
-    eventManager.subscribe(GameEvents.PLAYER_CARGO_SOLD, this._handleCargoUpdate.bind(this)); // Also trigger render on sell
-    eventManager.subscribe(GameEvents.PLAYER_FUEL_CHANGED, this._handleFuelUpdate.bind(this)); // Trigger render on fuel change
-    eventManager.subscribe(GameEvents.PLAYER_CREDITS_CHANGED, this._handleCreditsUpdate.bind(this)); // Trigger render on credit change
-    eventManager.subscribe(GameEvents.COMMAND_BAR_ACTION_SELECTED, this._handleCommandBarAction.bind(this));
+    this.eventUnsubscribers = [
+      eventManager.subscribe(GameEvents.GAME_STATE_CHANGED, (transition) => {
+        this._handleGameStateChange(transition);
+      }),
+      eventManager.subscribe(GameEvents.TRADE_REQUESTED, () => { this._handleTradeRequest(); }),
+      eventManager.subscribe(GameEvents.REFUEL_REQUESTED, () => { this._handleRefuelRequest(); }),
+      eventManager.subscribe(GameEvents.PLAYER_CARGO_ADDED, () => { this._handleCargoUpdate(); }),
+      eventManager.subscribe(GameEvents.PLAYER_CARGO_SOLD, () => { this._handleCargoUpdate(); }),
+      eventManager.subscribe(GameEvents.PLAYER_FUEL_CHANGED, () => { this._handleFuelUpdate(); }),
+      eventManager.subscribe(GameEvents.PLAYER_CREDITS_CHANGED, () => { this._handleCreditsUpdate(); }),
+      eventManager.subscribe(GameEvents.COMMAND_BAR_ACTION_SELECTED, (data) => {
+        this._handleCommandBarAction(data);
+      }),
+    ];
 
     // Add resize listener
-    window.addEventListener('resize', this._handleResize.bind(this));
+    window.addEventListener('resize', this._handleResize);
     this._handleResize(); // Initial fit
 
     logger.info(
@@ -407,12 +415,12 @@ export class Game {
   }
 
   // --- Event Handlers ---
-  private _handleGameStateChange(newState: GameState): void {
+  private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
     this.forceFullRender = true; // Always force redraw on state change
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
     // Reset zoom to default when leaving system view
-    if (newState !== 'system' && this.stateManager.state === 'system') {
-      this.currentZoomLevelIndex = 2; // Index of default zoom
+    if (previousState === 'system' && newState !== 'system') {
+      this.currentZoomLevelIndex = DEFAULT_SYSTEM_ZOOM_INDEX;
       logger.info(`[Game] Resetting zoom to default level (${this.currentZoomLevelIndex}) due to state change.`);
     }
     this.travelMode.resetForState(newState);
@@ -506,18 +514,18 @@ export class Game {
     }
   }
 
-  private _handleResize(): void {
+  private _handleResize = (): void => {
     logger.debug('[Game] Handling window resize...');
     this.renderer.fitToScreen();
     // Update terminal overlay dimensions if needed
     this.terminalOverlay.updateCharDimensions(this.renderer.getCharHeightPx());
     this.forceFullRender = true; // Force redraw after resize
     this.lastUpdateTime = performance.now(); // Reset timer to avoid large deltaTime jump
-  }
+  };
 
   // --- Game Loop Control ---
   startGame(): void {
-    if (this.isRunning) return;
+    if (this.isRunning || this.isDestroyed) return;
     logger.info('[Game] Starting game loop...');
     this.isRunning = true;
     this.lastUpdateTime = performance.now();
@@ -533,25 +541,25 @@ export class Game {
   }
 
   stopGame(): void {
-    if (!this.isRunning) return;
+    if (this.isDestroyed) return;
     logger.info('[Game] Stopping game loop...');
     this.isRunning = false;
+    this.isDestroyed = true;
     this.inputManager.stopListening();
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-    // Clean up systems
-    if (this.movementSystem) this.movementSystem.destroy();
-    if (this.miningSystem) this.miningSystem.destroy();
-    if (this.stateManager) this.stateManager.destroy();
-    // Clear event manager listeners? Optional, depends if Game instance is reused
-    // eventManager.clearAll();
-    // Final status message
     eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
       message: 'Game stopped. Refresh to restart.',
       hasStarbase: false,
     });
+    window.removeEventListener('resize', this._handleResize);
+    this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
+    this.movementSystem.destroy();
+    this.miningSystem.destroy();
+    this.stateManager.destroy();
+    this.renderer.destroy();
     logger.info('[Game] Game loop stopped.');
   }
 
@@ -1872,15 +1880,11 @@ export class Game {
   }
   /** Gets the current view scale in meters/cell based on the zoom level. */
   private getCurrentViewScale(): number {
-    // Clamp index to prevent errors if it somehow goes out of bounds
-    const safeIndex = Math.max(0, Math.min(this.currentZoomLevelIndex, this.zoomLevels.length - 1));
-    return this.zoomLevels[safeIndex];
+    return getSystemViewScale(this.currentZoomLevelIndex);
   }
 
   private getSystemCursorMoveSpeedMultiplier(): number {
-    const defaultZoomIndex = 3; // Index of 1x zoom (adjust if default changes)
-    const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
-    return Math.max(0.01, Math.min(Math.pow(0.5, zoomDifference), 10.0));
+    return getSystemSimulationSpeedMultiplier(this.currentZoomLevelIndex);
   }
 
   /** Handles scan requests triggered by ActionProcessor */
@@ -2610,13 +2614,7 @@ export class Game {
     }
 
     // Time scale adjustments
-    const defaultZoomIndex = 3; // Index of your default scale (1x zoom)
-    const zoomDifference = this.currentZoomLevelIndex - defaultZoomIndex;
-    // Adjust time speed by factor of 2 per zoom level (0.5 = slower when zoomed in)
-    // Adjust the base (0.5) for different scaling sensitivity
-    let timeScaleMultiplier = Math.pow(0.5, zoomDifference);
-    // Clamp multiplier to prevent time stopping or going excessively fast
-    timeScaleMultiplier = Math.max(0.01, Math.min(timeScaleMultiplier, 10.0));
+    const timeScaleMultiplier = getSystemSimulationSpeedMultiplier(this.currentZoomLevelIndex);
     logger.debug(
       `[Game] Zoom Index: ${this.currentZoomLevelIndex}, Time Scale Multiplier: ${timeScaleMultiplier.toFixed(3)}`
     );
@@ -4754,9 +4752,7 @@ export class Game {
 
     let zoomLabel = '';
     if (this.stateManager.state === 'system') {
-      const defaultZoomIndex = 2; // Index of 1x zoom
-      const zoomDifference = defaultZoomIndex - this.currentZoomLevelIndex;
-      const zoomFactor = Math.pow(4, zoomDifference); // Assuming factor of 4 steps
+      const zoomFactor = getSystemZoomFactor(this.currentZoomLevelIndex);
       zoomLabel = ` | Zoom: ${zoomFactor.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`;
     }
 

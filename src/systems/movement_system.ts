@@ -7,7 +7,7 @@ import { PositionComponent, RenderComponent } from '../core/components';
 import { CONFIG } from '../config';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
-import { eventManager, GameEvents } from '../core/event_manager';
+import { eventManager, GameEvents, Unsubscribe } from '../core/event_manager';
 import { getEngineFuelUseMultiplier } from '../core/ship_modifications';
 
 // Define or import the event data structure expected by handleMoveRequest
@@ -24,12 +24,16 @@ export interface MoveRequestData {
 export class MovementSystem {
     private player: Player;
     private lastHyperspaceMoveAt = 0;
+    private readonly unsubscribeMoveRequest: Unsubscribe;
 
     constructor(player: Player) {
         this.player = player;
         logger.info('[MovementSystem] Initialized.');
         // Subscribe to the move request event
-        eventManager.subscribe(GameEvents.MOVE_REQUESTED, this.handleMoveRequest.bind(this));
+        this.unsubscribeMoveRequest = eventManager.subscribe(
+            GameEvents.MOVE_REQUESTED,
+            (data) => { this.handleMoveRequest(data); }
+        );
         logger.debug('[MovementSystem] Subscribed to MOVE_REQUESTED event.');
     }
 
@@ -179,7 +183,7 @@ export class MovementSystem {
      /** Cleans up event listeners when the system is no longer needed. */
      destroy(): void {
         logger.info('[MovementSystem] Destroying and unsubscribing...');
-        eventManager.unsubscribe(GameEvents.MOVE_REQUESTED, this.handleMoveRequest.bind(this));
+        this.unsubscribeMoveRequest();
      }
 
 } // End MovementSystem class
