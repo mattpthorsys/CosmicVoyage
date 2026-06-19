@@ -3,6 +3,7 @@ import { SystemDataGenerator } from '../../generation/system_data_generator';
 import { HyperspaceTileProvider } from '../../rendering/hyperspace_tile_provider';
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { CONFIG } from '../../config';
+import { HyperspaceTileGenerationProvider } from '../../rendering/hyperspace_tile_generation_provider';
 
 /** Creates nebula renderer. */
 function createNebulaRenderer(): NebulaRenderer {
@@ -71,6 +72,7 @@ describe('HyperspaceTileProvider', () => {
 
   it('warms whole hyperspace tiles asynchronously without blocking the current call', async () => {
     let mapCalls = 0;
+    let workerCalls = 0;
     const generator = {
       getSystemMapProperties: () => {
         mapCalls++;
@@ -84,40 +86,62 @@ describe('HyperspaceTileProvider', () => {
       },
       getDeepSpacePhenomenonProperties: () => ({ exists: false }),
     } as unknown as SystemDataGenerator;
-    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator);
+    const tileGenerationProvider: HyperspaceTileGenerationProvider = {
+      getTilesAsync: async (requests) => {
+        workerCalls++;
+        return requests.map(({ worldX, worldY, rangeCells }) => ({
+          worldX,
+          worldY,
+          rangeCells,
+          tile: { bg: '#010203', starChar: null, starColor: null },
+        }));
+      },
+      clearCache: () => undefined,
+    };
+    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator, tileGenerationProvider);
 
     provider.prefetchTileRegion(100, 200, 3, 3, 1, 1);
 
     expect(mapCalls).toBe(0);
     await nextTask();
-    expect(mapCalls).toBe(9);
+    expect(workerCalls).toBe(1);
+    expect(mapCalls).toBe(0);
 
     provider.getTile(101, 201, 0);
-    expect(mapCalls).toBe(9);
+    expect(mapCalls).toBe(0);
   });
 
   it('does not rescan an unchanged viewport for tile prefetching', async () => {
-    let mapCalls = 0;
+    let workerCalls = 0;
     const generator = {
-      getSystemMapProperties: () => {
-        mapCalls++;
-        return {
-          exists: false,
-          starType: null,
-          name: null,
-          hasStarbase: false,
-          objectKind: null,
-        };
-      },
+      getSystemMapProperties: () => ({
+        exists: false,
+        starType: null,
+        name: null,
+        hasStarbase: false,
+        objectKind: null,
+      }),
       getDeepSpacePhenomenonProperties: () => ({ exists: false }),
     } as unknown as SystemDataGenerator;
-    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator);
+    const tileGenerationProvider: HyperspaceTileGenerationProvider = {
+      getTilesAsync: async (requests) => {
+        workerCalls++;
+        return requests.map(({ worldX, worldY, rangeCells }) => ({
+          worldX,
+          worldY,
+          rangeCells,
+          tile: { bg: '#010203', starChar: null, starColor: null },
+        }));
+      },
+      clearCache: () => undefined,
+    };
+    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator, tileGenerationProvider);
 
     provider.prefetchTileRegion(100, 200, 3, 3, 1, 1);
     await nextTask();
     provider.prefetchTileRegion(100, 200, 3, 3, 1, 1);
     await nextTask();
 
-    expect(mapCalls).toBe(9);
+    expect(workerCalls).toBe(1);
   });
 });

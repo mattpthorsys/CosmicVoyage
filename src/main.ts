@@ -14,6 +14,7 @@ import { setNebulaColourProvider } from './rendering/nebula_colour_provider';
 import { WorkerNebulaColourProvider } from './rendering/nebula_generation_worker_client';
 import { setHyperspaceSurveyCellProvider } from './core/hyperspace_survey_cell_provider';
 import { WorkerHyperspaceSurveyCellProvider } from './core/hyperspace_survey_worker_client';
+import { setHyperspaceTileGenerationProvider } from './rendering/hyperspace_tile_generation_provider';
 
 logger.info('main.ts executing...');
 
@@ -21,8 +22,11 @@ setSurfaceGenerationProvider(new WorkerSurfaceGenerationProvider());
 logger.info('Surface generation worker provider registered.');
 setNebulaColourProvider(new WorkerNebulaColourProvider());
 logger.info('Nebula generation worker provider registered.');
-setHyperspaceSurveyCellProvider(new WorkerHyperspaceSurveyCellProvider(CONFIG.SEED));
+const hyperspaceWorkerProvider = new WorkerHyperspaceSurveyCellProvider(CONFIG.SEED);
+setHyperspaceSurveyCellProvider(hyperspaceWorkerProvider);
 logger.info('Hyperspace survey worker provider registered.');
+setHyperspaceTileGenerationProvider(hyperspaceWorkerProvider);
+logger.info('Complete hyperspace tile worker provider registered.');
 
 /** Renders fatal initialization error. */
 function renderFatalInitializationError(error: unknown): void {

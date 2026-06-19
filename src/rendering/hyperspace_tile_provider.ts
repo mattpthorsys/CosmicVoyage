@@ -1,23 +1,14 @@
-import { CONFIG } from '../config';
-import { SPECTRAL_TYPES } from '../constants/stellar';
 import { HyperspaceSurveyCell } from '../core/hyperspace_survey';
-import {
-  DeepSpacePhenomenonProperties,
-  SystemDataGenerator,
-  SystemMapProperties,
-} from '../generation/system_data_generator';
+import { SystemDataGenerator } from '../generation/system_data_generator';
 import { logger } from '../utils/logger';
 import { NebulaRenderer } from './nebula_renderer';
-import { dimHexColour, getRenderedStarCell } from './starfield';
+import { createHyperspaceTile, HyperspaceTile } from './hyperspace_tile_generation';
+import {
+  getHyperspaceTileGenerationProvider,
+  HyperspaceTileGenerationProvider,
+} from './hyperspace_tile_generation_provider';
 
-export interface HyperspaceTile {
-  bg: string;
-  starChar: string | null;
-  starColor: string | null;
-}
-
-type TileSystemProps = Pick<SystemMapProperties, 'exists' | 'starType' | 'objectKind'>;
-type TilePhenomenonProps = Pick<DeepSpacePhenomenonProperties, 'exists' | 'char' | 'colour' | 'type'>;
+export type { HyperspaceTile } from './hyperspace_tile_generation';
 
 /** Builds and caches complete hyperspace cells from survey, nebula, and starfield data. */
 export class HyperspaceTileProvider {
@@ -25,25 +16,22 @@ export class HyperspaceTileProvider {
   private readonly pendingTilePrefetchKeys = new Set<string>();
   private readonly maxTileCacheSize = 60000;
   private prefetchGeneration = 0;
-  private tilePrefetchScheduled = false;
-  private readonly tilePrefetchQueue: Array<{ worldX: number; worldY: number; rangeCells: number }> = [];
-  private readonly maxTilePrefetchChunkSize = 192;
   private lastTilePrefetchSignature = '';
 
   /** Initializes HyperspaceTileProvider. */
   constructor(
     private readonly nebulaRenderer: NebulaRenderer,
-    private readonly systemDataGenerator: SystemDataGenerator
+    private readonly systemDataGenerator: SystemDataGenerator,
+    private readonly tileGenerationProvider: HyperspaceTileGenerationProvider = getHyperspaceTileGenerationProvider()
   ) {}
 
   /** Clears cache. */
   clearCache(): void {
     this.tileCache.clear();
     this.pendingTilePrefetchKeys.clear();
-    this.tilePrefetchQueue.length = 0;
-    this.tilePrefetchScheduled = false;
     this.lastTilePrefetchSignature = '';
     this.prefetchGeneration++;
+    this.tileGenerationProvider.clearCache();
   }
 
   /** Prefetches background tiles around the current hyperspace viewport. */
@@ -75,7 +63,7 @@ export class HyperspaceTileProvider {
       this.maxTileCacheSize - this.tileCache.size - this.pendingTilePrefetchKeys.size;
     if (availableCacheSlots <= 0) return;
 
-    let queued = 0;
+    const requests: Array<{ worldX: number; worldY: number; rangeCells: number }> = [];
     collect: for (let y = -margin; y < rows + margin; y++) {
       for (let x = -margin; x < cols + margin; x++) {
         const worldX = startWorldX + x;
@@ -85,13 +73,37 @@ export class HyperspaceTileProvider {
         if (this.tileCache.has(key) || this.pendingTilePrefetchKeys.has(key)) continue;
 
         this.pendingTilePrefetchKeys.add(key);
-        this.tilePrefetchQueue.push({ worldX, worldY, rangeCells });
-        queued++;
-        if (queued >= availableCacheSlots) break collect;
+        requests.push({ worldX, worldY, rangeCells });
+        if (requests.length >= availableCacheSlots) break collect;
       }
     }
 
-    this.scheduleTilePrefetch();
+    if (requests.length === 0) return;
+    const generation = this.prefetchGeneration;
+    void this.tileGenerationProvider
+      .getTilesAsync(requests)
+      .then((samples) => {
+        if (generation !== this.prefetchGeneration) return;
+        for (const sample of samples) {
+          const key = this.getTileKey(sample.worldX, sample.worldY, sample.rangeCells);
+          this.pendingTilePrefetchKeys.delete(key);
+          if (!this.tileCache.has(key)) {
+            this.cacheTile(key, sample.tile);
+          }
+        }
+      })
+      .catch((error) => {
+        if (generation !== this.prefetchGeneration) return;
+        if (this.lastTilePrefetchSignature === signature) {
+          this.lastTilePrefetchSignature = '';
+        }
+        for (const request of requests) {
+          this.pendingTilePrefetchKeys.delete(
+            this.getTileKey(request.worldX, request.worldY, request.rangeCells)
+          );
+        }
+        logger.debug(`[HyperspaceTileProvider.prefetchTileRegion] Tile prefetch failed: ${error}`);
+      });
   }
 
   /** Returns tile. */
@@ -105,7 +117,7 @@ export class HyperspaceTileProvider {
     const phenomenon = system.exists
       ? null
       : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
-    return this.cacheTile(key, this.createTile(bg, system, phenomenon, worldX, worldY, rangeCells));
+    return this.cacheTile(key, createHyperspaceTile(bg, system, phenomenon, worldX, worldY, rangeCells));
   }
 
   /** Returns tile from survey cell. */
@@ -117,78 +129,8 @@ export class HyperspaceTileProvider {
     const bg = this.nebulaRenderer.getBackgroundColor(cell.worldX, cell.worldY);
     return this.cacheTile(
       key,
-      this.createTile(bg, cell.system, cell.phenomenon, cell.worldX, cell.worldY, cell.rangeCells)
+      createHyperspaceTile(bg, cell.system, cell.phenomenon, cell.worldX, cell.worldY, cell.rangeCells)
     );
-  }
-
-  /** Schedules background generation for one uncached hyperspace tile. */
-  private scheduleTilePrefetch(): void {
-    if (this.tilePrefetchScheduled || this.tilePrefetchQueue.length === 0) return;
-    this.tilePrefetchScheduled = true;
-    const generation = this.prefetchGeneration;
-    setTimeout(() => this.processTilePrefetchChunk(generation), 0);
-  }
-
-  /** Processes tile prefetch chunk. */
-  private processTilePrefetchChunk(generation: number): void {
-    this.tilePrefetchScheduled = false;
-    if (generation !== this.prefetchGeneration) return;
-
-    const chunk = this.tilePrefetchQueue.splice(0, this.maxTilePrefetchChunkSize);
-    for (const item of chunk) {
-      const key = this.getTileKey(item.worldX, item.worldY, item.rangeCells);
-      this.pendingTilePrefetchKeys.delete(key);
-      if (!this.tileCache.has(key)) {
-        this.getTile(item.worldX, item.worldY, item.rangeCells);
-      }
-    }
-
-    this.scheduleTilePrefetch();
-  }
-
-  /** Creates tile. */
-  private createTile(
-    bg: string,
-    systemProps: TileSystemProps,
-    phenomenon: TilePhenomenonProps | null,
-    worldX: number,
-    worldY: number,
-    rangeCells: number
-  ): HyperspaceTile {
-    if (systemProps.exists) {
-      const starInfo = SPECTRAL_TYPES[systemProps.starType!];
-      if (!starInfo) {
-        logger.error(
-          `[HyperspaceTileProvider] Could not find star info for "${systemProps.starType}" at [${worldX}, ${worldY}].`
-        );
-        return { bg, starChar: '?', starColor: '#FF00FF' };
-      }
-
-      const isBrownDwarf = systemProps.objectKind === 'brown-dwarf';
-      if (isBrownDwarf && rangeCells > CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS) {
-        return { bg, starChar: null, starColor: null };
-      }
-
-      const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
-      return {
-        bg,
-        starChar: star.char,
-        starColor: isBrownDwarf ? dimHexColour(star.color, rangeCells <= 12 ? 0.75 : 0.42) : star.color,
-      };
-    }
-
-    if (
-      phenomenon?.exists &&
-      phenomenon.char &&
-      phenomenon.colour &&
-      rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS
-    ) {
-      const dimFactor =
-        phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
-      return { bg, starChar: phenomenon.char, starColor: dimHexColour(phenomenon.colour, dimFactor) };
-    }
-
-    return { bg, starChar: null, starColor: null };
   }
 
   /** Stores a generated hyperspace tile and evicts the oldest entry when full. */
