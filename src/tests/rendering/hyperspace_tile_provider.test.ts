@@ -95,4 +95,29 @@ describe('HyperspaceTileProvider', () => {
     provider.getTile(101, 201, 0);
     expect(mapCalls).toBe(9);
   });
+
+  it('does not rescan an unchanged viewport for tile prefetching', async () => {
+    let mapCalls = 0;
+    const generator = {
+      getSystemMapProperties: () => {
+        mapCalls++;
+        return {
+          exists: false,
+          starType: null,
+          name: null,
+          hasStarbase: false,
+          objectKind: null,
+        };
+      },
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator);
+
+    provider.prefetchTileRegion(100, 200, 3, 3, 1, 1);
+    await nextTask();
+    provider.prefetchTileRegion(100, 200, 3, 3, 1, 1);
+    await nextTask();
+
+    expect(mapCalls).toBe(9);
+  });
 });

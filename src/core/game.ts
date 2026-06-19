@@ -219,6 +219,8 @@ export class Game {
   private lastOverlayRenderAt: number = Number.NEGATIVE_INFINITY;
   private lastPublishedStatusSignature: string = '';
   private lastPublishedCommandSignature: string = '';
+  private lastHyperspaceUpdateSignature: string = '';
+  private lastHyperspaceUpdateStatus: string = '';
   private profilerVisible: boolean = false;
   private lastFrameProfile: FrameProfile = {
     frameMs: 0,
@@ -648,6 +650,8 @@ export class Game {
   /** Handles game state change. */
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
     this.forceFullRender = true; // Always force redraw on state change
+    this.lastHyperspaceUpdateSignature = '';
+    this.lastHyperspaceUpdateStatus = '';
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
     // Reset zoom to default when leaving system view
     if (previousState === 'system' && newState !== 'system') {
@@ -3078,6 +3082,17 @@ export class Game {
   // --- State-specific update methods ---
   /** Updates hyperspace. */
   private _updateHyperspace(_deltaTime: number): string {
+    const viewportSignature = [
+      this.player.position.worldX,
+      this.player.position.worldY,
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows(),
+      this.player.resources.fuel.toFixed(3),
+    ].join('|');
+    if (viewportSignature === this.lastHyperspaceUpdateSignature) {
+      return this.lastHyperspaceUpdateStatus;
+    }
+
     // Check for nearby star system for status message
     const survey = this.getCurrentHyperspaceSurvey();
     const currentProps =
@@ -3155,6 +3170,8 @@ export class Game {
       });
       baseStatus += ` | Actions: ${formatAvailableActions(actions, 5)}`;
     }
+    this.lastHyperspaceUpdateSignature = viewportSignature;
+    this.lastHyperspaceUpdateStatus = baseStatus;
     return baseStatus;
   }
 

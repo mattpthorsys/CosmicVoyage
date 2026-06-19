@@ -11,6 +11,7 @@ export class NebulaRenderer {
   private readonly defaultBgColor: string = CONFIG.DEFAULT_BG_COLOUR;
   private readonly nebulaCachePrecision: number;
   private readonly provider: NebulaColourProvider;
+  private lastPrefetchSignature = '';
 
   /** Initializes NebulaRenderer. */
   constructor(provider: NebulaColourProvider = new LocalNebulaColourProvider()) {
@@ -25,6 +26,7 @@ export class NebulaRenderer {
     this.nebulaColorCache = {};
     this.nebulaCacheSize = 0;
     this.pendingPrefetchKeys.clear();
+    this.lastPrefetchSignature = '';
     this.provider.clearCache();
   }
 
@@ -47,6 +49,10 @@ export class NebulaRenderer {
 
   /** Prefetches nebula colours for the visible world region. */
   prefetchRegion(startWorldX: number, startWorldY: number, cols: number, rows: number, margin = 0): void {
+    const signature = `${startWorldX},${startWorldY}|${cols}x${rows}|${margin}`;
+    if (signature === this.lastPrefetchSignature) return;
+    this.lastPrefetchSignature = signature;
+
     const availableCacheSlots =
       this.maxNebulaCacheSize - this.nebulaCacheSize - this.pendingPrefetchKeys.size;
     if (availableCacheSlots <= 0) return;
@@ -75,6 +81,9 @@ export class NebulaRenderer {
         }
       })
       .catch((error) => {
+        if (this.lastPrefetchSignature === signature) {
+          this.lastPrefetchSignature = '';
+        }
         for (const { worldX, worldY } of requests) {
           this.pendingPrefetchKeys.delete(this.getCacheKey(worldX, worldY));
         }

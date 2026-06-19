@@ -81,6 +81,7 @@ export class AstrometricOverlay {
   private lastCamera: CameraState | null = null;
   private hyperspaceStarbaseMarkers: HyperspaceStarbaseMarker[] = [];
   private hyperspaceMarkerSignature = '';
+  private hyperspaceSurveyViewportSignature = '';
   private popupCycleSignature = '';
   private popupCycleIndex = 0;
 
@@ -98,16 +99,21 @@ export class AstrometricOverlay {
     const now = performance.now();
     this.shiftWithCamera(context);
     if (context.state === 'hyperspace') {
-      this.hyperspaceStarbaseMarkers = this.hyperspaceSurveyService
-        ? this.hyperspaceSurveyService.getSurvey(
-            context.player.position.worldX,
-            context.player.position.worldY,
-            cols,
-            rows
-          ).starbaseMarkers
-        : this.getHyperspaceStarbaseMarkers(context.player, cols, rows);
+      const viewportSignature = `${context.player.position.worldX},${context.player.position.worldY}|${cols}x${rows}`;
+      if (viewportSignature !== this.hyperspaceSurveyViewportSignature) {
+        this.hyperspaceSurveyViewportSignature = viewportSignature;
+        this.hyperspaceStarbaseMarkers = this.hyperspaceSurveyService
+          ? this.hyperspaceSurveyService.getSurvey(
+              context.player.position.worldX,
+              context.player.position.worldY,
+              cols,
+              rows
+            ).starbaseMarkers
+          : this.getHyperspaceStarbaseMarkers(context.player, cols, rows);
+      }
     } else {
       this.hyperspaceMarkerSignature = '';
+      this.hyperspaceSurveyViewportSignature = '';
       this.hyperspaceStarbaseMarkers = [];
     }
     for (const item of this.items) {

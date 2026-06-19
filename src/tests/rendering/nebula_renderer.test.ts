@@ -73,6 +73,41 @@ describe('NebulaRenderer', () => {
     expect(provider.syncCalls).toBe(0);
   });
 
+  it('does not resubmit an unchanged viewport for nebula prefetching', async () => {
+    class CountingProvider implements NebulaColourProvider {
+      asyncCalls = 0;
+
+      /** Returns a fallback background colour. */
+      getBackgroundColor(): string {
+        return '#101010';
+      }
+
+      /** Counts asynchronous viewport generation requests. */
+      getBackgroundColorsAsync(requests: readonly { worldX: number; worldY: number }[]) {
+        this.asyncCalls++;
+        return Promise.resolve(
+          requests.map(({ worldX, worldY }) => ({
+            worldX,
+            worldY,
+            colour: '#123456',
+          }))
+        );
+      }
+
+      /** Clears provider state. */
+      clearCache(): void {}
+    }
+
+    const provider = new CountingProvider();
+    const renderer = new NebulaRenderer(provider);
+
+    renderer.prefetchRegion(10, 20, 2, 2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.prefetchRegion(10, 20, 2, 2);
+
+    expect(provider.asyncCalls).toBe(1);
+  });
+
   it('renders deterministic, sparse nebula fields', () => {
     const first = new NebulaRenderer();
     const second = new NebulaRenderer();

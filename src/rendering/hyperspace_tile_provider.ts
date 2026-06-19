@@ -28,6 +28,7 @@ export class HyperspaceTileProvider {
   private tilePrefetchScheduled = false;
   private readonly tilePrefetchQueue: Array<{ worldX: number; worldY: number; rangeCells: number }> = [];
   private readonly maxTilePrefetchChunkSize = 192;
+  private lastTilePrefetchSignature = '';
 
   /** Initializes HyperspaceTileProvider. */
   constructor(
@@ -41,6 +42,7 @@ export class HyperspaceTileProvider {
     this.pendingTilePrefetchKeys.clear();
     this.tilePrefetchQueue.length = 0;
     this.tilePrefetchScheduled = false;
+    this.lastTilePrefetchSignature = '';
     this.prefetchGeneration++;
   }
 
@@ -65,6 +67,10 @@ export class HyperspaceTileProvider {
     viewCenterY: number,
     margin = 0
   ): void {
+    const signature = `${startWorldX},${startWorldY}|${cols}x${rows}|${viewCenterX},${viewCenterY}|${margin}`;
+    if (signature === this.lastTilePrefetchSignature) return;
+    this.lastTilePrefetchSignature = signature;
+
     const availableCacheSlots =
       this.maxTileCacheSize - this.tileCache.size - this.pendingTilePrefetchKeys.size;
     if (availableCacheSlots <= 0) return;

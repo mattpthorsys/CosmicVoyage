@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Planet } from '../../entities/planet';
 import { Player } from '../../core/player';
 import { AstrometricOverlay } from '../../rendering/astrometric_overlay';
@@ -16,6 +16,38 @@ function createPlanet(name: string, systemX: number, systemY: number): Planet {
 }
 
 describe('AstrometricOverlay starbase markers', () => {
+  it('reuses hyperspace survey markers while the viewport is unchanged', () => {
+    const player = new Player();
+    const getSurvey = vi.fn(() => ({ starbaseMarkers: [{ x: 4, y: 3, distanceCells: 2 }] }));
+    const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
+    Object.assign(overlay as any, {
+      systemDataGenerator: {},
+      hyperspaceSurveyService: { getSurvey },
+      hyperspaceStarbaseMarkers: [],
+      hyperspaceMarkerSignature: '',
+      hyperspaceSurveyViewportSignature: '',
+      items: [],
+      lastEmitAt: performance.now(),
+      lastCamera: null,
+      shiftWithCamera: () => undefined,
+    });
+    const context = {
+      state: 'hyperspace',
+      player,
+      system: null,
+      planet: null,
+      starbase: null,
+      viewScale: 1,
+    } as const;
+
+    overlay.update(context, 0.016, 80, 40);
+    overlay.update(context, 0.016, 80, 40);
+    player.position.worldX++;
+    overlay.update(context, 0.016, 80, 40);
+
+    expect(getSurvey).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps nearby hyperspace starbase brackets brighter than distant ones', () => {
     const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
     (overlay as any).hyperspaceStarbaseMarkers = [
