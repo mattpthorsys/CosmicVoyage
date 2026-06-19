@@ -197,6 +197,11 @@ export class Game {
   private activeMissions: Record<string, StarbaseMission> = {};
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
+  private static readonly SYSTEM_RENDER_INTERVAL_MS = 1000 / 60;
+  private static readonly ORBIT_RENDER_INTERVAL_MS = 1000 / 60;
+  private static readonly SURFACE_RENDER_INTERVAL_MS = 250;
+  private static readonly STARBASE_ALERT_RENDER_INTERVAL_MS = 450;
+  private static readonly OVERLAY_RENDER_INTERVAL_MS = 1000 / 60;
   private gameClockElapsedSeconds: number = 0;
   private currentShipCompartmentId: string = 'bridge';
   private autoScannedSystemName: string | null = null;
@@ -211,6 +216,9 @@ export class Game {
   private forceFullRender: boolean = true;
   private lastRenderStatsLogAt: number = 0;
   private lastMainRenderSignature: string = '';
+  private lastOverlayRenderAt: number = Number.NEGATIVE_INFINITY;
+  private lastPublishedStatusSignature: string = '';
+  private lastPublishedCommandSignature: string = '';
   private profilerVisible: boolean = false;
   private lastFrameProfile: FrameProfile = {
     frameMs: 0,
@@ -5526,7 +5534,6 @@ export class Game {
     this.player.position.systemX += (dx / distance) * step;
     this.player.position.systemY += (dy / distance) * step;
     this.player.render.char = this.player.render.directionGlyph;
-    this.forceFullRender = true;
   }
 
   /** Updates orbit. */
@@ -5541,8 +5548,6 @@ export class Game {
       0,
       Math.min(mapSize - 1, Math.floor(this.orbitModeState.landingY))
     );
-    this.forceFullRender = true;
-
     const actions = createAvailableActions({
       state: 'orbit',
       player: this.player,
@@ -5626,7 +5631,8 @@ export class Game {
   private _render(): void {
     const currentState = this.stateManager.state;
     try {
-      const mainRenderSignature = this.getMainRenderSignature();
+      const renderNow = performance.now();
+      const mainRenderSignature = this.getMainRenderSignature(renderNow);
       const shouldRenderMainScene = !this.canSkipMainRender(currentState, mainRenderSignature);
       if (shouldRenderMainScene) {
         const renderPrepStart = performance.now();
@@ -5780,27 +5786,32 @@ export class Game {
         this.lastFrameProfile.renderPrepMs = 0;
       }
 
-      const overlayStart = performance.now();
-      this.renderer.clearOverlay();
-      this.renderTravelDateTimeHud();
-      if (!this.shouldSuppressHudForeground()) {
-        this.astrometricOverlay.render(
-          this.renderer.getOverlayContext(),
-          this.renderer.getCharWidthPx(),
-          this.renderer.getCharHeightPx()
-        );
-      }
+      if (this.shouldRenderOverlay(renderNow)) {
+        const overlayStart = performance.now();
+        this.renderer.clearOverlay();
+        this.renderTravelDateTimeHud();
+        if (!this.shouldSuppressHudForeground()) {
+          this.astrometricOverlay.render(
+            this.renderer.getOverlayContext(),
+            this.renderer.getCharWidthPx(),
+            this.renderer.getCharHeightPx()
+          );
+        }
 
-      // Draw Terminal Overlay on top
-      if (!this.shouldSuppressHudForeground()) {
-        this.terminalOverlay.render(
-          this.renderer.getOverlayContext(),
-          this.renderer.getOverlayCanvas().width,
-          this.renderer.getOverlayCanvas().height
-        );
+        // Draw Terminal Overlay on top
+        if (!this.shouldSuppressHudForeground()) {
+          this.terminalOverlay.render(
+            this.renderer.getOverlayContext(),
+            this.renderer.getOverlayCanvas().width,
+            this.renderer.getOverlayCanvas().height
+          );
+        }
+        this.renderPerformanceOverlay();
+        this.lastFrameProfile.overlayMs = performance.now() - overlayStart;
+        this.lastOverlayRenderAt = renderNow;
+      } else {
+        this.lastFrameProfile.overlayMs = 0;
       }
-      this.renderPerformanceOverlay();
-      this.lastFrameProfile.overlayMs = performance.now() - overlayStart;
     } catch (renderError) {
       logger.error(`[Game:_render] !!!! CRITICAL RENDER ERROR in state '${currentState}' !!!!`, renderError);
       this.statusMessage = `FATAL RENDER ERROR: ${
@@ -5879,13 +5890,16 @@ export class Game {
       this.jettisonConfirmation
     )
       return false;
-    if (state === 'starbase' && this.starbaseMode.alert) return false;
-    if (state !== 'hyperspace' && state !== 'planet' && state !== 'starbase') return false;
     return signature === this.lastMainRenderSignature;
   }
 
+  /** Returns whether the animated overlay layer is due for another frame. */
+  private shouldRenderOverlay(now: number): boolean {
+    return this.forceFullRender || now - this.lastOverlayRenderAt >= Game.OVERLAY_RENDER_INTERVAL_MS;
+  }
+
   /** Returns main render signature. */
-  private getMainRenderSignature(): string {
+  private getMainRenderSignature(now: number = performance.now()): string {
     const state = this.stateManager.state;
     switch (state) {
       case 'hyperspace':
@@ -5895,6 +5909,26 @@ export class Game {
           this.player.position.worldY,
           this.player.render.char,
         ].join('|');
+      case 'system':
+        return [
+          state,
+          this.stateManager.currentSystem?.name ?? '',
+          this.player.render.char,
+          this.currentZoomLevelIndex,
+          this.travelMode.currentTargetSignature,
+          Math.floor(now / Game.SYSTEM_RENDER_INTERVAL_MS),
+        ].join('|');
+      case 'orbit':
+        return [
+          state,
+          this.getSelectedOrbitBody()?.name ?? '',
+          this.orbitModeState.selectedBodyIndex,
+          this.orbitModeState.mode,
+          this.orbitModeState.landingX,
+          this.orbitModeState.landingY,
+          this.orbitModeState.alert,
+          Math.floor(now / Game.ORBIT_RENDER_INTERVAL_MS),
+        ].join('|');
       case 'planet':
         return [
           state,
@@ -5903,7 +5937,6 @@ export class Game {
           this.player.position.surfaceY,
           this.player.render.char,
           this.stateManager.currentPlanet?.scanned ? 'scanned' : 'unscanned',
-          this.getGameDateTimeLabel(),
           this.player.terrainVehicle.deployed ? 'rover' : 'ship',
           this.player.terrainVehicle.available ? 'available' : 'lost',
           this.player.terrainVehicle.onFoot ? 'foot' : 'notfoot',
@@ -5917,7 +5950,7 @@ export class Game {
           this.surfaceMode.scanCursor
             ? `${this.surfaceMode.scanCursor.dx},${this.surfaceMode.scanCursor.dy}`
             : 'noscan',
-          Math.floor(performance.now() / 450),
+          Math.floor(now / Game.SURFACE_RENDER_INTERVAL_MS),
           this.player.terrainVehicle.fuel.toFixed(1),
           this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold),
           this.statusMessage,
@@ -5932,9 +5965,10 @@ export class Game {
           this.starbaseMode.alert,
           this.player.resources.credits,
           this.player.resources.fuel,
+          this.starbaseMode.alert ? Math.floor(now / Game.STARBASE_ALERT_RENDER_INTERVAL_MS) : 'static',
         ].join('|');
       default:
-        return `${state}|${performance.now()}`;
+        return state;
     }
   }
 
@@ -6058,16 +6092,24 @@ export class Game {
     const finalStatus = this.statusMessage + commonStatus;
     const hasStarbase = this.stateManager.state === 'starbase';
 
-    // Publish event for the status bar updater
-    eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
-
     const actions = this.getCurrentAvailableActions();
-    eventManager.publish(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, {
+    const commandUpdate = {
       actions,
       primaryActionId: this.choosePrimaryAction(actions)?.id,
       targetName: this.getCommandStripTargetName(),
       commandBar: this.createCommandBarModel(actions),
-    });
+    };
+    const statusSignature = `${hasStarbase ? 'starbase' : 'standard'}|${finalStatus}`;
+    if (statusSignature !== this.lastPublishedStatusSignature) {
+      this.lastPublishedStatusSignature = statusSignature;
+      eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
+    }
+
+    const commandSignature = JSON.stringify(commandUpdate);
+    if (commandSignature !== this.lastPublishedCommandSignature) {
+      this.lastPublishedCommandSignature = commandSignature;
+      eventManager.publish(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, commandUpdate);
+    }
   }
 
   /** Creates command bar model. */

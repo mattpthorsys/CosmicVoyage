@@ -14,6 +14,7 @@ function createRenderGateHarness(): any {
     forceFullRender: false,
     popupState: 'inactive',
     lastMainRenderSignature: '',
+    lastOverlayRenderAt: Number.NEGATIVE_INFINITY,
     gameClockElapsedSeconds: 0,
     _travelMode: new TravelModeController(),
     _orbitModeState: new OrbitModeController(),
@@ -51,6 +52,41 @@ describe('Game main render signatures', () => {
     game.gameClockElapsedSeconds = 90 * 60;
 
     expect(game.getMainRenderSignature()).toBe(first);
+  });
+
+  it('caps system and orbit scene animation at sixty frames per second', () => {
+    const game = createRenderGateHarness();
+    game.stateManager = {
+      state: 'system',
+      currentSystem: { name: 'Tau Test' },
+    };
+    game.player.position.systemX = 10;
+    game.player.position.systemY = 20;
+    game.currentZoomLevelIndex = 3;
+    game.travelMode.currentTargetSignature = 'target';
+
+    expect(game.getMainRenderSignature(1001)).toBe(game.getMainRenderSignature(1016));
+    expect(game.getMainRenderSignature(1017)).not.toBe(game.getMainRenderSignature(1016));
+
+    const beforeMovement = game.getMainRenderSignature(1017);
+    game.player.position.systemX += 500;
+    expect(game.getMainRenderSignature(1017)).toBe(beforeMovement);
+
+    game.stateManager = { state: 'orbit' };
+    game.getSelectedOrbitBody = () => ({ name: 'Test I' });
+    expect(game.getMainRenderSignature(2001)).toBe(game.getMainRenderSignature(2016));
+    expect(game.getMainRenderSignature(2017)).not.toBe(game.getMainRenderSignature(2016));
+  });
+
+  it('caps overlay drawing at sixty frames per second', () => {
+    const game = createRenderGateHarness();
+
+    game.lastOverlayRenderAt = 1000;
+    expect(game.shouldRenderOverlay(1016)).toBe(false);
+    expect(game.shouldRenderOverlay(1017)).toBe(true);
+
+    game.forceFullRender = true;
+    expect(game.shouldRenderOverlay(1020)).toBe(true);
   });
 
   it('changes hyperspace signatures when the player moves', () => {
@@ -97,6 +133,7 @@ describe('Game main render signatures', () => {
       renderPerformanceOverlay: vi.fn(),
       getMainRenderSignature: () => 'stable',
       canSkipMainRender: () => true,
+      shouldRenderOverlay: () => true,
     });
 
     game._render();
