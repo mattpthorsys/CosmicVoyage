@@ -41,12 +41,14 @@ export interface MissionProgressState {
   completedMissionIds: Set<string>;
 }
 
+/** Returns mission status. */
 export function getMissionStatus(mission: StarbaseMission, progress: MissionProgressState): MissionStatus {
   if (progress.completedMissionIds.has(mission.id)) return 'COMPLETE';
   if (progress.acceptedMissionIds.has(mission.id)) return 'ACTIVE';
   return 'AVAILABLE';
 }
 
+/** Formats mission detail. */
 export function formatMissionDetail(mission: StarbaseMission, status: MissionStatus): string {
   return [
     `CONTRACT: ${mission.title}`,
@@ -59,7 +61,11 @@ export function formatMissionDetail(mission: StarbaseMission, status: MissionSta
   ].join(' | ');
 }
 
-export function isMissionCompletedByScan(mission: StarbaseMission, target: Planet | StellarBody | SolarSystem): boolean {
+/** Returns whether mission completed by scan. */
+export function isMissionCompletedByScan(
+  mission: StarbaseMission,
+  target: Planet | StellarBody | SolarSystem
+): boolean {
   if (mission.objective.kind !== 'scan') return false;
   if (target instanceof Planet) {
     return mission.objective.targetType === 'planet' && target.name === mission.objective.targetName;
@@ -70,6 +76,7 @@ export function isMissionCompletedByScan(mission: StarbaseMission, target: Plane
   return mission.objective.targetType === 'star' && target.name === mission.objective.targetName;
 }
 
+/** Generates starbase notices. */
 export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem): StarbaseNotice[] {
   const notices: StarbaseNotice[] = [];
   const planets = getPlanets(system);
@@ -81,24 +88,28 @@ export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem)
     id: `${missionPrefix}:notice:traffic`,
     date: formatStationDate(starbase.name, 1),
     priority: system.architecture.kind === 'single' ? 'PORT' : 'SAFETY',
-    text: system.architecture.kind === 'single'
-      ? 'Departure lanes clear outside normal radiator purge windows.'
-      : `${system.architecture.kind.toUpperCase()} ephemeris advisory active for outbound traffic.`,
-    detail: system.architecture.kind === 'single'
-      ? 'Dockmaster traffic is light; automated launch holds remain tied to thermal cycling.'
-      : 'Companion-star motion changes recommended launch bearings across short station intervals.',
+    text:
+      system.architecture.kind === 'single'
+        ? 'Departure lanes clear outside normal radiator purge windows.'
+        : `${system.architecture.kind.toUpperCase()} ephemeris advisory active for outbound traffic.`,
+    detail:
+      system.architecture.kind === 'single'
+        ? 'Dockmaster traffic is light; automated launch holds remain tied to thermal cycling.'
+        : 'Companion-star motion changes recommended launch bearings across short station intervals.',
   });
 
   notices.push({
     id: `${missionPrefix}:notice:trade`,
     date: formatStationDate(starbase.name, 2),
     priority: 'TRADE',
-    text: giants.length > 0
-      ? 'Volatile brokers report thinner tanker traffic from the outer giant lanes.'
-      : 'Bulk haulers are favouring compact cargo until local survey returns improve.',
-    detail: giants.length > 0
-      ? `Station factors are watching ${giants[0].name} for fuel-stock opportunities.`
-      : 'Market pressure is local and modest; no emergency pricing bulletin has been filed.',
+    text:
+      giants.length > 0
+        ? 'Volatile brokers report thinner tanker traffic from the outer giant lanes.'
+        : 'Bulk haulers are favouring compact cargo until local survey returns improve.',
+    detail:
+      giants.length > 0
+        ? `Station factors are watching ${giants[0].name} for fuel-stock opportunities.`
+        : 'Market pressure is local and modest; no emergency pricing bulletin has been filed.',
   });
 
   notices.push({
@@ -128,6 +139,7 @@ export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem)
   return notices;
 }
 
+/** Generates starbase missions. */
 export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem): StarbaseMission[] {
   const planets = getPlanets(system);
   const solid = planets.filter((planet) => planet.type !== 'GasGiant' && planet.type !== 'IceGiant');
@@ -208,7 +220,8 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
         type: 'recovery',
         issuer: 'Station Communications',
         summary: `Investigate weak relay returns near ${target.name}.`,
-        detail: 'No docking required. A close scan pass should confirm whether the returns are natural noise.',
+        detail:
+          'No docking required. A close scan pass should confirm whether the returns are natural noise.',
         rewardCredits: 1680,
         risk: system.architecture.kind === 'triple' ? 'High' : 'Med',
         originStarbaseName: starbase.name,
@@ -226,14 +239,20 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
   return missions;
 }
 
+/** Returns planets. */
 function getPlanets(system: SolarSystem): Planet[] {
   return system.planets.filter((planet): planet is Planet => planet !== null);
 }
 
+/** Returns board id prefix. */
 function getBoardIdPrefix(starbase: Starbase): string {
-  return starbase.name.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+  return starbase.name
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
 }
 
+/** Formats station date. */
 function formatStationDate(starbaseName: string, index: number): string {
   let hash = 17 + index * 41;
   for (let i = 0; i < starbaseName.length; i++) {

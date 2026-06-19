@@ -20,17 +20,10 @@ import {
 import { createTemperatureProfileFromAverage } from '../entities/planet/temperature_calculator';
 import { SystemBasicProperties } from '@/generation/system_data_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
-import {
-  getHostLabel,
-  getPrimaryStar,
-  OrbitHost,
-  StellarArchitecture,
-  StellarBody,
-} from './stellar_body';
+import { getHostLabel, getPrimaryStar, OrbitHost, StellarArchitecture, StellarBody } from './stellar_body';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
-  // private static readonly BASE_ORBITAL_CONSTANT = 5e2; // Removed - using physics now
 
   readonly starX: number; // World coordinate X
   readonly starY: number; // World coordinate Y
@@ -48,12 +41,15 @@ export class SolarSystem {
   readonly isStarless: boolean;
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
+  /** Initializes SolarSystem. */
   constructor(basicProps: SystemBasicProperties, starX: number, starY: number, gameSeedPRNG: PRNG) {
     this.starX = starX;
     this.starY = starY;
     const starSeed = `star_${starX},${starY}`;
     this.systemPRNG = gameSeedPRNG.seedNew(starSeed);
-    logger.debug(`[System:${starX},${starY}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`);
+    logger.debug(
+      `[System:${starX},${starY}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`
+    );
 
     this.architecture = basicProps.architecture ?? this.createFallbackArchitecture(basicProps);
     this.stars = this.architecture.stars;
@@ -105,7 +101,11 @@ export class SolarSystem {
     let maxOrbit_m = 0;
     this.planets.forEach((p) => {
       if (p) {
-        maxOrbit_m = Math.max(maxOrbit_m, p.orbitDistance, Math.sqrt(p.systemX * p.systemX + p.systemY * p.systemY));
+        maxOrbit_m = Math.max(
+          maxOrbit_m,
+          p.orbitDistance,
+          Math.sqrt(p.systemX * p.systemX + p.systemY * p.systemY)
+        );
         // Also consider furthest moon orbit relative to star (approx)
         if (p.moons && p.moons.length > 0) {
           const furthestMoonOrbit = p.moons.reduce((max, moon) => Math.max(max, moon.orbitDistance), 0);
@@ -183,6 +183,7 @@ export class SolarSystem {
     return name;
   }
 
+  /** Creates fallback architecture. */
   private createFallbackArchitecture(basicProps: SystemBasicProperties): StellarArchitecture {
     if (basicProps.objectKind === 'rogue-planet') {
       return {
@@ -224,12 +225,14 @@ export class SolarSystem {
     };
   }
 
+  /** Calculates star luminosity. */
   private calculateStarLuminosity(starType: string, _environment: StellarEnvironment): number {
     const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
     const sigma = 5.670374419e-8;
     return 4 * Math.PI * Math.pow(starInfo.radius, 2) * sigma * Math.pow(starInfo.temp, 4);
   }
 
+  /** Configures stable orbital relationships for stars in a multiple-star system. */
   private configureStellarOrbits(): void {
     if (this.stars.length < 2) return;
     const primary = this.stars.find((star) => star.id === 'A');
@@ -266,6 +269,7 @@ export class SolarSystem {
     }
   }
 
+  /** Updates star positions. */
   private updateStarPositions(deltaTime: number): void {
     const scaledDeltaTime = this.getScaledOrbitalDeltaTime(deltaTime);
     for (const star of this.stars) {
@@ -275,25 +279,34 @@ export class SolarSystem {
         continue;
       }
       if (scaledDeltaTime > 0 && star.orbit.periodSeconds > 0) {
-        star.orbit.angle = (star.orbit.angle + (2 * Math.PI * scaledDeltaTime) / star.orbit.periodSeconds) % (Math.PI * 2);
+        star.orbit.angle =
+          (star.orbit.angle + (2 * Math.PI * scaledDeltaTime) / star.orbit.periodSeconds) % (Math.PI * 2);
       }
       star.systemX = Math.cos(star.orbit.angle) * star.orbit.radius;
       star.systemY = Math.sin(star.orbit.angle) * star.orbit.radius;
     }
   }
 
+  /** Returns scaled orbital delta time. */
   private getScaledOrbitalDeltaTime(deltaTime: number): number {
     if (!Number.isFinite(deltaTime) || deltaTime <= 0) return 0;
     return deltaTime * SolarSystem.SIMULATED_SECONDS_PER_REAL_SECOND;
   }
 
+  /** Calculates kepler period seconds. */
   private calculateKeplerPeriodSeconds(orbitRadius_m: number, centralMass_kg: number): number {
-    if (!Number.isFinite(orbitRadius_m) || orbitRadius_m <= 0 || !Number.isFinite(centralMass_kg) || centralMass_kg <= 0) {
+    if (
+      !Number.isFinite(orbitRadius_m) ||
+      orbitRadius_m <= 0 ||
+      !Number.isFinite(centralMass_kg) ||
+      centralMass_kg <= 0
+    ) {
       return Number.POSITIVE_INFINITY;
     }
     return 2 * Math.PI * Math.sqrt(Math.pow(orbitRadius_m, 3) / (GRAVITATIONAL_CONSTANT_G * centralMass_kg));
   }
 
+  /** Calculates planet tidal rotation. */
   private calculatePlanetTidalRotation(
     planetType: string,
     orbitDistance_m: number,
@@ -301,19 +314,28 @@ export class SolarSystem {
     ageGyr: number,
     prng: PRNG
   ): { tidallyLocked: boolean; rotationPeriodHours?: number } {
-    if (!Number.isFinite(orbitDistance_m) || orbitDistance_m <= 0 || !Number.isFinite(hostMass_kg) || hostMass_kg <= 0) {
+    if (
+      !Number.isFinite(orbitDistance_m) ||
+      orbitDistance_m <= 0 ||
+      !Number.isFinite(hostMass_kg) ||
+      hostMass_kg <= 0
+    ) {
       return { tidallyLocked: false };
     }
 
     const orbitAU = orbitDistance_m / AU_IN_METERS;
     const hostMassSolar = hostMass_kg / SOLAR_MASS_KG;
     const bodyCoupling =
-      planetType === 'GasGiant' || planetType === 'IceGiant' ? 0.35 :
-      planetType === 'Lunar' || planetType === 'Molten' ? 1.35 :
-      planetType === 'Oceanic' ? 1.15 :
-      1;
+      planetType === 'GasGiant' || planetType === 'IceGiant'
+        ? 0.35
+        : planetType === 'Lunar' || planetType === 'Molten'
+          ? 1.35
+          : planetType === 'Oceanic'
+            ? 1.15
+            : 1;
     const ageFactor = Math.max(0.08, ageGyr) / 4.6;
-    const tidalScore = ageFactor * Math.pow(hostMassSolar, 2) * Math.pow(0.12 / Math.max(0.015, orbitAU), 6) * bodyCoupling;
+    const tidalScore =
+      ageFactor * Math.pow(hostMassSolar, 2) * Math.pow(0.12 / Math.max(0.015, orbitAU), 6) * bodyCoupling;
     const lockProbability = this.clamp((Math.log10(Math.max(1e-5, tidalScore)) + 1.0) / 2.4, 0, 0.98);
     const tidallyLocked = prng.random() < lockProbability;
     if (!tidallyLocked) return { tidallyLocked: false };
@@ -334,7 +356,9 @@ export class SolarSystem {
 
     // Define realistic distance ranges in METERS (e.g., 0.2 AU to 50+ AU)
     const stabilityInnerLimit =
-      this.architecture.kind === 'single' ? 0.2 * AU_IN_METERS : Math.max(0.7 * AU_IN_METERS, this.architecture.binarySeparation * 4.2);
+      this.architecture.kind === 'single'
+        ? 0.2 * AU_IN_METERS
+        : Math.max(0.7 * AU_IN_METERS, this.architecture.binarySeparation * 4.2);
     const MIN_INNER_ORBIT_M = stabilityInnerLimit; // e.g., ~3e10 meters
     const MAX_INNER_ORBIT_M = 0.7 * AU_IN_METERS; // e.g., ~1e11 meters
     const wideCompanionLimit =
@@ -344,7 +368,10 @@ export class SolarSystem {
     const MIN_OUTER_ORBIT_M = Math.min(50 * AU_IN_METERS, wideCompanionLimit); // Example outer limit (adjust as needed)
 
     const orbitScaleBase = this.systemPRNG.random(1.5, 2.0);
-    let lastOrbitDistance = this.systemPRNG.random(MIN_INNER_ORBIT_M, Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M));
+    let lastOrbitDistance = this.systemPRNG.random(
+      MIN_INNER_ORBIT_M,
+      Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M)
+    );
     const MIN_PLANET_SEPARATION_M = 0.1 * AU_IN_METERS; // e.g., 0.1 AU separation minimum
     const secondaryHosts = this.getSecondaryCircumstellarPlanetHosts();
     const reservedSecondarySlots = Math.min(3, secondaryHosts.length * 2);
@@ -392,10 +419,21 @@ export class SolarSystem {
         orbitCenter.y + Math.sin(angle) * currentOrbitDistance
       );
       const parentStar = this.getPlanetEnvironmentStar(orbitHost);
-      const formationChance = this.getPlanetFormationChance(i, currentOrbitDistance, totalFlux, parentStar.starType, 0.08);
+      const formationChance = this.getPlanetFormationChance(
+        i,
+        currentOrbitDistance,
+        totalFlux,
+        parentStar.starType,
+        0.08
+      );
       if (this.systemPRNG.random() < formationChance) {
         logger.debug(`[System:${this.name}] Slot ${i + 1}: Planet formation roll success.`);
-        const planetType = this.determinePlanetType(currentOrbitDistance, totalFlux, parentStar.starType, orbitHost);
+        const planetType = this.determinePlanetType(
+          currentOrbitDistance,
+          totalFlux,
+          parentStar.starType,
+          orbitHost
+        );
         const planetName = `${this.name} ${this.getRomanNumeral(i + 1)}`;
         const parentStarType = parentStar.starType; // Pass star type to planet constructor
         const tidalRotation = this.calculatePlanetTidalRotation(
@@ -495,6 +533,7 @@ export class SolarSystem {
     logger.info(`[System:${this.name}] Planet generation complete. ${planetsGenerated} planets created.`);
   }
 
+  /** Returns secondary circumstellar planet hosts. */
   private getSecondaryCircumstellarPlanetHosts(): StellarBody[] {
     if (this.architecture.kind === 'single' || this.architecture.kind === 'starless') return [];
     return this.stars.filter((star) => {
@@ -504,12 +543,26 @@ export class SolarSystem {
     });
   }
 
-  private getCircumstellarStableZone(star: StellarBody): { minOrbit_m: number; maxOrbit_m: number; nearestStarDistance_m: number } | null {
+  /** Returns circumstellar stable zone. */
+  private getCircumstellarStableZone(
+    star: StellarBody
+  ): { minOrbit_m: number; maxOrbit_m: number; nearestStarDistance_m: number } | null {
     const nearestStarDistance_m = this.getNearestOtherStarDistance(star);
     if (!Number.isFinite(nearestStarDistance_m) || nearestStarDistance_m < 5 * AU_IN_METERS) return null;
 
     const starClass = star.starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G';
-    const minByClassAu: Record<string, number> = { O: 0.9, B: 0.65, A: 0.35, F: 0.22, G: 0.16, K: 0.1, M: 0.055, L: 0.035, T: 0.025, Y: 0.02 };
+    const minByClassAu: Record<string, number> = {
+      O: 0.9,
+      B: 0.65,
+      A: 0.35,
+      F: 0.22,
+      G: 0.16,
+      K: 0.1,
+      M: 0.055,
+      L: 0.035,
+      T: 0.025,
+      Y: 0.02,
+    };
     const minOrbit_m = Math.max(star.radiusM * 18, (minByClassAu[starClass] ?? 0.12) * AU_IN_METERS);
     const stabilityFraction = this.architecture.kind === 'triple' && star.id === 'C' ? 0.14 : 0.16;
     const maxOrbit_m = nearestStarDistance_m * stabilityFraction;
@@ -517,6 +570,7 @@ export class SolarSystem {
     return { minOrbit_m, maxOrbit_m, nearestStarDistance_m };
   }
 
+  /** Returns nearest other star distance. */
   private getNearestOtherStarDistance(star: StellarBody): number {
     let nearest = Number.POSITIVE_INFINITY;
     for (const other of this.stars) {
@@ -528,6 +582,7 @@ export class SolarSystem {
     return nearest;
   }
 
+  /** Generates secondary circumstellar planets. */
   private generateSecondaryCircumstellarPlanets(hosts: StellarBody[]): number {
     if (hosts.length === 0) return 0;
     let generated = 0;
@@ -540,14 +595,21 @@ export class SolarSystem {
       const hostPRNG = this.systemPRNG.seedNew(`circumstellar_${host.id}`);
       const maxForHost = Math.min(remainingSlots, 3 - generated, hostPRNG.random() < 0.72 ? 1 : 2);
       const spacing = hostPRNG.random(1.55, 2.25);
-      let lastOrbit = hostPRNG.random(stableZone.minOrbit_m, Math.min(stableZone.maxOrbit_m, stableZone.minOrbit_m * 2.2));
+      let lastOrbit = hostPRNG.random(
+        stableZone.minOrbit_m,
+        Math.min(stableZone.maxOrbit_m, stableZone.minOrbit_m * 2.2)
+      );
 
       for (let localIndex = 0; localIndex < maxForHost; localIndex++) {
         const slot = this.planets.findIndex((planet) => planet === null);
         if (slot < 0) return generated;
-        const orbitDistance = localIndex === 0
-          ? lastOrbit
-          : Math.min(stableZone.maxOrbit_m, lastOrbit * spacing + hostPRNG.random(0.03 * AU_IN_METERS, 0.12 * AU_IN_METERS));
+        const orbitDistance =
+          localIndex === 0
+            ? lastOrbit
+            : Math.min(
+                stableZone.maxOrbit_m,
+                lastOrbit * spacing + hostPRNG.random(0.03 * AU_IN_METERS, 0.12 * AU_IN_METERS)
+              );
         if (orbitDistance > stableZone.maxOrbit_m) break;
 
         const orbitHost: OrbitHost = { kind: 'circumstellar', starId: host.id };
@@ -555,7 +617,13 @@ export class SolarSystem {
         const x = host.systemX + Math.cos(angle) * orbitDistance;
         const y = host.systemY + Math.sin(angle) * orbitDistance;
         const totalFlux = this.calculateFluxAt(x, y);
-        const formationChance = this.getPlanetFormationChance(localIndex, orbitDistance, totalFlux, host.starType, 0.0);
+        const formationChance = this.getPlanetFormationChance(
+          localIndex,
+          orbitDistance,
+          totalFlux,
+          host.starType,
+          0.0
+        );
         if (hostPRNG.random() > formationChance) {
           lastOrbit = orbitDistance;
           continue;
@@ -599,6 +667,7 @@ export class SolarSystem {
     return generated;
   }
 
+  /** Generates rogue planetary mass object. */
   private generateRoguePlanetaryMassObject(): void {
     const prng = this.systemPRNG.seedNew('rogue_planetary_mass_object');
     const planetType = this.weightedChoice(prng, [
@@ -624,9 +693,12 @@ export class SolarSystem {
     planet.systemY = 0;
     this.planets[0] = planet;
     this.generateMoonsForRoguePlanet(planet, this.name, prng);
-    logger.info(`[System:${this.name}] Generated starless ${planet.type} with ${planet.moons.length} retained moon${planet.moons.length === 1 ? '' : 's'}.`);
+    logger.info(
+      `[System:${this.name}] Generated starless ${planet.type} with ${planet.moons.length} retained moon${planet.moons.length === 1 ? '' : 's'}.`
+    );
   }
 
+  /** Generates rogue planet characteristics. */
   private generateRoguePlanetCharacteristics(planetType: string, prng: PRNG): PlanetCharacteristics {
     const physical =
       planetType === 'GasGiant'
@@ -645,10 +717,22 @@ export class SolarSystem {
           : prng.randomInt(8, 45);
     const atmosphere: PlanetCharacteristics['atmosphere'] =
       planetType === 'GasGiant'
-        ? { density: 'Superdense', pressure: prng.random(200, 1500), composition: { Hydrogen: 0.82, Helium: 0.16, Methane: 0.02 } }
+        ? {
+            density: 'Superdense',
+            pressure: prng.random(200, 1500),
+            composition: { Hydrogen: 0.82, Helium: 0.16, Methane: 0.02 },
+          }
         : planetType === 'IceGiant'
-          ? { density: 'Superdense', pressure: prng.random(80, 700), composition: { Hydrogen: 0.52, Helium: 0.18, Methane: 0.18, Ammonia: 0.12 } }
-          : { density: 'Trace', pressure: prng.random(0.001, 0.08), composition: { Nitrogen: 0.35, Methane: 0.28, 'Carbon Dioxide': 0.22, Argon: 0.15 } };
+          ? {
+              density: 'Superdense',
+              pressure: prng.random(80, 700),
+              composition: { Hydrogen: 0.52, Helium: 0.18, Methane: 0.18, Ammonia: 0.12 },
+            }
+          : {
+              density: 'Trace',
+              pressure: prng.random(0.001, 0.08),
+              composition: { Nitrogen: 0.35, Methane: 0.28, 'Carbon Dioxide': 0.22, Argon: 0.15 },
+            };
     const axialTilt = generateAxialTiltRad(prng, false);
     const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, planetType, atmosphere, {
       diameterKm: physical.diameter,
@@ -680,19 +764,34 @@ export class SolarSystem {
       mineralRichness: planetType === 'Frozen' ? MineralRichness.POOR : MineralRichness.NONE,
       baseMinerals: planetType === 'Frozen' ? prng.randomInt(4, 16) : 0,
       elementAbundance: volatileAbundance,
-      magneticFieldStrength: planetType === 'GasGiant' ? prng.random(120, 1800) : planetType === 'IceGiant' ? prng.random(60, 900) : prng.random(0, 3),
+      magneticFieldStrength:
+        planetType === 'GasGiant'
+          ? prng.random(120, 1800)
+          : planetType === 'IceGiant'
+            ? prng.random(60, 900)
+            : prng.random(0, 3),
       axialTilt,
       tidallyLocked: false,
-      rotationPeriodHours: generateRotationPeriodHours(prng, planetType, physical.diameter, physical.density, 0, false),
+      rotationPeriodHours: generateRotationPeriodHours(
+        prng,
+        planetType,
+        physical.diameter,
+        physical.density,
+        0,
+        false
+      ),
       orbitalInclination: 0,
     };
   }
 
+  /** Generates moons for rogue planet. */
   private generateMoonsForRoguePlanet(parent: Planet, planetName: string, prng: PRNG): void {
     if (!parent.mass || parent.mass <= 0 || !parent.diameter || parent.diameter <= 0) return;
     const parentRadius_m = (parent.diameter * 1000) / 2;
-    const innerOrbit_m = parentRadius_m * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 3.2 : 5.0);
-    const outerStableOrbit_m = parentRadius_m * (parent.type === 'GasGiant' ? 520 : parent.type === 'IceGiant' ? 360 : 120);
+    const innerOrbit_m =
+      parentRadius_m * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 3.2 : 5.0);
+    const outerStableOrbit_m =
+      parentRadius_m * (parent.type === 'GasGiant' ? 520 : parent.type === 'IceGiant' ? 360 : 120);
     const targetMoonCount =
       parent.type === 'GasGiant'
         ? this.clamp(Math.round(prng.random(4, 16)), 0, 18)
@@ -704,13 +803,20 @@ export class SolarSystem {
     for (let j = 0; j < targetMoonCount; j++) {
       const moonOrbit_m = lastMoonOrbit_m * prng.random(1.38, parent.type === 'Frozen' ? 2.7 : 1.85);
       if (moonOrbit_m > outerStableOrbit_m) break;
-      const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
-      const moonType = orbitFraction < 0.25 && this.getMoonTidalHeatingFactor(parent, moonOrbit_m) > 0.18 && prng.random() < 0.45
-        ? 'Lunar'
-        : this.weightedChoice(prng, [
-          { item: 'Frozen', weight: parent.type === 'Frozen' ? 2.2 : 5 },
-          { item: 'Lunar', weight: orbitFraction > 0.65 ? 2.2 : 1.1 },
-        ]);
+      const orbitFraction = this.clamp(
+        (moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1),
+        0,
+        1
+      );
+      const moonType =
+        orbitFraction < 0.25 &&
+        this.getMoonTidalHeatingFactor(parent, moonOrbit_m) > 0.18 &&
+        prng.random() < 0.45
+          ? 'Lunar'
+          : this.weightedChoice(prng, [
+              { item: 'Frozen', weight: parent.type === 'Frozen' ? 2.2 : 5 },
+              { item: 'Lunar', weight: orbitFraction > 0.65 ? 2.2 : 1.1 },
+            ]);
       const moonCharacteristics = this.generateRogueMoonCharacteristics(
         moonType,
         moonOrbit_m,
@@ -739,6 +845,7 @@ export class SolarSystem {
     }
   }
 
+  /** Generates rogue moon characteristics. */
   private generateRogueMoonCharacteristics(
     moonType: string,
     moonOrbit_m: number,
@@ -748,15 +855,26 @@ export class SolarSystem {
     innerOrbit_m: number,
     outerStableOrbit_m: number
   ): PlanetCharacteristics {
-    const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
-    const parentDiameterLimit = parent.diameter * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 0.08 : 0.22);
-    const maxDiameter = Math.max(420, Math.min(moonType === 'Frozen' ? 5200 : 3800, parentDiameterLimit) * Math.max(0.45, 1 - moonIndex * 0.055));
+    const orbitFraction = this.clamp(
+      (moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1),
+      0,
+      1
+    );
+    const parentDiameterLimit =
+      parent.diameter * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 0.08 : 0.22);
+    const maxDiameter = Math.max(
+      420,
+      Math.min(moonType === 'Frozen' ? 5200 : 3800, parentDiameterLimit) *
+        Math.max(0.45, 1 - moonIndex * 0.055)
+    );
     const diameter = prng.random(moonType === 'Frozen' ? 520 : 420, maxDiameter);
     const density = moonType === 'Frozen' ? prng.random(1.15, 2.25) : prng.random(2.35, 3.7);
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
-    const surfaceTemp = Math.round((moonType === 'Frozen' ? prng.random(9, 34) : prng.random(12, 52)) + tidalHeat * prng.random(12, 95));
+    const surfaceTemp = Math.round(
+      (moonType === 'Frozen' ? prng.random(9, 34) : prng.random(12, 52)) + tidalHeat * prng.random(12, 95)
+    );
     const tidallyLocked = orbitFraction < 0.82 || tidalHeat > 0.12;
     const atmosphere: PlanetCharacteristics['atmosphere'] = {
       density: surfaceTemp > 35 && diameter > 2400 ? 'Trace' : 'None',
@@ -789,14 +907,16 @@ export class SolarSystem {
       lithosphere: moonType === 'Frozen' ? 'Ice-rock crust' : 'Cratered silicate crust',
       mineralRichness: prng.random() < 0.14 ? MineralRichness.AVERAGE : MineralRichness.POOR,
       baseMinerals: prng.randomInt(2, 18),
-      elementAbundance: moonType === 'Frozen'
-        ? { WATER_ICE: 0.34, METHANE_ICE: 0.2, AMMONIA_ICE: 0.14, SILICON: 0.18, IRON: 0.14 }
-        : { SILICON: 0.34, IRON: 0.24, ALUMINIUM: 0.12, MAGNESIUM: 0.12, WATER_ICE: 0.18 },
+      elementAbundance:
+        moonType === 'Frozen'
+          ? { WATER_ICE: 0.34, METHANE_ICE: 0.2, AMMONIA_ICE: 0.14, SILICON: 0.18, IRON: 0.14 }
+          : { SILICON: 0.34, IRON: 0.24, ALUMINIUM: 0.12, MAGNESIUM: 0.12, WATER_ICE: 0.18 },
       magneticFieldStrength: prng.random(0, 4) * (tidalHeat > 0.2 ? 1.4 : 0.45),
       axialTilt,
       tidallyLocked,
       rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
-      orbitalInclination: orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 2.8),
+      orbitalInclination:
+        orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 2.8),
     };
   }
 
@@ -828,12 +948,14 @@ export class SolarSystem {
     return romanMap[num] || num.toString();
   }
 
+  /** Returns default planet orbit host. */
   private getDefaultPlanetOrbitHost(): OrbitHost {
     if (this.isStarless) return { kind: 'barycentric' };
     if (this.architecture.kind === 'single') return { kind: 'circumstellar', starId: 'A' };
     return { kind: 'circumbinary' };
   }
 
+  /** Returns orbit center. */
   getOrbitCenter(host: OrbitHost): { x: number; y: number } {
     if (host.kind === 'circumstellar' && host.starId) {
       const star = this.stars.find((s) => s.id === host.starId);
@@ -842,6 +964,7 @@ export class SolarSystem {
     return { x: 0, y: 0 };
   }
 
+  /** Returns planet environment star. */
   private getPlanetEnvironmentStar(host: OrbitHost): StellarBody {
     if (host.kind === 'circumstellar' && host.starId) {
       return this.stars.find((star) => star.id === host.starId) ?? getPrimaryStar(this.architecture);
@@ -849,10 +972,13 @@ export class SolarSystem {
     return getPrimaryStar(this.architecture);
   }
 
+  /** Returns orbit host mass kg. */
   private getOrbitHostMassKg(host: OrbitHost): number {
     if (this.isStarless) return 0;
     if (host.kind === 'circumstellar' && host.starId) {
-      return this.stars.find((star) => star.id === host.starId)?.massKg ?? getPrimaryStar(this.architecture).massKg;
+      return (
+        this.stars.find((star) => star.id === host.starId)?.massKg ?? getPrimaryStar(this.architecture).massKg
+      );
     }
     if (host.kind === 'circumbinary') {
       const innerPairMass = this.stars
@@ -863,6 +989,7 @@ export class SolarSystem {
     return this.stars.reduce((sum, star) => sum + star.massKg, 0);
   }
 
+  /** Calculates stellar flux at the supplied distance from the selected host. */
   private calculateFluxAt(x_m: number, y_m: number): number {
     if (this.isStarless || this.stars.length === 0) return 0.0001;
     let flux = 0;
@@ -875,6 +1002,7 @@ export class SolarSystem {
     return Number.isFinite(flux) && flux > 0 ? flux : 1361;
   }
 
+  /** Returns planet formation chance. */
   private getPlanetFormationChance(
     slotIndex: number,
     orbitDistance_m: number,
@@ -898,11 +1026,19 @@ export class SolarSystem {
     const effectiveTemp = this.getEffectiveTemperature(totalFlux_W_m2);
     const orbitAU = orbitDistance_m / AU_IN_METERS;
     const metallicityBoost = Math.max(-0.18, Math.min(0.12, this.metallicityFeH * 0.12));
-    const compactSystemBoost = (starClass === 'M' || starClass === 'L' || starClass === 'T' || starClass === 'Y') && orbitAU < 2 ? 0.08 : 0;
+    const compactSystemBoost =
+      (starClass === 'M' || starClass === 'L' || starClass === 'T' || starClass === 'Y') && orbitAU < 2
+        ? 0.08
+        : 0;
     const hotStarPenalty = ['A', 'B', 'O'].includes(starClass) && effectiveTemp > 420 ? -0.18 : 0;
     const lateSlotPenalty = slotIndex * (starClass === 'M' || starClass === 'K' ? 0.035 : 0.055);
     return this.clamp(
-      (baseByClass[starClass] ?? 0.75) + metallicityBoost + compactSystemBoost + hotStarPenalty - lateSlotPenalty - architecturePenalty,
+      (baseByClass[starClass] ?? 0.75) +
+        metallicityBoost +
+        compactSystemBoost +
+        hotStarPenalty -
+        lateSlotPenalty -
+        architecturePenalty,
       0.03,
       0.96
     );
@@ -915,7 +1051,9 @@ export class SolarSystem {
     hostStarType: string = this.starType,
     orbitHost: OrbitHost = this.getDefaultPlanetOrbitHost()
   ): string {
-    logger.debug(`[System:${this.name}] Determining planet type for orbit ${orbitDistance_m.toExponential(2)}m...`);
+    logger.debug(
+      `[System:${this.name}] Determining planet type for orbit ${orbitDistance_m.toExponential(2)}m...`
+    );
     const typePRNG = this.systemPRNG.seedNew(`type_${getHostLabel(orbitHost)}_${orbitDistance_m.toFixed(0)}`);
     const orbitDistance_AU = orbitDistance_m / AU_IN_METERS;
     const flux = totalFlux_W_m2 ?? this.calculateFluxAt(orbitDistance_m, 0);
@@ -934,13 +1072,30 @@ export class SolarSystem {
     );
 
     const starClass = this.getSpectralClass(hostStarType);
-    const giantBiasByClass: Record<string, number> = { M: 0.42, K: 0.85, G: 1.0, F: 1.2, A: 1.45, B: 0.7, O: 0.25, L: 0.18, T: 0.1, Y: 0.05 };
-    const giantBias = (giantBiasByClass[starClass] ?? 1) * Math.pow(10, Math.max(-0.6, Math.min(0.5, this.metallicityFeH)) * 0.75);
+    const giantBiasByClass: Record<string, number> = {
+      M: 0.42,
+      K: 0.85,
+      G: 1.0,
+      F: 1.2,
+      A: 1.45,
+      B: 0.7,
+      O: 0.25,
+      L: 0.18,
+      T: 0.1,
+      Y: 0.05,
+    };
+    const giantBias =
+      (giantBiasByClass[starClass] ?? 1) *
+      Math.pow(10, Math.max(-0.6, Math.min(0.5, this.metallicityFeH)) * 0.75);
     const iceBias = starClass === 'M' ? 1.15 : starClass === 'A' || starClass === 'F' ? 0.85 : 1;
     const metalFactor = Math.pow(10, Math.max(-0.8, Math.min(0.6, this.metallicityFeH)));
     const closeInFactor = orbitDistance_AU < 0.12 ? 2.2 : orbitDistance_AU < 0.35 ? 1.25 : 0.45;
-    const temperateHostFactor = starClass === 'M' || starClass === 'K' ? 1.25 : starClass === 'G' ? 1 : starClass === 'F' ? 0.75 : 0.35;
-    const carbonWorldBias = Math.max(0.03, Math.min(0.28, 0.06 * metalFactor * (starClass === 'M' || starClass === 'K' ? 1.15 : 1)));
+    const temperateHostFactor =
+      starClass === 'M' || starClass === 'K' ? 1.25 : starClass === 'G' ? 1 : starClass === 'F' ? 0.75 : 0.35;
+    const carbonWorldBias = Math.max(
+      0.03,
+      Math.min(0.28, 0.06 * metalFactor * (starClass === 'M' || starClass === 'K' ? 1.15 : 1))
+    );
     const chthonianBias = Math.max(0.02, Math.min(0.55, 0.12 * metalFactor * closeInFactor));
     const hyceanBias = Math.max(0.02, Math.min(0.42, 0.11 * metalFactor * temperateHostFactor));
     const dwarfIceBias = starClass === 'A' || starClass === 'B' || starClass === 'O' ? 0.6 : 1.0;
@@ -969,7 +1124,10 @@ export class SolarSystem {
         { item: 'Rock', weight: 4 },
         { item: 'Oceanic', weight: starClass === 'M' ? 2 : 3 },
         { item: 'Hycean', weight: hyceanBias },
-        { item: 'Greenhouse', weight: 0.35 * (starClass === 'F' || starClass === 'G' || starClass === 'K' ? 1 : 0.45) },
+        {
+          item: 'Greenhouse',
+          weight: 0.35 * (starClass === 'F' || starClass === 'G' || starClass === 'K' ? 1 : 0.45),
+        },
         { item: 'CarbonRich', weight: carbonWorldBias },
         { item: 'Lunar', weight: 1.2 },
         { item: 'GasGiant', weight: 0.2 * giantBias },
@@ -1003,6 +1161,7 @@ export class SolarSystem {
     return chosenType;
   }
 
+  /** Generates moons for planet. */
   private generateMoonsForPlanet(
     planet: Planet,
     planetName: string,
@@ -1018,11 +1177,19 @@ export class SolarSystem {
     const parentRadius_m = (planet.diameter * 1000) / 2;
     const hostMass = parentStar.massKg || SOLAR_MASS_KG;
     const hillRadius_m = planet.orbitDistance * Math.pow(planet.mass / (3 * hostMass), 1 / 3);
-    const outerStableOrbit_m = hillRadius_m * (planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 0.42 : 0.32);
-    const innerOrbit_m = parentRadius_m * (planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 3.0 : 4.0);
+    const outerStableOrbit_m =
+      hillRadius_m * (planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 0.42 : 0.32);
+    const innerOrbit_m =
+      parentRadius_m * (planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 3.0 : 4.0);
     if (!Number.isFinite(outerStableOrbit_m) || outerStableOrbit_m <= innerOrbit_m * 1.8) return;
 
-    const targetMoonCount = this.getMajorMoonTargetCount(planet, effectiveTemp, outerStableOrbit_m, innerOrbit_m, moonPRNG);
+    const targetMoonCount = this.getMajorMoonTargetCount(
+      planet,
+      effectiveTemp,
+      outerStableOrbit_m,
+      innerOrbit_m,
+      moonPRNG
+    );
     if (targetMoonCount <= 0) return;
     logger.debug(
       `[Planet:${planet.name}] Generating up to ${targetMoonCount} major moons inside Hill sphere ${hillRadius_m.toExponential(2)}m.`
@@ -1030,13 +1197,23 @@ export class SolarSystem {
 
     let lastMoonOrbit_m = innerOrbit_m;
     for (let j = 0; j < targetMoonCount; j++) {
-      const spacing = moonPRNG.random(1.35, planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 1.85 : 2.4);
+      const spacing = moonPRNG.random(
+        1.35,
+        planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 1.85 : 2.4
+      );
       const moonOrbit_m = lastMoonOrbit_m * spacing;
       if (moonOrbit_m > outerStableOrbit_m) break;
 
       const moonAngle = moonPRNG.random(0, Math.PI * 2);
       const moonName = `${planetName}.${j + 1}`;
-      const moonType = this.determineMoonType(planet, effectiveTemp, moonOrbit_m, innerOrbit_m, outerStableOrbit_m, moonPRNG);
+      const moonType = this.determineMoonType(
+        planet,
+        effectiveTemp,
+        moonOrbit_m,
+        innerOrbit_m,
+        outerStableOrbit_m,
+        moonPRNG
+      );
       let moonCharacteristics: PlanetCharacteristics;
       try {
         moonCharacteristics = this.generateRealisticMoonCharacteristics(
@@ -1052,7 +1229,9 @@ export class SolarSystem {
           outerStableOrbit_m
         );
       } catch (charError) {
-        logger.error(`[Planet:${planet.name}] Error generating characteristics for moon ${moonName}: ${charError}`);
+        logger.error(
+          `[Planet:${planet.name}] Error generating characteristics for moon ${moonName}: ${charError}`
+        );
         continue;
       }
 
@@ -1072,14 +1251,19 @@ export class SolarSystem {
           totalFlux
         );
         planet.moons.push(moon);
-        logger.info(`[Planet:${planet.name}] Generated Moon: ${moonName} (Type: ${moonType}, Orbit: ${moonOrbit_m.toExponential(1)}m)`);
+        logger.info(
+          `[Planet:${planet.name}] Generated Moon: ${moonName} (Type: ${moonType}, Orbit: ${moonOrbit_m.toExponential(1)}m)`
+        );
         lastMoonOrbit_m = moonOrbit_m;
       } catch (moonError) {
-        logger.error(`[Planet:${planet.name}] Error constructing moon ${moonName} from characteristics: ${moonError}`);
+        logger.error(
+          `[Planet:${planet.name}] Error constructing moon ${moonName} from characteristics: ${moonError}`
+        );
       }
     }
   }
 
+  /** Returns major moon target count. */
   private getMajorMoonTargetCount(
     planet: Planet,
     effectiveTemp: number,
@@ -1088,8 +1272,22 @@ export class SolarSystem {
     prng: PRNG
   ): number {
     const stableWidth = Math.max(0, Math.log(outerStableOrbit_m / innerOrbit_m));
-    const heatPenalty = effectiveTemp > 650 ? 0.05 : effectiveTemp > 390 ? 0.15 : effectiveTemp > 300 ? 0.55 : effectiveTemp > 190 ? 0.85 : 1;
-    const tidalPenalty = planet.orbitDistance < 0.35 * AU_IN_METERS ? 0.15 : planet.orbitDistance < 0.7 * AU_IN_METERS ? 0.45 : 1;
+    const heatPenalty =
+      effectiveTemp > 650
+        ? 0.05
+        : effectiveTemp > 390
+          ? 0.15
+          : effectiveTemp > 300
+            ? 0.55
+            : effectiveTemp > 190
+              ? 0.85
+              : 1;
+    const tidalPenalty =
+      planet.orbitDistance < 0.35 * AU_IN_METERS
+        ? 0.15
+        : planet.orbitDistance < 0.7 * AU_IN_METERS
+          ? 0.45
+          : 1;
     const massFactor = this.clamp(Math.sqrt(planet.mass / 5.972e24), 0.2, 7);
 
     if (planet.type === 'GasGiant') {
@@ -1107,11 +1305,13 @@ export class SolarSystem {
       return this.clamp(Math.floor(prng.random(0, expected + 1.4)), 0, 3);
     }
 
-    const impactMoonChance = this.clamp(0.1 + (massFactor - 0.4) * 0.16, 0.03, 0.45) * heatPenalty * tidalPenalty;
+    const impactMoonChance =
+      this.clamp(0.1 + (massFactor - 0.4) * 0.16, 0.03, 0.45) * heatPenalty * tidalPenalty;
     if (prng.random() > impactMoonChance) return 0;
     return prng.random() < 0.82 ? 1 : 2;
   }
 
+  /** Selects a moon type from its host planet and orbital conditions. */
   private determineMoonType(
     parent: Planet,
     effectiveTemp: number,
@@ -1121,7 +1321,11 @@ export class SolarSystem {
     prng: PRNG
   ): string {
     const isGiantParent = parent.type === 'GasGiant' || parent.type === 'IceGiant';
-    const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
+    const orbitFraction = this.clamp(
+      (moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1),
+      0,
+      1
+    );
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
 
     if (isGiantParent && orbitFraction < 0.28 && tidalHeat > 0.22 && prng.random() < 0.55) {
@@ -1142,6 +1346,7 @@ export class SolarSystem {
     ]);
   }
 
+  /** Generates realistic moon characteristics. */
   private generateRealisticMoonCharacteristics(
     moonType: string,
     moonOrbit_m: number,
@@ -1154,27 +1359,45 @@ export class SolarSystem {
     innerOrbit_m: number,
     outerStableOrbit_m: number
   ): PlanetCharacteristics {
-    const characteristics = generatePlanetCharacteristics(moonType, moonOrbit_m, prng, parentStarType, environment, totalFlux);
+    const characteristics = generatePlanetCharacteristics(
+      moonType,
+      moonOrbit_m,
+      prng,
+      parentStarType,
+      environment,
+      totalFlux
+    );
     const isGiantParent = parent.type === 'GasGiant' || parent.type === 'IceGiant';
-    const orbitFraction = this.clamp((moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1), 0, 1);
+    const orbitFraction = this.clamp(
+      (moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1),
+      0,
+      1
+    );
     const distanceInParentRadii = moonOrbit_m / Math.max(1, (parent.diameter * 1000) / 2);
     const parentDiameterLimit = parent.diameter * (isGiantParent ? 0.09 : 0.32);
     const baseMax = isGiantParent ? 5600 : 3600;
     const isRegularGiantMoon = isGiantParent && (orbitFraction < 0.55 || distanceInParentRadii < 80);
     const capturedSizeFactor = isGiantParent && !isRegularGiantMoon ? 0.55 : 1;
     const indexFalloff = Math.max(0.35, 1 - moonIndex * 0.045);
-    const minDiameter = moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce' ? 450 : 350;
-    const maxDiameter = Math.max(minDiameter + 50, Math.min(baseMax, parentDiameterLimit) * indexFalloff * capturedSizeFactor);
+    const minDiameter =
+      moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce' ? 450 : 350;
+    const maxDiameter = Math.max(
+      minDiameter + 50,
+      Math.min(baseMax, parentDiameterLimit) * indexFalloff * capturedSizeFactor
+    );
     const diameter = prng.random(minDiameter, maxDiameter);
-    const density = moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce'
-      ? prng.random(moonType === 'DwarfIce' ? 0.9 : 1.2, moonType === 'Cryovolcanic' ? 2.8 : 2.4)
-      : prng.random(2.4, 3.6);
+    const density =
+      moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce'
+        ? prng.random(moonType === 'DwarfIce' ? 0.9 : 1.2, moonType === 'Cryovolcanic' ? 2.8 : 2.4)
+        : prng.random(2.4, 3.6);
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
     const gravity = calculateGravity(diameter, density);
     const escapeVelocity = Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m);
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
-    const tidallyLocked = isGiantParent ? isRegularGiantMoon || orbitFraction < 0.78 : tidalHeat > 0.16 || moonOrbit_m < parent.diameter * 1000 * 24;
+    const tidallyLocked = isGiantParent
+      ? isRegularGiantMoon || orbitFraction < 0.78
+      : tidalHeat > 0.16 || moonOrbit_m < parent.diameter * 1000 * 24;
     const axialTilt = isRegularGiantMoon
       ? prng.random(0, Math.PI / 90)
       : tidallyLocked
@@ -1188,16 +1411,23 @@ export class SolarSystem {
     const rotationPeriodHours = tidallyLocked
       ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass) / 3600
       : generateRotationPeriodHours(prng, moonType, diameter, density, moonOrbit_m, false);
-    const tidalTemperatureBoost = isGiantParent ? Math.round(tidalHeat * prng.random(20, 95)) : Math.round(tidalHeat * prng.random(8, 35));
+    const tidalTemperatureBoost = isGiantParent
+      ? Math.round(tidalHeat * prng.random(20, 95))
+      : Math.round(tidalHeat * prng.random(8, 35));
     const boostedAverageTemp = characteristics.surfaceTemp + tidalTemperatureBoost;
-    const temperatureProfile = createTemperatureProfileFromAverage(boostedAverageTemp, moonType, characteristics.atmosphere, {
-      diameterKm: diameter,
-      densityGcm3: density,
-      ageGyr: environment.ageGyr,
-      axialTiltRad: axialTilt,
-      tidallyLocked,
-      tidalHeatingFactor: tidalHeat,
-    });
+    const temperatureProfile = createTemperatureProfileFromAverage(
+      boostedAverageTemp,
+      moonType,
+      characteristics.atmosphere,
+      {
+        diameterKm: diameter,
+        densityGcm3: density,
+        ageGyr: environment.ageGyr,
+        axialTiltRad: axialTilt,
+        tidallyLocked,
+        tidalHeatingFactor: tidalHeat,
+      }
+    );
     return {
       ...characteristics,
       diameter,
@@ -1216,6 +1446,7 @@ export class SolarSystem {
     };
   }
 
+  /** Returns moon tidal heating factor. */
   private getMoonTidalHeatingFactor(parent: Planet, moonOrbit_m: number): number {
     const parentRadius_m = Math.max(1, (parent.diameter * 1000) / 2);
     const distanceInRadii = moonOrbit_m / parentRadius_m;
@@ -1225,14 +1456,17 @@ export class SolarSystem {
     return this.clamp(proximityFactor * massFactor * giantBoost, 0, 1);
   }
 
+  /** Returns effective temperature. */
   private getEffectiveTemperature(totalFlux_W_m2: number): number {
     return 278.3 * Math.pow(Math.max(totalFlux_W_m2, 0.0001) / 1361, 0.25);
   }
 
+  /** Returns spectral class. */
   private getSpectralClass(starType: string = this.starType): string {
     return (starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G') as string;
   }
 
+  /** Selects a value according to the supplied relative weights. */
   private weightedChoice<T>(prng: PRNG, choices: Array<{ item: T; weight: number }>): T {
     const total = choices.reduce((sum, choice) => sum + Math.max(0, choice.weight), 0);
     let roll = prng.random(0, total);
@@ -1243,6 +1477,7 @@ export class SolarSystem {
     return choices[choices.length - 1].item;
   }
 
+  /** Clamps a numeric value to the supplied bounds. */
   private clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
   }
@@ -1315,6 +1550,7 @@ export class SolarSystem {
     return body;
   }
 
+  /** Returns star near. */
   getStarNear(x_m: number, y_m: number, radius_m: number): StellarBody | null {
     let closestStar: StellarBody | null = null;
     let minDistanceSq = radius_m * radius_m;
@@ -1330,6 +1566,7 @@ export class SolarSystem {
     return closestStar;
   }
 
+  /** Returns nearest star. */
   getNearestStar(x_m: number, y_m: number): StellarBody {
     if (this.stars.length === 0) {
       throw new Error(`System ${this.name} has no stellar primary.`);
@@ -1420,7 +1657,9 @@ export class SolarSystem {
           const numerator = 4 * Math.PI ** 2 * Math.pow(moon_r_rel, 3);
           const denominator = G * planet.mass;
           if (denominator <= 0) {
-            logger.warn(`[System:${this.name}] Invalid denominator for moon period calc for ${moon.name}. Skipping.`);
+            logger.warn(
+              `[System:${this.name}] Invalid denominator for moon period calc for ${moon.name}. Skipping.`
+            );
             return;
           }
           const moonPeriod_s = Math.sqrt(numerator / denominator);

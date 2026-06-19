@@ -1,5 +1,3 @@
-// src/entities/planet/surface_generator.ts (Added Sparsity Check)
-
 import { PRNG } from '../../utils/prng';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet';
@@ -46,6 +44,7 @@ export class SurfaceGenerator {
   private mapSeed: string;
   private atmosphere: Atmosphere; // Needed for crater check
 
+  /** Initializes SurfaceGenerator. */
   constructor(planetType: string, mapSeed: string, prng: PRNG, atmosphere: Atmosphere) {
     this.planetType = planetType;
     this.mapSeed = mapSeed;
@@ -56,7 +55,10 @@ export class SurfaceGenerator {
   }
 
   /** Generates all necessary surface data based on planet type. */
-  generateSurfaceData(planetAbundance: Record<string, number>, profile: SurfaceElementGenerationProfile = {}): SurfaceData {
+  generateSurfaceData(
+    planetAbundance: Record<string, number>,
+    profile: SurfaceElementGenerationProfile = {}
+  ): SurfaceData {
     return generateSurfaceDataInternal(
       this.planetType,
       this.mapSeed,
@@ -68,6 +70,7 @@ export class SurfaceGenerator {
   }
 } // End SurfaceGenerator class
 
+/** Generates surface data internal. */
 function generateSurfaceDataInternal(
   planetType: string,
   mapSeed: string,
@@ -131,11 +134,15 @@ function generateSurfaceDataInternal(
           logger.error(`[SurfaceGen:${planetType}] Failed to generate height level colours.`);
         }
       } else {
-        logger.error(`[SurfaceGen:${planetType}] Failed to generate RGB palette, cannot generate height level colours.`);
+        logger.error(
+          `[SurfaceGen:${planetType}] Failed to generate RGB palette, cannot generate height level colours.`
+        );
         heightLevelColors = null;
       }
     } else {
-      logger.error(`[SurfaceGen:${planetType}] Heightmap generation failed. Cannot generate colours or element map.`);
+      logger.error(
+        `[SurfaceGen:${planetType}] Heightmap generation failed. Cannot generate colours or element map.`
+      );
       heightLevelColors = null;
       rgbPaletteCache = null;
       surfaceElementMap = null;
@@ -145,6 +152,7 @@ function generateSurfaceDataInternal(
   return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay };
 }
 
+/** Masks submerged elements. */
 function maskSubmergedElements(
   elementMap: string[][],
   heightmap: number[][],

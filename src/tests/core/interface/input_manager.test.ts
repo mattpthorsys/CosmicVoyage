@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InputManager } from '../../../core/input_manager';
 
+/** Creates a keyboard event with stable key and code values. */
 function keyEvent(key: string, code: string): KeyboardEvent {
   return {
     key,

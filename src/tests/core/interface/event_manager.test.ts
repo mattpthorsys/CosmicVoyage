@@ -34,6 +34,7 @@ describe('EventManager', () => {
   it('allows a listener to unsubscribe while an event is being delivered', () => {
     const events = new EventManager<TestEvents>();
     const visited: string[] = [];
+    /** Unsubscribes the second listener during event dispatch. */
     let unsubscribeSecond: () => void = () => undefined;
     events.subscribe('ping', () => {
       visited.push('first');

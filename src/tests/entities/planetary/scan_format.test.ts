@@ -4,6 +4,7 @@ import { PRNG } from '../../../utils/prng';
 import { Planet } from '../../../entities/planet';
 import { PlanetCharacteristics } from '../../../entities/planet/planet_characteristics_generator';
 
+/** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
   return {
     diameter: 110000,

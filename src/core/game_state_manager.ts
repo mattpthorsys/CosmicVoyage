@@ -1,5 +1,3 @@
-// src/core/game_state_manager.ts (Subscribing to Action Request Events)
-
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { Starbase } from '../entities/starbase';
@@ -31,6 +29,7 @@ export class GameStateManager {
   private systemDataGenerator: SystemDataGenerator;
   private readonly eventUnsubscribers: Unsubscribe[];
 
+  /** Initializes GameStateManager. */
   constructor(player: Player, gameSeedPRNG: PRNG, systemDataGenerator: SystemDataGenerator) {
     this._state = 'hyperspace'; // Initial state
     this.player = player;
@@ -39,28 +38,40 @@ export class GameStateManager {
     logger.info(`[GameStateManager] Initialized. Initial state: '${this._state}'`);
 
     this.eventUnsubscribers = [
-      eventManager.subscribe(GameEvents.ENTER_SYSTEM_REQUESTED, () => { this.enterSystem(); }),
-      eventManager.subscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, () => { this.leaveSystem(); }),
-      eventManager.subscribe(GameEvents.LAND_REQUESTED, () => { this.landOnNearbyObject(); }),
-      eventManager.subscribe(GameEvents.LIFTOFF_REQUESTED, () => { this.liftOff(); }),
+      eventManager.subscribe(GameEvents.ENTER_SYSTEM_REQUESTED, () => {
+        this.enterSystem();
+      }),
+      eventManager.subscribe(GameEvents.LEAVE_SYSTEM_REQUESTED, () => {
+        this.leaveSystem();
+      }),
+      eventManager.subscribe(GameEvents.LAND_REQUESTED, () => {
+        this.landOnNearbyObject();
+      }),
+      eventManager.subscribe(GameEvents.LIFTOFF_REQUESTED, () => {
+        this.liftOff();
+      }),
     ];
     logger.info('[GameStateManager] Subscribed to action request events.');
   }
 
-
   // --- Getters for current state and context ---
+  /** Returns state. */
   get state(): GameState {
     return this._state;
   }
+  /** Returns current system. */
   get currentSystem(): SolarSystem | null {
     return this._currentSystem;
   }
+  /** Returns current planet. */
   get currentPlanet(): Planet | null {
     return this._currentPlanet;
   }
+  /** Returns current orbit reference planet. */
   get currentOrbitReferencePlanet(): Planet | null {
     return this._currentOrbitReferencePlanet ?? this._currentPlanet;
   }
+  /** Returns current starbase. */
   get currentStarbase(): Starbase | null {
     return this._currentStarbase;
   }
@@ -119,7 +130,9 @@ export class GameStateManager {
     );
 
     if (!this._currentSystem) {
-      logger.warn('[GameStateManager] Leave System failed: Not currently in a system (internal state error).');
+      logger.warn(
+        '[GameStateManager] Leave System failed: Not currently in a system (internal state error).'
+      );
       this.statusMessage = 'Cannot leave system: System data missing.';
       return false;
     }
@@ -177,7 +190,8 @@ export class GameStateManager {
     try {
       if (nearbyObject instanceof Planet) {
         const orbitParent = this._currentSystem.getOrbitParentFor(nearbyObject);
-        const insertionTarget = orbitParent === nearbyObject ? nearbyObject.name : `${orbitParent.name} local space`;
+        const insertionTarget =
+          orbitParent === nearbyObject ? nearbyObject.name : `${orbitParent.name} local space`;
         this._currentOrbitReferencePlanet = orbitParent;
         this._changeState('orbit', this._currentSystem, orbitParent, null);
         this.player.render.char = CONFIG.PLAYER_CHAR;
@@ -208,6 +222,7 @@ export class GameStateManager {
     }
   }
 
+  /** Lands the ship at the selected surface coordinates from orbit. */
   landFromOrbit(targetPlanet: Planet, surfaceX: number, surfaceY: number): Planet | null {
     if (this._state !== 'orbit') {
       logger.warn(`[GameStateManager.landFromOrbit] Attempted orbital landing from state ${this._state}.`);
@@ -229,6 +244,7 @@ export class GameStateManager {
     return null;
   }
 
+  /** Launches the ship from the surface and restores orbital state. */
   launchFromSurfaceToOrbit(): boolean {
     if (this._state !== 'planet' || !this._currentPlanet || !this._currentSystem) {
       this.statusMessage = 'Launch requires a landed ship on a planet surface.';
@@ -245,6 +261,7 @@ export class GameStateManager {
     return true;
   }
 
+  /** Leaves orbit and restores the player to local system travel. */
   leaveOrbit(): boolean {
     if (this._state !== 'orbit') {
       logger.warn(`[GameStateManager.leaveOrbit] Attempted to leave orbit from state ${this._state}.`);
@@ -270,7 +287,9 @@ export class GameStateManager {
       return this.leaveOrbit();
     }
     if (this._state !== 'planet' && this._state !== 'starbase') {
-      logger.warn(`[GameStateManager.liftOff] Attempted liftoff while not landed/docked (State: ${this._state})`);
+      logger.warn(
+        `[GameStateManager.liftOff] Attempted liftoff while not landed/docked (State: ${this._state})`
+      );
       return false;
     }
     logger.debug(`[GameStateManager] Handling ${GameEvents.LIFTOFF_REQUESTED} event...`);
@@ -301,8 +320,14 @@ export class GameStateManager {
   /** Checks if a star system or explorable rogue planetary-mass object exists at the player's current world coordinates. */
   private _canEnterSystemAtCurrentLocation(): boolean {
     return (
-      this.systemDataGenerator.getSystemMapProperties(this.player.position.worldX, this.player.position.worldY).exists ||
-      this.systemDataGenerator.getRoguePlanetSystemProperties(this.player.position.worldX, this.player.position.worldY) !== null
+      this.systemDataGenerator.getSystemMapProperties(
+        this.player.position.worldX,
+        this.player.position.worldY
+      ).exists ||
+      this.systemDataGenerator.getRoguePlanetSystemProperties(
+        this.player.position.worldX,
+        this.player.position.worldY
+      ) !== null
     );
   }
 
@@ -312,9 +337,17 @@ export class GameStateManager {
       `[GameStateManager] Creating system at <span class="math-inline">\{this\.player\.position\.worldX\},</span>{this.player.position.worldY}...`
     );
     const basicProps =
-      this.systemDataGenerator.getRoguePlanetSystemProperties(this.player.position.worldX, this.player.position.worldY) ??
+      this.systemDataGenerator.getRoguePlanetSystemProperties(
+        this.player.position.worldX,
+        this.player.position.worldY
+      ) ??
       this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
-    const system = new SolarSystem(basicProps, this.player.position.worldX, this.player.position.worldY, this.gameSeedPRNG);
+    const system = new SolarSystem(
+      basicProps,
+      this.player.position.worldX,
+      this.player.position.worldY,
+      this.gameSeedPRNG
+    );
     logger.info(
       `[GameStateManager] Generated System: <span class="math-inline">\{system\.name\} \(</span>{system.starType})`
     );
@@ -347,6 +380,7 @@ export class GameStateManager {
     );
   }
 
+  /** Returns ship glyph for vector. */
   private _getShipGlyphForVector(dx: number, dy: number): string {
     if (Math.abs(dx) > Math.abs(dy)) {
       return dx > 0 ? GLYPHS.SHIP_EAST : GLYPHS.SHIP_WEST;
@@ -380,7 +414,11 @@ export class GameStateManager {
   }
 
   /** Prepares the target object's surface and updates game state for landing/docking. */
-  private _prepareSurfaceAndLand(targetObject: Planet | Starbase, surfaceX?: number, surfaceY?: number): GameState | null {
+  private _prepareSurfaceAndLand(
+    targetObject: Planet | Starbase,
+    surfaceX?: number,
+    surfaceY?: number
+  ): GameState | null {
     targetObject.ensureSurfaceReady(); // Throws on failure
 
     const oldState = this._state;
@@ -390,7 +428,8 @@ export class GameStateManager {
 
     if (targetObject instanceof Planet) {
       newState = 'planet';
-      this._currentOrbitReferencePlanet = this._currentSystem?.getOrbitParentFor(targetObject) ?? targetObject;
+      this._currentOrbitReferencePlanet =
+        this._currentSystem?.getOrbitParentFor(targetObject) ?? targetObject;
       const mapSize = targetObject.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
       this.player.position.surfaceX = ((Math.floor(surfaceX ?? mapSize / 2) % mapSize) + mapSize) % mapSize;
       this.player.position.surfaceY = Math.max(0, Math.min(mapSize - 1, Math.floor(surfaceY ?? mapSize / 2)));
@@ -461,9 +500,7 @@ export class GameStateManager {
     if (newState !== 'orbit' && newState !== 'planet') {
       this._currentOrbitReferencePlanet = null;
     }
-    logger.debug(
-      `[GameStateManager._changeState] State changing: '${oldState}' -> '${newState}'`
-    );
+    logger.debug(`[GameStateManager._changeState] State changing: '${oldState}' -> '${newState}'`);
     eventManager.publish(GameEvents.GAME_STATE_CHANGED, {
       previousState: oldState,
       state: this._state,

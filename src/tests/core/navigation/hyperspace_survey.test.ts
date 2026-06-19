@@ -23,7 +23,13 @@ describe('HyperspaceSurveyService', () => {
       getSystemMapProperties: (x: number, y: number): SystemMapProperties => {
         mapCalls++;
         if (x === 2 && y === 0) {
-          return { exists: true, starType: 'G2V', name: 'Survey-2', hasStarbase: true, objectKind: 'stellar' };
+          return {
+            exists: true,
+            starType: 'G2V',
+            name: 'Survey-2',
+            hasStarbase: true,
+            objectKind: 'stellar',
+          };
         }
         return emptySystem;
       },
@@ -33,7 +39,16 @@ describe('HyperspaceSurveyService', () => {
       },
       getDeepSpacePhenomenonProperties: () => {
         phenomenonCalls++;
-        return { exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null };
+        return {
+          exists: false,
+          type: null,
+          name: null,
+          classification: null,
+          signal: null,
+          char: null,
+          colour: null,
+          rarity: null,
+        };
       },
       getInterstellarMediumProperties: () => ({
         kind: 'diffuse-hydrogen',
@@ -71,11 +86,26 @@ describe('HyperspaceSurveyService', () => {
           return { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' };
         }
         if (x === 28 && y === 0) {
-          return { exists: true, starType: 'T5', name: 'Brown-28', hasStarbase: false, objectKind: 'brown-dwarf' };
+          return {
+            exists: true,
+            starType: 'T5',
+            name: 'Brown-28',
+            hasStarbase: false,
+            objectKind: 'brown-dwarf',
+          };
         }
         return emptySystem;
       },
-      getDeepSpacePhenomenonProperties: () => ({ exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null }),
+      getDeepSpacePhenomenonProperties: () => ({
+        exists: false,
+        type: null,
+        name: null,
+        classification: null,
+        signal: null,
+        char: null,
+        colour: null,
+        rarity: null,
+      }),
       getInterstellarMediumProperties: () => ({
         kind: 'diffuse-hydrogen',
         label: 'diffuse neutral hydrogen',
@@ -104,11 +134,26 @@ describe('HyperspaceSurveyService', () => {
           return { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' };
         }
         if (x === 28 && y === 0) {
-          return { exists: true, starType: 'T5', name: 'Brown-28', hasStarbase: false, objectKind: 'brown-dwarf' };
+          return {
+            exists: true,
+            starType: 'T5',
+            name: 'Brown-28',
+            hasStarbase: false,
+            objectKind: 'brown-dwarf',
+          };
         }
         return emptySystem;
       },
-      getDeepSpacePhenomenonProperties: () => ({ exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null }),
+      getDeepSpacePhenomenonProperties: () => ({
+        exists: false,
+        type: null,
+        name: null,
+        classification: null,
+        signal: null,
+        char: null,
+        colour: null,
+        rarity: null,
+      }),
       getInterstellarMediumProperties: () => ({
         kind: 'diffuse-hydrogen',
         label: 'diffuse neutral hydrogen',
@@ -140,30 +185,57 @@ describe('HyperspaceSurveyService', () => {
       syncCalls = 0;
       asyncCalls = 0;
 
+      /** Returns cell data. */
       getCellData(worldX: number, worldY: number): HyperspaceSurveyCellData {
         this.syncCalls++;
         return {
           worldX,
           worldY,
-          system: worldX === 2 && worldY === 0
-            ? { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' }
-            : emptySystem,
-          phenomenon: { exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null },
+          system:
+            worldX === 2 && worldY === 0
+              ? { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' }
+              : emptySystem,
+          phenomenon: {
+            exists: false,
+            type: null,
+            name: null,
+            classification: null,
+            signal: null,
+            char: null,
+            colour: null,
+            rarity: null,
+          },
         };
       }
 
-      getCellDataBatchAsync(requests: readonly { worldX: number; worldY: number }[]): Promise<HyperspaceSurveyCellData[]> {
+      /** Returns cell data batch async. */
+      getCellDataBatchAsync(
+        requests: readonly { worldX: number; worldY: number }[]
+      ): Promise<HyperspaceSurveyCellData[]> {
         this.asyncCalls++;
-        return Promise.resolve(requests.map(({ worldX, worldY }) => ({
-          worldX,
-          worldY,
-          system: worldX === 2 && worldY === 0
-            ? { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' }
-            : emptySystem,
-          phenomenon: { exists: false, type: null, name: null, classification: null, signal: null, char: null, colour: null, rarity: null },
-        })));
+        return Promise.resolve(
+          requests.map(({ worldX, worldY }) => ({
+            worldX,
+            worldY,
+            system:
+              worldX === 2 && worldY === 0
+                ? { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' }
+                : emptySystem,
+            phenomenon: {
+              exists: false,
+              type: null,
+              name: null,
+              classification: null,
+              signal: null,
+              char: null,
+              colour: null,
+              rarity: null,
+            },
+          }))
+        );
       }
 
+      /** Clears cache. */
       clearCache(): void {}
     }
 

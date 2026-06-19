@@ -1,6 +1,3 @@
-/* FILE: src/rendering/screen_buffer.ts */
-// src/rendering/screen_buffer.ts (Added copyBufferFrom method)
-
 import { CONFIG } from '../config';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
@@ -33,7 +30,6 @@ interface ScaledGlyphState {
 
 /** Manages the character grid buffers and physical drawing to the canvas. */
 export class ScreenBuffer {
-
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
 
@@ -62,6 +58,7 @@ export class ScreenBuffer {
 
   private isTransparent: boolean = false; // Flag for the buffer itself
 
+  /** Initializes ScreenBuffer. */
   constructor(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, isTransparent: boolean = false) {
     this.canvas = canvas;
     this.ctx = context;
@@ -78,17 +75,39 @@ export class ScreenBuffer {
     // defaultBgColor also depends on the buffer's transparency setting
     this.defaultBgColor = isTransparent ? CONFIG.TRANSPARENT_COLOUR : CONFIG.DEFAULT_BG_COLOUR;
 
-    logger.debug(`[ScreenBuffer] Instance created. isTransparent: ${this.isTransparent}, Default BG: ${this.defaultBgColor}`);
+    logger.debug(
+      `[ScreenBuffer] Instance created. isTransparent: ${this.isTransparent}, Default BG: ${this.defaultBgColor}`
+    );
   }
 
-
-  getCols(): number { return this.cols; }
-  getRows(): number { return this.rows; }
-  getCharWidthPx(): number { return this.charWidthPx; }
-  getCharHeightPx(): number { return this.charHeightPx; }
-  getDefaultFgColor(): string { return this.defaultFgColor; }
-  getDefaultBgColor(): string { return this.defaultBgColor; }
-  getLastRenderStats(): RenderStats { return { ...this.lastRenderStats }; }
+  /** Returns cols. */
+  getCols(): number {
+    return this.cols;
+  }
+  /** Returns rows. */
+  getRows(): number {
+    return this.rows;
+  }
+  /** Returns char width px. */
+  getCharWidthPx(): number {
+    return this.charWidthPx;
+  }
+  /** Returns char height px. */
+  getCharHeightPx(): number {
+    return this.charHeightPx;
+  }
+  /** Returns default fg color. */
+  getDefaultFgColor(): string {
+    return this.defaultFgColor;
+  }
+  /** Returns default bg color. */
+  getDefaultBgColor(): string {
+    return this.defaultBgColor;
+  }
+  /** Returns last render stats. */
+  getLastRenderStats(): RenderStats {
+    return { ...this.lastRenderStats };
+  }
 
   /** Initializes or re-initializes the screen buffers based on current dimensions. */
   initBuffers(cols: number, rows: number): void {
@@ -107,7 +126,8 @@ export class ScreenBuffer {
     logger.info(
       `[ScreenBuffer.initBuffers] Initializing buffers for ${this.cols}x${this.rows} grid (${size} cells)`
     );
-    if (size > 2000000) { // Safety limit
+    if (size > 2000000) {
+      // Safety limit
       logger.error(
         `[ScreenBuffer.initBuffers] Excessive buffer size calculated: ${size}. Aborting buffer initialization.`
       );
@@ -125,12 +145,7 @@ export class ScreenBuffer {
   }
 
   /** Updates the character grid dimensions and font settings. */
-  updateDimensions(
-    cols: number,
-    rows: number,
-    charWidth: number,
-    charHeight: number
-  ): void {
+  updateDimensions(cols: number, rows: number, charWidth: number, charHeight: number): void {
     const resized = this.cols !== cols || this.rows !== rows;
     this.cols = cols;
     this.rows = rows;
@@ -145,9 +160,7 @@ export class ScreenBuffer {
       logger.info(
         `[ScreenBuffer.updateDimensions] Dimensions updated: Grid=${this.cols}x${
           this.rows
-        }, CharSize=${this.charWidthPx.toFixed(1)}x${this.charHeightPx.toFixed(
-          1
-        )}px`
+        }, CharSize=${this.charWidthPx.toFixed(1)}x${this.charHeightPx.toFixed(1)}px`
       );
       this.initBuffers(this.cols, this.rows); // Reinitialize buffers if size changed
     } else {
@@ -161,12 +174,12 @@ export class ScreenBuffer {
 
   /** Resets staging state and optionally clears the rendered state and physical canvas. */
   clear(physicalClear: boolean = true): void {
-    logger.debug(
-      `[ScreenBuffer.clear] Clearing buffers (Physical Clear: ${physicalClear})...`
-    );
+    logger.debug(`[ScreenBuffer.clear] Clearing buffers (Physical Clear: ${physicalClear})...`);
     if (physicalClear && this.canvas.width > 0 && this.canvas.height > 0) {
       // Clear the entire physical canvas area this buffer controls
-      logger.debug(`[ScreenBuffer.clear] Physically clearing canvas area ${this.canvas.width}x${this.canvas.height}`);
+      logger.debug(
+        `[ScreenBuffer.clear] Physically clearing canvas area ${this.canvas.width}x${this.canvas.height}`
+      );
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.hadScaledGlyphsLastFrame = false;
     }
@@ -176,20 +189,21 @@ export class ScreenBuffer {
     // when the physical canvas is also cleared, otherwise diff rendering loses its baseline.
     const size = this.cols * this.rows;
     for (let i = 0; i < size; i++) {
-       if (physicalClear && i < this.screenBuffer.length) {
-           this.screenBuffer[i] = this.defaultCellState;
-       }
-       if (i < this.newBuffer.length) {
-           this.newBuffer[i] = this.defaultCellState;
-       }
+      if (physicalClear && i < this.screenBuffer.length) {
+        this.screenBuffer[i] = this.defaultCellState;
+      }
+      if (i < this.newBuffer.length) {
+        this.newBuffer[i] = this.defaultCellState;
+      }
     }
     if (this.newBuffer.length !== size || this.screenBuffer.length !== size) {
-        logger.warn(`[ScreenBuffer.clear] Buffer length mismatch after clear. Grid: ${size}, Screen: ${this.screenBuffer.length}, New: ${this.newBuffer.length}`);
+      logger.warn(
+        `[ScreenBuffer.clear] Buffer length mismatch after clear. Grid: ${size}, Screen: ${this.screenBuffer.length}, New: ${this.newBuffer.length}`
+      );
     }
 
     logger.debug('[ScreenBuffer.clear] Internal buffers reset to default state.');
   }
-
 
   /**
    * Sets a character in the new drawing buffer ('newBuffer') at grid position (x, y).
@@ -220,9 +234,9 @@ export class ScreenBuffer {
     }
 
     // Determine if the provided background implies transparency
-    const isTransparentUpdate = (bgColor === null || bgColor === CONFIG.TRANSPARENT_COLOUR);
+    const isTransparentUpdate = bgColor === null || bgColor === CONFIG.TRANSPARENT_COLOUR;
     // Use the provided background color, or fall back to the buffer's default background
-    const finalBgColor = isTransparentUpdate ? CONFIG.TRANSPARENT_COLOUR : (bgColor || this.defaultBgColor);
+    const finalBgColor = isTransparentUpdate ? CONFIG.TRANSPARENT_COLOUR : bgColor || this.defaultBgColor;
 
     this.newBuffer[index] = {
       char: char || ' ', // Use space if char is null
@@ -289,88 +303,92 @@ export class ScreenBuffer {
   }
 
   /**
-   * *** NEW METHOD ***
+   * Copies staged cell state from another compatible buffer.
    * Copies the content of another ScreenBuffer's *rendered* state (screenBuffer)
    * into this buffer's *drawing* state (newBuffer).
    * Assumes dimensions match. Used for compositing layers.
    */
   copyBufferFrom(sourceBuffer: ScreenBuffer): void {
-      if (this.cols !== sourceBuffer.getCols() || this.rows !== sourceBuffer.getRows()) {
-          logger.error(`[ScreenBuffer.copyBufferFrom] Buffer dimension mismatch! Cannot copy. Target: ${this.cols}x${this.rows}, Source: ${sourceBuffer.getCols()}x${sourceBuffer.getRows()}`);
-          return;
-      }
+    if (this.cols !== sourceBuffer.getCols() || this.rows !== sourceBuffer.getRows()) {
+      logger.error(
+        `[ScreenBuffer.copyBufferFrom] Buffer dimension mismatch! Cannot copy. Target: ${this.cols}x${this.rows}, Source: ${sourceBuffer.getCols()}x${sourceBuffer.getRows()}`
+      );
+      return;
+    }
 
-      const size = this.cols * this.rows;
-      const sourceScreen = sourceBuffer.screenBuffer; // Access internal array directly
+    const size = this.cols * this.rows;
+    const sourceScreen = sourceBuffer.screenBuffer; // Access internal array directly
 
-      if (sourceScreen.length !== size || this.newBuffer.length !== size) {
-           logger.error(`[ScreenBuffer.copyBufferFrom] Internal buffer length mismatch! Target: ${this.newBuffer.length}, Source: ${sourceScreen.length}, Expected: ${size}`);
-           return;
-      }
+    if (sourceScreen.length !== size || this.newBuffer.length !== size) {
+      logger.error(
+        `[ScreenBuffer.copyBufferFrom] Internal buffer length mismatch! Target: ${this.newBuffer.length}, Source: ${sourceScreen.length}, Expected: ${size}`
+      );
+      return;
+    }
 
-      logger.debug(`[ScreenBuffer.copyBufferFrom] Copying ${size} cells from source buffer.`);
-      for (let i = 0; i < size; i++) {
-          // Copy the state directly into the newBuffer for drawing
-          // We copy the source's *screenBuffer* (last rendered state)
-          this.newBuffer[i] = sourceScreen[i] || this.defaultCellState;
-      }
+    logger.debug(`[ScreenBuffer.copyBufferFrom] Copying ${size} cells from source buffer.`);
+    for (let i = 0; i < size; i++) {
+      // Copy the state directly into the newBuffer for drawing
+      // We copy the source's *screenBuffer* (last rendered state)
+      this.newBuffer[i] = sourceScreen[i] || this.defaultCellState;
+    }
   }
-
 
   /** Renders the entire content of the newBuffer to the canvas. */
   renderFull(): void {
-      const startTime = performance.now();
-      const size = this.cols * this.rows;
-      if (size !== this.newBuffer.length || size === 0) {
-          logger.error(
-              `[ScreenBuffer.renderFull] Buffer size mismatch or zero size! Grid: ${size}, NewBuffer: ${this.newBuffer.length}. Cannot render full.`
-          );
-          return;
+    const startTime = performance.now();
+    const size = this.cols * this.rows;
+    if (size !== this.newBuffer.length || size === 0) {
+      logger.error(
+        `[ScreenBuffer.renderFull] Buffer size mismatch or zero size! Grid: ${size}, NewBuffer: ${this.newBuffer.length}. Cannot render full.`
+      );
+      return;
+    }
+
+    let cellsDrawn = 0;
+    let backgroundsDrawn = 0;
+    let glyphsDrawn = 0;
+    this.drawBackgroundRuns(this.newBuffer);
+    for (let i = 0; i < size; i++) {
+      const newState = this.newBuffer[i];
+      const y = Math.floor(i / this.cols);
+      const x = i % this.cols;
+      cellsDrawn++;
+      if (!newState.isTransparentBg) backgroundsDrawn++;
+      if ((newState.char || ' ') !== ' ') {
+        this._physicalDrawGlyph(newState.char, x, y, newState.fg);
+        glyphsDrawn++;
       }
 
-      let cellsDrawn = 0;
-      let backgroundsDrawn = 0;
-      let glyphsDrawn = 0;
-      this.drawBackgroundRuns(this.newBuffer);
-      for (let i = 0; i < size; i++) {
-          const newState = this.newBuffer[i];
-          const y = Math.floor(i / this.cols);
-          const x = i % this.cols;
-          cellsDrawn++;
-          if (!newState.isTransparentBg) backgroundsDrawn++;
-          if ((newState.char || ' ') !== ' ') {
-              this._physicalDrawGlyph(newState.char, x, y, newState.fg);
-              glyphsDrawn++;
-          }
+      // Update screenBuffer to match what was just drawn
+      this.screenBuffer[i] = newState;
+      // Reset newBuffer cell ready for the next frame's drawing operations
+      this.newBuffer[i] = this.defaultCellState;
+    }
 
-          // Update screenBuffer to match what was just drawn
-          this.screenBuffer[i] = newState;
-          // Reset newBuffer cell ready for the next frame's drawing operations
-          this.newBuffer[i] = this.defaultCellState;
-      }
-
-      this.renderScaledGlyphs();
-      const endTime = performance.now();
-      this.lastRenderStats = { mode: 'full', cellsDrawn, backgroundsDrawn, glyphsDrawn, durationMs: endTime - startTime };
-      // Reduce logging frequency if needed
-      // if (cellsDrawn > 0) {
-      //   logger.debug(
-      //       `[ScreenBuffer.renderFull] Completed: ${cellsDrawn} cells drawn (full render) in ${(endTime - startTime).toFixed(2)} ms`
-      //   );
-      // }
+    this.renderScaledGlyphs();
+    const endTime = performance.now();
+    this.lastRenderStats = {
+      mode: 'full',
+      cellsDrawn,
+      backgroundsDrawn,
+      glyphsDrawn,
+      durationMs: endTime - startTime,
+    };
+    // Reduce logging frequency if needed
+    // if (cellsDrawn > 0) {
+    //   logger.debug(
+    //       `[ScreenBuffer.renderFull] Completed: ${cellsDrawn} cells drawn (full render) in ${(endTime - startTime).toFixed(2)} ms`
+    //   );
+    // }
   }
-
 
   /** Compares the new buffer to the screen buffer and draws only the changed cells to the canvas. */
   renderDiff(): void {
     // logger.debug('[ScreenBuffer.renderDiff] Comparing buffers and drawing changes...'); // Noisy
     let cellsDrawn = 0;
     const size = this.cols * this.rows;
-    if (
-      size !== this.newBuffer.length ||
-      size !== this.screenBuffer.length ||
-      size === 0
-    ) {
+    if (size !== this.newBuffer.length || size !== this.screenBuffer.length || size === 0) {
       logger.error(
         `[ScreenBuffer.renderDiff] Buffer size mismatch or zero size! Grid: ${this.cols}x${this.rows} (${size}), ScreenBuffer: ${this.screenBuffer.length}, NewBuffer: ${this.newBuffer.length}. Cannot render diff.`
       );
@@ -390,15 +408,12 @@ export class ScreenBuffer {
       const newState = this.newBuffer[i];
 
       // Optimization: Skip if both are default state
-      if (
-        oldState === this.defaultCellState &&
-        newState === this.defaultCellState
-      ) {
-           // Ensure newBuffer is still reset even if we skip drawing
-           if (this.newBuffer[i] !== this.defaultCellState) {
-               this.newBuffer[i] = this.defaultCellState;
-           }
-           continue;
+      if (oldState === this.defaultCellState && newState === this.defaultCellState) {
+        // Ensure newBuffer is still reset even if we skip drawing
+        if (this.newBuffer[i] !== this.defaultCellState) {
+          this.newBuffer[i] = this.defaultCellState;
+        }
+        continue;
       }
 
       // Check if cell state has actually changed
@@ -442,7 +457,13 @@ export class ScreenBuffer {
     }
 
     const endTime = performance.now();
-    this.lastRenderStats = { mode: 'diff', cellsDrawn, backgroundsDrawn, glyphsDrawn, durationMs: endTime - startTime };
+    this.lastRenderStats = {
+      mode: 'diff',
+      cellsDrawn,
+      backgroundsDrawn,
+      glyphsDrawn,
+      durationMs: endTime - startTime,
+    };
     if (cellsDrawn > 0) {
       // logger.debug( // Can be noisy
       //   `[ScreenBuffer.renderDiff] Completed: ${cellsDrawn} cells drawn in ${(
@@ -452,6 +473,7 @@ export class ScreenBuffer {
     }
   }
 
+  /** Draws background runs. */
   private drawBackgroundRuns(buffer: CellState[]): number {
     let backgroundsDrawn = 0;
     for (let y = 0; y < this.rows; y++) {
@@ -470,7 +492,12 @@ export class ScreenBuffer {
           runEnd++;
         }
         this.ctx.fillStyle = bg;
-        this.ctx.fillRect(x * this.charWidthPx, y * this.charHeightPx, (runEnd - x) * this.charWidthPx, this.charHeightPx);
+        this.ctx.fillRect(
+          x * this.charWidthPx,
+          y * this.charHeightPx,
+          (runEnd - x) * this.charWidthPx,
+          this.charHeightPx
+        );
         backgroundsDrawn += runEnd - x;
         x = runEnd;
       }
@@ -478,6 +505,7 @@ export class ScreenBuffer {
     return backgroundsDrawn;
   }
 
+  /** Draws background runs for indices. */
   private drawBackgroundRunsForIndices(indices: number[], buffer: CellState[]): number {
     let backgroundsDrawn = 0;
     let cursor = 0;
@@ -498,17 +526,29 @@ export class ScreenBuffer {
         const nextY = Math.floor(nextIndex / this.cols);
         const nextX = nextIndex % this.cols;
         const nextState = buffer[nextIndex];
-        if (nextY !== y || nextX !== endX || nextState.isTransparentBg || (nextState.bg || this.defaultBgColor) !== bg) break;
+        if (
+          nextY !== y ||
+          nextX !== endX ||
+          nextState.isTransparentBg ||
+          (nextState.bg || this.defaultBgColor) !== bg
+        )
+          break;
         endX++;
         cursor++;
       }
       this.ctx.fillStyle = bg;
-      this.ctx.fillRect(startX * this.charWidthPx, y * this.charHeightPx, (endX - startX) * this.charWidthPx, this.charHeightPx);
+      this.ctx.fillRect(
+        startX * this.charWidthPx,
+        y * this.charHeightPx,
+        (endX - startX) * this.charWidthPx,
+        this.charHeightPx
+      );
       backgroundsDrawn += endX - startX;
     }
     return backgroundsDrawn;
   }
 
+  /** Draws one glyph to the canvas at its physical pixel position. */
   private _physicalDrawGlyph(char: string | null, x: number, y: number, fgColor: string | null): void {
     const charToDraw = char || ' ';
     if (charToDraw === ' ') return;
@@ -516,6 +556,7 @@ export class ScreenBuffer {
     this.ctx.fillText(charToDraw, x * this.charWidthPx, y * this.charHeightPx);
   }
 
+  /** Renders scaled glyphs. */
   private renderScaledGlyphs(): void {
     const glyphs = this.scaledGlyphs;
     this.hadScaledGlyphsLastFrame = glyphs.length > 0;
@@ -551,5 +592,4 @@ export class ScreenBuffer {
     this.ctx.restore();
     this.scaledGlyphs = [];
   }
-
 }

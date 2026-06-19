@@ -10,19 +10,23 @@ export interface StellarEnvironment {
 
 const MILKY_WAY_DISK_AGE_GYR = 13.2;
 
+/** Clamps a numeric value to the supplied bounds. */
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/** Returns spectral class. */
 export function getSpectralClass(starType: string): string {
   return starType.charAt(0).toUpperCase();
 }
 
+/** Estimates main sequence lifetime gyr. */
 export function estimateMainSequenceLifetimeGyr(starType: string): number {
   const massSolar = (SPECTRAL_TYPES[starType]?.mass ?? SPECTRAL_TYPES['G'].mass) / SOLAR_MASS_KG;
   return clamp(10 * Math.pow(massSolar, -2.5), 0.003, 1000);
 }
 
+/** Generates stellar age gyr. */
 export function generateStellarAgeGyr(starType: string, prng: PRNG): number {
   const spectralClass = getSpectralClass(starType);
   const lifetimeLimit = estimateMainSequenceLifetimeGyr(starType) * 0.92;
@@ -55,10 +59,17 @@ export function generateStellarAgeGyr(starType: string, prng: PRNG): number {
   return age < 0.1 ? Math.round(age * 1000) / 1000 : Math.round(age * 100) / 100;
 }
 
+/** Generates milky way metallicity fe h. */
 export function generateMilkyWayMetallicityFeH(ageGyr: number, starType: string, prng: PRNG): number {
   const ageFraction = clamp(ageGyr / MILKY_WAY_DISK_AGE_GYR, 0, 1);
   const spectralClass = getSpectralClass(starType);
-  const isOldCoolPopulation = (spectralClass === 'K' || spectralClass === 'M' || spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y') && ageGyr > 8;
+  const isOldCoolPopulation =
+    (spectralClass === 'K' ||
+      spectralClass === 'M' ||
+      spectralClass === 'L' ||
+      spectralClass === 'T' ||
+      spectralClass === 'Y') &&
+    ageGyr > 8;
 
   // Disk stars cluster around solar metallicity, with older populations trending metal-poor.
   const meanFeH = 0.16 - ageFraction * 0.55;
@@ -75,6 +86,7 @@ export function generateMilkyWayMetallicityFeH(ageGyr: number, starType: string,
   return Math.round(feh * 100) / 100;
 }
 
+/** Returns default stellar environment. */
 export function getDefaultStellarEnvironment(parentStarType: string): StellarEnvironment {
   return {
     starType: parentStarType,
@@ -83,6 +95,7 @@ export function getDefaultStellarEnvironment(parentStarType: string): StellarEnv
   };
 }
 
+/** Estimates evolutionary luminosity factor. */
 export function estimateEvolutionaryLuminosityFactor(environment: StellarEnvironment): number {
   const spectralClass = getSpectralClass(environment.starType);
   const lifetime = estimateMainSequenceLifetimeGyr(environment.starType);
@@ -94,21 +107,29 @@ export function estimateEvolutionaryLuminosityFactor(environment: StellarEnviron
   else if (spectralClass === 'A' || spectralClass === 'F') ageFactor = 1 + fractionalAge * 0.42;
   else if (spectralClass === 'G' || spectralClass === 'K') ageFactor = 0.72 + fractionalAge * 0.58;
   else if (spectralClass === 'M') ageFactor = 0.9 + fractionalAge * 0.16;
-  else if (spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y') ageFactor = 1.18 - fractionalAge * 0.58;
+  else if (spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y')
+    ageFactor = 1.18 - fractionalAge * 0.58;
 
   return clamp(ageFactor * metalFactor, 0.55, 1.9);
 }
 
+/** Estimates stellar activity. */
 export function estimateStellarActivity(environment: StellarEnvironment, orbitAu: number): number {
   const spectralClass = getSpectralClass(environment.starType);
-  const youngBoost = environment.ageGyr < 0.1 ? 2.5 : environment.ageGyr < 1 ? 1.6 : environment.ageGyr < 3 ? 1.15 : 0.85;
+  const youngBoost =
+    environment.ageGyr < 0.1 ? 2.5 : environment.ageGyr < 1 ? 1.6 : environment.ageGyr < 3 ? 1.15 : 0.85;
   const typeBoost =
-    spectralClass === 'O' || spectralClass === 'B' ? 2.2 :
-    spectralClass === 'A' ? 1.65 :
-    spectralClass === 'M' ? 1.45 :
-    spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y' ? 0.55 :
-    spectralClass === 'F' ? 1.2 :
-    1.0;
+    spectralClass === 'O' || spectralClass === 'B'
+      ? 2.2
+      : spectralClass === 'A'
+        ? 1.65
+        : spectralClass === 'M'
+          ? 1.45
+          : spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y'
+            ? 0.55
+            : spectralClass === 'F'
+              ? 1.2
+              : 1.0;
   const proximityBoost = orbitAu < 0.35 ? 1.7 : orbitAu < 0.8 ? 1.25 : 1.0;
   return clamp(typeBoost * youngBoost * proximityBoost, 0.45, 5);
 }

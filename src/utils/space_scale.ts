@@ -3,6 +3,7 @@ import { AU_IN_METERS, LIGHT_SPEED_M_PER_S } from '../constants/physics';
 
 const SECONDS_PER_YEAR = 365.25 * 24 * 60 * 60;
 
+/** Formats distance au. */
 export function formatDistanceAu(distanceMeters: number): string {
   const au = distanceMeters / AU_IN_METERS;
   if (!Number.isFinite(au)) return 'unknown AU';
@@ -11,6 +12,7 @@ export function formatDistanceAu(distanceMeters: number): string {
   return `${au.toFixed(1)} AU`;
 }
 
+/** Formats light time from meters. */
 export function formatLightTimeFromMeters(distanceMeters: number): string {
   const seconds = distanceMeters / LIGHT_SPEED_M_PER_S;
   if (!Number.isFinite(seconds) || seconds < 0) return 'signal delay unknown';
@@ -25,6 +27,7 @@ export function formatLightTimeFromMeters(distanceMeters: number): string {
   return `${years.toFixed(years < 10 ? 2 : 1)} light-yr`;
 }
 
+/** Formats hyperspace span. */
 export function formatHyperspaceSpan(cells: number): string {
   const lightYears = cells * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS;
   if (!Number.isFinite(lightYears)) return 'unknown ly';
@@ -33,10 +36,11 @@ export function formatHyperspaceSpan(cells: number): string {
   return `${lightYears.toFixed(0)} ly`;
 }
 
+/** Formats hyperspace signal delay. */
 export function formatHyperspaceSignalDelay(cells: number): string {
   const lightYears = cells * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS;
   if (!Number.isFinite(lightYears)) return 'signal delay unknown';
   const years = lightYears;
-  if (years < 1) return `${(years * SECONDS_PER_YEAR / 86400).toFixed(1)} days at c`;
+  if (years < 1) return `${((years * SECONDS_PER_YEAR) / 86400).toFixed(1)} days at c`;
   return `${years.toFixed(years < 10 ? 1 : 0)} years at c`;
 }

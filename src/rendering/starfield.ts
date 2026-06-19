@@ -11,7 +11,12 @@ export interface StarfieldCell {
   color: string;
 }
 
-export function getRenderedStarCell(starType: string, worldX: number, worldY: number): { char: string; color: string } {
+/** Returns rendered star cell. */
+export function getRenderedStarCell(
+  starType: string,
+  worldX: number,
+  worldY: number
+): { char: string; color: string } {
   const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES['G'];
   const hash = fastHash(worldX, worldY, 0);
   const brightnessFactor = 1.0 + ((hash % 100) / 500.0 - 0.1);
@@ -23,11 +28,13 @@ export function getRenderedStarCell(starType: string, worldX: number, worldY: nu
   };
 }
 
+/** Scales a hexadecimal colour to the requested brightness. */
 export function dimHexColour(hex: string, factor: number): string {
   const rgb = hexToRgb(hex);
   return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
 }
 
+/** Creates system travel starfield. */
 export function createSystemTravelStarfield(
   cols: number,
   rows: number,
@@ -37,7 +44,11 @@ export function createSystemTravelStarfield(
   const cells: StarfieldCell[] = [];
   if (cols <= 0 || rows <= 0) return cells;
 
-  const baseSeedHash = fastHash(CONFIG.SEED.length, CONFIG.SEED.charCodeAt(0) || 0, CONFIG.SEED.charCodeAt(CONFIG.SEED.length - 1) || 0);
+  const baseSeedHash = fastHash(
+    CONFIG.SEED.length,
+    CONFIG.SEED.charCodeAt(0) || 0,
+    CONFIG.SEED.charCodeAt(CONFIG.SEED.length - 1) || 0
+  );
   CONFIG.STAR_BACKGROUND_LAYERS.forEach((layer, layerIndex) => {
     const viewOffsetX = Math.floor((systemX * layer.factor) / layer.scale);
     const viewOffsetY = Math.floor((systemY * layer.factor) / layer.scale);

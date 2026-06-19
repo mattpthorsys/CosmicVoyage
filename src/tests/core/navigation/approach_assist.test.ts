@@ -5,6 +5,7 @@ import { Player } from '../../../core/player';
 import { Starbase } from '../../../entities/starbase';
 import { GLYPHS } from '../../../constants';
 
+/** Creates approach harness. */
 function createApproachHarness(zoomIndex: number): any {
   const player = new Player();
   player.position.systemX = 0;

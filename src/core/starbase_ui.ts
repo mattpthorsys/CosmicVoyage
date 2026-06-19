@@ -38,6 +38,7 @@ export const STARBASE_SECTIONS: StarbaseSection[] = [
   { id: 'crew', label: 'Crew' },
 ];
 
+/** Creates starbase screen model. */
 export function createStarbaseScreenModel(args: {
   starbase: Starbase;
   player: Player;

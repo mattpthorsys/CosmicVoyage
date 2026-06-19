@@ -2,6 +2,7 @@ import { CONFIG } from '../config';
 import { AvailableAction } from './available_actions';
 import { GameState } from './game_state_manager';
 
+/** Creates help reference lines. */
 export function createHelpReferenceLines(state: GameState, actions: AvailableAction[]): string[] {
   return [
     'COSMIC VOYAGE REFERENCE',
@@ -39,6 +40,7 @@ export function createHelpReferenceLines(state: GameState, actions: AvailableAct
   ];
 }
 
+/** Formats current actions. */
 function formatCurrentActions(actions: AvailableAction[]): string[] {
   const visibleActions = actions
     .filter((action) => action.enabled)
@@ -49,10 +51,14 @@ function formatCurrentActions(actions: AvailableAction[]): string[] {
 
   return [
     'AVAILABLE NOW',
-    ...visibleActions.map((action) => `${formatKey(action.key).padEnd(10)} ${action.label}${action.targetName ? `: ${action.targetName}` : ''}`),
+    ...visibleActions.map(
+      (action) =>
+        `${formatKey(action.key).padEnd(10)} ${action.label}${action.targetName ? `: ${action.targetName}` : ''}`
+    ),
   ];
 }
 
+/** Formats mode name. */
 function formatModeName(state: GameState): string {
   switch (state) {
     case 'hyperspace':
@@ -68,9 +74,11 @@ function formatModeName(state: GameState): string {
   }
 }
 
+/** Formats key. */
 function formatKey(key: string): string {
   if (key === ' ') return 'Space';
-  if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') return 'Arrows';
+  if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight')
+    return 'Arrows';
   if (key === 'Control') return 'Ctrl';
   return key;
 }

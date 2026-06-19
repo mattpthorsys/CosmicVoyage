@@ -29,11 +29,13 @@ export class HyperspaceTileProvider {
   private readonly tilePrefetchQueue: Array<{ worldX: number; worldY: number; rangeCells: number }> = [];
   private readonly maxTilePrefetchChunkSize = 192;
 
+  /** Initializes HyperspaceTileProvider. */
   constructor(
     private readonly nebulaRenderer: NebulaRenderer,
     private readonly systemDataGenerator: SystemDataGenerator
   ) {}
 
+  /** Clears cache. */
   clearCache(): void {
     this.tileCache.clear();
     this.pendingTilePrefetchKeys.clear();
@@ -42,10 +44,18 @@ export class HyperspaceTileProvider {
     this.prefetchGeneration++;
   }
 
-  prefetchBackgroundRegion(startWorldX: number, startWorldY: number, cols: number, rows: number, margin = 0): void {
+  /** Prefetches background tiles around the current hyperspace viewport. */
+  prefetchBackgroundRegion(
+    startWorldX: number,
+    startWorldY: number,
+    cols: number,
+    rows: number,
+    margin = 0
+  ): void {
     this.nebulaRenderer.prefetchRegion(startWorldX, startWorldY, cols, rows, margin);
   }
 
+  /** Prefetches every uncached tile intersecting the supplied region. */
   prefetchTileRegion(
     startWorldX: number,
     startWorldY: number,
@@ -55,12 +65,12 @@ export class HyperspaceTileProvider {
     viewCenterY: number,
     margin = 0
   ): void {
-    const availableCacheSlots = this.maxTileCacheSize - this.tileCache.size - this.pendingTilePrefetchKeys.size;
+    const availableCacheSlots =
+      this.maxTileCacheSize - this.tileCache.size - this.pendingTilePrefetchKeys.size;
     if (availableCacheSlots <= 0) return;
 
     let queued = 0;
-    collect:
-    for (let y = -margin; y < rows + margin; y++) {
+    collect: for (let y = -margin; y < rows + margin; y++) {
       for (let x = -margin; x < cols + margin; x++) {
         const worldX = startWorldX + x;
         const worldY = startWorldY + y;
@@ -78,6 +88,7 @@ export class HyperspaceTileProvider {
     this.scheduleTilePrefetch();
   }
 
+  /** Returns tile. */
   getTile(worldX: number, worldY: number, rangeCells: number): HyperspaceTile {
     const key = this.getTileKey(worldX, worldY, rangeCells);
     const cached = this.tileCache.get(key);
@@ -91,6 +102,7 @@ export class HyperspaceTileProvider {
     return this.cacheTile(key, this.createTile(bg, system, phenomenon, worldX, worldY, rangeCells));
   }
 
+  /** Returns tile from survey cell. */
   getTileFromSurveyCell(cell: HyperspaceSurveyCell): HyperspaceTile {
     const key = this.getTileKey(cell.worldX, cell.worldY, cell.rangeCells);
     const cached = this.tileCache.get(key);
@@ -103,6 +115,7 @@ export class HyperspaceTileProvider {
     );
   }
 
+  /** Schedules background generation for one uncached hyperspace tile. */
   private scheduleTilePrefetch(): void {
     if (this.tilePrefetchScheduled || this.tilePrefetchQueue.length === 0) return;
     this.tilePrefetchScheduled = true;
@@ -110,6 +123,7 @@ export class HyperspaceTileProvider {
     setTimeout(() => this.processTilePrefetchChunk(generation), 0);
   }
 
+  /** Processes tile prefetch chunk. */
   private processTilePrefetchChunk(generation: number): void {
     this.tilePrefetchScheduled = false;
     if (generation !== this.prefetchGeneration) return;
@@ -126,6 +140,7 @@ export class HyperspaceTileProvider {
     this.scheduleTilePrefetch();
   }
 
+  /** Creates tile. */
   private createTile(
     bg: string,
     systemProps: TileSystemProps,
@@ -137,7 +152,9 @@ export class HyperspaceTileProvider {
     if (systemProps.exists) {
       const starInfo = SPECTRAL_TYPES[systemProps.starType!];
       if (!starInfo) {
-        logger.error(`[HyperspaceTileProvider] Could not find star info for "${systemProps.starType}" at [${worldX}, ${worldY}].`);
+        logger.error(
+          `[HyperspaceTileProvider] Could not find star info for "${systemProps.starType}" at [${worldX}, ${worldY}].`
+        );
         return { bg, starChar: '?', starColor: '#FF00FF' };
       }
 
@@ -160,13 +177,15 @@ export class HyperspaceTileProvider {
       phenomenon.colour &&
       rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS
     ) {
-      const dimFactor = phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
+      const dimFactor =
+        phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
       return { bg, starChar: phenomenon.char, starColor: dimHexColour(phenomenon.colour, dimFactor) };
     }
 
     return { bg, starChar: null, starColor: null };
   }
 
+  /** Stores a generated hyperspace tile and evicts the oldest entry when full. */
   private cacheTile(key: string, tile: HyperspaceTile): HyperspaceTile {
     if (this.tileCache.size >= this.maxTileCacheSize) {
       const firstKey = this.tileCache.keys().next().value;
@@ -176,6 +195,7 @@ export class HyperspaceTileProvider {
     return tile;
   }
 
+  /** Returns tile key. */
   private getTileKey(worldX: number, worldY: number, rangeCells: number): string {
     return `${worldX},${worldY}|${Math.floor(rangeCells)}`;
   }

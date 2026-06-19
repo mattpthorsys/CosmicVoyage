@@ -6,19 +6,17 @@ import { NebulaColourProvider } from '../../rendering/nebula_colour_provider';
 import { NebulaColourSampler } from '../../rendering/nebula_colour_sampler';
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 
+/** Calculates approximate luminance for an RGB colour. */
 function luminance(hex: string): number {
   const rgb = hexToRgb(hex);
   return rgb.r * 0.2126 + rgb.g * 0.7152 + rgb.b * 0.0722;
 }
 
+/** Calculates Euclidean distance between two RGB colours. */
 function colourDistance(first: string, second: string): number {
   const a = hexToRgb(first);
   const b = hexToRgb(second);
-  return Math.sqrt(
-    (a.r - b.r) ** 2 +
-    (a.g - b.g) ** 2 +
-    (a.b - b.b) ** 2
-  );
+  return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
 }
 
 describe('NebulaRenderer', () => {
@@ -43,20 +41,25 @@ describe('NebulaRenderer', () => {
       syncCalls = 0;
       asyncCalls = 0;
 
+      /** Returns background color. */
       getBackgroundColor(): string {
         this.syncCalls++;
         return '#101010';
       }
 
+      /** Returns background colors async. */
       getBackgroundColorsAsync(requests: readonly { worldX: number; worldY: number }[]) {
         this.asyncCalls++;
-        return Promise.resolve(requests.map(({ worldX, worldY }) => ({
-          worldX,
-          worldY,
-          colour: '#123456',
-        })));
+        return Promise.resolve(
+          requests.map(({ worldX, worldY }) => ({
+            worldX,
+            worldY,
+            colour: '#123456',
+          }))
+        );
       }
 
+      /** Clears cache. */
       clearCache(): void {}
     }
 
@@ -83,7 +86,9 @@ describe('NebulaRenderer', () => {
       }
     }
 
-    const visible = samples.filter((colour) => colour !== CONFIG.DEFAULT_BG_COLOUR && luminance(colour) > 1.5);
+    const visible = samples.filter(
+      (colour) => colour !== CONFIG.DEFAULT_BG_COLOUR && luminance(colour) > 1.5
+    );
     const visibleRatio = visible.length / samples.length;
     expect(visibleRatio).toBeGreaterThan(0.015);
     expect(visibleRatio).toBeLessThan(0.3);
@@ -144,14 +149,18 @@ describe('NebulaRenderer', () => {
     expect(visible.length).toBeGreaterThan(0);
     const brightest = Math.max(...visible.map(luminance));
     expect(brightest).toBeLessThan(55);
-    expect(visible.some((colour) => {
-      const rgb = hexToRgb(colour);
-      return rgb.r >= rgb.g && rgb.r > rgb.b;
-    })).toBe(true);
-    expect(visible.some((colour) => {
-      const rgb = hexToRgb(colour);
-      return rgb.b >= rgb.r && rgb.g >= rgb.r;
-    })).toBe(true);
+    expect(
+      visible.some((colour) => {
+        const rgb = hexToRgb(colour);
+        return rgb.r >= rgb.g && rgb.r > rgb.b;
+      })
+    ).toBe(true);
+    expect(
+      visible.some((colour) => {
+        const rgb = hexToRgb(colour);
+        return rgb.b >= rgb.r && rgb.g >= rgb.r;
+      })
+    ).toBe(true);
   });
 
   it('returns stable colours from cache and after cache clearing', () => {

@@ -7,6 +7,7 @@ import { TEXT_PALETTE } from './text_palette';
 export class CommandStripUpdater {
   private readonly element: HTMLElement;
 
+  /** Initializes CommandStripUpdater. */
   constructor(element: HTMLElement) {
     this.element = element;
     this.element.style.fontFamily = CONFIG.FONT_FAMILY;
@@ -21,10 +22,12 @@ export class CommandStripUpdater {
     this.ensureCommandBarStyles();
   }
 
+  /** Returns element. */
   getElement(): HTMLElement {
     return this.element;
   }
 
+  /** Updates max chars. */
   updateMaxChars(charWidthPx: number, charHeightPx: number): void {
     const fontSize = charHeightPx > 0 ? charHeightPx * 0.82 : 13;
     this.element.style.fontSize = `${fontSize}px`;
@@ -35,7 +38,12 @@ export class CommandStripUpdater {
     this.element.style.bottom = `${statusHeight}px`;
   }
 
-  update(actionsOrModel: AvailableAction[] | CommandBarModel, primaryActionId?: string, targetName?: string): void {
+  /** Updates. */
+  update(
+    actionsOrModel: AvailableAction[] | CommandBarModel,
+    primaryActionId?: string,
+    targetName?: string
+  ): void {
     while (this.element.firstChild) {
       this.element.removeChild(this.element.firstChild);
     }
@@ -65,6 +73,7 @@ export class CommandStripUpdater {
     });
   }
 
+  /** Updates command bar. */
   private updateCommandBar(model: CommandBarModel): void {
     if (model.targetName) {
       const target = document.createElement('span');
@@ -78,10 +87,13 @@ export class CommandStripUpdater {
     const left = model.leftButtons ?? [];
     const right = model.rightButtons ?? [];
     [...left, ...model.buttons, ...right].forEach((button) => {
-      this.element.appendChild(this.createButton(button, button.id === model.primaryButtonId, button.id === model.selectedButtonId));
+      this.element.appendChild(
+        this.createButton(button, button.id === model.primaryButtonId, button.id === model.selectedButtonId)
+      );
     });
   }
 
+  /** Creates button. */
   private createButton(button: CommandBarButton, primary: boolean, selected: boolean): HTMLElement {
     const el = document.createElement('button');
     const enabled = button.enabled !== false;
@@ -95,13 +107,20 @@ export class CommandStripUpdater {
     el.style.padding = '3px 8px';
     el.style.borderRadius = '0';
     el.style.border = `1px solid ${this.getBorderColour(button)}`;
-    el.style.backgroundColor = enabled ? this.getBackgroundColour(button, primary, selected) : TEXT_PALETTE.panelBackground;
+    el.style.backgroundColor = enabled
+      ? this.getBackgroundColour(button, primary, selected)
+      : TEXT_PALETTE.panelBackground;
     el.style.color = enabled ? this.getForegroundColour(button, primary, selected) : TEXT_PALETTE.textDim;
     el.style.cursor = enabled ? 'pointer' : 'default';
     el.style.textTransform = 'uppercase';
     el.style.letterSpacing = '0';
     el.style.whiteSpace = 'nowrap';
-    el.style.boxShadow = selected && enabled ? '0 0 10px rgba(140, 255, 255, 0.35)' : primary && enabled ? '0 0 8px rgba(0, 255, 160, 0.35)' : 'none';
+    el.style.boxShadow =
+      selected && enabled
+        ? '0 0 10px rgba(140, 255, 255, 0.35)'
+        : primary && enabled
+          ? '0 0 8px rgba(0, 255, 160, 0.35)'
+          : 'none';
     if (button.tone === 'green' && enabled && !selected) {
       el.classList.add('cosmic-command-button-green');
     }
@@ -112,6 +131,7 @@ export class CommandStripUpdater {
     return el;
   }
 
+  /** Returns border colour. */
   private getBorderColour(button: CommandBarButton): string {
     switch (button.tone) {
       case 'green':
@@ -125,6 +145,7 @@ export class CommandStripUpdater {
     }
   }
 
+  /** Returns background colour. */
   private getBackgroundColour(button: CommandBarButton, primary: boolean, selected: boolean): string {
     if (selected) return button.tone === 'green' ? TEXT_PALETTE.greenAction : TEXT_PALETTE.text;
     switch (button.tone) {
@@ -139,6 +160,7 @@ export class CommandStripUpdater {
     }
   }
 
+  /** Returns foreground colour. */
   private getForegroundColour(button: CommandBarButton, primary: boolean, selected: boolean): string {
     if (selected) return TEXT_PALETTE.inverseText;
     switch (button.tone) {
@@ -153,14 +175,17 @@ export class CommandStripUpdater {
     }
   }
 
+  /** Formats key. */
   private formatKey(key: string): string {
-    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') return 'ARROWS';
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight')
+      return 'ARROWS';
     if (key === 'Arrows') return 'ARROWS';
     if (key === 'Up/Down') return 'UP/DOWN';
     if (key === ' ') return 'SPACE';
     return key.toUpperCase();
   }
 
+  /** Ensures command bar styles. */
   private ensureCommandBarStyles(): void {
     if (document.getElementById('cosmic-command-bar-styles')) return;
     const style = document.createElement('style');

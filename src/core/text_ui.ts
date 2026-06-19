@@ -49,15 +49,18 @@ export interface SelectionViewport {
   viewOffset: number;
 }
 
+/** Clamps index. */
 export function clampIndex(index: number, length: number): number {
   if (length <= 0) return 0;
   return Math.max(0, Math.min(index, length - 1));
 }
 
+/** Clamps offset. */
 export function clampOffset(offset: number, rowCount: number, visibleRows: number): number {
   return Math.max(0, Math.min(offset, Math.max(0, rowCount - Math.max(1, visibleRows))));
 }
 
+/** Moves selection. */
 export function moveSelection(
   currentIndex: number,
   delta: number,
@@ -68,6 +71,7 @@ export function moveSelection(
   return setSelection(currentIndex + delta, rowCount, visibleRows, currentOffset);
 }
 
+/** Moves selection in rows. */
 export function moveSelectionInRows(
   currentIndex: number,
   delta: number,
@@ -80,7 +84,12 @@ export function moveSelectionInRows(
   const baseIndex = current >= 0 ? current : clampIndex(currentIndex, rows.length);
   if (delta === 0) {
     const selectedIndex = findNearestSelectableRowIndex(rows, baseIndex, 1);
-    return setSelection(selectedIndex >= 0 ? selectedIndex : baseIndex, rows.length, visibleRows, currentOffset);
+    return setSelection(
+      selectedIndex >= 0 ? selectedIndex : baseIndex,
+      rows.length,
+      visibleRows,
+      currentOffset
+    );
   }
 
   const direction = delta > 0 ? 1 : -1;
@@ -90,6 +99,7 @@ export function moveSelectionInRows(
   return setSelection(selectedIndex, rows.length, visibleRows, currentOffset);
 }
 
+/** Finds selectable row index. */
 function findSelectableRowIndex(rows: TextTableRow[], startIndex: number, direction: 1 | -1): number {
   for (let index = startIndex; index >= 0 && index < rows.length; index += direction) {
     if (!rows[index].skipSelection) return index;
@@ -97,12 +107,18 @@ function findSelectableRowIndex(rows: TextTableRow[], startIndex: number, direct
   return -1;
 }
 
-function findNearestSelectableRowIndex(rows: TextTableRow[], startIndex: number, preferredDirection: 1 | -1): number {
+/** Finds nearest selectable row index. */
+function findNearestSelectableRowIndex(
+  rows: TextTableRow[],
+  startIndex: number,
+  preferredDirection: 1 | -1
+): number {
   const preferred = findSelectableRowIndex(rows, startIndex, preferredDirection);
   if (preferred >= 0) return preferred;
   return findSelectableRowIndex(rows, startIndex, preferredDirection === 1 ? -1 : 1);
 }
 
+/** Updates selection. */
 export function setSelection(
   index: number,
   rowCount: number,

@@ -1,6 +1,3 @@
-/* FILE: src/rendering/terminal_overlay.ts */
-// src/rendering/terminal_overlay.ts (Added setTheme method)
-
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 import { TEXT_PALETTE } from './text_palette';
@@ -17,13 +14,13 @@ const MARKERS = {
   EMERGENCY_END: '</e>',
 } as const;
 
-// -- Type for coloured text segments -- (remains the same)
+// Represents one coloured span within terminal output.
 interface TextSegment {
   text: string;
   color: string;
 }
 
-// -- Type for a message composed of segments -- (remains the same)
+// Represents one queued terminal message and its animation state.
 interface TerminalMessage {
   segments: TextSegment[];
   fullText: string;
@@ -55,6 +52,7 @@ export class TerminalOverlay {
   private currentTypingProgressChars: number = 0;
 
   // --- Constructor ---
+  /** Initializes TerminalOverlay. */
   constructor(initialTheme: 'dark' | 'light' = 'dark') {
     this.font = `${CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE * 0.9}px ${CONFIG.THIN_FONT_FAMILY}`;
     // Initialize colors using the new setTheme method
@@ -94,13 +92,13 @@ export class TerminalOverlay {
   }
   // --- END NEW Method ---
 
-  /** Sets character dimensions (call on resize) */ // (remains the same)
+  /** Updates character dimensions after the canvas is resized. */
   updateCharDimensions(charHeight: number): void {
     this.charHeight = charHeight > 0 ? charHeight : 16;
     this.font = `${this.charHeight * 0.9}px ${CONFIG.THIN_FONT_FAMILY}`;
   }
 
-  /** Adds a raw message text (with markers) to the waiting queue */ // (remains the same)
+  /** Parses marked-up text and queues it for animated terminal output. */
   addMessage(rawText: string): void {
     if (!rawText) return;
     this.messageQueue.push(rawText);
@@ -131,6 +129,7 @@ export class TerminalOverlay {
     this.currentTypingProgressChars = 0;
   }
 
+  /** Returns whether visible content is present. */
   hasVisibleContent(): boolean {
     return this.displayMessages.length > 0 || this.messageQueue.length > 0 || this.isCurrentlyTyping;
   }
@@ -203,7 +202,7 @@ export class TerminalOverlay {
     });
   }
 
-  /** Parses text with markers into colored segments */ 
+  /** Parses text with markers into colored segments */
   private _parseTextToSegments(rawText: string, maxChars?: number): TextSegment[] {
     const segments: TextSegment[] = [];
     let currentText = '';

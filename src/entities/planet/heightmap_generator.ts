@@ -24,9 +24,7 @@ export function generateHeightmap(
   planetType: string,
   atmosphere: Atmosphere
 ): number[][] | null {
-  logger.info(
-    `[HeightmapGenFunc] Generating heightmap for ${planetType} (Seed: ${mapSeed})...`
-  );
+  logger.info(`[HeightmapGenFunc] Generating heightmap for ${planetType} (Seed: ${mapSeed})...`);
   const mapSizeTarget = CONFIG.PLANET_MAP_BASE_SIZE;
   try {
     const generator = new BaseHeightmapGenerator(
@@ -36,11 +34,7 @@ export function generateHeightmap(
     );
     let generatedMap = generator.generate(); // Generate the base map
 
-    if (
-      !generatedMap ||
-      generatedMap.length < 1 ||
-      generatedMap[0].length !== generatedMap.length
-    ) {
+    if (!generatedMap || generatedMap.length < 1 || generatedMap[0].length !== generatedMap.length) {
       throw new Error('BaseHeightmapGenerator returned invalid map dimensions.');
     }
 
@@ -57,9 +51,7 @@ export function generateHeightmap(
     );
     return generatedMap;
   } catch (error) {
-    logger.error(
-      `[HeightmapGenFunc] Heightmap generation failed for ${planetType}: ${error}`
-    );
+    logger.error(`[HeightmapGenFunc] Heightmap generation failed for ${planetType}: ${error}`);
     return null;
   }
 }
@@ -88,7 +80,10 @@ export function addCratersToHeightmap(
   logger.debug(`[CraterFunc] Generating ${numCraters} craters.`);
 
   for (let i = 0; i < numCraters; i++) {
-    const r = Math.max(2, Math.round(craterPRNG.randomInt(3, Math.max(5, Math.floor(mapSize / 10))) * profile.radiusMultiplier));
+    const r = Math.max(
+      2,
+      Math.round(craterPRNG.randomInt(3, Math.max(5, Math.floor(mapSize / 10))) * profile.radiusMultiplier)
+    );
     const cx = craterPRNG.randomInt(0, mapSize - 1);
     const cy = craterPRNG.randomInt(0, mapSize - 1);
     const depthFactor = craterPRNG.random(0.5, 2.0) * profile.depthMultiplier;
@@ -97,7 +92,10 @@ export function addCratersToHeightmap(
     const rimHeight = maxDepth * rimFactor;
     const startY = Math.max(0, cy - r - 2);
     const endY = Math.min(mapSize - 1, cy + r + 2);
-    const horizontalRadius = Math.min(mapSize, Math.ceil((r + 2) / getMercatorCraterLongitudeScale(cy, mapSize)));
+    const horizontalRadius = Math.min(
+      mapSize,
+      Math.ceil((r + 2) / getMercatorCraterLongitudeScale(cy, mapSize))
+    );
 
     for (let y = startY; y <= endY; y++) {
       for (let xOffset = -horizontalRadius; xOffset <= horizontalRadius; xOffset++) {
@@ -109,27 +107,20 @@ export function addCratersToHeightmap(
           const dist = Math.sqrt(distSq);
           const currentH = heightmap[y]?.[x] ?? 0; // Add nullish coalescing for safety
           let deltaH = 0;
-          if (dist < r)
-            deltaH -= maxDepth * ((Math.cos((dist / r) * Math.PI) + 1) / 2); // Depression
+          if (dist < r) deltaH -= maxDepth * ((Math.cos((dist / r) * Math.PI) + 1) / 2); // Depression
           const rimPeakDist = r * 0.85;
           const rimWidth = r * 0.3;
           if (dist > rimPeakDist - rimWidth && dist < rimPeakDist + rimWidth) {
-            deltaH +=
-              rimHeight *
-              ((Math.cos(((dist - rimPeakDist) / rimWidth) * Math.PI) + 1) /
-                2); // Rim
+            deltaH += rimHeight * ((Math.cos(((dist - rimPeakDist) / rimWidth) * Math.PI) + 1) / 2); // Rim
           }
           // Ensure heightmap access is valid before writing
           if (heightmap[y] !== undefined) {
-              heightmap[y][x] = Math.max(
-                  0,
-                  Math.min(
-                      CONFIG.PLANET_HEIGHT_LEVELS - 1,
-                      Math.round(currentH + deltaH)
-                  )
-              );
+            heightmap[y][x] = Math.max(
+              0,
+              Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(currentH + deltaH))
+            );
           } else {
-               logger.warn(`[CraterFunc] Invalid heightmap access at y=${y}`);
+            logger.warn(`[CraterFunc] Invalid heightmap access at y=${y}`);
           }
         }
       }
@@ -139,26 +130,34 @@ export function addCratersToHeightmap(
   return heightmap;
 }
 
+/** Returns mercator crater distance sq. */
 export function getMercatorCraterDistanceSq(dx: number, dy: number, row: number, mapSize: number): number {
   const longitudeScale = getMercatorCraterLongitudeScale(row, mapSize);
   return (dx * longitudeScale) ** 2 + dy * dy;
 }
 
+/** Returns mercator crater longitude scale. */
 function getMercatorCraterLongitudeScale(row: number, mapSize: number): number {
-  const latitude = ((row / Math.max(1, mapSize - 1)) - 0.5) * Math.PI;
+  const latitude = (row / Math.max(1, mapSize - 1) - 0.5) * Math.PI;
   return Math.max(0.18, Math.abs(Math.cos(latitude)));
 }
 
+/** Returns crater profile. */
 function getCraterProfile(planetType: string, atmosphere: Atmosphere): CraterProfile {
   const density = atmosphere?.density ?? 'None';
   const pressure = atmosphere?.pressure ?? 0;
   const atmosphereErosion =
-    density === 'None' ? 1 :
-    density === 'Trace' ? 0.82 :
-    density === 'Thin' ? 0.58 :
-    density === 'Earth-like' ? 0.24 :
-    density === 'Thick' ? 0.08 :
-    0.02;
+    density === 'None'
+      ? 1
+      : density === 'Trace'
+        ? 0.82
+        : density === 'Thin'
+          ? 0.58
+          : density === 'Earth-like'
+            ? 0.24
+            : density === 'Thick'
+              ? 0.08
+              : 0.02;
   const pressureErosion = Math.max(0.02, Math.min(1, 1 / (1 + pressure * 0.28)));
 
   switch (planetType) {
@@ -169,15 +168,35 @@ function getCraterProfile(planetType: string, atmosphere: Atmosphere): CraterPro
     case 'Chthonian':
       return { countMultiplier: 0.72 * atmosphereErosion, radiusMultiplier: 0.9, depthMultiplier: 0.85 };
     case 'CarbonRich':
-      return { countMultiplier: 0.48 * atmosphereErosion * pressureErosion, radiusMultiplier: 0.95, depthMultiplier: 0.9 };
+      return {
+        countMultiplier: 0.48 * atmosphereErosion * pressureErosion,
+        radiusMultiplier: 0.95,
+        depthMultiplier: 0.9,
+      };
     case 'Rock':
-      return { countMultiplier: 0.5 * atmosphereErosion * pressureErosion, radiusMultiplier: 1, depthMultiplier: 1 };
+      return {
+        countMultiplier: 0.5 * atmosphereErosion * pressureErosion,
+        radiusMultiplier: 1,
+        depthMultiplier: 1,
+      };
     case 'Frozen':
-      return { countMultiplier: 0.58 * atmosphereErosion * pressureErosion, radiusMultiplier: 1.05, depthMultiplier: 0.72 };
+      return {
+        countMultiplier: 0.58 * atmosphereErosion * pressureErosion,
+        radiusMultiplier: 1.05,
+        depthMultiplier: 0.72,
+      };
     case 'Cryovolcanic':
-      return { countMultiplier: 0.26 * atmosphereErosion * pressureErosion, radiusMultiplier: 0.88, depthMultiplier: 0.55 };
+      return {
+        countMultiplier: 0.26 * atmosphereErosion * pressureErosion,
+        radiusMultiplier: 0.88,
+        depthMultiplier: 0.55,
+      };
     case 'Greenhouse':
-      return { countMultiplier: 0.08 * atmosphereErosion * pressureErosion, radiusMultiplier: 1.1, depthMultiplier: 0.35 };
+      return {
+        countMultiplier: 0.08 * atmosphereErosion * pressureErosion,
+        radiusMultiplier: 1.1,
+        depthMultiplier: 0.35,
+      };
     case 'Molten':
       return { countMultiplier: 0.04 * atmosphereErosion, radiusMultiplier: 0.85, depthMultiplier: 0.3 };
     default:
@@ -185,6 +204,7 @@ function getCraterProfile(planetType: string, atmosphere: Atmosphere): CraterPro
   }
 }
 
+/** Applies planetary surface processes. */
 function applyPlanetarySurfaceProcesses(
   heightmap: number[][],
   planetType: string,
@@ -197,12 +217,24 @@ function applyPlanetarySurfaceProcesses(
 
   if (planetType === 'Oceanic' || planetType === 'Hycean') {
     processed = compressToOceanWorld(processed);
-    processed = smoothHeightmap(processed, planetType === 'Hycean' ? 3 : pressure > 0.5 ? 2 : 1, planetType === 'Hycean' ? 0.55 : 0.42);
+    processed = smoothHeightmap(
+      processed,
+      planetType === 'Hycean' ? 3 : pressure > 0.5 ? 2 : 1,
+      planetType === 'Hycean' ? 0.55 : 0.42
+    );
     processed = addSubmarineRidges(processed, prng, planetType === 'Hycean' ? 5 : 3);
     if (planetType === 'Hycean') processed = addIslandArcs(processed, prng, 3);
   } else if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce') {
-    processed = smoothHeightmap(processed, density === 'Thick' ? 2 : 1, planetType === 'DwarfIce' ? 0.18 : 0.28);
-    processed = addIceFractures(processed, prng, planetType === 'Cryovolcanic' ? 11 : density === 'None' ? 8 : 5);
+    processed = smoothHeightmap(
+      processed,
+      density === 'Thick' ? 2 : 1,
+      planetType === 'DwarfIce' ? 0.18 : 0.28
+    );
+    processed = addIceFractures(
+      processed,
+      prng,
+      planetType === 'Cryovolcanic' ? 11 : density === 'None' ? 8 : 5
+    );
     if (planetType === 'Cryovolcanic') processed = addCryovolcanicDomes(processed, prng, 9);
     if (planetType === 'DwarfIce') {
       processed = addVolatileFrostBasins(processed, prng, 7);
@@ -234,6 +266,7 @@ function applyPlanetarySurfaceProcesses(
   return processed;
 }
 
+/** Smooths neighbouring heightmap cells while preserving longitude wrapping. */
 function smoothHeightmap(heightmap: number[][], passes: number, strength: number): number[][] {
   let result = heightmap;
   const size = result.length;
@@ -256,6 +289,7 @@ function smoothHeightmap(heightmap: number[][], passes: number, strength: number
   return result;
 }
 
+/** Compresses terrain relief to produce an ocean-dominated world. */
 function compressToOceanWorld(heightmap: number[][]): number[][] {
   return heightmap.map((row) =>
     row.map((height) => {
@@ -266,6 +300,7 @@ function compressToOceanWorld(heightmap: number[][]): number[][] {
   );
 }
 
+/** Adds submarine ridges. */
 function addSubmarineRidges(heightmap: number[][], prng: PRNG, ridgeCount: number): number[][] {
   const size = heightmap.length;
   for (let ridge = 0; ridge < ridgeCount; ridge++) {
@@ -284,6 +319,7 @@ function addSubmarineRidges(heightmap: number[][], prng: PRNG, ridgeCount: numbe
   return heightmap;
 }
 
+/** Adds island arcs. */
 function addIslandArcs(heightmap: number[][], prng: PRNG, arcCount: number): number[][] {
   const size = heightmap.length;
   for (let arc = 0; arc < arcCount; arc++) {
@@ -311,6 +347,7 @@ function addIslandArcs(heightmap: number[][], prng: PRNG, arcCount: number): num
   return heightmap;
 }
 
+/** Adds ice fractures. */
 function addIceFractures(heightmap: number[][], prng: PRNG, fractureCount: number): number[][] {
   const size = heightmap.length;
   for (let fracture = 0; fracture < fractureCount; fracture++) {
@@ -328,6 +365,7 @@ function addIceFractures(heightmap: number[][], prng: PRNG, fractureCount: numbe
   return heightmap;
 }
 
+/** Adds cryovolcanic domes. */
 function addCryovolcanicDomes(heightmap: number[][], prng: PRNG, domeCount: number): number[][] {
   const size = heightmap.length;
   for (let dome = 0; dome < domeCount; dome++) {
@@ -351,6 +389,7 @@ function addCryovolcanicDomes(heightmap: number[][], prng: PRNG, domeCount: numb
   return heightmap;
 }
 
+/** Adds volatile frost basins. */
 function addVolatileFrostBasins(heightmap: number[][], prng: PRNG, basinCount: number): number[][] {
   const size = heightmap.length;
   for (let basin = 0; basin < basinCount; basin++) {
@@ -373,6 +412,7 @@ function addVolatileFrostBasins(heightmap: number[][], prng: PRNG, basinCount: n
   return smoothHeightmap(heightmap, 1, 0.12);
 }
 
+/** Adds volcanic rifts. */
 function addVolcanicRifts(heightmap: number[][], prng: PRNG, riftCount: number): number[][] {
   const size = heightmap.length;
   for (let rift = 0; rift < riftCount; rift++) {
@@ -390,6 +430,7 @@ function addVolcanicRifts(heightmap: number[][], prng: PRNG, riftCount: number):
   return heightmap;
 }
 
+/** Adds ablation scarps. */
 function addAblationScarps(heightmap: number[][], prng: PRNG, scarpCount: number): number[][] {
   const size = heightmap.length;
   for (let scarp = 0; scarp < scarpCount; scarp++) {
@@ -408,6 +449,7 @@ function addAblationScarps(heightmap: number[][], prng: PRNG, scarpCount: number
   return heightmap;
 }
 
+/** Adds tessera terrain. */
 function addTesseraTerrain(heightmap: number[][], prng: PRNG, blockCount: number): number[][] {
   const size = heightmap.length;
   for (let block = 0; block < blockCount; block++) {
@@ -420,7 +462,7 @@ function addTesseraTerrain(heightmap: number[][], prng: PRNG, blockCount: number
       for (let x = 0; x < width; x++) {
         const px = (x0 + x + size) % size;
         const py = (y0 + y + size) % size;
-        const ridge = (x % 4 === 0 || y % 5 === 0) ? prng.random(4, 10) : 0;
+        const ridge = x % 4 === 0 || y % 5 === 0 ? prng.random(4, 10) : 0;
         const warped = Math.sin((x + block) * 0.7) * Math.cos((y - block) * 0.55) * 3;
         heightmap[py][px] = clampHeight(heightmap[py][px] + uplift + ridge + warped);
       }
@@ -429,6 +471,7 @@ function addTesseraTerrain(heightmap: number[][], prng: PRNG, blockCount: number
   return smoothHeightmap(heightmap, 1, 0.08);
 }
 
+/** Adds carbon dune fields. */
 function addCarbonDuneFields(heightmap: number[][], prng: PRNG, fieldCount: number): number[][] {
   const size = heightmap.length;
   for (let field = 0; field < fieldCount; field++) {
@@ -447,6 +490,7 @@ function addCarbonDuneFields(heightmap: number[][], prng: PRNG, fieldCount: numb
   return smoothHeightmap(heightmap, 1, 0.1);
 }
 
+/** Adds sedimentary plains. */
 function addSedimentaryPlains(heightmap: number[][], strength: number): number[][] {
   const mid = (CONFIG.PLANET_HEIGHT_LEVELS - 1) * 0.48;
   return heightmap.map((row) =>
@@ -459,16 +503,22 @@ function addSedimentaryPlains(heightmap: number[][], strength: number): number[]
   );
 }
 
+/** Sharpens terrain relief for erosion-free airless bodies. */
 function sharpenAirlessRelief(heightmap: number[][], strength: number): number[][] {
   const mid = (CONFIG.PLANET_HEIGHT_LEVELS - 1) / 2;
   return heightmap.map((row) => row.map((height) => clampHeight(mid + (height - mid) * (1 + strength))));
 }
 
+/** Clamps height. */
 function clampHeight(value: number): number {
   return Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(value)));
 }
 
-export function blendLongitudeSeam(heightmap: number[][], bandWidth: number = Math.max(4, Math.floor(heightmap.length / 32))): number[][] {
+/** Blends longitude seam. */
+export function blendLongitudeSeam(
+  heightmap: number[][],
+  bandWidth: number = Math.max(4, Math.floor(heightmap.length / 32))
+): number[][] {
   const size = heightmap.length;
   if (size <= 2 || bandWidth <= 0) return heightmap;
   const width = Math.min(Math.floor(size / 2), Math.max(1, bandWidth));

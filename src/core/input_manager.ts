@@ -1,6 +1,3 @@
-/* FILE: src/core/input_manager.ts */
-// Full file integrating Zoom key bindings and handling.
-
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 
@@ -21,6 +18,7 @@ export class InputManager {
   // Memoized mapping from key codes to action names for faster lookups
   private keyToActionMap: Map<string, string> = new Map();
 
+  /** Initializes InputManager. */
   constructor() {
     logger.debug('[InputManager] Instance created.');
     this._buildKeyToActionMap();
@@ -31,45 +29,42 @@ export class InputManager {
   private _buildKeyToActionMap(): void {
     this.keyToActionMap.clear();
     for (const [actionName, boundKey] of Object.entries(CONFIG.KEY_BINDINGS)) {
-        const lowerBoundKey = boundKey.toLowerCase();
+      const lowerBoundKey = boundKey.toLowerCase();
 
-        // Map the primary bound key (lowercase)
-        this.keyToActionMap.set(lowerBoundKey, actionName);
+      // Map the primary bound key (lowercase)
+      this.keyToActionMap.set(lowerBoundKey, actionName);
 
-        // --- Special Handling for Zoom Keys --- <<< ADDED >>>
-        // Check actionName first to avoid misinterpreting other keys like '=' if bound differently
-        if (actionName === 'ZOOM_IN' && boundKey === '=') {
-            this.keyToActionMap.set('+', actionName); // Also map '+' (Shift + '=')
-        }
-        // Numpad keys usually have distinct key values like "NumpadAdd"
-        else if (actionName === 'ZOOM_IN_NUMPAD') {
-             this.keyToActionMap.set('numpadadd', actionName); // Map lowercase "numpadadd"
-        }
-        else if (actionName === 'ZOOM_OUT_NUMPAD') {
-             this.keyToActionMap.set('numpadsubtract', actionName); // Map lowercase "numpadsubtract"
-        }
-        // --- End Zoom Key Handling ---
+      // Register alternate keyboard and numpad forms for zoom actions.
+      // Check actionName first to avoid misinterpreting other keys like '=' if bound differently
+      if (actionName === 'ZOOM_IN' && boundKey === '=') {
+        this.keyToActionMap.set('+', actionName); // Also map '+' (Shift + '=')
+      }
+      // Numpad keys usually have distinct key values like "NumpadAdd"
+      else if (actionName === 'ZOOM_IN_NUMPAD') {
+        this.keyToActionMap.set('numpadadd', actionName); // Map lowercase "numpadadd"
+      } else if (actionName === 'ZOOM_OUT_NUMPAD') {
+        this.keyToActionMap.set('numpadsubtract', actionName); // Map lowercase "numpadsubtract"
+      }
+      // --- End Zoom Key Handling ---
 
-        // Handle standard modifiers
-        else if (boundKey === 'Shift') {
-            // Ensure 'shift' maps to FINE_CONTROL, overriding potential other bindings for 'shift' key itself
-            this.keyToActionMap.set('shift', 'FINE_CONTROL');
-        }
-        else if (boundKey === 'Control') {
-             // Ensure 'control' maps to BOOST
-             this.keyToActionMap.set('control', 'BOOST');
-        }
+      // Handle standard modifiers
+      else if (boundKey === 'Shift') {
+        // Ensure 'shift' maps to FINE_CONTROL, overriding potential other bindings for 'shift' key itself
+        this.keyToActionMap.set('shift', 'FINE_CONTROL');
+      } else if (boundKey === 'Control') {
+        // Ensure 'control' maps to BOOST
+        this.keyToActionMap.set('control', 'BOOST');
+      }
     }
-     // Add mappings for modifiers if they aren't explicitly in KEY_BINDINGS
-     if (!this.keyToActionMap.has('shift')) {
-         this.keyToActionMap.set('shift', 'FINE_CONTROL');
-     }
-     if (!this.keyToActionMap.has('control')) {
-         this.keyToActionMap.set('control', 'BOOST');
-     }
+    // Add mappings for modifiers if they aren't explicitly in KEY_BINDINGS
+    if (!this.keyToActionMap.has('shift')) {
+      this.keyToActionMap.set('shift', 'FINE_CONTROL');
+    }
+    if (!this.keyToActionMap.has('control')) {
+      this.keyToActionMap.set('control', 'BOOST');
+    }
     logger.debug('[InputManager] Key to action map built:', this.keyToActionMap);
   }
-
 
   /** Starts listening for keyboard events. */
   startListening(): void {
@@ -102,7 +97,6 @@ export class InputManager {
     this.justPressedActions.clear();
   }
 
-
   /**
    * Updates the manager's state.
    * Should be called once per game loop tick,
@@ -123,7 +117,7 @@ export class InputManager {
     return this.activeActions.has(action);
   }
 
-   /**
+  /**
    * Checks if a specific action was *just* activated in the current frame.
    * Useful for discrete actions that should only trigger once per key press.
    * @param action The action name (e.g., "LAND", "SCAN").
@@ -153,14 +147,14 @@ export class InputManager {
 
     // --- Handle Modifiers Directly ---
     if (e.shiftKey && !this.activeActions.has('FINE_CONTROL')) {
-        logger.debug(`[InputManager] FINE_CONTROL activated.`);
-        this.activeActions.add('FINE_CONTROL');
-        this.justPressedActions.add('FINE_CONTROL'); // Track initial press
+      logger.debug(`[InputManager] FINE_CONTROL activated.`);
+      this.activeActions.add('FINE_CONTROL');
+      this.justPressedActions.add('FINE_CONTROL'); // Track initial press
     }
     if (e.ctrlKey && !this.activeActions.has('BOOST')) {
-        logger.debug(`[InputManager] BOOST activated.`);
-        this.activeActions.add('BOOST');
-        this.justPressedActions.add('BOOST'); // Track initial press
+      logger.debug(`[InputManager] BOOST activated.`);
+      this.activeActions.add('BOOST');
+      this.justPressedActions.add('BOOST'); // Track initial press
     }
 
     // --- Handle Base Actions (including zoom keys mapped via lowercase) ---
@@ -168,33 +162,33 @@ export class InputManager {
     let action: string | undefined = undefined;
     // Check specific keys first if they have multiple mappings (like '+')
     if (key === '+') {
-        action = this.keyToActionMap.get('+'); // Check '+' specifically
+      action = this.keyToActionMap.get('+'); // Check '+' specifically
     }
     // Fallback to lowercase lookup
     if (!action) {
-        action = this.keyToActionMap.get(lowerKey);
+      action = this.keyToActionMap.get(lowerKey);
     }
     if (!action) {
-        action = this.keyToActionMap.get(lowerCode);
+      action = this.keyToActionMap.get(lowerCode);
     }
 
     // If an action is found and it's not just a modifier key itself being pressed
     if (action && key !== 'Shift' && key !== 'Control') {
-        // Check if the action is *already* active (for continuous actions like move)
-        // Only add to justPressedActions if it wasn't already active
-        if (!this.activeActions.has(action)) {
-            this.justPressedActions.add(action);
-            logger.debug(`[InputManager] Action '${action}' added to justPressedActions.`);
-        }
-        // Always add to activeActions on keydown (handles holds)
-        this.activeActions.add(action);
-        logger.debug(`[InputManager] Action '${action}' added/confirmed in activeActions.`);
+      // Check if the action is *already* active (for continuous actions like move)
+      // Only add to justPressedActions if it wasn't already active
+      if (!this.activeActions.has(action)) {
+        this.justPressedActions.add(action);
+        logger.debug(`[InputManager] Action '${action}' added to justPressedActions.`);
+      }
+      // Always add to activeActions on keydown (handles holds)
+      this.activeActions.add(action);
+      logger.debug(`[InputManager] Action '${action}' added/confirmed in activeActions.`);
 
-        // Prevent default browser behavior for bound keys
-        e.preventDefault();
+      // Prevent default browser behavior for bound keys
+      e.preventDefault();
     } else if (key === 'Shift' || key === 'Control') {
-        // Prevent default for modifier keys if we handle them (prevents page scrolling etc.)
-        e.preventDefault();
+      // Prevent default for modifier keys if we handle them (prevents page scrolling etc.)
+      e.preventDefault();
     }
   };
 
@@ -213,37 +207,37 @@ export class InputManager {
     // --- Handle Modifier Releases ---
     // If Shift is released, deactivate FINE_CONTROL
     if (key === 'Shift') {
-        logger.debug(`[InputManager] FINE_CONTROL deactivated.`);
-        this.activeActions.delete('FINE_CONTROL');
+      logger.debug(`[InputManager] FINE_CONTROL deactivated.`);
+      this.activeActions.delete('FINE_CONTROL');
     }
     // If Control is released, deactivate BOOST
     if (key === 'Control') {
-        logger.debug(`[InputManager] BOOST deactivated.`);
-        this.activeActions.delete('BOOST');
+      logger.debug(`[InputManager] BOOST deactivated.`);
+      this.activeActions.delete('BOOST');
     }
 
     // --- Deactivate Base Actions ---
     // Find corresponding action(s) for the released key
     let action: string | undefined = undefined;
     if (key === '+') {
-        action = this.keyToActionMap.get('+');
+      action = this.keyToActionMap.get('+');
     }
     if (!action) {
-        action = this.keyToActionMap.get(lowerKey);
+      action = this.keyToActionMap.get(lowerKey);
     }
     if (!action) {
-        action = this.keyToActionMap.get(lowerCode);
+      action = this.keyToActionMap.get(lowerCode);
     }
 
     // If an action is found and it's not a modifier action itself
     if (action && action !== 'FINE_CONTROL' && action !== 'BOOST') {
-        logger.debug(`[InputManager] Action deactivated: ${action}`);
-        this.activeActions.delete(action);
+      logger.debug(`[InputManager] Action deactivated: ${action}`);
+      this.activeActions.delete(action);
     }
   };
 
-   /** Optional: Destroy method to ensure cleanup */
-   destroy(): void {
-     this.stopListening();
-   }
+  /** Optional: Destroy method to ensure cleanup */
+  destroy(): void {
+    this.stopListening();
+  }
 } // End InputManager class

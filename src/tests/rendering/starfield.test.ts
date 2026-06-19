@@ -27,5 +27,4 @@ describe('starfield generation', () => {
     expect(ratio).toBeLessThan(0.03);
     expect(new Set(stars.map((cell) => `${cell.x},${cell.y}`)).size).toBeGreaterThan(stars.length * 0.9);
   });
-
 });

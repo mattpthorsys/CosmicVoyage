@@ -1,68 +1,68 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cosmic Voyage TS</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden; /* Prevent scrollbars */
-            background-color: #000000;
-            color: #FFFFFF;
-            font-family: 'Courier New', Courier, monospace;
-            display: flex;
-            height: 100vh;
-            flex-direction: column; /* Allow canvas and status bar */
-        }
-        canvas {
-            display: block;
-            background-color: #000000;
-            /* Canvas margin is now handled by JS/TS in fitToScreen */
-        }
-        #statusBar {
-            position: fixed; /* Keep fixed at bottom */
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            padding: 5px 10px; /* Keep padding */
-            background-color: #000000; /* Black background */
-            box-sizing: border-box; /* Include padding in width */
-            font-size: 1.5em; /* Base font size (scaled by JS/TS) */
-            height: 4.5em; /* Approx 3 lines based on base font size */
-            overflow: hidden; /* Hide overflow */
-            white-space: pre-wrap; /* Allow wrapping for longer messages */
-            border-top: 1px solid #FFA500; /* Amber border */
-            line-height: 1.4; /* Adjust line spacing if needed */
-            color: #FFA500; /* Default status bar text color */
-        }
-        #commandStrip {
-            position: fixed;
-            bottom: 4.5em;
-            left: 0;
-            width: 100%;
-            min-height: 1.8em;
-            padding: 4px 10px;
-            background-color: #001010;
-            box-sizing: border-box;
-            overflow: hidden;
-            white-space: nowrap;
-            border-top: 1px solid #006A6A;
-            color: #9FFFE0;
-        }
-        .command-key {
-            color: #FFD700;
-        }
-        .command-disabled {
-            color: #506060;
-        }
+      body {
+        margin: 0;
+        overflow: hidden; /* Prevent scrollbars */
+        background-color: #000000;
+        color: #ffffff;
+        font-family: 'Courier New', Courier, monospace;
+        display: flex;
+        height: 100vh;
+        flex-direction: column; /* Allow canvas and status bar */
+      }
+      canvas {
+        display: block;
+        background-color: #000000;
+        /* Canvas margin is now handled by JS/TS in fitToScreen */
+      }
+      #statusBar {
+        position: fixed; /* Keep fixed at bottom */
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        padding: 5px 10px; /* Keep padding */
+        background-color: #000000; /* Black background */
+        box-sizing: border-box; /* Include padding in width */
+        font-size: 1.5em; /* Base font size (scaled by JS/TS) */
+        height: 4.5em; /* Approx 3 lines based on base font size */
+        overflow: hidden; /* Hide overflow */
+        white-space: pre-wrap; /* Allow wrapping for longer messages */
+        border-top: 1px solid #ffa500; /* Amber border */
+        line-height: 1.4; /* Adjust line spacing if needed */
+        color: #ffa500; /* Default status bar text color */
+      }
+      #commandStrip {
+        position: fixed;
+        bottom: 4.5em;
+        left: 0;
+        width: 100%;
+        min-height: 1.8em;
+        padding: 4px 10px;
+        background-color: #001010;
+        box-sizing: border-box;
+        overflow: hidden;
+        white-space: nowrap;
+        border-top: 1px solid #006a6a;
+        color: #9fffe0;
+      }
+      .command-key {
+        color: #ffd700;
+      }
+      .command-disabled {
+        color: #506060;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <canvas id="gameCanvas"></canvas>
     <div id="commandStrip">Arrows Move</div>
     <div id="statusBar">Initializing systems...</div>
 
     <script type="module" src="/src/main.ts"></script>
-</body>
+  </body>
 </html>

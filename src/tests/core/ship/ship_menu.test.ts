@@ -5,6 +5,7 @@ import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { PRNG } from '../../../utils/prng';
 
+/** Creates ship menu harness. */
 function createShipMenuHarness(state: string = 'hyperspace'): any {
   const player = new Player();
   const cargoSystem = new CargoSystem();
@@ -18,6 +19,7 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
       currentSystem: null,
       currentStarbase: null,
       statusMessage: '',
+      /** Simulates leaving the test starbase and records the resulting status. */
       liftOff() {
         this.state = 'system';
         this.statusMessage = 'Lifted off from test starbase.';
@@ -139,8 +141,12 @@ describe('ship menu', () => {
     expect(status.columns).toEqual(['VESSEL DIAGRAM', 'READOUT']);
     expect(status.rows).toEqual([]);
     expect(status.dashboard).toBeDefined();
-    const dashboardText = status.dashboard!.map((line: any) => line.segments.map((segment: any) => segment.text).join('')).join('\n');
-    const dashboardTones = status.dashboard!.flatMap((line: any) => line.segments.map((segment: any) => segment.tone));
+    const dashboardText = status
+      .dashboard!.map((line: any) => line.segments.map((segment: any) => segment.text).join(''))
+      .join('\n');
+    const dashboardTones = status.dashboard!.flatMap((line: any) =>
+      line.segments.map((segment: any) => segment.tone)
+    );
     expect(status.footer).toEqual(['Esc/Left back']);
     expect(dashboardText).toContain('┌');
     expect(dashboardText).toContain('BRIDGE');
@@ -194,7 +200,9 @@ describe('ship menu', () => {
     expect(model.rows.find((row: any) => row.id === 'refit:frame')?.cells[3]).toContain('fitted load');
     expect(model.rows.find((row: any) => row.id === 'refit:damage')?.cells[3]).toContain('hull');
     expect(model.rows.find((row: any) => row.id === 'refit:cargo')?.cells[3]).toContain('100 m^3 capacity');
-    expect(model.rows.find((row: any) => row.id === 'refit:special')?.detail).toContain('Future mission labs');
+    expect(model.rows.find((row: any) => row.id === 'refit:special')?.detail).toContain(
+      'Future mission labs'
+    );
     expect(model.rows.some((row: any) => row.id === 'shipyard:repair')).toBe(true);
     expect(model.rows.some((row: any) => row.id === 'shipyard:cargo-pod')).toBe(true);
     expect(model.rows.some((row: any) => row.id === 'shipyard:shield:1')).toBe(true);
@@ -380,7 +388,9 @@ describe('ship menu', () => {
     const model = game.createSurfaceLegendModel();
 
     expect(model.title).toBe('Surface Icon Legend');
-    expect(model.rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['ship', 'resource', 'scanner']));
+    expect(model.rows.map((row: any) => row.id)).toEqual(
+      expect.arrayContaining(['ship', 'resource', 'scanner'])
+    );
     expect(model.footer[0]).toContain('PageUp/PageDown');
   });
 
@@ -434,7 +444,9 @@ describe('ship menu', () => {
     const game = createShipMenuHarness();
 
     const main = game.createShipMenuModel();
-    expect(main.rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status', 'log']));
+    expect(main.rows.map((row: any) => row.id)).toEqual(
+      expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status', 'log'])
+    );
 
     game.shipMenuSection = 'deck';
     const deck = game.createShipMenuModel();
@@ -460,7 +472,9 @@ describe('ship menu', () => {
 
     expect(log.title).toBe('Ship Log');
     expect(log.columns).toEqual(['LOG', 'CHANNEL', 'STATE', 'ENTRY']);
-    expect(log.rows.map((row: any) => row.cells[1])).toEqual(expect.arrayContaining(['NAV', 'SHIP', 'CREW', 'SURVEY', 'ALERT']));
+    expect(log.rows.map((row: any) => row.cells[1])).toEqual(
+      expect.arrayContaining(['NAV', 'SHIP', 'CREW', 'SURVEY', 'ALERT'])
+    );
     expect(log.rows[0].cells[3]).toContain('Interstellar grid');
     expect(log.footer[0]).toContain('PageUp/PageDown');
   });
@@ -479,7 +493,12 @@ describe('ship menu', () => {
 
   it('includes starbases in the system target menu without adding moons', () => {
     const game = createShipMenuHarness('system');
-    const planet = { name: 'Aster', systemX: 100, systemY: 0, moons: [{ name: 'Aster I', systemX: 120, systemY: 0 }] };
+    const planet = {
+      name: 'Aster',
+      systemX: 100,
+      systemY: 0,
+      moons: [{ name: 'Aster I', systemX: 120, systemY: 0 }],
+    };
     const starbase = Object.create(Starbase.prototype) as Starbase;
     Object.defineProperties(starbase, {
       name: { value: 'Aster Relay' },

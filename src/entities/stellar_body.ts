@@ -42,6 +42,7 @@ export interface OrbitHost {
   starId?: StellarBody['id'];
 }
 
+/** Calculates stellar luminosity w. */
 export function calculateStellarLuminosityW(starType: string, luminosityFactor: number = 1): number {
   const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
   return (
@@ -54,10 +55,12 @@ export function calculateStellarLuminosityW(starType: string, luminosityFactor: 
   );
 }
 
+/** Returns primary star. */
 export function getPrimaryStar(architecture: StellarArchitecture): StellarBody {
   return architecture.stars.find((star) => star.id === architecture.primaryStarId) ?? architecture.stars[0];
 }
 
+/** Returns host label. */
 export function getHostLabel(host: OrbitHost): string {
   if (host.kind === 'circumbinary') return 'AB';
   if (host.kind === 'circumstellar') return host.starId ?? 'A';

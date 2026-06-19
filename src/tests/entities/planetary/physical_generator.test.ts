@@ -3,7 +3,10 @@ import { PRNG } from '../../../utils/prng';
 import { calculateGravity, generatePhysicalBase } from '../../../entities/planet/physical_generator';
 
 describe('planet physical generation', () => {
-  const solidExpectations: Record<string, { diameter: [number, number]; density: [number, number]; gravity: [number, number] }> = {
+  const solidExpectations: Record<
+    string,
+    { diameter: [number, number]; density: [number, number]; gravity: [number, number] }
+  > = {
     Molten: { diameter: [4500, 18500], density: [3.8, 7.8], gravity: [0.24, 2.1] },
     Rock: { diameter: [3500, 19000], density: [3.1, 6.8], gravity: [0.15, 1.9] },
     Oceanic: { diameter: [6500, 20000], density: [2.4, 5.2], gravity: [0.22, 1.55] },

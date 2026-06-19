@@ -105,6 +105,7 @@ type PublishArgs<Payload> = undefined extends Payload ? [data?: Payload] : [data
 export class EventManager<EventMap extends object> {
   private readonly listeners = new Map<keyof EventMap, Set<Listener<EventMap[keyof EventMap]>>>();
 
+  /** Subscribes to. */
   subscribe<EventName extends keyof EventMap>(
     eventName: EventName,
     callback: Listener<EventMap[EventName]>
@@ -124,6 +125,7 @@ export class EventManager<EventMap extends object> {
     };
   }
 
+  /** Publishes. */
   publish<EventName extends keyof EventMap>(
     eventName: EventName,
     ...[data]: PublishArgs<EventMap[EventName]>
@@ -140,6 +142,7 @@ export class EventManager<EventMap extends object> {
     });
   }
 
+  /** Clears all. */
   clearAll(): void {
     this.listeners.clear();
   }

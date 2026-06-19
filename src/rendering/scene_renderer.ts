@@ -15,16 +15,19 @@ import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
-import { TextDashboardLine, TextMenuSection, TextModalTableModel, TextTableModel, TextTone } from '../core/text_ui';
+import {
+  TextDashboardLine,
+  TextMenuSection,
+  TextModalTableModel,
+  TextTableModel,
+  TextTone,
+} from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
 import { HyperspaceTileProvider } from './hyperspace_tile_provider';
 import { PlayerViewSnapshot } from './scene_view_model';
-import {
-  GiantAtmosphereRenderer,
-  GiantAtmosphereSample,
-} from './scenes/giant_atmosphere_renderer';
+import { GiantAtmosphereRenderer, GiantAtmosphereSample } from './scenes/giant_atmosphere_renderer';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -105,6 +108,7 @@ export class SceneRenderer {
     cells: 0,
   };
 
+  /** Initializes SceneRenderer. */
   constructor(
     screenBuffer: ScreenBuffer,
     drawingContext: DrawingContext,
@@ -121,11 +125,13 @@ export class SceneRenderer {
     logger.debug('[SceneRenderer] Instance created.');
   }
 
+  /** Clears caches. */
   clearCaches(): void {
     this.hyperspaceTileProvider.clearCache();
     this.hyperspaceFrameCache = null;
   }
 
+  /** Returns last hyperspace render stats. */
   getLastHyperspaceRenderStats(): HyperspaceRenderStats {
     return { ...this.lastHyperspaceRenderStats };
   }
@@ -155,7 +161,15 @@ export class SceneRenderer {
     const startWorldY = player.position.worldY - viewCenterY;
     const prefetchStart = performance.now();
     this.hyperspaceTileProvider.prefetchBackgroundRegion(startWorldX, startWorldY, cols, rows, 6);
-    this.hyperspaceTileProvider.prefetchTileRegion(startWorldX, startWorldY, cols, rows, viewCenterX, viewCenterY, 4);
+    this.hyperspaceTileProvider.prefetchTileRegion(
+      startWorldX,
+      startWorldY,
+      cols,
+      rows,
+      viewCenterX,
+      viewCenterY,
+      4
+    );
     stats.prefetchMs = performance.now() - prefetchStart;
 
     this.screenBuffer.clear(false);
@@ -175,7 +189,14 @@ export class SceneRenderer {
     }
 
     const shiftStart = performance.now();
-    const shiftedCells = this.tryShiftHyperspaceFrame(startWorldX, startWorldY, cols, rows, viewCenterX, viewCenterY);
+    const shiftedCells = this.tryShiftHyperspaceFrame(
+      startWorldX,
+      startWorldY,
+      cols,
+      rows,
+      viewCenterX,
+      viewCenterY
+    );
     stats.shiftMs = performance.now() - shiftStart;
     if (shiftedCells) {
       this.hyperspaceFrameCache = { cols, rows, startWorldX, startWorldY, cells: shiftedCells };
@@ -188,10 +209,23 @@ export class SceneRenderer {
     }
 
     const surveyStart = performance.now();
-    const survey = this.hyperspaceSurveyService?.getSurvey(player.position.worldX, player.position.worldY, cols, rows);
+    const survey = this.hyperspaceSurveyService?.getSurvey(
+      player.position.worldX,
+      player.position.worldY,
+      cols,
+      rows
+    );
     stats.surveyMs = performance.now() - surveyStart;
     const buildStart = performance.now();
-    const cells = this.createHyperspaceBackgroundCells(cols, rows, startWorldX, startWorldY, viewCenterX, viewCenterY, survey?.visibleCells);
+    const cells = this.createHyperspaceBackgroundCells(
+      cols,
+      rows,
+      startWorldX,
+      startWorldY,
+      viewCenterX,
+      viewCenterY,
+      survey?.visibleCells
+    );
     stats.buildMs = performance.now() - buildStart;
     this.hyperspaceFrameCache = { cols, rows, startWorldX, startWorldY, cells };
     const stageStart = performance.now();
@@ -201,6 +235,7 @@ export class SceneRenderer {
     this.lastHyperspaceRenderStats = stats;
   }
 
+  /** Creates hyperspace background cells. */
   private createHyperspaceBackgroundCells(
     cols: number,
     rows: number,
@@ -232,6 +267,7 @@ export class SceneRenderer {
     return cells;
   }
 
+  /** Reuses the previous hyperspace frame when camera movement permits a safe shift. */
   private tryShiftHyperspaceFrame(
     startWorldX: number,
     startWorldY: number,
@@ -241,7 +277,12 @@ export class SceneRenderer {
     viewCenterY: number
   ): CellState[] | null {
     const previous = this.hyperspaceFrameCache;
-    if (!previous || previous.cols !== cols || previous.rows !== rows || previous.cells.length !== cols * rows) {
+    if (
+      !previous ||
+      previous.cols !== cols ||
+      previous.rows !== rows ||
+      previous.cells.length !== cols * rows
+    ) {
       return null;
     }
 
@@ -267,7 +308,11 @@ export class SceneRenderer {
 
         const worldX = startWorldX + viewX;
         const worldY = startWorldY + viewY;
-        const tile = this.hyperspaceTileProvider.getTile(worldX, worldY, Math.hypot(viewX - viewCenterX, viewY - viewCenterY));
+        const tile = this.hyperspaceTileProvider.getTile(
+          worldX,
+          worldY,
+          Math.hypot(viewX - viewCenterX, viewY - viewCenterY)
+        );
         cells[index] = tile.starChar
           ? this.createCell(tile.starChar, tile.starColor, CONFIG.TRANSPARENT_COLOUR, true)
           : this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
@@ -276,6 +321,7 @@ export class SceneRenderer {
     return cells;
   }
 
+  /** Returns hyperspace range band. */
   private getHyperspaceRangeBand(rangeCells: number): number {
     if (rangeCells <= 12) return 0;
     if (rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) return 1;
@@ -283,6 +329,7 @@ export class SceneRenderer {
     return 3;
   }
 
+  /** Stages visible hyperspace cells before compositing overlays. */
   private stageHyperspaceCells(
     backgroundCells: readonly CellState[],
     viewCenterX: number,
@@ -299,21 +346,33 @@ export class SceneRenderer {
     this.screenBuffer.stageCells(cells);
   }
 
-  private createCell(char: string | null, fg: string | null, bg: string | null, isTransparentBg: boolean): CellState {
+  /** Creates cell. */
+  private createCell(
+    char: string | null,
+    fg: string | null,
+    bg: string | null,
+    isTransparentBg: boolean
+  ): CellState {
     return {
       char: char || ' ',
       fg: fg || TEXT_PALETTE.text,
-      bg: isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : (bg || CONFIG.DEFAULT_BG_COLOUR),
+      bg: isTransparentBg ? CONFIG.TRANSPARENT_COLOUR : bg || CONFIG.DEFAULT_BG_COLOUR,
       isTransparentBg,
     };
   }
 
+  /** Draws system travel starfield. */
   private drawSystemTravelStarfield(player: PlayerViewSnapshot): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols <= 0 || rows <= 0) return;
 
-    for (const cell of createSystemTravelStarfield(cols, rows, player.position.systemX, player.position.systemY)) {
+    for (const cell of createSystemTravelStarfield(
+      cols,
+      rows,
+      player.position.systemX,
+      player.position.systemY
+    )) {
       this.screenBuffer.drawChar(cell.char, cell.x, cell.y, cell.color, CONFIG.DEFAULT_BG_COLOUR);
     }
   }
@@ -321,16 +380,20 @@ export class SceneRenderer {
   // --- drawSolarSystem (Refactored) ---
   /** Draws the solar system view, including moons, using the specified view scale. */
   drawSolarSystem(player: PlayerViewSnapshot, system: SolarSystem, currentViewScale: number): void {
-    logger.debug(`[SceneRenderer.drawSolarSystem] Drawing system: ${system.name} (Scale: ${currentViewScale.toExponential(1)} m/cell)`);
+    logger.debug(
+      `[SceneRenderer.drawSolarSystem] Drawing system: ${system.name} (Scale: ${currentViewScale.toExponential(1)} m/cell)`
+    );
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols <= 0 || rows <= 0) return;
 
     const viewScale = currentViewScale;
     if (!Number.isFinite(viewScale) || viewScale <= 0) {
-        logger.error(`[SceneRenderer.drawSolarSystem] Invalid viewScale received: ${viewScale}. Aborting draw.`);
-        this._drawError("Internal Error: Invalid view scale.");
-        return;
+      logger.error(
+        `[SceneRenderer.drawSolarSystem] Invalid viewScale received: ${viewScale}. Aborting draw.`
+      );
+      this._drawError('Internal Error: Invalid view scale.');
+      return;
     }
 
     const viewCenterX = Math.floor(cols / 2);
@@ -353,7 +416,13 @@ export class SceneRenderer {
 
     // --- Collect Visible Planets and Moons ---
     const visiblePlanets: VisiblePlanetMarker[] = [];
-    const visibleMoons: { moon: Planet, viewX: number, viewY: number, parentViewX: number, parentViewY: number }[] = [];
+    const visibleMoons: {
+      moon: Planet;
+      viewX: number;
+      viewY: number;
+      parentViewX: number;
+      parentViewY: number;
+    }[] = [];
 
     system.planets.forEach((planet, planetIndex) => {
       if (!planet) return;
@@ -370,40 +439,58 @@ export class SceneRenderer {
 
       // Check if planet is in view
       if (planetViewX >= 0 && planetViewX < cols && planetViewY >= 0 && planetViewY < rows) {
-          visiblePlanets.push({ planet, viewX: planetViewX, viewY: planetViewY, marker: this.getPlanetMarker(planetIndex) });
+        visiblePlanets.push({
+          planet,
+          viewX: planetViewX,
+          viewY: planetViewY,
+          marker: this.getPlanetMarker(planetIndex),
+        });
 
-          // Check Moons if planet is visible
-          if (planet.moons) {
-              planet.moons.forEach(moon => {
-                  const moonViewX = Math.floor((moon.systemX - viewWorldStartX) / viewScale);
-                  const moonViewY = Math.floor((moon.systemY - viewWorldStartY) / viewScale);
-                  // Check if moon is in view
-                  if (moonViewX >= 0 && moonViewX < cols && moonViewY >= 0 && moonViewY < rows) {
-                      visibleMoons.push({ moon, viewX: moonViewX, viewY: moonViewY, parentViewX: planetViewX, parentViewY: planetViewY });
-                  }
+        // Check Moons if planet is visible
+        if (planet.moons) {
+          planet.moons.forEach((moon) => {
+            const moonViewX = Math.floor((moon.systemX - viewWorldStartX) / viewScale);
+            const moonViewY = Math.floor((moon.systemY - viewWorldStartY) / viewScale);
+            // Check if moon is in view
+            if (moonViewX >= 0 && moonViewX < cols && moonViewY >= 0 && moonViewY < rows) {
+              visibleMoons.push({
+                moon,
+                viewX: moonViewX,
+                viewY: moonViewY,
+                parentViewX: planetViewX,
+                parentViewY: planetViewY,
               });
-          }
+            }
+          });
+        }
       }
     });
 
     // --- Draw Planets ---
-    visiblePlanets.forEach(item => {
-        this._drawPlanetBody(item.planet, item.viewX, item.viewY, item.marker);
+    visiblePlanets.forEach((item) => {
+      this._drawPlanetBody(item.planet, item.viewX, item.viewY, item.marker);
     });
 
     // --- Draw Moons --- (After Planets)
-    visibleMoons.forEach(item => {
-        // Don't draw moon if it occupies the exact same cell as its parent planet
-        if (item.viewX !== item.parentViewX || item.viewY !== item.parentViewY) {
-            this._drawMoonBody(item.moon, item.viewX, item.viewY, viewScale);
-        }
+    visibleMoons.forEach((item) => {
+      // Don't draw moon if it occupies the exact same cell as its parent planet
+      if (item.viewX !== item.parentViewX || item.viewY !== item.parentViewY) {
+        this._drawMoonBody(item.moon, item.viewX, item.viewY, viewScale);
+      }
     });
 
     // --- Draw Starbase ---
     if (system.starbase) {
       const barycenterViewX = Math.floor((0 - viewWorldStartX) / viewScale);
       const barycenterViewY = Math.floor((0 - viewWorldStartY) / viewScale);
-      this._drawStarbaseInSystem(system.starbase, barycenterViewX, barycenterViewY, viewWorldStartX, viewWorldStartY, viewScale);
+      this._drawStarbaseInSystem(
+        system.starbase,
+        barycenterViewX,
+        barycenterViewY,
+        viewWorldStartX,
+        viewWorldStartY,
+        viewScale
+      );
     }
 
     this.drawSystemPlanetHud(system, player, visiblePlanets);
@@ -417,60 +504,132 @@ export class SceneRenderer {
 
   // --- Private Helper Methods for drawSolarSystem ---
 
-  private _drawStarInSystem(starViewX: number, starViewY: number, starRadius: number, starColor: string, label?: string): void {
-      const cols = this.screenBuffer.getCols();
-      const rows = this.screenBuffer.getRows();
-      // Draw star only if potentially visible
-      if (starViewX + starRadius >= 0 && starViewX - starRadius < cols && starViewY + starRadius >= 0 && starViewY - starRadius < rows) {
-          this.drawingContext.drawCircle(starViewX, starViewY, starRadius, GLYPHS.SHADE_DARK, starColor, starColor);
-          this.drawingContext.drawOrbit(starViewX, starViewY, starRadius, GLYPHS.SHADE_MEDIUM, starColor, 0, 0, cols - 1, rows - 1);
-          if (label && starViewX + 1 < cols && starViewY >= 0 && starViewY < rows) {
-            this.screenBuffer.drawString(label, starViewX + 1, starViewY, starColor, null);
-          }
+  /** Draws star in system. */
+  private _drawStarInSystem(
+    starViewX: number,
+    starViewY: number,
+    starRadius: number,
+    starColor: string,
+    label?: string
+  ): void {
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    // Draw star only if potentially visible
+    if (
+      starViewX + starRadius >= 0 &&
+      starViewX - starRadius < cols &&
+      starViewY + starRadius >= 0 &&
+      starViewY - starRadius < rows
+    ) {
+      this.drawingContext.drawCircle(
+        starViewX,
+        starViewY,
+        starRadius,
+        GLYPHS.SHADE_DARK,
+        starColor,
+        starColor
+      );
+      this.drawingContext.drawOrbit(
+        starViewX,
+        starViewY,
+        starRadius,
+        GLYPHS.SHADE_MEDIUM,
+        starColor,
+        0,
+        0,
+        cols - 1,
+        rows - 1
+      );
+      if (label && starViewX + 1 < cols && starViewY >= 0 && starViewY < rows) {
+        this.screenBuffer.drawString(label, starViewX + 1, starViewY, starColor, null);
       }
+    }
   }
 
+  /** Draws planet orbit. */
   private _drawPlanetOrbit(planet: Planet, starViewX: number, starViewY: number, viewScale: number): void {
-      const cols = this.screenBuffer.getCols();
-      const rows = this.screenBuffer.getRows();
-      const orbitViewRadius = Math.round(planet.orbitDistance / viewScale);
-      if (orbitViewRadius > 1) {
-          this.drawingContext.drawOrbit(starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.ORBIT_COLOUR_MAIN, 0, 0, cols - 1, rows - 1);
-      }
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    const orbitViewRadius = Math.round(planet.orbitDistance / viewScale);
+    if (orbitViewRadius > 1) {
+      this.drawingContext.drawOrbit(
+        starViewX,
+        starViewY,
+        orbitViewRadius,
+        GLYPHS.ORBIT_CHAR,
+        CONFIG.ORBIT_COLOUR_MAIN,
+        0,
+        0,
+        cols - 1,
+        rows - 1
+      );
+    }
   }
 
+  /** Draws planet body. */
   private _drawPlanetBody(planet: Planet, planetViewX: number, planetViewY: number, marker: string): void {
-      const planetColor = this.getPlanetDisplayColour(planet.type);
-      this.screenBuffer.drawChar(marker, planetViewX, planetViewY, TEXT_PALETTE.inverseText, planetColor);
+    const planetColor = this.getPlanetDisplayColour(planet.type);
+    this.screenBuffer.drawChar(marker, planetViewX, planetViewY, TEXT_PALETTE.inverseText, planetColor);
   }
 
+  /** Returns planet marker. */
   private getPlanetMarker(index: number): string {
     return '123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[index] ?? '?';
   }
 
+  /** Draws moon body. */
   private _drawMoonBody(moon: Planet, moonViewX: number, moonViewY: number, _viewScale: number): void {
-      // Moons are only drawn if visible and not exactly overlapping parent (checked in caller)
-      // Determine moon glyph based on zoom? For now, always '.'
-      const moonGlyph = '.';
-      const moonColor = this.getPlanetDisplayColour(moon.type);
-      this.screenBuffer.drawChar(moonGlyph, moonViewX, moonViewY, moonColor, null);
+    // Moons are only drawn if visible and not exactly overlapping parent (checked in caller)
+    // Determine moon glyph based on zoom? For now, always '.'
+    const moonGlyph = '.';
+    const moonColor = this.getPlanetDisplayColour(moon.type);
+    this.screenBuffer.drawChar(moonGlyph, moonViewX, moonViewY, moonColor, null);
   }
 
-  private _drawStarbaseInSystem(starbase: Starbase, starViewX: number, starViewY: number, viewWorldStartX: number, viewWorldStartY: number, viewScale: number): void {
-      const cols = this.screenBuffer.getCols();
-      const rows = this.screenBuffer.getRows();
-      const orbitViewRadius = Math.round(starbase.orbitDistance / viewScale);
-      if (orbitViewRadius > 1) {
-          this.drawingContext.drawOrbit(starViewX, starViewY, orbitViewRadius, GLYPHS.ORBIT_CHAR, CONFIG.STARBASE_COLOUR, 0, 0, cols - 1, rows - 1);
-      }
-      const sbViewX = Math.floor((starbase.systemX - viewWorldStartX) / viewScale);
-      const sbViewY = Math.floor((starbase.systemY - viewWorldStartY) / viewScale);
-      if (sbViewX >= 0 && sbViewX < cols && sbViewY >= 0 && sbViewY < rows) {
-           this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbViewX, sbViewY, TEXT_PALETTE.inverseText, CONFIG.STARBASE_COLOUR);
-      }
+  /** Draws starbase in system. */
+  private _drawStarbaseInSystem(
+    starbase: Starbase,
+    starViewX: number,
+    starViewY: number,
+    viewWorldStartX: number,
+    viewWorldStartY: number,
+    viewScale: number
+  ): void {
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    const orbitViewRadius = Math.round(starbase.orbitDistance / viewScale);
+    if (orbitViewRadius > 1) {
+      this.drawingContext.drawOrbit(
+        starViewX,
+        starViewY,
+        orbitViewRadius,
+        GLYPHS.ORBIT_CHAR,
+        CONFIG.STARBASE_COLOUR,
+        0,
+        0,
+        cols - 1,
+        rows - 1
+      );
+    }
+    const sbViewX = Math.floor((starbase.systemX - viewWorldStartX) / viewScale);
+    const sbViewY = Math.floor((starbase.systemY - viewWorldStartY) / viewScale);
+    if (sbViewX >= 0 && sbViewX < cols && sbViewY >= 0 && sbViewY < rows) {
+      this.screenBuffer.drawChar(
+        GLYPHS.STARBASE_ICON,
+        sbViewX,
+        sbViewY,
+        TEXT_PALETTE.inverseText,
+        CONFIG.STARBASE_COLOUR
+      );
+    }
   }
 
-  private drawSystemPlanetHud(system: SolarSystem, player: PlayerViewSnapshot, visiblePlanets: VisiblePlanetMarker[]): void {
+  /** Draws system planet hud. */
+  private drawSystemPlanetHud(
+    system: SolarSystem,
+    player: PlayerViewSnapshot,
+    visiblePlanets: VisiblePlanetMarker[]
+  ): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     if (cols < 46 || rows < 14 || visiblePlanets.length === 0) return;
@@ -481,24 +640,51 @@ export class SceneRenderer {
     const startX = 1;
     const startY = 1;
 
-    this.drawingContext.drawBox(startX, startY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorder, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' NAV TARGETS ', startX + 2, startY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      startX,
+      startY,
+      panelWidth,
+      panelHeight,
+      TEXT_PALETTE.cyanBorder,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ' NAV TARGETS ',
+      startX + 2,
+      startY,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
 
     visiblePlanets.slice(0, maxRows).forEach((item, row) => {
       const planetColor = this.getPlanetDisplayColour(item.planet.type);
-      const distanceAu = Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY)) / AU_IN_METERS;
-      const lightTime = formatLightTimeFromMeters(Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY)))
+      const distanceAu =
+        Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY)) / AU_IN_METERS;
+      const lightTime = formatLightTimeFromMeters(
+        Math.sqrt(player.distanceSqToSystemCoords(item.planet.systemX, item.planet.systemY))
+      )
         .replace(' light-', '')
         .replace('light-', '');
-      const bearing = this.formatBearing(item.planet.systemX - player.position.systemX, item.planet.systemY - player.position.systemY);
+      const bearing = this.formatBearing(
+        item.planet.systemX - player.position.systemX,
+        item.planet.systemY - player.position.systemY
+      );
       const name = item.planet.name.replace(`${system.name} `, '');
       const label = `${item.marker} ${name.padEnd(5).slice(0, 5)} ${distanceAu.toFixed(2).padStart(5)}AU ${lightTime.padStart(7).slice(0, 7)} ${bearing}`;
       const y = startY + 2 + row;
       this.screenBuffer.drawChar(item.marker, startX + 2, y, TEXT_PALETTE.inverseText, planetColor);
-      this.screenBuffer.drawString(label.slice(2, panelWidth - 4), startX + 4, y, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        label.slice(2, panelWidth - 4),
+        startX + 4,
+        y,
+        TEXT_PALETTE.text,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     });
   }
 
+  /** Formats bearing. */
   private formatBearing(dx: number, dy: number): string {
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return 'HERE';
     const horizontal = dx > 0 ? 'E' : dx < 0 ? 'W' : '';
@@ -506,6 +692,7 @@ export class SceneRenderer {
     return `${vertical}${horizontal}` || 'HERE';
   }
 
+  /** Draws system minimap. */
   private drawSystemMinimap(system: SolarSystem, player: PlayerViewSnapshot): void {
     const cols = this.screenBuffer.getCols();
     const mapWidth = Math.floor(cols * CONFIG.MINIMAP_SIZE_FACTOR);
@@ -515,10 +702,26 @@ export class SceneRenderer {
     const mapStartY = 1;
     const worldRadius_m = system.edgeRadius;
     const mapScale_m_per_cell = (2 * worldRadius_m) / Math.min(mapWidth, mapHeight);
-    if (mapScale_m_per_cell <= 0 || !Number.isFinite(mapScale_m_per_cell)) { return; }
-    this.drawingContext.drawBox(mapStartX - 1, mapStartY - 1, mapWidth + 2, mapHeight + 2, '#888888', CONFIG.DEFAULT_BG_COLOUR);
+    if (mapScale_m_per_cell <= 0 || !Number.isFinite(mapScale_m_per_cell)) {
+      return;
+    }
+    this.drawingContext.drawBox(
+      mapStartX - 1,
+      mapStartY - 1,
+      mapWidth + 2,
+      mapHeight + 2,
+      '#888888',
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     const title = system.isStarless ? ' LOCAL FRAME ' : ' LOCAL SYSTEM ';
-    this.screenBuffer.drawString(title.slice(0, mapWidth), mapStartX + 1, mapStartY - 1, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      title.slice(0, mapWidth),
+      mapStartX + 1,
+      mapStartY - 1,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    /** Projects world coordinates into minimap cell coordinates. */
     const worldToMinimap = (worldX_m: number, worldY_m: number): { x: number; y: number } | null => {
       const mapX = Math.floor(worldX_m / mapScale_m_per_cell + mapWidth / 2);
       const mapY = Math.floor(worldY_m / mapScale_m_per_cell + mapHeight / 2);
@@ -527,14 +730,24 @@ export class SceneRenderer {
       }
       return null;
     };
-    for (let y = 0; y < mapHeight; ++y) { for (let x = 0; x < mapWidth; ++x) { this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOUR); } }
-    system.planets.forEach(p => {
+    for (let y = 0; y < mapHeight; ++y) {
+      for (let x = 0; x < mapWidth; ++x) {
+        this.screenBuffer.drawChar(null, mapStartX + x, mapStartY + y, null, CONFIG.DEFAULT_BG_COLOUR);
+      }
+    }
+    system.planets.forEach((p) => {
       if (!p) return;
       const planetPos = worldToMinimap(p.systemX, p.systemY);
       if (planetPos) {
         const planetIcon = '.';
         const planetColor = this.getPlanetDisplayColour(p.type);
-        this.screenBuffer.drawChar(planetIcon, planetPos.x, planetPos.y, planetColor, CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawChar(
+          planetIcon,
+          planetPos.x,
+          planetPos.y,
+          planetColor,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
       }
     });
     system.stars.forEach((star) => {
@@ -542,19 +755,48 @@ export class SceneRenderer {
       if (starPos) {
         const starInfo = SPECTRAL_TYPES[star.starType];
         const starColor = starInfo?.colour || '#FFFFFF';
-        this.screenBuffer.drawChar(star.id === 'A' ? '*' : star.id.toLowerCase(), starPos.x, starPos.y, starColor, CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawChar(
+          star.id === 'A' ? '*' : star.id.toLowerCase(),
+          starPos.x,
+          starPos.y,
+          starColor,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
       }
     });
     if (system.starbase) {
-        const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
-        if (sbPos) { this.screenBuffer.drawChar(GLYPHS.STARBASE_ICON, sbPos.x, sbPos.y, CONFIG.STARBASE_COLOUR, CONFIG.DEFAULT_BG_COLOUR); }
+      const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
+      if (sbPos) {
+        this.screenBuffer.drawChar(
+          GLYPHS.STARBASE_ICON,
+          sbPos.x,
+          sbPos.y,
+          CONFIG.STARBASE_COLOUR,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
+      }
     }
     const playerPos = worldToMinimap(player.position.systemX, player.position.systemY);
-    if (playerPos) { this.screenBuffer.drawChar(player.render.char, playerPos.x, playerPos.y, player.render.fgColor, CONFIG.DEFAULT_BG_COLOUR); }
+    if (playerPos) {
+      this.screenBuffer.drawChar(
+        player.render.char,
+        playerPos.x,
+        playerPos.y,
+        player.render.fgColor,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+    }
     const scaleText = `1 cell ${formatDistanceAu(mapScale_m_per_cell)}`;
-    this.screenBuffer.drawString(scaleText.slice(0, mapWidth), mapStartX, mapStartY + mapHeight + 1, TEXT_PALETTE.textDim, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      scaleText.slice(0, mapWidth),
+      mapStartX,
+      mapStartY + mapHeight + 1,
+      TEXT_PALETTE.textDim,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
   }
 
+  /** Returns planet display colour. */
   private getPlanetDisplayColour(planetType: string): string {
     switch (planetType) {
       case 'Molten':
@@ -589,7 +831,11 @@ export class SceneRenderer {
   }
 
   /** Draws the surface view for planets or starbases. */
-  drawPlanetSurface(player: PlayerViewSnapshot, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  drawPlanetSurface(
+    player: PlayerViewSnapshot,
+    landedObject: Planet | Starbase,
+    surfaceOverlay?: SurfaceVehicleOverlayModel
+  ): void {
     this.screenBuffer.clear(false);
     if (landedObject instanceof Planet) {
       if (landedObject.type === 'GasGiant' || landedObject.type === 'IceGiant') {
@@ -601,12 +847,16 @@ export class SceneRenderer {
       this.drawStarbaseInterior(player, landedObject);
     } else {
       logger.error(`[SceneRenderer.drawPlanetSurface] Unknown object type: ${typeof landedObject}`);
-      this._drawError("Error: Unknown object landed on!");
+      this._drawError('Error: Unknown object landed on!');
     }
   }
 
   /** Draws the surface of a solid planet. */
-  private drawSolidPlanetSurface(player: PlayerViewSnapshot, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  private drawSolidPlanetSurface(
+    player: PlayerViewSnapshot,
+    planet: Planet,
+    surfaceOverlay?: SurfaceVehicleOverlayModel
+  ): void {
     logger.debug(`[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`);
     const map = planet.heightmap;
     const heightColors = planet.heightLevelColors;
@@ -619,9 +869,9 @@ export class SceneRenderer {
     }
     const mapSize = map.length;
     if (mapSize <= 0) {
-        logger.error(`[SceneRenderer.drawSolidPlanetSurface] Invalid map size ${mapSize} for ${planet.name}.`);
-        this._drawError(`Surface Error: Invalid Map Size for ${planet.name}`);
-        return;
+      logger.error(`[SceneRenderer.drawSolidPlanetSurface] Invalid map size ${mapSize} for ${planet.name}.`);
+      this._drawError(`Surface Error: Invalid Map Size for ${planet.name}`);
+      return;
     }
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
@@ -649,18 +899,27 @@ export class SceneRenderer {
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
         const submerged = !!liquidOverlay && height <= liquidOverlay.seaLevel;
-        const terrainColor = submerged
-          ? liquidOverlay.colour
-          : heightColors[height] || '#FF00FF';
+        const terrainColor = submerged ? liquidOverlay.colour : heightColors[height] || '#FF00FF';
         const screenX = viewport.x + x;
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
         const elementKey = elementMap[wrappedMapY]?.[wrappedMapX];
-        const isCellCenter = x % cellScale === Math.floor(cellScale / 2) && y % cellScale === Math.floor(cellScale / 2);
-        if (!submerged && isCellCenter) this._drawSurfaceOverlay(screenX, screenY, wrappedMapX, wrappedMapY, elementKey, terrainColor, planet);
+        const isCellCenter =
+          x % cellScale === Math.floor(cellScale / 2) && y % cellScale === Math.floor(cellScale / 2);
+        if (!submerged && isCellCenter)
+          this._drawSurfaceOverlay(
+            screenX,
+            screenY,
+            wrappedMapX,
+            wrappedMapY,
+            elementKey,
+            terrainColor,
+            planet
+          );
       }
     }
-    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
+    if (surfaceOverlay?.ship)
+      this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
     this.screenBuffer.drawChar(
       player.render.char,
       viewport.x + Math.floor(viewport.width / 2),
@@ -674,9 +933,16 @@ export class SceneRenderer {
     if (this.screenBuffer.getCols() < 96) this.drawHeightmapLegend(planet);
   }
 
-  private getSurfaceViewport(cols: number, rows: number): { x: number; y: number; width: number; height: number } {
+  /** Returns surface viewport. */
+  private getSurfaceViewport(
+    cols: number,
+    rows: number
+  ): { x: number; y: number; width: number; height: number } {
     const sidebarWidth = cols >= 96 ? 24 : 0;
-    const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5)));
+    const width = Math.max(
+      1,
+      Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5))
+    );
     const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 11)));
     return {
       x: Math.max(1, Math.floor((cols - sidebarWidth - width) / 2)),
@@ -686,6 +952,7 @@ export class SceneRenderer {
     };
   }
 
+  /** Returns planet liquid overlay. */
   private getPlanetLiquidOverlay(planet: Planet) {
     if (
       !Object.prototype.hasOwnProperty.call(planet, '_surfaceData') &&
@@ -701,20 +968,34 @@ export class SceneRenderer {
   }
 
   /** Draws the resource overlay character (%) if applicable for the given cell. */
-  private _drawSurfaceOverlay( screenX: number, screenY: number, mapX: number, mapY: number, elementKey: string | null | undefined, terrainColor: string, planet: Planet ): void {
-      if (elementKey && elementKey !== '' && !planet.isMined(mapX, mapY)) {
-          this.screenBuffer.drawChar( '%', screenX, screenY, '#000000', terrainColor);
-      }
+  private _drawSurfaceOverlay(
+    screenX: number,
+    screenY: number,
+    mapX: number,
+    mapY: number,
+    elementKey: string | null | undefined,
+    terrainColor: string,
+    planet: Planet
+  ): void {
+    if (elementKey && elementKey !== '' && !planet.isMined(mapX, mapY)) {
+      this.screenBuffer.drawChar('%', screenX, screenY, '#000000', terrainColor);
+    }
   }
 
   /** Draws the "surface" view for a gas giant. */
-  private drawGasGiantSurface(player: PlayerViewSnapshot, planet: Planet, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  private drawGasGiantSurface(
+    player: PlayerViewSnapshot,
+    planet: Planet,
+    surfaceOverlay?: SurfaceVehicleOverlayModel
+  ): void {
     logger.debug(`[SceneRenderer.drawGasGiantSurface] Drawing atmospheric view: ${planet.name}`);
     const palette = planet.rgbPaletteCache;
     if (!palette || palette.length < 1) {
-        logger.error(`[SceneRenderer.drawGasGiantSurface] RGB Palette cache missing or empty for ${planet.name}.`);
-        this._drawError(`Atmosphere Error: Missing Data for ${planet.name}`);
-        return;
+      logger.error(
+        `[SceneRenderer.drawGasGiantSurface] RGB Palette cache missing or empty for ${planet.name}.`
+      );
+      this._drawError(`Atmosphere Error: Missing Data for ${planet.name}`);
+      return;
     }
     const rows = this.screenBuffer.getRows();
     const cols = this.screenBuffer.getCols();
@@ -739,7 +1020,8 @@ export class SceneRenderer {
         this.screenBuffer.drawChar(char, viewport.x + x, viewport.y + y, sample.colour, sample.colour);
       }
     }
-    if (surfaceOverlay?.ship) this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
+    if (surfaceOverlay?.ship)
+      this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
     this.screenBuffer.drawChar(
       player.render.char,
       viewport.x + Math.floor(viewport.width / 2),
@@ -752,6 +1034,7 @@ export class SceneRenderer {
     if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
   }
 
+  /** Samples the giant-atmosphere renderer for one projected cell. */
   private sampleGiantAtmosphere(
     planet: Planet,
     palette: RgbColour[],
@@ -762,6 +1045,7 @@ export class SceneRenderer {
     return this.giantAtmosphereRenderer.sample(planet, palette, longitude01, latitude01, phase01);
   }
 
+  /** Returns giant atmosphere glyph. */
   private getGiantAtmosphereGlyph(sample: GiantAtmosphereSample): string {
     return this.giantAtmosphereRenderer.getGlyph(sample);
   }
@@ -780,11 +1064,18 @@ export class SceneRenderer {
       selectedIndex: starbase.selectedTradeIndex,
       viewOffset: 0,
       visibleRowCount: Math.max(1, this.screenBuffer.getRows() - 16),
-      footer: [`Cr ${player.resources.credits.toLocaleString()}  Fuel ${player.resources.fuel.toFixed(0)}/${player.resources.maxFuel}`],
+      footer: [
+        `Cr ${player.resources.credits.toLocaleString()}  Fuel ${player.resources.fuel.toFixed(0)}/${player.resources.maxFuel}`,
+      ],
     });
   }
 
-  drawStarbaseInterface(player: PlayerViewSnapshot, starbase: Starbase, model: Readonly<StarbaseScreenModel>): void {
+  /** Draws starbase interface. */
+  drawStarbaseInterface(
+    player: PlayerViewSnapshot,
+    starbase: Starbase,
+    model: Readonly<StarbaseScreenModel>
+  ): void {
     logger.debug(`[SceneRenderer.drawStarbaseInterior] Drawing interior: ${starbase.name}`);
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
@@ -798,13 +1089,51 @@ export class SceneRenderer {
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(2, Math.floor((rows - panelHeight) / 2));
 
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorderBright, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${renderModel.title.toUpperCase()} `, panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(renderModel.stationName.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      panelX,
+      panelY,
+      panelWidth,
+      panelHeight,
+      TEXT_PALETTE.cyanBorderBright,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ` ${renderModel.title.toUpperCase()} `,
+      panelX + 3,
+      panelY,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      renderModel.stationName.slice(0, panelWidth - 6),
+      panelX + 3,
+      panelY + 2,
+      TEXT_PALETTE.cyanActive,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      renderModel.subtitle.slice(0, panelWidth - 6),
+      panelX + 3,
+      panelY + 3,
+      TEXT_PALETTE.text,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      '-'.repeat(Math.max(1, panelWidth - 6)),
+      panelX + 3,
+      panelY + 4,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
 
-    this.drawTextTabs(renderModel.sections, renderModel.sectionId, panelX + 4, panelY + 6, panelX + panelWidth - 2);
+    this.drawTextTabs(
+      renderModel.sections,
+      renderModel.sectionId,
+      panelX + 4,
+      panelY + 6,
+      panelX + panelWidth - 2
+    );
 
     const tableX = panelX + 4;
     const tableY = panelY + 8;
@@ -813,19 +1142,51 @@ export class SceneRenderer {
     const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelHeight - 17 - detailRows));
     this.drawTextTableHeader(renderModel, tableX, tableY, tableWidth);
     this.drawTextTableRows(renderModel, tableX, tableY + 2, tableWidth, visibleRows);
-    this.drawTextScrollbar(tableX + tableWidth + 1, tableY + 2, visibleRows, model.rows.length, model.viewOffset);
+    this.drawTextScrollbar(
+      tableX + tableWidth + 1,
+      tableY + 2,
+      visibleRows,
+      model.rows.length,
+      model.viewOffset
+    );
 
     if (renderModel.alert) {
-      this.screenBuffer.drawString(renderModel.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        renderModel.alert.slice(0, panelWidth - 8),
+        panelX + 4,
+        panelY + panelHeight - 5,
+        TEXT_PALETTE.amber,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
-      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(renderModel.alert.length, panelWidth - 9), panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+      if (blink)
+        this.screenBuffer.drawChar(
+          '_',
+          panelX + 4 + Math.min(renderModel.alert.length, panelWidth - 9),
+          panelY + panelHeight - 5,
+          TEXT_PALETTE.amber,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
     }
     renderModel.footer.forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line.slice(0, panelWidth - 8),
+        panelX + 4,
+        panelY + panelHeight - 3 + index,
+        index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.cyan,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     });
-    this.screenBuffer.drawChar(player.render.char, Math.floor(cols / 2), Math.floor(rows / 2), player.render.fgColor, null);
+    this.screenBuffer.drawChar(
+      player.render.char,
+      Math.floor(cols / 2),
+      Math.floor(rows / 2),
+      player.render.fgColor,
+      null
+    );
   }
 
+  /** Draws text modal table. */
   drawTextModalTable(model: TextModalTableModel): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
@@ -849,27 +1210,63 @@ export class SceneRenderer {
     const tableX = panelX + 4;
     const tableY = panelY + 5;
 
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorder, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${renderModel.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      panelX,
+      panelY,
+      panelWidth,
+      panelHeight,
+      TEXT_PALETTE.cyanBorder,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ` ${renderModel.title} `.slice(0, panelWidth - 4),
+      panelX + 3,
+      panelY,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     if (renderModel.subtitle) {
-      this.screenBuffer.drawString(renderModel.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        renderModel.subtitle.slice(0, panelWidth - 6),
+        panelX + 3,
+        panelY + 2,
+        TEXT_PALETTE.green,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
 
     this.drawTextTableHeader(renderModel, tableX, tableY, tableWidth);
     this.drawTextTableRows(renderModel, tableX, tableY + 2, tableWidth, visibleRows);
-    this.drawTextScrollbar(panelX + panelWidth - 3, tableY + 2, visibleRows, renderModel.rows.length, renderModel.viewOffset);
+    this.drawTextScrollbar(
+      panelX + panelWidth - 3,
+      tableY + 2,
+      visibleRows,
+      renderModel.rows.length,
+      renderModel.viewOffset
+    );
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, TEXT_PALETTE.textDim, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line.slice(0, panelWidth - 6),
+        panelX + 3,
+        footerY + index,
+        TEXT_PALETTE.textDim,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     });
   }
 
+  /** Draws text dashboard. */
   private drawTextDashboard(model: TextModalTableModel): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     const footerRows = model.footer?.length ?? 0;
-    const contentWidth = Math.max(54, Math.min(104, Math.max(...model.dashboard!.map((line) => this.getDashboardLineLength(line)), 54)));
+    const contentWidth = Math.max(
+      54,
+      Math.min(104, Math.max(...model.dashboard!.map((line) => this.getDashboardLineLength(line)), 54))
+    );
     const visibleRows = Math.min(model.dashboard!.length, Math.max(1, rows - 10 - footerRows));
     const panelWidth = Math.min(cols - 4, contentWidth + 8);
     const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 8);
@@ -878,10 +1275,30 @@ export class SceneRenderer {
     const contentX = panelX + 4;
     const contentY = panelY + 5;
 
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorder, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(` ${model.title} `.slice(0, panelWidth - 4), panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      panelX,
+      panelY,
+      panelWidth,
+      panelHeight,
+      TEXT_PALETTE.cyanBorder,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ` ${model.title} `.slice(0, panelWidth - 4),
+      panelX + 3,
+      panelY,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     if (model.subtitle) {
-      this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.cyanSoft, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        model.subtitle.slice(0, panelWidth - 6),
+        panelX + 3,
+        panelY + 2,
+        TEXT_PALETTE.cyanSoft,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
 
     model.dashboard!.slice(0, visibleRows).forEach((line, index) => {
@@ -890,37 +1307,60 @@ export class SceneRenderer {
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 6), panelX + 3, footerY + index, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line.slice(0, panelWidth - 6),
+        panelX + 3,
+        footerY + index,
+        TEXT_PALETTE.cyan,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     });
   }
 
+  /** Draws dashboard line. */
   private drawDashboardLine(line: TextDashboardLine, x: number, y: number, width: number): void {
     let cursorX = x;
     for (const segment of line.segments) {
       if (cursorX >= x + width) return;
       const text = segment.text.slice(0, x + width - cursorX);
-      this.screenBuffer.drawString(text, cursorX, y, this.getTextToneColour(segment.tone ?? 'normal'), CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        text,
+        cursorX,
+        y,
+        this.getTextToneColour(segment.tone ?? 'normal'),
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       cursorX += text.length;
     }
   }
 
+  /** Returns dashboard line length. */
   private getDashboardLineLength(line: TextDashboardLine): number {
     return line.segments.reduce((sum, segment) => sum + segment.text.length, 0);
   }
 
+  /** Returns text tone colour. */
   private getTextToneColour(tone: TextTone): string {
     switch (tone) {
-      case 'muted': return TEXT_PALETTE.textMuted;
-      case 'cyan': return TEXT_PALETTE.cyan;
-      case 'green': return TEXT_PALETTE.green;
-      case 'amber': return TEXT_PALETTE.amber;
-      case 'red': return TEXT_PALETTE.red;
-      case 'bright': return TEXT_PALETTE.textBright;
+      case 'muted':
+        return TEXT_PALETTE.textMuted;
+      case 'cyan':
+        return TEXT_PALETTE.cyan;
+      case 'green':
+        return TEXT_PALETTE.green;
+      case 'amber':
+        return TEXT_PALETTE.amber;
+      case 'red':
+        return TEXT_PALETTE.red;
+      case 'bright':
+        return TEXT_PALETTE.textBright;
       case 'normal':
-      default: return TEXT_PALETTE.text;
+      default:
+        return TEXT_PALETTE.text;
     }
   }
 
+  /** Draws orbit interface. */
   drawOrbitInterface(model: OrbitScreenModel): void {
     logger.debug(`[SceneRenderer.drawOrbitInterface] Drawing orbit screen: ${model.selectedBody.name}`);
     const cols = this.screenBuffer.getCols();
@@ -932,18 +1372,56 @@ export class SceneRenderer {
     const panelHeight = Math.min(46, Math.max(32, Math.floor(rows * 0.78)));
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(1, Math.floor((rows - panelHeight) / 3));
-    this.drawingContext.drawBox(panelX, panelY, panelWidth, panelHeight, TEXT_PALETTE.cyanBorderBright, CONFIG.DEFAULT_BG_COLOUR, ' ');
+    this.drawingContext.drawBox(
+      panelX,
+      panelY,
+      panelWidth,
+      panelHeight,
+      TEXT_PALETTE.cyanBorderBright,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
 
-    this.screenBuffer.drawString(` ${model.title.toUpperCase()} `, panelX + 3, panelY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(model.selectedBody.name.slice(0, panelWidth - 6), panelX + 3, panelY + 2, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(model.subtitle.slice(0, panelWidth - 6), panelX + 3, panelY + 3, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString('-'.repeat(Math.max(1, panelWidth - 6)), panelX + 3, panelY + 4, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      ` ${model.title.toUpperCase()} `,
+      panelX + 3,
+      panelY,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      model.selectedBody.name.slice(0, panelWidth - 6),
+      panelX + 3,
+      panelY + 2,
+      TEXT_PALETTE.cyanActive,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      model.subtitle.slice(0, panelWidth - 6),
+      panelX + 3,
+      panelY + 3,
+      TEXT_PALETTE.text,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      '-'.repeat(Math.max(1, panelWidth - 6)),
+      panelX + 3,
+      panelY + 4,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
 
     let bodyTabX = panelX + 4;
     model.bodies.forEach((body) => {
       const label = body.selected ? `[${body.label}]` : ` ${body.label} `;
       if (bodyTabX + label.length < panelX + panelWidth - 2) {
-        this.screenBuffer.drawString(label, bodyTabX, panelY + 6, body.selected ? TEXT_PALETTE.inverseText : TEXT_PALETTE.green, body.selected ? TEXT_PALETTE.cyanActive : CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(
+          label,
+          bodyTabX,
+          panelY + 6,
+          body.selected ? TEXT_PALETTE.inverseText : TEXT_PALETTE.green,
+          body.selected ? TEXT_PALETTE.cyanActive : CONFIG.DEFAULT_BG_COLOUR
+        );
       }
       bodyTabX += label.length + 1;
     });
@@ -952,31 +1430,85 @@ export class SceneRenderer {
     const contentBottom = panelY + panelHeight - 6;
     const contentHeight = Math.max(12, contentBottom - contentTop + 1);
     const leftColumnWidth = Math.max(28, Math.min(38, Math.floor(panelWidth * 0.3)));
-    const sphereRadius = Math.max(5, Math.min(13, Math.floor((leftColumnWidth - 8) / 2), Math.floor((contentHeight - 8) / 2)));
+    const sphereRadius = Math.max(
+      5,
+      Math.min(13, Math.floor((leftColumnWidth - 8) / 2), Math.floor((contentHeight - 8) / 2))
+    );
     const sphereBoxHeight = contentHeight;
     const sphereCx = panelX + 3 + Math.floor(leftColumnWidth / 2);
     const sphereCy = contentTop + 3 + sphereRadius;
-    this.drawingContext.drawBox(panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' ORBITAL VIEW ', panelX + 5, contentTop, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      panelX + 3,
+      contentTop,
+      leftColumnWidth,
+      sphereBoxHeight,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ' ORBITAL VIEW ',
+      panelX + 5,
+      contentTop,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     this.drawRotatingPlanetSphere(model, sphereCx, sphereCy, sphereRadius);
     this.drawOrbitAtmosphericHorizon(model, sphereCx, sphereCy, sphereRadius);
-    this.drawOrbitSunReference(model, sphereCx, sphereCy, sphereRadius, panelX + 3, contentTop, leftColumnWidth, sphereBoxHeight);
+    this.drawOrbitSunReference(
+      model,
+      sphereCx,
+      sphereCy,
+      sphereRadius,
+      panelX + 3,
+      contentTop,
+      leftColumnWidth,
+      sphereBoxHeight
+    );
     this.drawOrbitViewReadout(model, panelX + 5, contentTop + sphereBoxHeight - 3, leftColumnWidth - 4);
 
     const mapWidth = Math.max(20, Math.min(32, Math.floor(panelWidth * 0.25)));
     const mapHeight = Math.max(10, Math.min(20, contentHeight - 4));
     const mapX = panelX + panelWidth - mapWidth - 6;
     const mapY = contentTop;
-    this.drawingContext.drawBox(mapX - 1, mapY, mapWidth + 2, mapHeight + 4, model.mode === 'landing' ? TEXT_PALETTE.cyanActive : TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' LANDING MAP ', mapX + 1, mapY, model.mode === 'landing' ? TEXT_PALETTE.textBright : TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      mapX - 1,
+      mapY,
+      mapWidth + 2,
+      mapHeight + 4,
+      model.mode === 'landing' ? TEXT_PALETTE.cyanActive : TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ' LANDING MAP ',
+      mapX + 1,
+      mapY,
+      model.mode === 'landing' ? TEXT_PALETTE.textBright : TEXT_PALETTE.green,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     this.drawOrbitLandingMap(model, mapX, mapY + 2, mapWidth, mapHeight);
 
     const descX = panelX + leftColumnWidth + 8;
     const descY = contentTop;
     const descWidth = Math.max(30, mapX - descX - 3);
     const descHeight = Math.max(10, contentBottom - descY + 1);
-    this.drawingContext.drawBox(descX - 1, descY, descWidth + 2, descHeight, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString(' SCAN SUMMARY ', descX + 1, descY, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      descX - 1,
+      descY,
+      descWidth + 2,
+      descHeight,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      ' SCAN SUMMARY ',
+      descX + 1,
+      descY,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     const lines = [
       ...this.formatOrbitSummaryLines(model.telemetry, descWidth - 2),
       '',
@@ -993,15 +1525,35 @@ export class SceneRenderer {
     });
 
     if (model.alert) {
-      this.screenBuffer.drawString(model.alert.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        model.alert.slice(0, panelWidth - 8),
+        panelX + 4,
+        panelY + panelHeight - 5,
+        TEXT_PALETTE.amber,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
-      if (blink) this.screenBuffer.drawChar('_', panelX + 4 + Math.min(model.alert.length, panelWidth - 9), panelY + panelHeight - 5, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+      if (blink)
+        this.screenBuffer.drawChar(
+          '_',
+          panelX + 4 + Math.min(model.alert.length, panelWidth - 9),
+          panelY + panelHeight - 5,
+          TEXT_PALETTE.amber,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
     }
     model.footer.forEach((line, index) => {
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 8), panelX + 4, panelY + panelHeight - 3 + index, index === 0 ? TEXT_PALETTE.cyan : TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line.slice(0, panelWidth - 8),
+        panelX + 4,
+        panelY + panelHeight - 3 + index,
+        index === 0 ? TEXT_PALETTE.cyan : TEXT_PALETTE.amber,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     });
   }
 
+  /** Draws rotating planet sphere. */
   private drawRotatingPlanetSphere(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
     const planet = model.selectedBody;
     const orbitPhase = model.illuminationPhase * Math.PI * 2;
@@ -1009,8 +1561,12 @@ export class SceneRenderer {
     // reserved for the body's own rotation.
     const texturePhase = model.rotationPhase * Math.PI * 2;
     const cachedSurface = this.getCachedSolidSurfaceData(planet);
-    const solidMap = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightmap ?? null;
-    const solidColours = planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
+    const solidMap =
+      planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : (cachedSurface?.heightmap ?? null);
+    const solidColours =
+      planet.type === 'GasGiant' || planet.type === 'IceGiant'
+        ? null
+        : (cachedSurface?.heightLevelColors ?? null);
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
     const rimThicknessPixels = 2;
@@ -1062,6 +1618,7 @@ export class SceneRenderer {
     }
   }
 
+  /** Samples limb colour for the edge of an orbit-view globe. */
   private sampleOrbitGlobeRimColour(
     planet: Planet,
     solidMap: number[][] | null,
@@ -1114,6 +1671,7 @@ export class SceneRenderer {
     return interpolateColour(background, planetColour, coverage);
   }
 
+  /** Samples surface colour for one orbit-view globe cell. */
   private sampleOrbitGlobeColour(
     planet: Planet,
     solidMap: number[][] | null,
@@ -1144,37 +1702,53 @@ export class SceneRenderer {
     const textureLongitude = Math.atan2(bodyNormal.x, bodyNormal.z) + texturePhase;
     const textureX = this.wrapUnit(textureLongitude / (Math.PI * 2) + 0.5);
     const textureY = this.mercatorTextureY(bodyLatitude);
-    const solidSample = solidMap && solidColours
-      ? this.sampleSolidPlanetTexture(solidMap, solidColours, liquidOverlay, textureX, textureY)
-      : null;
-    const colour = solidSample?.colour ?? (
-      planet.type === 'GasGiant' || planet.type === 'IceGiant'
-        ? this.sampleGiantPlanetTexture(planet, textureX, textureY, textureLongitude, bodyLatitude, texturePhase)
-        : this.samplePendingSolidPlanetTexture(planet, textureX, textureY)
-    );
+    const solidSample =
+      solidMap && solidColours
+        ? this.sampleSolidPlanetTexture(solidMap, solidColours, liquidOverlay, textureX, textureY)
+        : null;
+    const colour =
+      solidSample?.colour ??
+      (planet.type === 'GasGiant' || planet.type === 'IceGiant'
+        ? this.sampleGiantPlanetTexture(
+            planet,
+            textureX,
+            textureY,
+            textureLongitude,
+            bodyLatitude,
+            texturePhase
+          )
+        : this.samplePendingSolidPlanetTexture(planet, textureX, textureY));
     const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z);
     const brightness = solidSample?.liquid
       ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, viewLatitude, z)
       : light.brightness;
     const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
-    let finalColour = solidSample?.liquid && solidSample.reflectiveColour
-      ? interpolateColour(baseColour, this.hexToRgbFallback(solidSample.reflectiveColour), this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph)
-      : baseColour;
+    let finalColour =
+      solidSample?.liquid && solidSample.reflectiveColour
+        ? interpolateColour(
+            baseColour,
+            this.hexToRgbFallback(solidSample.reflectiveColour),
+            this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph
+          )
+        : baseColour;
     finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
     const atmosphericTwilight = this.calculateAtmosphericGlobeTwilight(planet, light.glyph);
     if (atmosphericTwilight > 0) {
       finalColour = interpolateColour(
         finalColour,
-        this.hexToRgbFallback(this.getAtmosphericScatteringBaseColour(
-          Object.entries(planet.atmosphere?.composition ?? {}).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '',
-          planet.atmosphere?.density ?? ''
-        )),
+        this.hexToRgbFallback(
+          this.getAtmosphericScatteringBaseColour(
+            Object.entries(planet.atmosphere?.composition ?? {}).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '',
+            planet.atmosphere?.density ?? ''
+          )
+        ),
         atmosphericTwilight
       );
     }
     return finalColour;
   }
 
+  /** Rotates an orbit-view surface normal into the planet’s body frame. */
   private transformOrbitViewNormalToBodyFrame(
     x: number,
     y: number,
@@ -1205,6 +1779,7 @@ export class SceneRenderer {
     };
   }
 
+  /** Draws orbit sun reference. */
   private drawOrbitSunReference(
     model: OrbitScreenModel,
     cx: number,
@@ -1226,7 +1801,8 @@ export class SceneRenderer {
       projectedX >= viewX + viewWidth - 1 ||
       projectedY <= viewY ||
       projectedY >= viewY + viewHeight - 1
-    ) return;
+    )
+      return;
 
     const planetMaskRadius = radius + 1;
     if (Math.hypot(projectedX - cx, projectedY - cy) <= planetMaskRadius) return;
@@ -1259,7 +1835,8 @@ export class SceneRenderer {
           companionY <= viewY ||
           companionY >= viewY + viewHeight - 1 ||
           Math.hypot(companionX - cx, companionY - cy) <= planetMaskRadius
-        ) return;
+        )
+          return;
         const colour = this.getOrbitStellarSourceColour(source.colour, source.brightness * 0.72);
         this.screenBuffer.drawScaledChar(
           GLYPHS.STAR_DIM,
@@ -1273,6 +1850,7 @@ export class SceneRenderer {
       });
   }
 
+  /** Returns orbit stellar source colour. */
   private getOrbitStellarSourceColour(colour: string | undefined, brightness: number): string {
     const base = this.hexToRgbFallback(colour ?? TEXT_PALETTE.amber);
     const boost = Math.max(1.08, Math.min(1.62, 1.22 + brightness * 0.24));
@@ -1280,6 +1858,7 @@ export class SceneRenderer {
     return rgbToHex(brightened.r, brightened.g, brightened.b);
   }
 
+  /** Draws orbit atmospheric horizon. */
   private drawOrbitAtmosphericHorizon(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
     const atmosphere = model.selectedBody.atmosphere;
     if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return;
@@ -1301,14 +1880,26 @@ export class SceneRenderer {
     if (strength <= 0.08) return;
 
     const source = model.stellarSources.find((candidate) => candidate.primary) ?? model.stellarSources[0];
-    const colour = this.hexToRgbFallback(this.getAtmosphericHorizonColour(model.selectedBody, source?.colour, strength));
+    const colour = this.hexToRgbFallback(
+      this.getAtmosphericHorizonColour(model.selectedBody, source?.colour, strength)
+    );
     const side = projectedX < cx ? -1 : 1;
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
-    const denseRim = atmosphere.pressure >= 0.45 || atmosphere.density === 'Dense' || atmosphere.density === 'Thick' || atmosphere.density === 'Superdense';
+    const denseRim =
+      atmosphere.pressure >= 0.45 ||
+      atmosphere.density === 'Dense' ||
+      atmosphere.density === 'Thick' ||
+      atmosphere.density === 'Superdense';
     const cachedSurface = this.getCachedSolidSurfaceData(model.selectedBody);
-    const solidMap = model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant' ? null : cachedSurface?.heightmap ?? null;
-    const solidColours = model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant' ? null : cachedSurface?.heightLevelColors ?? null;
+    const solidMap =
+      model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant'
+        ? null
+        : (cachedSurface?.heightmap ?? null);
+    const solidColours =
+      model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant'
+        ? null
+        : (cachedSurface?.heightLevelColors ?? null);
     const texturePhase = model.rotationPhase * Math.PI * 2;
     const orbitPhase = model.illuminationPhase * Math.PI * 2;
 
@@ -1375,6 +1966,7 @@ export class SceneRenderer {
     }
   }
 
+  /** Samples atmosphere colour and opacity beyond the globe horizon. */
   private sampleAtmosphericHorizonPixel(
     planet: Planet,
     solidMap: number[][] | null,
@@ -1425,10 +2017,18 @@ export class SceneRenderer {
     return rgbToHex(final.r, final.g, final.b);
   }
 
-  private getAtmosphericHorizonColour(planet: Planet, starColour: string | undefined, strength: number): string {
+  /** Returns atmospheric horizon colour. */
+  private getAtmosphericHorizonColour(
+    planet: Planet,
+    starColour: string | undefined,
+    strength: number
+  ): string {
     const composition = planet.atmosphere?.composition ?? {};
     const dominantGas = Object.entries(composition).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '';
-    const scatteringHex = this.getAtmosphericScatteringBaseColour(dominantGas, planet.atmosphere?.density ?? '');
+    const scatteringHex = this.getAtmosphericScatteringBaseColour(
+      dominantGas,
+      planet.atmosphere?.density ?? ''
+    );
     const scattering = this.hexToRgbFallback(scatteringHex);
     const star = this.hexToRgbFallback(starColour ?? '#FFFACD');
     const starMix = Math.max(0.22, Math.min(0.48, 0.28 + strength * 0.16));
@@ -1437,6 +2037,7 @@ export class SceneRenderer {
     return rgbToHex(brightened.r, brightened.g, brightened.b);
   }
 
+  /** Returns atmospheric scattering base colour. */
   private getAtmosphericScatteringBaseColour(dominantGas: string, density: string): string {
     if (dominantGas.includes('Methane') || dominantGas.includes('Hydrogen Cyanide')) return '#5BD6C8';
     if (dominantGas.includes('Sulfur') || dominantGas.includes('Hydrogen Sulfide')) return '#FFB04A';
@@ -1449,7 +2050,13 @@ export class SceneRenderer {
     return '#6EA8FF';
   }
 
-  private calculateGlobeLighting(planet: Planet, longitude: number, latitude: number, viewNormalZ: number): { brightness: number; glyph: number } {
+  /** Calculates globe lighting. */
+  private calculateGlobeLighting(
+    planet: Planet,
+    longitude: number,
+    latitude: number,
+    viewNormalZ: number
+  ): { brightness: number; glyph: number } {
     const subsolarLongitude = -0.55;
     const subsolarLatitude = 0.12;
     const incidence =
@@ -1464,8 +2071,14 @@ export class SceneRenderer {
     const atmosphere = planet.atmosphere;
     const pressure = atmosphere?.pressure ?? 0;
     const density = atmosphere?.density ?? 'None';
-    const hasDenseAir = pressure >= 0.75 || density === 'Dense' || density === 'Thick' || density === 'Superdense';
-    const isAirlessRegolith = planet.type === 'Lunar' || planet.type === 'DwarfIce' || planet.type === 'Chthonian' || density === 'None' || density === 'Trace';
+    const hasDenseAir =
+      pressure >= 0.75 || density === 'Dense' || density === 'Thick' || density === 'Superdense';
+    const isAirlessRegolith =
+      planet.type === 'Lunar' ||
+      planet.type === 'DwarfIce' ||
+      planet.type === 'Chthonian' ||
+      density === 'None' ||
+      density === 'Trace';
 
     if (isGiant) {
       const day = Math.pow(mu0, 0.62);
@@ -1484,11 +2097,13 @@ export class SceneRenderer {
     const atmosphereStrength = hasDenseAir ? 1 : 0.45;
     const day = Math.pow(mu0, hasDenseAir ? 0.52 : 0.78);
     const limb = hasDenseAir ? 0.78 + 0.22 * mu : 0.66 + 0.34 * mu;
-    const haze = dayMask * (1 - mu) * 0.08 * atmosphereStrength + nightMask * 0.025 * atmosphereStrength * (1 - mu);
+    const haze =
+      dayMask * (1 - mu) * 0.08 * atmosphereStrength + nightMask * 0.025 * atmosphereStrength * (1 - mu);
     const brightness = Math.max(0.07, Math.min(1.16, 0.07 + day * limb * 0.99 + haze));
     return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu) + haze)) };
   }
 
+  /** Limits atmospheric highlights so text-mode colours retain contrast. */
   private capAtmosphericGlobeHighlight(planet: Planet, colour: RgbColour, lightGlyph: number): RgbColour {
     const atmosphere = planet.atmosphere;
     if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return colour;
@@ -1500,10 +2115,12 @@ export class SceneRenderer {
     const targetLuminance = 174 + pressure * 18;
     if (luminance <= targetLuminance) return colour;
 
-    const compression = 1 - Math.min(0.24, ((luminance - targetLuminance) / 255) * highlight * (0.55 + pressure * 0.35));
+    const compression =
+      1 - Math.min(0.24, ((luminance - targetLuminance) / 255) * highlight * (0.55 + pressure * 0.35));
     return adjustBrightness(colour, compression);
   }
 
+  /** Calculates atmospheric globe twilight. */
   private calculateAtmosphericGlobeTwilight(planet: Planet, lightGlyph: number): number {
     const atmosphere = planet.atmosphere;
     if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return 0;
@@ -1513,11 +2130,13 @@ export class SceneRenderer {
     return Math.max(0, Math.min(0.18, enteringDay * leavingTerminator * pressure * 0.16));
   }
 
+  /** Smoothly interpolates a value between two thresholds. */
   private smoothstep(edge0: number, edge1: number, value: number): number {
     const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(0.0001, edge1 - edge0)));
     return t * t * (3 - 2 * t);
   }
 
+  /** Samples generated terrain for one visible solid-planet cell. */
   private sampleSolidPlanetTexture(
     heightmap: number[][] | null,
     heightColours: string[] | null,
@@ -1540,6 +2159,7 @@ export class SceneRenderer {
     return { colour: this.sampleHeightColour(heightColours, sample.height), liquid: false };
   }
 
+  /** Returns cached solid surface data. */
   private getCachedSolidSurfaceData(planet: Planet): {
     heightmap: number[][] | null;
     heightLevelColors: string[] | null;
@@ -1562,20 +2182,31 @@ export class SceneRenderer {
       return {
         heightmap: fixture.heightmap ?? null,
         heightLevelColors: fixture.heightLevelColors ?? null,
-        liquidOverlay: Object.prototype.hasOwnProperty.call(planet, 'surfaceLiquid') ? fixture.surfaceLiquid ?? null : null,
+        liquidOverlay: Object.prototype.hasOwnProperty.call(planet, 'surfaceLiquid')
+          ? (fixture.surfaceLiquid ?? null)
+          : null,
       };
     }
 
     return null;
   }
 
+  /** Samples a placeholder texture while solid-planet terrain is loading. */
   private samplePendingSolidPlanetTexture(planet: Planet, u: number, v: number): string {
     const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#476A6A', '#5E8585', '#8CB0AA', '#B0CBC2'];
-    const index = Math.max(0, Math.min(palette.length - 1, Math.floor((u * 0.45 + v * 0.55) * palette.length)));
+    const index = Math.max(
+      0,
+      Math.min(palette.length - 1, Math.floor((u * 0.45 + v * 0.55) * palette.length))
+    );
     return palette[index] ?? '#88BBBB';
   }
 
-  private sampleWrappedHeight(heightmap: number[][], u: number, v: number): { height: number; x: number; y: number } {
+  /** Samples heightmap data with wrapped longitude and clamped latitude. */
+  private sampleWrappedHeight(
+    heightmap: number[][],
+    u: number,
+    v: number
+  ): { height: number; x: number; y: number } {
     const size = heightmap.length;
     const x = this.wrapUnit(u) * size;
     const y = Math.max(0, Math.min(size - 1.000001, v * size));
@@ -1594,6 +2225,7 @@ export class SceneRenderer {
     return { height: top * (1 - ty) + bottom * ty, x, y };
   }
 
+  /** Maps a sampled terrain height to its configured display colour. */
   private sampleHeightColour(heightColours: string[], height: number): string {
     if (heightColours.length === 0) return '#88BBBB';
     const clamped = Math.max(0, Math.min(heightColours.length - 1, height));
@@ -1607,18 +2239,41 @@ export class SceneRenderer {
     return rgbToHex(blended.r, blended.g, blended.b);
   }
 
-  private sampleGiantPlanetTexture(planet: Planet, u: number, _v: number, _lon: number, lat: number, phase: number): string {
-    const paletteHex = PLANET_TYPES[planet.type]?.terrainColours ?? ['#557777', '#669999', '#88BBBB', '#AADDDD'];
+  /** Samples procedural bands and storms for a giant planet cell. */
+  private sampleGiantPlanetTexture(
+    planet: Planet,
+    u: number,
+    _v: number,
+    _lon: number,
+    lat: number,
+    phase: number
+  ): string {
+    const paletteHex = PLANET_TYPES[planet.type]?.terrainColours ?? [
+      '#557777',
+      '#669999',
+      '#88BBBB',
+      '#AADDDD',
+    ];
     const palette = paletteHex.map((colour) => this.hexToRgbFallback(colour));
     const lat01 = Math.max(0, Math.min(1, 0.5 - lat / Math.PI));
     const phase01 = this.wrapUnit(phase / (Math.PI * 2));
     return this.sampleGiantAtmosphere(planet, palette, u, lat01, phase01).colour;
   }
 
-  private calculateLiquidGlobeBrightness(baseBrightness: number, longitude: number, latitude: number, viewNormalZ: number): number {
-    return Math.max(0.05, Math.min(1.32, baseBrightness + this.calculateLiquidGlint(longitude, latitude, viewNormalZ) * 0.22));
+  /** Calculates liquid globe brightness. */
+  private calculateLiquidGlobeBrightness(
+    baseBrightness: number,
+    longitude: number,
+    latitude: number,
+    viewNormalZ: number
+  ): number {
+    return Math.max(
+      0.05,
+      Math.min(1.32, baseBrightness + this.calculateLiquidGlint(longitude, latitude, viewNormalZ) * 0.22)
+    );
   }
 
+  /** Calculates liquid glint. */
   private calculateLiquidGlint(longitude: number, latitude: number, viewNormalZ: number): number {
     const cosLat = Math.cos(latitude);
     const surfaceNormal = {
@@ -1627,7 +2282,8 @@ export class SceneRenderer {
       z: cosLat * Math.cos(longitude),
     };
     const sunVector = this.getGlobeSunVector(0);
-    const incidence = surfaceNormal.x * sunVector.x + surfaceNormal.y * sunVector.y + surfaceNormal.z * sunVector.z;
+    const incidence =
+      surfaceNormal.x * sunVector.x + surfaceNormal.y * sunVector.y + surfaceNormal.z * sunVector.z;
     const sunVisible = Math.max(0, incidence);
     const viewVisible = Math.max(0, viewNormalZ);
     const reflected = {
@@ -1642,6 +2298,7 @@ export class SceneRenderer {
     return Math.pow(specularAlignment, 70) * Math.pow(sunVisible, 0.9) * limbFade;
   }
 
+  /** Returns globe sun vector. */
   private getGlobeSunVector(illuminationPhaseRadians: number): { x: number; y: number; z: number } {
     const subsolarLongitude = -0.55 - illuminationPhaseRadians;
     const subsolarLatitude = 0.12;
@@ -1653,23 +2310,41 @@ export class SceneRenderer {
     };
   }
 
+  /** Converts projected latitude to a wrapped Mercator texture coordinate. */
   private mercatorTextureY(latitudeRad: number): number {
     const limitedLat = Math.max(-1.45, Math.min(1.45, latitudeRad));
     const mercatorY = 0.5 - Math.log(Math.tan(Math.PI / 4 + limitedLat / 2)) / (Math.PI * 2);
     return Math.max(0, Math.min(1, mercatorY));
   }
 
+  /** Wraps unit. */
   private wrapUnit(value: number): number {
     return ((value % 1) + 1) % 1;
   }
 
+  /** Draws orbit view readout. */
   private drawOrbitViewReadout(model: OrbitScreenModel, x: number, y: number, width: number): void {
-    const phaseText = `ROT ${Math.floor((model.rotationPhase % 1) * 360).toString().padStart(3)} DEG`;
+    const phaseText = `ROT ${Math.floor((model.rotationPhase % 1) * 360)
+      .toString()
+      .padStart(3)} DEG`;
     const modeText = model.mode === 'landing' ? 'LANDING SOLUTION' : 'SURVEY HOLD';
-    this.screenBuffer.drawString(phaseText.slice(0, width), x, y, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
-    this.screenBuffer.drawString(modeText.slice(0, width), x, y + 1, model.mode === 'landing' ? TEXT_PALETTE.amber : TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      phaseText.slice(0, width),
+      x,
+      y,
+      TEXT_PALETTE.cyan,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+    this.screenBuffer.drawString(
+      modeText.slice(0, width),
+      x,
+      y + 1,
+      model.mode === 'landing' ? TEXT_PALETTE.amber : TEXT_PALETTE.green,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
   }
 
+  /** Formats orbit summary lines. */
   private formatOrbitSummaryLines(paragraphs: string[], width: number): string[] {
     const lines: string[] = [];
     paragraphs.forEach((paragraph, index) => {
@@ -1679,8 +2354,10 @@ export class SceneRenderer {
     return lines;
   }
 
+  /** Draws orbit summary line. */
   private drawOrbitSummaryLine(line: string, x: number, y: number, width: number, baseColour: string): void {
-    const measurePattern = /~?\d[\d,]*(?:\.\d+)?(?:-\d[\d,]*(?:\.\d+)?)?\s?(?:g\/cm3|m\^3|AU|bar|deg|hours?|mins?|minutes?|secs?|seconds?|km|Cr|K|g|s|%)/g;
+    const measurePattern =
+      /~?\d[\d,]*(?:\.\d+)?(?:-\d[\d,]*(?:\.\d+)?)?\s?(?:g\/cm3|m\^3|AU|bar|deg|hours?|mins?|minutes?|secs?|seconds?|km|Cr|K|g|s|%)/g;
     let cursorX = x;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -1701,34 +2378,61 @@ export class SceneRenderer {
     }
 
     if (cursorX < x + width && lastIndex < line.length) {
-      this.screenBuffer.drawString(line.slice(lastIndex, lastIndex + x + width - cursorX), cursorX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line.slice(lastIndex, lastIndex + x + width - cursorX),
+        cursorX,
+        y,
+        baseColour,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
   }
 
-  private drawOrbitLandingMap(model: OrbitScreenModel, x: number, y: number, width: number, height: number): void {
+  /** Draws orbit landing map. */
+  private drawOrbitLandingMap(
+    model: OrbitScreenModel,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
     const planet = model.selectedBody;
     const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
     const cachedSurface = this.getCachedSolidSurfaceData(planet);
-    const map = isGiant ? null : cachedSurface?.heightmap ?? null;
+    const map = isGiant ? null : (cachedSurface?.heightmap ?? null);
     const colours = cachedSurface?.heightLevelColors ?? null;
     const palette = PLANET_TYPES[planet.type]?.terrainColours ?? ['#4A7777', '#6A9999', '#9FCCCC'];
     const detailScale = 0.5;
     const detailWidth = Math.max(1, Math.floor(width / detailScale));
     const detailHeight = Math.max(1, Math.floor(height / detailScale));
-    const cursorX = Math.floor(this.wrapUnit(model.landingCursorX / Math.max(1, model.mapSize)) * detailWidth) % detailWidth;
+    const cursorX =
+      Math.floor(this.wrapUnit(model.landingCursorX / Math.max(1, model.mapSize)) * detailWidth) %
+      detailWidth;
     const cursorY = Math.round((model.landingCursorY / Math.max(1, model.mapSize - 1)) * (detailHeight - 1));
     for (let row = 0; row < detailHeight; row++) {
       for (let col = 0; col < detailWidth; col++) {
         const u = col / Math.max(1, detailWidth);
         const v = row / Math.max(1, detailHeight - 1);
-        let colour = this.sampleGiantMapBand(planet, palette, col, row, detailWidth, detailHeight, model.rotationPhase);
+        let colour = this.sampleGiantMapBand(
+          planet,
+          palette,
+          col,
+          row,
+          detailWidth,
+          detailHeight,
+          model.rotationPhase
+        );
         if (map && colours) {
           const sample = this.sampleWrappedHeight(map, u, v);
-          const heightValue = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height)));
+          const heightValue = Math.max(
+            0,
+            Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height))
+          );
           const liquid = cachedSurface?.liquidOverlay ?? null;
-          colour = liquid && heightValue <= liquid.seaLevel
-            ? liquid.colour
-            : this.sampleHeightColour(colours, sample.height);
+          colour =
+            liquid && heightValue <= liquid.seaLevel
+              ? liquid.colour
+              : this.sampleHeightColour(colours, sample.height);
         }
         if (col === cursorX && row === cursorY) {
           this.screenBuffer.drawScaledChar(
@@ -1753,9 +2457,19 @@ export class SceneRenderer {
         }
       }
     }
-    this.screenBuffer.drawString(`X ${model.landingCursorX.toString().padStart(3)} Y ${model.landingCursorY.toString().padStart(3)}`.slice(0, width), x, y + height + 1, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      `X ${model.landingCursorX.toString().padStart(3)} Y ${model.landingCursorY.toString().padStart(3)}`.slice(
+        0,
+        width
+      ),
+      x,
+      y + height + 1,
+      TEXT_PALETTE.amber,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
   }
 
+  /** Samples a giant planet’s map-band colour at normalized coordinates. */
   private sampleGiantMapBand(
     planet: Planet,
     palette: string[],
@@ -1774,6 +2488,7 @@ export class SceneRenderer {
     return this.sampleGiantAtmosphere(planet, rgbPalette, longitude, latitude, rotationPhase).colour;
   }
 
+  /** Wraps text. */
   private wrapText(text: string, width: number): string[] {
     const words = text.split(/\s+/).filter(Boolean);
     const lines: string[] = [];
@@ -1790,6 +2505,7 @@ export class SceneRenderer {
     return lines.length > 0 ? lines : [''];
   }
 
+  /** Parses a hexadecimal colour, returning a fallback when parsing fails. */
   private hexToRgbFallback(hex: string): { r: number; g: number; b: number } {
     const clean = hex.replace('#', '').slice(0, 6).padEnd(6, '8');
     const r = Number.parseInt(clean.slice(0, 2), 16);
@@ -1802,6 +2518,7 @@ export class SceneRenderer {
     };
   }
 
+  /** Draws text tabs. */
   private drawTextTabs<Id extends string>(
     sections: TextMenuSection<Id>[],
     activeId: Id,
@@ -1826,16 +2543,30 @@ export class SceneRenderer {
     });
   }
 
+  /** Draws text table header. */
   private drawTextTableHeader(model: TextTableModel, x: number, y: number, tableWidth: number): void {
     let cursorX = x;
     model.columns.forEach((column, index) => {
       const width = model.widths[index] ?? 12;
-      this.screenBuffer.drawString(column.padEnd(width).slice(0, width), cursorX, y, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        column.padEnd(width).slice(0, width),
+        cursorX,
+        y,
+        TEXT_PALETTE.textBright,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       cursorX += width + 1;
     });
-    this.screenBuffer.drawString('-'.repeat(Math.max(1, tableWidth)), x, y + 1, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      '-'.repeat(Math.max(1, tableWidth)),
+      x,
+      y + 1,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
   }
 
+  /** Calculates column widths and wrapping for a text table. */
   private resolveTextTableLayout(model: TextTableModel, maxTableWidth: number): TextTableLayout {
     const columnCount = Math.max(
       model.columns.length,
@@ -1851,7 +2582,10 @@ export class SceneRenderer {
     const desiredWidths = minimumWidths.map((minimumWidth, index) => {
       const configuredWidth = model.widths[index] ?? 12;
       const headerWidth = model.columns[index]?.length ?? 0;
-      const widestCell = model.rows.reduce((widest, row) => Math.max(widest, (row.cells[index] ?? '').length), 0);
+      const widestCell = model.rows.reduce(
+        (widest, row) => Math.max(widest, (row.cells[index] ?? '').length),
+        0
+      );
       return Math.max(minimumWidth, configuredWidth, headerWidth, widestCell);
     });
     const widths = this.clampTextTableWidths(desiredWidths, minimumWidths, maxTableWidth);
@@ -1861,7 +2595,12 @@ export class SceneRenderer {
     };
   }
 
-  private clampTextTableWidths(desiredWidths: number[], minimumWidths: number[], maxTableWidth: number): number[] {
+  /** Clamps text table widths. */
+  private clampTextTableWidths(
+    desiredWidths: number[],
+    minimumWidths: number[],
+    maxTableWidth: number
+  ): number[] {
     const gapWidth = Math.max(0, desiredWidths.length - 1);
     if (desiredWidths.reduce((sum, width) => sum + width, 0) + gapWidth <= maxTableWidth) {
       return desiredWidths.slice();
@@ -1869,7 +2608,9 @@ export class SceneRenderer {
 
     const availableCellWidth = Math.max(desiredWidths.length * 4, maxTableWidth - gapWidth);
     const softColumnCap = Math.max(18, Math.floor(availableCellWidth * 0.48));
-    const widths = desiredWidths.map((width, index) => Math.max(minimumWidths[index] ?? 4, Math.min(width, softColumnCap)));
+    const widths = desiredWidths.map((width, index) =>
+      Math.max(minimumWidths[index] ?? 4, Math.min(width, softColumnCap))
+    );
 
     while (this.getTextTableWidth(widths) > maxTableWidth) {
       let shrinkIndex = -1;
@@ -1901,14 +2642,28 @@ export class SceneRenderer {
     return widths;
   }
 
+  /** Returns text table width. */
   private getTextTableWidth(widths: number[]): number {
     return widths.reduce((sum, width) => sum + width, 0) + Math.max(0, widths.length - 1);
   }
 
-  private drawTextTableRows(model: TextTableModel, x: number, y: number, tableWidth: number, visibleRows: number): void {
+  /** Draws text table rows. */
+  private drawTextTableRows(
+    model: TextTableModel,
+    x: number,
+    y: number,
+    tableWidth: number,
+    visibleRows: number
+  ): void {
     const rows = model.rows.slice(model.viewOffset, model.viewOffset + visibleRows);
     if (rows.length === 0) {
-      this.screenBuffer.drawString('No records available.'.slice(0, tableWidth), x, y, TEXT_PALETTE.textDim, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        'No records available.'.slice(0, tableWidth),
+        x,
+        y,
+        TEXT_PALETTE.textDim,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       return;
     }
     rows.forEach((row, rowIndex) => {
@@ -1917,7 +2672,13 @@ export class SceneRenderer {
       const rowTone = row.tone ?? (row.disabled ? 'muted' : 'green');
       const fg = selected ? TEXT_PALETTE.inverseText : this.getTextToneColour(rowTone);
       const bg = selected ? TEXT_PALETTE.greenBright : CONFIG.DEFAULT_BG_COLOUR;
-      this.screenBuffer.drawChar(selected ? '>' : ' ', x - 2, y + rowIndex, selected ? TEXT_PALETTE.greenBright : TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawChar(
+        selected ? '>' : ' ',
+        x - 2,
+        y + rowIndex,
+        selected ? TEXT_PALETTE.greenBright : TEXT_PALETTE.cyanDeep,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       let cursorX = x;
       row.cells.forEach((cell, index) => {
         const width = model.widths[index] ?? 12;
@@ -1936,45 +2697,82 @@ export class SceneRenderer {
       detailLines.forEach((line, index) => {
         const detailY = y + visibleRows + 1 + index;
         if (detailY >= this.screenBuffer.getRows()) return;
-        this.screenBuffer.drawString(' '.repeat(tableWidth), x, detailY, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
-        this.screenBuffer.drawString(index === 0 ? '::' : '  ', x, detailY, detailColour, CONFIG.DEFAULT_BG_COLOUR);
-        this.screenBuffer.drawString(line.slice(0, detailWidth), x + 3, detailY, detailColour, CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(
+          ' '.repeat(tableWidth),
+          x,
+          detailY,
+          TEXT_PALETTE.cyanDeep,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
+        this.screenBuffer.drawString(
+          index === 0 ? '::' : '  ',
+          x,
+          detailY,
+          detailColour,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
+        this.screenBuffer.drawString(
+          line.slice(0, detailWidth),
+          x + 3,
+          detailY,
+          detailColour,
+          CONFIG.DEFAULT_BG_COLOUR
+        );
       });
     }
   }
 
+  /** Returns text table detail line count. */
   private getTextTableDetailLineCount(model: TextTableModel): number {
     return Math.max(0, Math.min(4, Math.floor(model.detailLineCount ?? 1)));
   }
 
+  /** Draws text scrollbar. */
   private drawTextScrollbar(x: number, y: number, height: number, totalRows: number, offset: number): void {
     if (height <= 0) return;
-    for (let i = 0; i < height; i++) this.screenBuffer.drawChar('│', x, y + i, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
+    for (let i = 0; i < height; i++)
+      this.screenBuffer.drawChar('│', x, y + i, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR);
     if (totalRows <= height) {
-      for (let i = 0; i < height; i++) this.screenBuffer.drawChar('█', x, y + i, TEXT_PALETTE.cyanSignal, CONFIG.DEFAULT_BG_COLOUR);
+      for (let i = 0; i < height; i++)
+        this.screenBuffer.drawChar('█', x, y + i, TEXT_PALETTE.cyanSignal, CONFIG.DEFAULT_BG_COLOUR);
       return;
     }
     const thumbHeight = Math.max(1, Math.floor((height / totalRows) * height));
     const maxOffset = Math.max(1, totalRows - height);
     const thumbY = y + Math.floor((offset / maxOffset) * (height - thumbHeight));
-    for (let i = 0; i < thumbHeight; i++) this.screenBuffer.drawChar('█', x, thumbY + i, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
+    for (let i = 0; i < thumbHeight; i++)
+      this.screenBuffer.drawChar('█', x, thumbY + i, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
   }
 
+  /** Draws surface hud. */
   private drawSurfaceHud(
     player: PlayerViewSnapshot,
     planet: Planet,
     viewport: { x: number; y: number; width: number; height: number }
   ): void {
     const mapSize = Math.max(1, planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE);
-    const lat = 90 - (Math.max(0, Math.min(mapSize - 1, player.position.surfaceY)) / Math.max(1, mapSize - 1)) * 180;
+    const lat =
+      90 - (Math.max(0, Math.min(mapSize - 1, player.position.surfaceY)) / Math.max(1, mapSize - 1)) * 180;
     const lon = (player.position.surfaceX / mapSize) * 360 - 180;
     const label = ` ${planet.name}  ${this.formatSurfaceCoordinate(lat, 'NS')} x ${this.formatSurfaceCoordinate(lon, 'EW')}  GRID ${Math.floor(player.position.surfaceX)},${Math.floor(player.position.surfaceY)} `;
     const clippedLabel = label.slice(0, Math.max(0, viewport.width - 2));
-    this.screenBuffer.drawString(clippedLabel, viewport.x + 1, viewport.y - 1, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      clippedLabel,
+      viewport.x + 1,
+      viewport.y - 1,
+      TEXT_PALETTE.text,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
 
     const footer = '  N ^   S v   W <   E >  ';
     const footerX = viewport.x + Math.max(1, viewport.width - footer.length - 1);
-    this.screenBuffer.drawString(footer, footerX, viewport.y + viewport.height, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      footer,
+      footerX,
+      viewport.y + viewport.height,
+      TEXT_PALETTE.cyan,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
 
     const crossX = viewport.x + Math.floor(viewport.width / 2);
     const crossY = viewport.y + Math.floor(viewport.height / 2);
@@ -1984,13 +2782,13 @@ export class SceneRenderer {
     this.screenBuffer.drawChar('+', crossX, crossY + 1, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
   }
 
+  /** Formats surface coordinate. */
   private formatSurfaceCoordinate(value: number, axis: 'NS' | 'EW'): string {
-    const direction = axis === 'NS'
-      ? value < 0 ? 'S' : 'N'
-      : value < 0 ? 'W' : 'E';
+    const direction = axis === 'NS' ? (value < 0 ? 'S' : 'N') : value < 0 ? 'W' : 'E';
     return `${Math.abs(value).toFixed(1)}${direction}`;
   }
 
+  /** Draws surface vehicle overlay. */
   private drawSurfaceVehicleOverlay(
     model: SurfaceVehicleOverlayModel,
     viewport: { x: number; y: number; width: number; height: number }
@@ -2000,11 +2798,31 @@ export class SceneRenderer {
     const panelWidth = viewport.width;
     if (panelY >= this.screenBuffer.getRows() - 1) return;
     const notifications = model.notifications.length > 0 ? model.notifications : ['Surface systems nominal.'];
-    this.drawingContext.drawBox(panelX - 1, panelY - 1, panelWidth + 2, 6, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString('NOTIFICATIONS', panelX + 2, panelY - 1, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      panelX - 1,
+      panelY - 1,
+      panelWidth + 2,
+      6,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      'NOTIFICATIONS',
+      panelX + 2,
+      panelY - 1,
+      TEXT_PALETTE.cyan,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     for (let index = 0; index < 4; index++) {
       const line = (notifications[index] ?? '').slice(0, panelWidth - 4);
-      this.screenBuffer.drawString(line, panelX + 2, panelY + index, index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.textSoft, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line,
+        panelX + 2,
+        panelY + index,
+        index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.textSoft,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
 
     if (!model.deployed) {
@@ -2013,7 +2831,13 @@ export class SceneRenderer {
         : model.available
           ? 'Terrain vehicle embarked. Open ship operations to disembark.'
           : 'Terrain vehicle lost. Replacement required at a starport shipyard.';
-      this.screenBuffer.drawString(line.slice(0, panelWidth - 4), panelX + 2, panelY + 5, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        line.slice(0, panelWidth - 4),
+        panelX + 2,
+        panelY + 5,
+        TEXT_PALETTE.cyan,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
       this.drawSurfaceCrewSidebar(model, viewport);
       return;
     }
@@ -2024,7 +2848,13 @@ export class SceneRenderer {
     const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel} ${fuelPct}%`;
     const cargo = `CARGO ${formatCargoAmount(model.cargo)}/${Math.round(model.cargoCapacity)} m^3`;
     const mode = model.mapExpanded ? 'MAP' : model.moving ? 'MOVING' : 'STOPPED';
-    this.screenBuffer.drawString(`${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth), panelX + 1, menuY, model.moving ? TEXT_PALETTE.text : TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      `${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth),
+      panelX + 1,
+      menuY,
+      model.moving ? TEXT_PALETTE.text : TEXT_PALETTE.cyan,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
 
     let cursorX = panelX + 1;
     const rowY = menuY + 1;
@@ -2042,19 +2872,36 @@ export class SceneRenderer {
     }
     const selected = model.items[model.selectedIndex];
     if (selected && rowY + 1 < this.screenBuffer.getRows()) {
-      const hint = model.atShip && selected.label.toLowerCase() !== 'embark'
-        ? `${selected.label}: ${selected.status} | At ship: select EMBARK to board.`
-        : `${selected.label}: ${selected.status}`;
-      this.screenBuffer.drawString(hint.slice(0, panelWidth), panelX + 1, rowY + 1, TEXT_PALETTE.textSoft, CONFIG.DEFAULT_BG_COLOUR);
+      const hint =
+        model.atShip && selected.label.toLowerCase() !== 'embark'
+          ? `${selected.label}: ${selected.status} | At ship: select EMBARK to board.`
+          : `${selected.label}: ${selected.status}`;
+      this.screenBuffer.drawString(
+        hint.slice(0, panelWidth),
+        panelX + 1,
+        rowY + 1,
+        TEXT_PALETTE.textSoft,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
     this.drawSurfaceCrewSidebar(model, viewport);
   }
 
-  private drawSurfaceScanCursor(cursor: { dx: number; dy: number }, viewport: { x: number; y: number; width: number; height: number }): void {
+  /** Draws surface scan cursor. */
+  private drawSurfaceScanCursor(
+    cursor: { dx: number; dy: number },
+    viewport: { x: number; y: number; width: number; height: number }
+  ): void {
     const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
     const x = viewport.x + Math.floor(viewport.width / 2) + cursor.dx * scale;
     const y = viewport.y + Math.floor(viewport.height / 2) + cursor.dy * scale;
-    if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
+    if (
+      x < viewport.x ||
+      x >= viewport.x + viewport.width ||
+      y < viewport.y ||
+      y >= viewport.y + viewport.height
+    )
+      return;
     const lit = Math.floor(performance.now() / 350) % 2 === 0;
     const fg = lit ? TEXT_PALETTE.amber : TEXT_PALETTE.amberDim;
     const bg = lit ? null : CONFIG.DEFAULT_BG_COLOUR;
@@ -2064,45 +2911,122 @@ export class SceneRenderer {
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, fg, bg);
   }
 
-  private drawParkedShipMarker(ship: { x: number; y: number }, viewport: { x: number; y: number; width: number; height: number }, surfaceCellScale?: number): void {
+  /** Draws parked ship marker. */
+  private drawParkedShipMarker(
+    ship: { x: number; y: number },
+    viewport: { x: number; y: number; width: number; height: number },
+    surfaceCellScale?: number
+  ): void {
     const scale = Math.max(1, surfaceCellScale ?? CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
     const x = viewport.x + Math.floor(viewport.width / 2) + Math.round(ship.x * scale);
     const y = viewport.y + Math.floor(viewport.height / 2) + Math.round(ship.y * scale);
-    if (x < viewport.x || x >= viewport.x + viewport.width || y < viewport.y || y >= viewport.y + viewport.height) return;
+    if (
+      x < viewport.x ||
+      x >= viewport.x + viewport.width ||
+      y < viewport.y ||
+      y >= viewport.y + viewport.height
+    )
+      return;
     const phase = (Math.sin((performance.now() / 1000) * Math.PI * 2) + 1) / 2;
-    const colour = phase > 0.66 ? TEXT_PALETTE.textBright : phase > 0.33 ? TEXT_PALETTE.cyanBorder : TEXT_PALETTE.textMuted;
+    const colour =
+      phase > 0.66
+        ? TEXT_PALETTE.textBright
+        : phase > 0.33
+          ? TEXT_PALETTE.cyanBorder
+          : TEXT_PALETTE.textMuted;
     this.screenBuffer.drawChar('S', x, y, TEXT_PALETTE.inverseText, colour);
     if (x > viewport.x) this.screenBuffer.drawChar('<', x - 1, y, colour, null);
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, colour, null);
   }
 
-  private drawSurfaceCrewSidebar(model: SurfaceVehicleOverlayModel, viewport: { x: number; y: number; width: number; height: number }): void {
+  /** Draws surface crew sidebar. */
+  private drawSurfaceCrewSidebar(
+    model: SurfaceVehicleOverlayModel,
+    viewport: { x: number; y: number; width: number; height: number }
+  ): void {
     const x = viewport.x + viewport.width + 3;
     const rows = this.screenBuffer.getRows();
     const width = Math.max(0, this.screenBuffer.getCols() - x - 2);
     if (width < 16) return;
     const height = Math.min(rows - 4, viewport.height + 8);
-    this.drawingContext.drawBox(x - 1, viewport.y - 1, width + 2, height, TEXT_PALETTE.cyanDeep, CONFIG.DEFAULT_BG_COLOUR, ' ');
-    this.screenBuffer.drawString('SURFACE TELEMETRY', x + 1, viewport.y - 1, TEXT_PALETTE.textBright, CONFIG.DEFAULT_BG_COLOUR);
+    this.drawingContext.drawBox(
+      x - 1,
+      viewport.y - 1,
+      width + 2,
+      height,
+      TEXT_PALETTE.cyanDeep,
+      CONFIG.DEFAULT_BG_COLOUR,
+      ' '
+    );
+    this.screenBuffer.drawString(
+      'SURFACE TELEMETRY',
+      x + 1,
+      viewport.y - 1,
+      TEXT_PALETTE.textBright,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     let row = viewport.y + 1;
-    this.screenBuffer.drawString(model.dateTime.slice(0, width), x, row++, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      model.dateTime.slice(0, width),
+      x,
+      row++,
+      TEXT_PALETTE.cyan,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
     row++;
     if (model.shipDistance) {
-      const km = model.shipDistance.distanceKm >= 100 ? model.shipDistance.distanceKm.toFixed(0) : model.shipDistance.distanceKm.toFixed(1);
-      this.screenBuffer.drawString(`SHIP ${km} km`.slice(0, width), x, row++, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
-      this.screenBuffer.drawString(`BRG  ${model.shipDistance.direction}`.slice(0, width), x, row++, TEXT_PALETTE.textSoft, CONFIG.DEFAULT_BG_COLOUR);
+      const km =
+        model.shipDistance.distanceKm >= 100
+          ? model.shipDistance.distanceKm.toFixed(0)
+          : model.shipDistance.distanceKm.toFixed(1);
+      this.screenBuffer.drawString(
+        `SHIP ${km} km`.slice(0, width),
+        x,
+        row++,
+        TEXT_PALETTE.amber,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+      this.screenBuffer.drawString(
+        `BRG  ${model.shipDistance.direction}`.slice(0, width),
+        x,
+        row++,
+        TEXT_PALETTE.textSoft,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
     if (model.altitudeBand) {
-      this.screenBuffer.drawString(`RELIEF ${model.altitudeBand.current}`.slice(0, width), x, row++, TEXT_PALETTE.text, CONFIG.DEFAULT_BG_COLOUR);
-      this.screenBuffer.drawString(`${model.altitudeBand.low} / ${model.altitudeBand.high}`.slice(0, width), x, row++, TEXT_PALETTE.cyan, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        `RELIEF ${model.altitudeBand.current}`.slice(0, width),
+        x,
+        row++,
+        TEXT_PALETTE.text,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+      this.screenBuffer.drawString(
+        `${model.altitudeBand.low} / ${model.altitudeBand.high}`.slice(0, width),
+        x,
+        row++,
+        TEXT_PALETTE.cyan,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     }
     row++;
     model.crew.slice(0, Math.max(0, viewport.y + height - row - 1)).forEach((member, index) => {
       const dead = member.hitPoints <= 0;
       const hp = dead ? 'DEAD' : `${member.hitPoints}/${member.maxHitPoints}`;
-      const fg = dead ? TEXT_PALETTE.red : member.hitPoints < member.maxHitPoints * 0.4 ? TEXT_PALETTE.amber : TEXT_PALETTE.text;
+      const fg = dead
+        ? TEXT_PALETTE.red
+        : member.hitPoints < member.maxHitPoints * 0.4
+          ? TEXT_PALETTE.amber
+          : TEXT_PALETTE.text;
       const nameWidth = Math.max(5, width - hp.length - 3);
-      this.screenBuffer.drawString(`${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width), x, row + index, fg, CONFIG.DEFAULT_BG_COLOUR);
+      this.screenBuffer.drawString(
+        `${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width),
+        x,
+        row + index,
+        fg,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
     });
   }
 
@@ -2118,26 +3042,28 @@ export class SceneRenderer {
     const startY = Math.floor((rows - legendHeight) / 2);
     const numColors = heightColors.length;
     for (let i = 0; i < legendHeight; i++) {
-      const colourIndex = Math.floor(((i / (legendHeight - 1)) * (numColors - 1)));
+      const colourIndex = Math.floor((i / (legendHeight - 1)) * (numColors - 1));
       const colour = heightColors[Math.max(0, Math.min(numColors - 1, colourIndex))] || '#FF00FF';
-      for (let w = 0; w < legendWidth; ++w) { this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour); }
+      for (let w = 0; w < legendWidth; ++w) {
+        this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour);
+      }
     }
-    this.screenBuffer.drawString("High", startX - 4, startY, TEXT_PALETTE.text, null);
-    this.screenBuffer.drawString("Low", startX - 3, startY + legendHeight - 1, TEXT_PALETTE.text, null);
+    this.screenBuffer.drawString('High', startX - 4, startY, TEXT_PALETTE.text, null);
+    this.screenBuffer.drawString('Low', startX - 3, startY + legendHeight - 1, TEXT_PALETTE.text, null);
   }
 
   /** Helper to draw an error message centered on the screen */
   private _drawError(message: string): void {
-      const cols = this.screenBuffer.getCols();
-      const rows = this.screenBuffer.getRows();
-      const x = Math.floor((cols - message.length) / 2);
-      const y = Math.floor(rows / 2);
-      this.screenBuffer.clear(true);
-      this.screenBuffer.drawString(message, x, y, TEXT_PALETTE.red, TEXT_PALETTE.background);
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    const x = Math.floor((cols - message.length) / 2);
+    const y = Math.floor(rows / 2);
+    this.screenBuffer.clear(true);
+    this.screenBuffer.drawString(message, x, y, TEXT_PALETTE.red, TEXT_PALETTE.background);
   }
-
 } // End SceneRenderer class
 
+/** Formats cargo amount. */
 function formatCargoAmount(value: number): string {
   return (Math.round(value * 10) / 10).toFixed(1);
 }

@@ -85,7 +85,13 @@ describe('DrawingContext', () => {
 
     it('should not fill the inside if fillChar is null', () => {
       drawingContext.drawBox(1, 1, 3, 3, '#FFF', '#000', null); // No fill char
-      expect(drawCharSpy).not.toHaveBeenCalledWith(expect.anything(), 2, 2, expect.anything(), expect.anything()); // Inside cell not drawn
+      expect(drawCharSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
+        2,
+        2,
+        expect.anything(),
+        expect.anything()
+      ); // Inside cell not drawn
     });
   });
 
@@ -102,21 +108,21 @@ describe('DrawingContext', () => {
       expect(drawCharSpy).not.toHaveBeenCalledWith('*', 4, 4, '#FFF', '#000');
     });
 
-     it('should draw a single point for radius 0', () => {
-        drawingContext.drawCircle(2, 3, 0, '@', '#F00', '#0F0');
-        expect(drawCharSpy).toHaveBeenCalledOnce();
-        expect(drawCharSpy).toHaveBeenCalledWith('@', 2, 3, '#F00', '#0F0');
-     });
+    it('should draw a single point for radius 0', () => {
+      drawingContext.drawCircle(2, 3, 0, '@', '#F00', '#0F0');
+      expect(drawCharSpy).toHaveBeenCalledOnce();
+      expect(drawCharSpy).toHaveBeenCalledWith('@', 2, 3, '#F00', '#0F0');
+    });
 
-     it('should default background colour to foreground colour', () => {
-        drawingContext.drawCircle(1, 1, 0, '#', '#ABC'); // bg omitted
-        expect(drawCharSpy).toHaveBeenCalledWith('#', 1, 1, '#ABC', '#ABC'); // bg should be same as fg
-     });
+    it('should default background colour to foreground colour', () => {
+      drawingContext.drawCircle(1, 1, 0, '#', '#ABC'); // bg omitted
+      expect(drawCharSpy).toHaveBeenCalledWith('#', 1, 1, '#ABC', '#ABC'); // bg should be same as fg
+    });
 
-     it('should not draw if radius is negative', () => {
-        drawingContext.drawCircle(1, 1, -1, '!', '#FFF', '#000');
-        expect(drawCharSpy).not.toHaveBeenCalled();
-     });
+    it('should not draw if radius is negative', () => {
+      drawingContext.drawCircle(1, 1, -1, '!', '#FFF', '#000');
+      expect(drawCharSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('drawOrbit', () => {
@@ -136,24 +142,24 @@ describe('DrawingContext', () => {
 
       // Check some expected points were drawn with null background
       expect(drawCharSpy).toHaveBeenCalledWith('.', 13, 5, '#888', null); // (10+3, 5)
-      expect(drawCharSpy).toHaveBeenCalledWith('.', 7, 5, '#888', null);  // (10-3, 5)
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 7, 5, '#888', null); // (10-3, 5)
       expect(drawCharSpy).toHaveBeenCalledWith('.', 10, 8, '#888', null); // (10, 5+3)
       expect(drawCharSpy).toHaveBeenCalledWith('.', 10, 2, '#888', null); // (10, 5-3)
       expect(drawCharSpy).toHaveBeenCalledWith('.', 13, 6, '#888', null); // Midpoint arc point
-      expect(drawCharSpy).toHaveBeenCalledWith('.', 8, 3, '#888', null);  // Midpoint arc point
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 8, 3, '#888', null); // Midpoint arc point
     });
 
     it('should respect boundary limits', () => {
-        // Orbit centered near edge, radius goes out of bounds
-        drawingContext.drawOrbit(18, 5, 3, '.', '#888', 0, 0, 19, 9); // MaxX=19, MaxY=9
-        // Point (18+3, 5) = (21, 5) is out of bounds (x > 19)
-        expect(drawCharSpy).not.toHaveBeenCalledWith('.', 21, 5, '#888', null);
-        // Point (18-2, 5+2) = (16, 7) is in bounds
-        expect(drawCharSpy).toHaveBeenCalledWith('.', 16, 7, '#888', null);
-        // Point (18, 5+3) = (18, 8) is in bounds
-        expect(drawCharSpy).toHaveBeenCalledWith('.', 18, 8, '#888', null);
-        // Point (18, 5-3) = (18, 2) is in bounds
-        expect(drawCharSpy).toHaveBeenCalledWith('.', 18, 2, '#888', null);
+      // Orbit centered near edge, radius goes out of bounds
+      drawingContext.drawOrbit(18, 5, 3, '.', '#888', 0, 0, 19, 9); // MaxX=19, MaxY=9
+      // Point (18+3, 5) = (21, 5) is out of bounds (x > 19)
+      expect(drawCharSpy).not.toHaveBeenCalledWith('.', 21, 5, '#888', null);
+      // Point (18-2, 5+2) = (16, 7) is in bounds
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 16, 7, '#888', null);
+      // Point (18, 5+3) = (18, 8) is in bounds
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 18, 8, '#888', null);
+      // Point (18, 5-3) = (18, 2) is in bounds
+      expect(drawCharSpy).toHaveBeenCalledWith('.', 18, 2, '#888', null);
     });
 
     it('should draw visible arcs for large off-screen orbits', () => {
@@ -181,11 +187,11 @@ describe('DrawingContext', () => {
       }
     });
 
-     it('should not draw if radius is zero or negative', () => {
-        drawingContext.drawOrbit(5, 5, 0, '.', '#888');
-        expect(drawCharSpy).not.toHaveBeenCalled();
-        drawingContext.drawOrbit(5, 5, -2, '.', '#888');
-        expect(drawCharSpy).not.toHaveBeenCalled();
-     });
+    it('should not draw if radius is zero or negative', () => {
+      drawingContext.drawOrbit(5, 5, 0, '.', '#888');
+      expect(drawCharSpy).not.toHaveBeenCalled();
+      drawingContext.drawOrbit(5, 5, -2, '.', '#888');
+      expect(drawCharSpy).not.toHaveBeenCalled();
+    });
   });
 });

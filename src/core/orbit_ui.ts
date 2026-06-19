@@ -38,6 +38,7 @@ export interface OrbitScreenModel {
   alert?: string;
 }
 
+/** Creates orbit screen model. */
 export function createOrbitScreenModel(args: {
   parentPlanet: Planet;
   selectedBody: Planet;
@@ -59,7 +60,10 @@ export function createOrbitScreenModel(args: {
     .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} ${abundance.toFixed(1)}%`);
 
   const pressure = selected.atmosphere.pressure < 0.001 ? '~0' : selected.atmosphere.pressure.toFixed(3);
-  const parentSeparation = selected === args.parentPlanet ? selected.orbitDistance : args.parentPlanet.orbitDistance + selected.orbitDistance;
+  const parentSeparation =
+    selected === args.parentPlanet
+      ? selected.orbitDistance
+      : args.parentPlanet.orbitDistance + selected.orbitDistance;
   const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(parentSeparation);
   const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(parentSeparation);
   const classText = describePlanetType(selected.type);
@@ -103,8 +107,8 @@ export function createOrbitScreenModel(args: {
       selected.orbitDistance <= 0
         ? 'Orbit none | Light time none'
         : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
-      `Tilt ${(selected.axialTilt * 180 / Math.PI).toFixed(1)} deg | Rot ${selected.getRotationPeriodLabel()} | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
-      `Incl ${(selected.orbitalInclination * 180 / Math.PI).toFixed(1)} deg`,
+      `Tilt ${((selected.axialTilt * 180) / Math.PI).toFixed(1)} deg | Rot ${selected.getRotationPeriodLabel()} | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
+      `Incl ${((selected.orbitalInclination * 180) / Math.PI).toFixed(1)} deg`,
       `Temp now ${selected.getCurrentTemperature()}K | Avg ${selected.surfaceTemp}K | Range ${selected.surfaceTempMin}-${selected.surfaceTempMax}K`,
       `Moons ${selected.moons.length}`,
     ],
@@ -118,6 +122,7 @@ export function createOrbitScreenModel(args: {
   };
 }
 
+/** Returns planet map size. */
 export function getPlanetMapSize(planet: Planet): number {
   if (planet.type === 'GasGiant' || planet.type === 'IceGiant') return CONFIG.PLANET_MAP_BASE_SIZE;
   return planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;

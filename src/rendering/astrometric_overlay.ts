@@ -12,7 +12,11 @@ import {
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
-import { formatHyperspaceSignalDelay, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
+import {
+  formatHyperspaceSignalDelay,
+  formatHyperspaceSpan,
+  formatLightTimeFromMeters,
+} from '../utils/space_scale';
 import { HyperspaceSurveyContact, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
 
@@ -57,7 +61,15 @@ interface OverlayCycleCandidate<T> {
 }
 
 type HyperspaceContact =
-  | { kind: 'system'; dx: number; dy: number; name: string; starType: string; distSq: number; objectKind: 'stellar' | 'brown-dwarf' | null }
+  | {
+      kind: 'system';
+      dx: number;
+      dy: number;
+      name: string;
+      starType: string;
+      distSq: number;
+      objectKind: 'stellar' | 'brown-dwarf' | null;
+    }
   | { kind: 'phenomenon'; dx: number; dy: number; phenomenon: DeepSpacePhenomenonProperties; distSq: number };
 
 export class AstrometricOverlay {
@@ -72,17 +84,27 @@ export class AstrometricOverlay {
   private popupCycleSignature = '';
   private popupCycleIndex = 0;
 
-  constructor(systemDataGenerator: SystemDataGenerator, hyperspaceSurveyService: HyperspaceSurveyService | null = null) {
+  /** Initializes AstrometricOverlay. */
+  constructor(
+    systemDataGenerator: SystemDataGenerator,
+    hyperspaceSurveyService: HyperspaceSurveyService | null = null
+  ) {
     this.systemDataGenerator = systemDataGenerator;
     this.hyperspaceSurveyService = hyperspaceSurveyService;
   }
 
+  /** Updates. */
   update(context: OverlayContext, deltaTime: number, cols: number, rows: number): void {
     const now = performance.now();
     this.shiftWithCamera(context);
     if (context.state === 'hyperspace') {
       this.hyperspaceStarbaseMarkers = this.hyperspaceSurveyService
-        ? this.hyperspaceSurveyService.getSurvey(context.player.position.worldX, context.player.position.worldY, cols, rows).starbaseMarkers
+        ? this.hyperspaceSurveyService.getSurvey(
+            context.player.position.worldX,
+            context.player.position.worldY,
+            cols,
+            rows
+          ).starbaseMarkers
         : this.getHyperspaceStarbaseMarkers(context.player, cols, rows);
     } else {
       this.hyperspaceMarkerSignature = '';
@@ -98,7 +120,10 @@ export class AstrometricOverlay {
       }
     }
 
-    if (now - this.lastEmitAt < this.getEmitInterval(context.state) || this.items.length >= this.getMaxItems(context.state)) {
+    if (
+      now - this.lastEmitAt < this.getEmitInterval(context.state) ||
+      this.items.length >= this.getMaxItems(context.state)
+    ) {
       return;
     }
 
@@ -109,6 +134,7 @@ export class AstrometricOverlay {
     }
   }
 
+  /** Renders. */
   render(ctx: CanvasRenderingContext2D, charWidth: number, charHeight: number): void {
     if (charWidth <= 0 || charHeight <= 0) return;
 
@@ -124,7 +150,10 @@ export class AstrometricOverlay {
     for (const item of this.items) {
       const age = now - item.createdAt;
       const fadeStart = item.durationMs;
-      const alpha = age <= fadeStart ? 0.88 : Math.max(0, 0.88 * (1 - (age - fadeStart) / CONFIG.ASTROMETRIC_OVERLAY_FADE_MS));
+      const alpha =
+        age <= fadeStart
+          ? 0.88
+          : Math.max(0, 0.88 * (1 - (age - fadeStart) / CONFIG.ASTROMETRIC_OVERLAY_FADE_MS));
       if (alpha <= 0) continue;
 
       ctx.globalAlpha = alpha;
@@ -143,10 +172,12 @@ export class AstrometricOverlay {
     ctx.restore();
   }
 
+  /** Returns whether visible content is present. */
   hasVisibleContent(): boolean {
     return this.items.length > 0 || this.hyperspaceStarbaseMarkers.length > 0;
   }
 
+  /** Creates item. */
   private createItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
     switch (context.state) {
       case 'hyperspace':
@@ -162,7 +193,13 @@ export class AstrometricOverlay {
     }
   }
 
-  private createHyperspaceItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
+  /** Creates hyperspace item. */
+  private createHyperspaceItem(
+    context: OverlayContext,
+    cols: number,
+    rows: number,
+    now: number
+  ): OverlayItem | null {
     const player = context.player;
     const medium = this.getInterstellarMedium(player.position.worldX, player.position.worldY);
     const detectionRadius = Math.max(
@@ -223,7 +260,10 @@ export class AstrometricOverlay {
       const range = Math.sqrt(contact.distSq);
       const isBrownDwarf = contact.objectKind === 'brown-dwarf';
       const heading = isBrownDwarf || range > 9 ? 'PROBABLE MASS CONTACT' : 'HYPERSPATIAL CONTACT';
-      const typeLabel = isBrownDwarf && range > 12 ? `LOW-LUMINOSITY SOURCE  ${this.getCertaintyLabel(range, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}` : `TYPE ${contact.starType}  ${starInfo.temp.toFixed(0)}K`;
+      const typeLabel =
+        isBrownDwarf && range > 12
+          ? `LOW-LUMINOSITY SOURCE  ${this.getCertaintyLabel(range, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}`
+          : `TYPE ${contact.starType}  ${starInfo.temp.toFixed(0)}K`;
       return {
         state: context.state,
         x,
@@ -263,7 +303,13 @@ export class AstrometricOverlay {
     };
   }
 
-  private createSystemItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
+  /** Creates system item. */
+  private createSystemItem(
+    context: OverlayContext,
+    cols: number,
+    rows: number,
+    now: number
+  ): OverlayItem | null {
     if (!context.system) return null;
     const player = context.player;
     const viewCenterX = Math.floor(cols / 2);
@@ -284,7 +330,8 @@ export class AstrometricOverlay {
 
     if (candidates.length === 0 && context.system.stars.length > 0) {
       const nearestStar = context.system.getNearestStar(player.position.systemX, player.position.systemY);
-      const starRangeAu = Math.sqrt(player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)) / AU_IN_METERS;
+      const starRangeAu =
+        Math.sqrt(player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)) / AU_IN_METERS;
       return {
         state: context.state,
         x: Math.max(1, Math.floor(cols * 0.62)),
@@ -306,14 +353,15 @@ export class AstrometricOverlay {
     }
     if (candidates.length === 0) return null;
 
-    const selected = this.pickCycledPopupCandidate(
-      'system',
-      `${context.system.name}:${Math.round(player.position.systemX)},${Math.round(player.position.systemY)}:${context.viewScale}`,
-      candidates.map((candidate) => ({
-        item: candidate,
-        signature: candidate.planet.name,
-      }))
-    ) ?? candidates[0];
+    const selected =
+      this.pickCycledPopupCandidate(
+        'system',
+        `${context.system.name}:${Math.round(player.position.systemX)},${Math.round(player.position.systemY)}:${context.viewScale}`,
+        candidates.map((candidate) => ({
+          item: candidate,
+          signature: candidate.planet.name,
+        }))
+      ) ?? candidates[0];
     const info = PLANET_TYPES[selected.planet.type];
     const rangeAu = Math.sqrt(selected.distSq) / AU_IN_METERS;
     return {
@@ -322,7 +370,7 @@ export class AstrometricOverlay {
       y: Math.max(1, Math.min(rows - 5, selected.viewY - 2)),
       targetX: selected.viewX,
       targetY: selected.viewY,
-        color: TEXT_PALETTE.greenBright,
+      color: TEXT_PALETTE.greenBright,
       createdAt: now,
       typedChars: 0,
       durationMs: this.getDuration(context.state),
@@ -336,11 +384,20 @@ export class AstrometricOverlay {
     };
   }
 
-  private createPlanetItem(context: OverlayContext, cols: number, rows: number, now: number): OverlayItem | null {
+  /** Creates planet item. */
+  private createPlanetItem(
+    context: OverlayContext,
+    cols: number,
+    rows: number,
+    now: number
+  ): OverlayItem | null {
     if (!context.planet) return null;
     const planet = context.planet;
     const viewport = this.getSurfaceViewport(cols, rows);
-    const x = Math.min(viewport.x + viewport.width - 29, viewport.x + Math.max(2, Math.floor(viewport.width * 0.58)));
+    const x = Math.min(
+      viewport.x + viewport.width - 29,
+      viewport.x + Math.max(2, Math.floor(viewport.width * 0.58))
+    );
     const y = viewport.y + Math.max(1, Math.floor(viewport.height * 0.16));
     return {
       state: context.state,
@@ -348,7 +405,7 @@ export class AstrometricOverlay {
       y,
       targetX: viewport.x + Math.floor(viewport.width / 2),
       targetY: viewport.y + Math.floor(viewport.height / 2),
-        color: TEXT_PALETTE.greenBright,
+      color: TEXT_PALETTE.greenBright,
       createdAt: now,
       typedChars: 0,
       durationMs: this.getDuration(context.state),
@@ -361,6 +418,7 @@ export class AstrometricOverlay {
     };
   }
 
+  /** Finds hyperspace contacts. */
   private findHyperspaceContacts(
     worldX: number,
     worldY: number,
@@ -377,11 +435,25 @@ export class AstrometricOverlay {
             : this.systemDataGenerator.getSystemProperties(worldX + dx, worldY + dy);
         if (props.exists && props.name && props.starType) {
           const range = Math.sqrt(distSq);
-          const objectKind = props.objectKind === 'brown-dwarf' ? 'brown-dwarf' : props.objectKind === 'stellar' ? 'stellar' : null;
+          const objectKind =
+            props.objectKind === 'brown-dwarf'
+              ? 'brown-dwarf'
+              : props.objectKind === 'stellar'
+                ? 'stellar'
+                : null;
           const detectRadius =
             (objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
             sensorRangeMultiplier;
-          if (range <= detectRadius) contacts.push({ kind: 'system', dx, dy, name: props.name, starType: props.starType, distSq, objectKind });
+          if (range <= detectRadius)
+            contacts.push({
+              kind: 'system',
+              dx,
+              dy,
+              name: props.name,
+              starType: props.starType,
+              distSq,
+              objectKind,
+            });
           continue;
         }
         const phenomenon =
@@ -396,12 +468,13 @@ export class AstrometricOverlay {
     return contacts.sort((a, b) => {
       const distDelta = a.distSq - b.distSq;
       if (distDelta !== 0) return distDelta;
-      const aName = a.kind === 'system' ? a.name : a.phenomenon.name ?? '';
-      const bName = b.kind === 'system' ? b.name : b.phenomenon.name ?? '';
+      const aName = a.kind === 'system' ? a.name : (a.phenomenon.name ?? '');
+      const bName = b.kind === 'system' ? b.name : (b.phenomenon.name ?? '');
       return aName.localeCompare(bName);
     });
   }
 
+  /** Converts survey contacts. */
   private convertSurveyContacts(contacts: HyperspaceSurveyContact[]): HyperspaceContact[] {
     return contacts
       .map((contact): HyperspaceContact | null => {
@@ -430,6 +503,7 @@ export class AstrometricOverlay {
       .filter((contact): contact is HyperspaceContact => contact !== null);
   }
 
+  /** Returns interstellar medium. */
   private getInterstellarMedium(worldX: number, worldY: number): InterstellarMediumProperties {
     if (typeof this.systemDataGenerator.getInterstellarMediumProperties === 'function') {
       return this.systemDataGenerator.getInterstellarMediumProperties(worldX, worldY);
@@ -450,6 +524,7 @@ export class AstrometricOverlay {
     };
   }
 
+  /** Selects the next visible popup candidate in stable cycle order. */
   private pickCycledPopupCandidate<T>(
     stateKey: string,
     positionKey: string,
@@ -472,7 +547,12 @@ export class AstrometricOverlay {
     return selected.item;
   }
 
-  private findHyperspaceStarbaseMarkers(player: Player, cols: number, rows: number): HyperspaceStarbaseMarker[] {
+  /** Finds hyperspace starbase markers. */
+  private findHyperspaceStarbaseMarkers(
+    player: Player,
+    cols: number,
+    rows: number
+  ): HyperspaceStarbaseMarker[] {
     const markers: HyperspaceStarbaseMarker[] = [];
     const viewCenterX = Math.floor(cols / 2);
     const viewCenterY = Math.floor(rows / 2);
@@ -498,7 +578,12 @@ export class AstrometricOverlay {
     return markers;
   }
 
-  private getHyperspaceStarbaseMarkers(player: Player, cols: number, rows: number): HyperspaceStarbaseMarker[] {
+  /** Returns hyperspace starbase markers. */
+  private getHyperspaceStarbaseMarkers(
+    player: Player,
+    cols: number,
+    rows: number
+  ): HyperspaceStarbaseMarker[] {
     const signature = `${player.position.worldX},${player.position.worldY}|${cols}x${rows}`;
     if (signature === this.hyperspaceMarkerSignature) {
       return this.hyperspaceStarbaseMarkers;
@@ -507,6 +592,7 @@ export class AstrometricOverlay {
     return this.findHyperspaceStarbaseMarkers(player, cols, rows);
   }
 
+  /** Draws hyperspace starbase markers. */
   private drawHyperspaceStarbaseMarkers(
     ctx: CanvasRenderingContext2D,
     charWidth: number,
@@ -529,6 +615,7 @@ export class AstrometricOverlay {
     ctx.restore();
   }
 
+  /** Shifts cached overlay geometry by the camera movement delta. */
   private shiftWithCamera(context: OverlayContext): void {
     const camera = this.getCameraState(context);
     if (
@@ -554,6 +641,7 @@ export class AstrometricOverlay {
     this.lastCamera = camera;
   }
 
+  /** Returns camera state. */
   private getCameraState(context: OverlayContext): CameraState {
     switch (context.state) {
       case 'hyperspace':
@@ -582,6 +670,7 @@ export class AstrometricOverlay {
     }
   }
 
+  /** Returns emit interval. */
   private getEmitInterval(state: GameState): number {
     switch (state) {
       case 'hyperspace':
@@ -595,6 +684,7 @@ export class AstrometricOverlay {
     }
   }
 
+  /** Returns duration. */
   private getDuration(state: GameState): number {
     switch (state) {
       case 'system':
@@ -608,13 +698,21 @@ export class AstrometricOverlay {
     }
   }
 
+  /** Returns max items. */
   private getMaxItems(state: GameState): number {
     return state === 'hyperspace' ? 2 : CONFIG.ASTROMETRIC_OVERLAY_MAX_ITEMS;
   }
 
-  private getSurfaceViewport(cols: number, rows: number): { x: number; y: number; width: number; height: number } {
+  /** Returns surface viewport. */
+  private getSurfaceViewport(
+    cols: number,
+    rows: number
+  ): { x: number; y: number; width: number; height: number } {
     const sidebarWidth = cols >= 96 ? 24 : 0;
-    const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5)));
+    const width = Math.max(
+      1,
+      Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5))
+    );
     const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 11)));
     return {
       x: Math.max(1, Math.floor((cols - sidebarWidth - width) / 2)),
@@ -624,6 +722,7 @@ export class AstrometricOverlay {
     };
   }
 
+  /** Places an overlay item in the first non-colliding candidate position. */
   private placeItem(item: OverlayItem, cols: number, rows: number): OverlayItem {
     const size = this.getItemBounds(item);
     if (item.state === 'planet') {
@@ -662,12 +761,15 @@ export class AstrometricOverlay {
       }
     }
 
-    const placed = candidates.find((candidate) => !this.collides(candidate.x, candidate.y, size.width, size.height, item));
+    const placed = candidates.find(
+      (candidate) => !this.collides(candidate.x, candidate.y, size.width, size.height, item)
+    );
     item.x = placed?.x ?? preferredX;
     item.y = placed?.y ?? preferredY;
     return item;
   }
 
+  /** Returns whether two overlay label bounds overlap. */
   private collides(x: number, y: number, width: number, height: number, newItem: OverlayItem): boolean {
     const padding = 2;
     return this.items.some((item) => {
@@ -682,6 +784,7 @@ export class AstrometricOverlay {
     });
   }
 
+  /** Returns item bounds. */
   private getItemBounds(item: OverlayItem): { width: number; height: number } {
     return {
       width: Math.max(...item.lines.map((line) => line.length), 1),
@@ -689,6 +792,7 @@ export class AstrometricOverlay {
     };
   }
 
+  /** Draws connector. */
   private drawConnector(
     ctx: CanvasRenderingContext2D,
     item: OverlayItem,
@@ -713,8 +817,12 @@ export class AstrometricOverlay {
     const elbowXPx = (elbowX + 0.5) * charWidth;
     const targetXPx = (targetX + 0.5) * charWidth;
     const targetYPx = (targetY + 0.5) * charHeight;
-    const pathLength = Math.abs(elbowXPx - startXPx) + Math.abs(targetYPx - startYPx) + Math.abs(targetXPx - elbowXPx);
-    const drawProgress = Math.min(1, (performance.now() - item.createdAt) / CONFIG.ASTROMETRIC_OVERLAY_LINE_DRAW_MS);
+    const pathLength =
+      Math.abs(elbowXPx - startXPx) + Math.abs(targetYPx - startYPx) + Math.abs(targetXPx - elbowXPx);
+    const drawProgress = Math.min(
+      1,
+      (performance.now() - item.createdAt) / CONFIG.ASTROMETRIC_OVERLAY_LINE_DRAW_MS
+    );
     const visibleLength = pathLength * drawProgress;
 
     ctx.save();
@@ -732,11 +840,16 @@ export class AstrometricOverlay {
     ctx.restore();
 
     ctx.fillStyle = TEXT_PALETTE.green;
-    ctx.fillText(dir > 0 ? '├' : '┤', (labelAnchorX + (dir > 0 ? 0 : -1)) * charWidth, labelMidY * charHeight);
+    ctx.fillText(
+      dir > 0 ? '├' : '┤',
+      (labelAnchorX + (dir > 0 ? 0 : -1)) * charWidth,
+      labelMidY * charHeight
+    );
     ctx.fillStyle = TEXT_PALETTE.greenBright;
     ctx.fillText('+', targetX * charWidth, targetY * charHeight);
   }
 
+  /** Draws animated segment. */
   private drawAnimatedSegment(
     ctx: CanvasRenderingContext2D,
     x1: number,
@@ -754,15 +867,18 @@ export class AstrometricOverlay {
     if (t >= 1) ctx.lineTo(x2, y2);
   }
 
+  /** Truncates styled text to a requested number of visible characters. */
   private takeVisibleChars(text: string, count: number): string {
     if (count <= 0) return '';
     return text.slice(0, count);
   }
 
+  /** Formats signed. */
   private formatSigned(value: number): string {
     return value >= 0 ? `+${value}` : `${value}`;
   }
 
+  /** Returns certainty label. */
   private getCertaintyLabel(rangeCells: number, detectionRadius: number): string {
     const fraction = rangeCells / Math.max(1, detectionRadius);
     if (fraction < 0.35) return 'CONFIRMED';
@@ -770,6 +886,7 @@ export class AstrometricOverlay {
     return 'TENTATIVE';
   }
 
+  /** Smoothly interpolates a value between two thresholds. */
   private smoothstep(edge0: number, edge1: number, value: number): number {
     if (edge0 === edge1) return value < edge0 ? 0 : 1;
     const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));

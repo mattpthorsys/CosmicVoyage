@@ -6,6 +6,7 @@ import { Player } from '../../../core/player';
 import { Planet } from '../../../entities/planet';
 import { Starbase } from '../../../entities/starbase';
 
+/** Creates the default action-discovery context used by each test. */
 function baseContext() {
   return {
     player: new Player(),
@@ -26,7 +27,9 @@ describe('available actions', () => {
 
     expect(actions.map((action) => action.id)).toContain('enter-system');
     expect(actions.map((action) => action.id)).toContain('scan-system');
-    expect(formatAvailableActions(actions)).toContain(`[${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter System`);
+    expect(formatAvailableActions(actions)).toContain(
+      `[${CONFIG.KEY_BINDINGS.ENTER_SYSTEM.toUpperCase()}] Enter System`
+    );
   });
 
   it('surfaces hyperspace drift controls for discoverability', () => {
@@ -36,7 +39,9 @@ describe('available actions', () => {
       isNearHyperspaceSystem: false,
     });
 
-    expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining(['boost', 'fine-control', 'profiler']));
+    expect(actions.map((action) => action.id)).toEqual(
+      expect.arrayContaining(['boost', 'fine-control', 'profiler'])
+    );
   });
 
   it('offers landing and scanning near a system object', () => {

@@ -24,6 +24,7 @@ export class TravelModeController {
   targetMenuSelection = 0;
   targetMenuOffset = 0;
 
+  /** Resets for state. */
   resetForState(state: 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase'): void {
     this.currentTargetIndex = 0;
     this.currentTargetSignature = '';
@@ -44,6 +45,7 @@ export class OrbitModeController {
   alert = '';
   elapsedSeconds = 0;
 
+  /** Resets. */
   reset(selectedBodyIndex = 0, mapSize = CONFIG.PLANET_MAP_BASE_SIZE): void {
     this.selectedBodyIndex = Math.max(0, selectedBodyIndex);
     this.mode = 'overview';
@@ -64,11 +66,13 @@ export class SurfaceModeController {
   scanCursor: { dx: number; dy: number } | null = null;
   notifications: string[] = [];
 
+  /** Closes transient interfaces. */
   closeTransientInterfaces(): void {
     this.mapExpanded = false;
     this.scanCursor = null;
   }
 
+  /** Resets for departure. */
   resetForDeparture(): void {
     this.closeTransientInterfaces();
     this.notifications = [];
@@ -83,6 +87,7 @@ export class ShipOperationsController {
   offsetBySection: Partial<Record<ShipMenuSection, number>> = {};
   jettisonItemKey: string | null = null;
 
+  /** Closes. */
   close(): void {
     this.section = 'main';
     this.selection = 0;
@@ -107,53 +112,70 @@ export type ActiveInterface<Quantity, Extraction, Confirmation> =
 export class InterfaceModeController<Quantity, Extraction, Confirmation> {
   private _active: ActiveInterface<Quantity, Extraction, Confirmation> = Object.freeze({ kind: 'none' });
 
+  /** Returns active. */
   get active(): ActiveInterface<Quantity, Extraction, Confirmation> {
     return this._active;
   }
 
+  /** Returns kind. */
   get kind(): ActiveInterface<Quantity, Extraction, Confirmation>['kind'] {
     return this._active.kind;
   }
 
+  /** Returns whether the requested modal interface is active. */
   is(kind: ActiveInterface<Quantity, Extraction, Confirmation>['kind']): boolean {
     return this._active.kind === kind;
   }
 
-  open(kind: Exclude<ActiveInterface<Quantity, Extraction, Confirmation>['kind'], 'none' | 'quantity' | 'surface-extraction' | 'jettison-confirmation'>): void {
+  /** Opens. */
+  open(
+    kind: Exclude<
+      ActiveInterface<Quantity, Extraction, Confirmation>['kind'],
+      'none' | 'quantity' | 'surface-extraction' | 'jettison-confirmation'
+    >
+  ): void {
     this._active = Object.freeze({ kind }) as ActiveInterface<Quantity, Extraction, Confirmation>;
   }
 
+  /** Opens quantity. */
   openQuantity(state: Quantity): void {
     this._active = Object.freeze({ kind: 'quantity', state });
   }
 
+  /** Opens surface extraction. */
   openSurfaceExtraction(state: Extraction): void {
     this._active = Object.freeze({ kind: 'surface-extraction', state });
   }
 
+  /** Opens jettison confirmation. */
   openJettisonConfirmation(state: Confirmation): void {
     this._active = Object.freeze({ kind: 'jettison-confirmation', state });
   }
 
+  /** Closes. */
   close(kind?: ActiveInterface<Quantity, Extraction, Confirmation>['kind']): void {
     if (kind && this._active.kind !== kind) return;
     this._active = Object.freeze({ kind: 'none' });
   }
 
+  /** Returns quantity. */
   get quantity(): Quantity | null {
     return this._active.kind === 'quantity' ? this._active.state : null;
   }
 
+  /** Returns surface extraction. */
   get surfaceExtraction(): Extraction | null {
     return this._active.kind === 'surface-extraction' ? this._active.state : null;
   }
 
+  /** Returns jettison confirmation. */
   get jettisonConfirmation(): Confirmation | null {
     return this._active.kind === 'jettison-confirmation' ? this._active.state : null;
   }
 }
 
 export class GameModeDispatcher {
+  /** Runs the handler associated with the active game state. */
   dispatch<T>(
     state: 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase',
     handlers: Record<'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase', () => T>

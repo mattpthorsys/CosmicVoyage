@@ -1,6 +1,3 @@
-// src/core/action_processor.ts (Fixed hyperspace scan return type, added comments)
-
-// Removed GameStateManager import
 import { Player } from './player';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager'; // Import Event Manager
@@ -18,14 +15,14 @@ export type ActionProcessResult =
   | { requestSystemPeek: true }
   | null;
 
-
 export class ActionProcessor {
   private player: Player;
-  // *** Dependency on stateManager is still needed for peekAtSystem during hyperspace scan ***
-  // If further decoupling is desired, the peek logic could also move to Game or be event-based.
+  // The state manager remains available for hyperspace system previews until
+  // that query is extracted into a dedicated survey service.
   private stateManager: GameStateManager;
 
   // Keep stateManager in constructor for now
+  /** Initializes ActionProcessor. */
   constructor(player: Player, stateManager: GameStateManager) {
     this.player = player;
     this.stateManager = stateManager; // Keep reference for peekAtSystem
@@ -33,6 +30,7 @@ export class ActionProcessor {
   }
 
   // Takes currentState as input
+  /** Processes action. */
   processAction(action: string, currentState: GameState): ActionProcessResult {
     logger.debug(`[ActionProcessor] Processing initial actions [${action}] in state: ${currentState}`);
 
@@ -41,7 +39,7 @@ export class ActionProcessor {
     let scanRequestResult: { requestScan: 'system_object' | 'planet_surface' } | null = null;
     let effectiveAction = action;
 
-    // Contextual logic for ACTIVATE_LAND_LIFTOFF (remains the same)
+    // Resolve the shared land/liftoff input against the active location.
     if (action === 'ACTIVATE_LAND_LIFTOFF') {
       // ... (logic as before) ...
       if (currentState === 'system') {
@@ -49,16 +47,20 @@ export class ActionProcessor {
       } else if (currentState === 'orbit' || currentState === 'planet' || currentState === 'starbase') {
         effectiveAction = 'LIFTOFF';
       } else {
-        logger.warn(`[ActionProcessor] Action '${action}' triggered in unexpected state '${currentState}'. Ignoring.`);
+        logger.warn(
+          `[ActionProcessor] Action '${action}' triggered in unexpected state '${currentState}'. Ignoring.`
+        );
         return `Cannot use that command (${action}) in ${currentState}.`;
       }
       logger.debug(`[ActionProcessor] Interpreting 'ACTIVATE_LAND_LIFTOFF' as '${effectiveAction}'.`);
     }
 
-    logger.debug(`[ActionProcessor] Processing effective action '${effectiveAction}' in state '${currentState}'`);
+    logger.debug(
+      `[ActionProcessor] Processing effective action '${effectiveAction}' in state '${currentState}'`
+    );
 
     try {
-      // Handle global actions (remains the same)
+      // Handle actions that are independent of the active location.
       if (effectiveAction === 'DOWNLOAD_LOG') {
         logger.downloadLogFile();
         statusMessage = 'Log file download initiated.';
@@ -70,7 +72,9 @@ export class ActionProcessor {
         case 'hyperspace':
           // Handle scan request specifically (corrected in previous step)
           if (effectiveAction === 'SCAN_SYSTEM_OBJECT') {
-            logger.debug(`[ActionProcessor] SCAN_SYSTEM_OBJECT in hyperspace: Returning system peek request.`);
+            logger.debug(
+              `[ActionProcessor] SCAN_SYSTEM_OBJECT in hyperspace: Returning system peek request.`
+            );
             return { requestSystemPeek: true }; // This is now the correct return for this specific case
           } else {
             // Handle other hyperspace actions (like ENTER_SYSTEM)
@@ -80,16 +84,20 @@ export class ActionProcessor {
 
         case 'system':
           const systemResult = this._processSystemAction(effectiveAction);
-          // *** FIX: Use Type Guard before accessing requestScan ***
+          // Narrow the result before reading the state-specific scan request.
           if (typeof systemResult === 'string' || systemResult === null) {
             statusMessage = systemResult;
-          } else if (typeof systemResult === 'object' && 'requestScan' in systemResult && systemResult.requestScan === 'system_object') {
+          } else if (
+            typeof systemResult === 'object' &&
+            'requestScan' in systemResult &&
+            systemResult.requestScan === 'system_object'
+          ) {
             // Type guard confirms it's the scan request object
             scanRequestResult = systemResult; // Now safe to assign
             statusMessage = 'Scanning nearby object/star...'; // Generic message
           }
           // Note: systemResult should not be { requestSystemPeek: true } here, but no explicit check needed now.
-          // *** END FIX ***
+
           break;
 
         case 'orbit':
@@ -98,28 +106,35 @@ export class ActionProcessor {
 
         case 'planet':
           const planetResult = this._processPlanetAction(effectiveAction);
-          // *** FIX: Use Type Guard before accessing requestScan ***
+          // Narrow the result before reading the state-specific scan request.
           if (typeof planetResult === 'string' || planetResult === null) {
             statusMessage = planetResult;
-          } else if (typeof planetResult === 'object' && 'requestScan' in planetResult && planetResult.requestScan === 'planet_surface') {
+          } else if (
+            typeof planetResult === 'object' &&
+            'requestScan' in planetResult &&
+            planetResult.requestScan === 'planet_surface'
+          ) {
             // Type guard confirms it's the scan request object
             scanRequestResult = planetResult; // Now safe to assign
             statusMessage = 'Scanning local surface...'; // Generic message
           }
-          // *** END FIX ***
+
           break;
 
-        case 'starbase': // (remains the same)
+        case 'starbase':
           statusMessage = this._processStarbaseAction(effectiveAction);
           break;
 
-        default: // (remains the same)
+        default:
           statusMessage = `Unknown game state: ${currentState}`;
           logger.warn(`[ActionProcessor] ${statusMessage}`);
           break;
       }
-    } catch (error) { // (remains the same)
-      logger.error(`[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${currentState}':`, error);
+    } catch (error) {
+      logger.error(
+        `[ActionProcessor] Error processing effective action '${effectiveAction}' in state '${currentState}':`,
+        error
+      );
       statusMessage = `ACTION ERROR: ${error instanceof Error ? error.message : String(error)}`;
     }
 
@@ -130,6 +145,7 @@ export class ActionProcessor {
 
   // --- Private State-Specific Action Handlers ---
 
+  /** Processes hyperspace action. */
   private _processHyperspaceAction(action: string): string | null {
     // Note: SCAN_SYSTEM_OBJECT is handled directly in processAction now
     let message: string | null = null;
@@ -143,6 +159,7 @@ export class ActionProcessor {
     return message;
   }
 
+  /** Processes system action. */
   private _processSystemAction(action: string): ActionProcessResult {
     let message: string | null = null;
     switch (action) {
@@ -158,20 +175,22 @@ export class ActionProcessor {
           message = 'Landing sequence initiated...';
         }
         break;
-      case 'SCAN_SYSTEM_OBJECT':
-        {
-          // *** SCAN LOGIC MOVED TO Game class ***
-          // ActionProcessor now only signals the *intent* to scan in this context.
-          // Game._handleScanRequest will determine the actual target.
-          logger.debug('[ActionProcessor] Received SCAN_SYSTEM_OBJECT in system state. Returning scan request.');
-          return { requestScan: 'system_object' };
-        }
+      case 'SCAN_SYSTEM_OBJECT': {
+        // Return scan intent; Game selects and presents the concrete target.
+        // ActionProcessor now only signals the *intent* to scan in this context.
+        // Game._handleScanRequest will determine the actual target.
+        logger.debug(
+          '[ActionProcessor] Received SCAN_SYSTEM_OBJECT in system state. Returning scan request.'
+        );
+        return { requestScan: 'system_object' };
+      }
       // break; // Not reachable due to return
     }
     return message; // Return string message or null if not scanning
   }
 
   // Return type includes scan request possibility
+  /** Processes planet action. */
   private _processPlanetAction(action: string): ActionProcessResult {
     let message: string | null = null;
     switch (action) {
@@ -182,7 +201,7 @@ export class ActionProcessor {
         }
         break;
       case 'SCAN':
-        // *** SCAN LOGIC MOVED TO Game class ***
+        // Return scan intent; Game selects and presents the concrete target.
         // ActionProcessor only signals the *intent* to scan the planet surface.
         logger.debug('[ActionProcessor] Received SCAN in planet state. Returning scan request.');
         return { requestScan: 'planet_surface' };
@@ -197,6 +216,7 @@ export class ActionProcessor {
     return message; // Return string message or null if not scanning/mining
   }
 
+  /** Processes orbit action. */
   private _processOrbitAction(action: string): string | null {
     switch (action) {
       case 'LIFTOFF':
@@ -206,6 +226,7 @@ export class ActionProcessor {
     return null;
   }
 
+  /** Processes starbase action. */
   private _processStarbaseAction(action: string): string | null {
     let message: string | null = null;
     switch (action) {

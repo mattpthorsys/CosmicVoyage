@@ -32,32 +32,31 @@ export class StarbaseController {
   offsetBySection: Record<string, number> = {};
   alert = '';
 
+  /** Resets. */
   reset(): void {
     this.sectionId = 'overview';
     this.alert = '';
   }
 
+  /** Returns selection. */
   getSelection(): number {
     return this.selectionBySection[this.sectionId] ?? 0;
   }
 
+  /** Returns offset. */
   getOffset(): number {
     return this.offsetBySection[this.sectionId] ?? 0;
   }
 
+  /** Moves selection. */
   moveSelection(delta: number, rowCount: number, visibleRows: number): void {
-    const viewport = moveSelection(
-      this.getSelection(),
-      delta,
-      rowCount,
-      visibleRows,
-      this.getOffset()
-    );
+    const viewport = moveSelection(this.getSelection(), delta, rowCount, visibleRows, this.getOffset());
     this.selectionBySection[this.sectionId] = viewport.selectedIndex;
     this.offsetBySection[this.sectionId] = viewport.viewOffset;
     this.alert = '';
   }
 
+  /** Switches section. */
   switchSection(delta: number): void {
     const currentIndex = STARBASE_SECTIONS.findIndex((section) => section.id === this.sectionId);
     const nextIndex = (currentIndex + delta + STARBASE_SECTIONS.length) % STARBASE_SECTIONS.length;
@@ -65,25 +64,30 @@ export class StarbaseController {
     this.alert = '';
   }
 
+  /** Returns whether cel panel is allowed. */
   cancelPanel(): void {
     this.sectionId = 'overview';
     this.alert = 'Cancelled current panel.';
   }
 
+  /** Opens section. */
   openSection(sectionId: StarbaseSectionId): void {
     this.sectionId = sectionId;
     this.alert = '';
   }
 
+  /** Returns section label. */
   getSectionLabel(): string {
     return STARBASE_SECTIONS.find((section) => section.id === this.sectionId)?.label ?? 'Operations';
   }
 
+  /** Returns visible row count. */
   getVisibleRowCount(canvasHeight: number, charHeight: number): number {
     const rows = Math.max(1, Math.floor(canvasHeight / Math.max(1, charHeight)));
     return Math.max(6, Math.min(18, rows - 18));
   }
 
+  /** Creates screen. */
   createScreen(context: StarbaseScreenContext): StarbaseScreenModel {
     const visibleRowCount = this.getVisibleRowCount(context.canvasHeight, context.charHeight);
     const meta = this.getSectionMeta(context.starbase);
@@ -104,6 +108,7 @@ export class StarbaseController {
     });
   }
 
+  /** Returns section meta. */
   getSectionMeta(starbase: Starbase): StarbaseSectionMeta {
     const baseSubtitle = `${starbase.name} | ${new Date(0).toISOString().slice(11, 16)} station time`;
     switch (this.sectionId) {

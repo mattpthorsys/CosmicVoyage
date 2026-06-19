@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { ScreenBuffer } from '../../rendering/screen_buffer';
 import { GLYPHS } from '../../constants';
 
-function createBuffer(cols: number, rows: number): {
+/** Creates buffer. */
+function createBuffer(
+  cols: number,
+  rows: number
+): {
   buffer: ScreenBuffer;
   ctx: {
     clearRect: ReturnType<typeof vi.fn>;
@@ -27,7 +31,11 @@ function createBuffer(cols: number, rows: number): {
     scale: vi.fn(),
   };
   const canvas = { width: cols * 8, height: rows * 8 };
-  const buffer = new ScreenBuffer(canvas as HTMLCanvasElement, ctx as unknown as CanvasRenderingContext2D, false);
+  const buffer = new ScreenBuffer(
+    canvas as HTMLCanvasElement,
+    ctx as unknown as CanvasRenderingContext2D,
+    false
+  );
   buffer.updateDimensions(cols, rows, 8, 8);
   return { buffer, ctx };
 }

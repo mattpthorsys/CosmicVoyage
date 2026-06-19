@@ -26,15 +26,20 @@ export class WorkerHyperspaceSurveyCellProvider implements HyperspaceSurveyCellP
   private readonly pending = new Map<number, PendingRequest>();
   private readonly fallback: LocalHyperspaceSurveyCellProvider;
 
+  /** Initializes WorkerHyperspaceSurveyCellProvider. */
   constructor(private readonly seed = CONFIG.SEED) {
     this.fallback = new LocalHyperspaceSurveyCellProvider(new SystemDataGenerator(new PRNG(seed)));
   }
 
+  /** Returns cell data. */
   getCellData(worldX: number, worldY: number): HyperspaceSurveyCellData {
     return this.fallback.getCellData(worldX, worldY);
   }
 
-  getCellDataBatchAsync(requests: readonly HyperspaceSurveyCellRequest[]): Promise<HyperspaceSurveyCellData[]> {
+  /** Returns cell data batch async. */
+  getCellDataBatchAsync(
+    requests: readonly HyperspaceSurveyCellRequest[]
+  ): Promise<HyperspaceSurveyCellData[]> {
     if (requests.length === 0) return Promise.resolve([]);
     if (typeof Worker === 'undefined') {
       return this.fallback.getCellDataBatchAsync(requests);
@@ -48,10 +53,12 @@ export class WorkerHyperspaceSurveyCellProvider implements HyperspaceSurveyCellP
     });
   }
 
+  /** Clears cache. */
   clearCache(): void {
     this.fallback.clearCache();
   }
 
+  /** Terminates the worker and rejects any pending requests. */
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
@@ -59,6 +66,7 @@ export class WorkerHyperspaceSurveyCellProvider implements HyperspaceSurveyCellP
     this.pending.clear();
   }
 
+  /** Returns worker. */
   private getWorker(): Worker {
     if (this.worker) return this.worker;
 
@@ -84,4 +92,3 @@ export class WorkerHyperspaceSurveyCellProvider implements HyperspaceSurveyCellP
     return this.worker;
   }
 }
-

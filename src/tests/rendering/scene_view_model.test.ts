@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Player } from '../../core/player';
-import {
-  createPlayerViewSnapshot,
-  createSceneViewModel,
-} from '../../rendering/scene_view_model';
+import { createPlayerViewSnapshot, createSceneViewModel } from '../../rendering/scene_view_model';
 
 describe('scene view models', () => {
   it('captures immutable player render state for a frame', () => {

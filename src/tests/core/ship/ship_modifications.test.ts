@@ -92,7 +92,12 @@ describe('ship modifications', () => {
     const repeated = getStarbaseShipyardProfile('Frontier Test Starbase Delta');
 
     expect(repeated).toEqual(frontier);
-    const options = createShipyardUpgradeOptions(ship, { ...frontier, maxShieldClass: 1, maxLaserClass: 1, sellsMissiles: false });
+    const options = createShipyardUpgradeOptions(ship, {
+      ...frontier,
+      maxShieldClass: 1,
+      maxLaserClass: 1,
+      sellsMissiles: false,
+    });
     expect(options.find((option) => option.id === 'shipyard:missile')?.disabled).toBe(true);
     expect(options.find((option) => option.id === 'shipyard:shield:2')?.disabled).toBe(true);
     expect(options.find((option) => option.id === 'shipyard:laser:1')?.disabled).toBe(false);

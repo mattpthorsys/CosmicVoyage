@@ -3,6 +3,7 @@ import { Planet } from '../../entities/planet';
 import { Player } from '../../core/player';
 import { AstrometricOverlay } from '../../rendering/astrometric_overlay';
 
+/** Creates planet. */
 function createPlanet(name: string, systemX: number, systemY: number): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
@@ -85,8 +86,22 @@ describe('AstrometricOverlay starbase markers', () => {
       systemDataGenerator: {
         value: {
           getSystemProperties: (x: number, y: number) => {
-            if (y === 0 && x === 29) return { exists: true, name: 'Lurker-29', starType: 'T4', objectKind: 'brown-dwarf', hasStarbase: false };
-            if (y === 0 && x === 31) return { exists: true, name: 'Lurker-31', starType: 'T6', objectKind: 'brown-dwarf', hasStarbase: false };
+            if (y === 0 && x === 29)
+              return {
+                exists: true,
+                name: 'Lurker-29',
+                starType: 'T4',
+                objectKind: 'brown-dwarf',
+                hasStarbase: false,
+              };
+            if (y === 0 && x === 31)
+              return {
+                exists: true,
+                name: 'Lurker-31',
+                starType: 'T6',
+                objectKind: 'brown-dwarf',
+                hasStarbase: false,
+              };
             return { exists: false };
           },
           getDeepSpacePhenomenonProperties: () => ({ exists: false }),
@@ -106,8 +121,22 @@ describe('AstrometricOverlay starbase markers', () => {
       systemDataGenerator: {
         value: {
           getSystemProperties: (x: number, y: number) => {
-            if (y === 0 && x === 5) return { exists: true, name: 'Clear-5', starType: 'K2V', objectKind: 'stellar', hasStarbase: false };
-            if (y === 0 && x === 8) return { exists: true, name: 'Lost-8', starType: 'G1V', objectKind: 'stellar', hasStarbase: false };
+            if (y === 0 && x === 5)
+              return {
+                exists: true,
+                name: 'Clear-5',
+                starType: 'K2V',
+                objectKind: 'stellar',
+                hasStarbase: false,
+              };
+            if (y === 0 && x === 8)
+              return {
+                exists: true,
+                name: 'Lost-8',
+                starType: 'G1V',
+                objectKind: 'stellar',
+                hasStarbase: false,
+              };
             return { exists: false };
           },
           getDeepSpacePhenomenonProperties: () => ({ exists: false }),

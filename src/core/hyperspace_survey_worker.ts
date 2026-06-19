@@ -21,6 +21,7 @@ interface HyperspaceSurveyWorkerResponse {
 
 const providersBySeed = new Map<string, LocalHyperspaceSurveyCellProvider>();
 
+/** Returns provider. */
 function getProvider(seed: string): LocalHyperspaceSurveyCellProvider {
   const cached = providersBySeed.get(seed);
   if (cached) return cached;
@@ -43,4 +44,3 @@ self.onmessage = (event: MessageEvent<HyperspaceSurveyWorkerRequest>) => {
     } satisfies HyperspaceSurveyWorkerResponse);
   }
 };
-

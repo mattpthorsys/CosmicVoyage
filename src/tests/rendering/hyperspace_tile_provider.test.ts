@@ -4,6 +4,7 @@ import { HyperspaceTileProvider } from '../../rendering/hyperspace_tile_provider
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { CONFIG } from '../../config';
 
+/** Creates nebula renderer. */
 function createNebulaRenderer(): NebulaRenderer {
   return {
     getBackgroundColor: () => '#010203',
@@ -11,6 +12,7 @@ function createNebulaRenderer(): NebulaRenderer {
   } as unknown as NebulaRenderer;
 }
 
+/** Waits for the next queued asynchronous task to complete. */
 function nextTask(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }

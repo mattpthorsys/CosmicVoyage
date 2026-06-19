@@ -142,13 +142,18 @@ const ARCHETYPES: CrewArchetype[] = [
   },
 ];
 
+/** Creates skill record. */
 export function createSkillRecord(value: number = 0): Record<CrewSkill, number> {
-  return CREW_SKILLS.reduce((record, skill) => {
-    record[skill] = value;
-    return record;
-  }, {} as Record<CrewSkill, number>);
+  return CREW_SKILLS.reduce(
+    (record, skill) => {
+      record[skill] = value;
+      return record;
+    },
+    {} as Record<CrewSkill, number>
+  );
 }
 
+/** Creates starting crew. */
 export function createStartingCrew(seed: string | number): CrewMember[] {
   const prng = new PRNG(`starting_crew_${String(seed)}`);
   const crew = [
@@ -160,16 +165,24 @@ export function createStartingCrew(seed: string | number): CrewMember[] {
   return crew;
 }
 
-export function generateRecruitCandidates(starbaseName: string, seed: string | number, count: number = 6): CrewMember[] {
+/** Generates recruit candidates. */
+export function generateRecruitCandidates(
+  starbaseName: string,
+  seed: string | number,
+  count: number = 6
+): CrewMember[] {
   const prng = new PRNG(`recruits_${String(seed)}_${starbaseName}`);
   const candidates: CrewMember[] = [];
   for (let i = 0; i < count; i++) {
     const archetype = ARCHETYPES[prng.randomInt(0, ARCHETYPES.length - 1)];
-    candidates.push(createCrewMember(`hire-${slug(starbaseName)}-${i}`, archetype, prng, prng.randomInt(1, 3)));
+    candidates.push(
+      createCrewMember(`hire-${slug(starbaseName)}-${i}`, archetype, prng, prng.randomInt(1, 3))
+    );
   }
   return candidates;
 }
 
+/** Awards experience to crew members whose roles match the completed activity. */
 export function awardCrewExperience(crew: CrewMember[], skill: CrewSkill, amount: number): CrewMember[] {
   if (amount <= 0) return [];
   const eligible = crew
@@ -180,33 +193,43 @@ export function awardCrewExperience(crew: CrewMember[], skill: CrewSkill, amount
   return recipients;
 }
 
+/** Spends training resources to improve a crew member skill. */
 export function trainCrewSkill(member: CrewMember, skill: CrewSkill): { success: boolean; message: string } {
   if (member.trainingPoints <= 0) {
     return { success: false, message: `${member.name} has no training points available.` };
   }
   if (member.skills[skill] >= member.skillCaps[skill]) {
-    return { success: false, message: `${member.name} has reached the ${CREW_SKILL_LABELS[skill]} learning cap.` };
+    return {
+      success: false,
+      message: `${member.name} has reached the ${CREW_SKILL_LABELS[skill]} learning cap.`,
+    };
   }
   member.skills[skill] += 1;
   member.trainingPoints -= 1;
-  return { success: true, message: `${member.name} trained ${CREW_SKILL_LABELS[skill]} to ${member.skills[skill]}.` };
+  return {
+    success: true,
+    message: `${member.name} trained ${CREW_SKILL_LABELS[skill]} to ${member.skills[skill]}.`,
+  };
 }
 
+/** Returns crew skill total. */
 export function getCrewSkillTotal(crew: CrewMember[], skill: CrewSkill): number {
   return crew.reduce((sum, member) => sum + member.skills[skill], 0);
 }
 
+/** Returns best crew skill. */
 export function getBestCrewSkill(crew: CrewMember[], skill: CrewSkill): number {
   return crew.reduce((best, member) => Math.max(best, member.skills[skill]), 0);
 }
 
+/** Returns next level experience. */
 export function getNextLevelExperience(level: number): number {
   return 100 + Math.max(0, level - 1) * 75;
 }
 
+/** Formats top skills. */
 export function formatTopSkills(member: CrewMember, limit: number = 3): string {
-  return CREW_SKILLS
-    .map((skill) => ({ skill, value: member.skills[skill] }))
+  return CREW_SKILLS.map((skill) => ({ skill, value: member.skills[skill] }))
     .filter((entry) => entry.value > 0)
     .sort((a, b) => b.value - a.value || CREW_SKILL_LABELS[a.skill].localeCompare(CREW_SKILL_LABELS[b.skill]))
     .slice(0, limit)
@@ -214,6 +237,7 @@ export function formatTopSkills(member: CrewMember, limit: number = 3): string {
     .join(' ');
 }
 
+/** Creates crew member. */
 function createCrewMember(id: string, archetype: CrewArchetype, prng: PRNG, level: number): CrewMember {
   const skills = createSkillRecord(0);
   for (const skill of CREW_SKILLS) skills[skill] = prng.randomInt(0, 1);
@@ -245,6 +269,7 @@ function createCrewMember(id: string, archetype: CrewArchetype, prng: PRNG, leve
   };
 }
 
+/** Adds experience. */
 function addExperience(member: CrewMember, amount: number): void {
   member.experience += Math.max(0, Math.round(amount));
   while (member.experience >= getNextLevelExperience(member.level)) {
@@ -256,6 +281,7 @@ function addExperience(member: CrewMember, amount: number): void {
   }
 }
 
+/** Ensures helpful starting coverage. */
 function ensureHelpfulStartingCoverage(crew: CrewMember[]): void {
   const required: Partial<Record<CrewSkill, number>> = {
     communication: 5,
@@ -268,10 +294,14 @@ function ensureHelpfulStartingCoverage(crew: CrewMember[]): void {
     const crewSkill = skill as CrewSkill;
     if (getCrewSkillTotal(crew, crewSkill) >= (minimum ?? 0)) continue;
     const best = crew.sort((a, b) => b.skills[crewSkill] - a.skills[crewSkill])[0];
-    best.skills[crewSkill] = Math.min(best.skillCaps[crewSkill], best.skills[crewSkill] + ((minimum ?? 0) - getCrewSkillTotal(crew, crewSkill)));
+    best.skills[crewSkill] = Math.min(
+      best.skillCaps[crewSkill],
+      best.skills[crewSkill] + ((minimum ?? 0) - getCrewSkillTotal(crew, crewSkill))
+    );
   }
 }
 
+/** Returns the compact display label for a crew skill. */
 function shortSkillLabel(skill: CrewSkill): string {
   const labels: Record<CrewSkill, string> = {
     astroscience: 'Astro',
@@ -290,6 +320,10 @@ function shortSkillLabel(skill: CrewSkill): string {
   return labels[skill];
 }
 
+/** Converts display text into a stable identifier fragment. */
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }

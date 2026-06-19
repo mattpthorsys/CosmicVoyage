@@ -4,6 +4,7 @@ import { StarbaseController } from '../../../core/starbase_controller';
 import { Starbase } from '../../../entities/starbase';
 import { PRNG } from '../../../utils/prng';
 
+/** Creates starbase. */
 function createStarbase(): Starbase {
   return new Starbase('Controller Dock', new PRNG('starbase-controller'), 'Controller System');
 }

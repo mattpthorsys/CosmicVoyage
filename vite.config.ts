@@ -16,15 +16,16 @@ export default defineConfig({
     headers: {
       // Ensure correct MIME types and allow cross-origin (though likely not needed for localhost)
       'Access-Control-Allow-Origin': '*',
-      'Content-Security-Policy': "default-src 'self'; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';", // Example CSP, adjust as needed
+      'Content-Security-Policy':
+        "default-src 'self'; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';", // Example CSP, adjust as needed
       // You might try removing or simplifying CSP if it causes issues
-    }
+    },
   },
   // Optional: Define aliases matching tsconfig.json paths
   resolve: {
     alias: {
-      '@': '/src' // Adjust path if needed based on project root
-    }
+      '@': '/src', // Adjust path if needed based on project root
+    },
   },
 
   test: {

@@ -14,18 +14,22 @@ export const SYSTEM_ZOOM_LEVELS: readonly number[] = Object.freeze([
   CONFIG.SYSTEM_VIEW_SCALE / 1024,
 ]);
 
+/** Clamps system zoom index. */
 export function clampSystemZoomIndex(index: number): number {
   return Math.max(0, Math.min(Math.trunc(index), SYSTEM_ZOOM_LEVELS.length - 1));
 }
 
+/** Returns system view scale. */
 export function getSystemViewScale(index: number): number {
   return SYSTEM_ZOOM_LEVELS[clampSystemZoomIndex(index)];
 }
 
+/** Returns system zoom factor. */
 export function getSystemZoomFactor(index: number): number {
   return Math.pow(4, clampSystemZoomIndex(index) - DEFAULT_SYSTEM_ZOOM_INDEX);
 }
 
+/** Returns system simulation speed multiplier. */
 export function getSystemSimulationSpeedMultiplier(index: number): number {
   const zoomDifference = clampSystemZoomIndex(index) - DEFAULT_SYSTEM_ZOOM_INDEX;
   return Math.max(0.01, Math.min(Math.pow(0.5, zoomDifference), 10));

@@ -39,6 +39,7 @@ export class NebulaColourSampler {
   private readonly defaultBgColor = CONFIG.DEFAULT_BG_COLOUR;
   private readonly palettesRgb: Record<NebulaKind, RgbColour[]>;
 
+  /** Initializes NebulaColourSampler. */
   constructor(seed = CONFIG.SEED + '_nebula') {
     this.nebulaNoiseGenerator = new PerlinNoise(seed);
     this.palettesRgb = {
@@ -50,10 +51,12 @@ export class NebulaColourSampler {
     };
   }
 
+  /** Clears cache. */
   clearCache(): void {
     this.nebulaNoiseGenerator.clearCache();
   }
 
+  /** Samples the deterministic nebula colour field at world coordinates. */
   sample(worldX: number, worldY: number): string {
     const scale = CONFIG.NEBULA_SCALE;
     const region = this.getNebulaRegion(worldX, worldY, scale);
@@ -86,13 +89,15 @@ export class NebulaColourSampler {
     const dustOcclusion = Math.max(0, dust - 0.56) * (region.kind === 'dark' ? 0.75 : 0.52);
     const attenuated = interpolateColour(colour, BLACK, Math.min(0.78, dustOcclusion));
     const edgeAlpha = this.smoothstep(0.002, 0.18, alpha);
-    const brightness = region.kind === 'dark'
-      ? edgeAlpha * (0.08 + alpha * 0.42)
-      : edgeAlpha * (0.2 + alpha * (region.kind === 'remnant' ? 0.84 : 0.76));
+    const brightness =
+      region.kind === 'dark'
+        ? edgeAlpha * (0.08 + alpha * 0.42)
+        : edgeAlpha * (0.2 + alpha * (region.kind === 'remnant' ? 0.84 : 0.76));
     const final = interpolateColour(BLACK, attenuated, Math.min(0.82, brightness));
     return rgbToHex(final.r, final.g, final.b);
   }
 
+  /** Returns nebula region. */
   private getNebulaRegion(worldX: number, worldY: number, scale: number): NebulaRegion | null {
     const regionScale = scale * 0.115;
     const regionX = worldX * regionScale;
@@ -107,7 +112,8 @@ export class NebulaColourSampler {
     const typeValue = this.normalizedNoise(regionX * 0.83 - 118.0, regionY * 0.83 + 57.0);
     const rareValue = this.normalizedNoise(regionX * 3.8 + 6.4, regionY * 3.8 - 91.3);
     let darkWeight = 1 - this.smoothstep(0.16, 0.38, typeValue);
-    let reflectionWeight = this.smoothstep(0.18, 0.38, typeValue) * (1 - this.smoothstep(0.43, 0.66, typeValue));
+    let reflectionWeight =
+      this.smoothstep(0.18, 0.38, typeValue) * (1 - this.smoothstep(0.43, 0.66, typeValue));
     let emissionWeight = this.smoothstep(0.48, 0.72, typeValue);
     const totalWeight = Math.max(0.0001, darkWeight + reflectionWeight + emissionWeight);
     darkWeight /= totalWeight;
@@ -129,6 +135,7 @@ export class NebulaColourSampler {
     return { kind, density, regionX, regionY, darkWeight, reflectionWeight, emissionWeight };
   }
 
+  /** Samples the deterministic nebula colour field at world coordinates. */
   private sampleNebulaColour(region: NebulaRegion, cloud: number, wisps: number): RgbColour {
     const factor = this.smoothstep(0.06, 0.98, cloud * 0.72 + wisps * 0.28);
     if (region.kind === 'planetary' || region.kind === 'remnant') {
@@ -145,6 +152,7 @@ export class NebulaColourSampler {
     return interpolateColour(base, { r: 42, g: 86, b: 88 }, oxygenHint);
   }
 
+  /** Selects and blends nebula palette colours for the sampled field values. */
   private sampleNebulaPalette(kind: NebulaKind, factor: number): RgbColour {
     const palette = this.palettesRgb[kind];
     const softenedFactor = 0.08 + Math.max(0, Math.min(0.999, factor)) * 0.84;
@@ -155,12 +163,19 @@ export class NebulaColourSampler {
     return interpolateColour(palette[index1], palette[index2], localMix);
   }
 
-  private mixWeighted(first: RgbColour, firstWeight: number, second: RgbColour, secondWeight: number): RgbColour {
+  /** Blends weighted colours while preserving normalized channel values. */
+  private mixWeighted(
+    first: RgbColour,
+    firstWeight: number,
+    second: RgbColour,
+    secondWeight: number
+  ): RgbColour {
     const total = firstWeight + secondWeight;
     if (total <= 0.0001) return BLACK;
     return interpolateColour(first, second, secondWeight / total);
   }
 
+  /** Calculates intensity within a soft-edged nebula shell. */
   private shellIntensity(worldX: number, worldY: number, region: NebulaRegion): number {
     const cellX = Math.floor(region.regionX);
     const cellY = Math.floor(region.regionY);
@@ -171,10 +186,15 @@ export class NebulaColourSampler {
     const distance = Math.sqrt(dx * dx + dy * dy);
     const radius = region.kind === 'remnant' ? 0.42 : 0.28;
     const shell = 1 - Math.min(1, Math.abs(distance - radius) / (region.kind === 'remnant' ? 0.16 : 0.09));
-    const filament = this.ridgedNoise(worldX * CONFIG.NEBULA_SCALE * 2.8, worldY * CONFIG.NEBULA_SCALE * 2.8, 3);
+    const filament = this.ridgedNoise(
+      worldX * CONFIG.NEBULA_SCALE * 2.8,
+      worldY * CONFIG.NEBULA_SCALE * 2.8,
+      3
+    );
     return Math.max(0, shell) * (0.48 + filament * 0.52);
   }
 
+  /** Evaluates layered fractal Brownian motion for soft cloud structure. */
   private fbm(x: number, y: number, octaves: number, persistence: number, lacunarity: number): number {
     let total = 0;
     let amplitude = 1;
@@ -186,9 +206,10 @@ export class NebulaColourSampler {
       amplitude *= persistence;
       frequency *= lacunarity;
     }
-    return Math.max(0, Math.min(1, total / Math.max(0.0001, amplitudeSum) * 0.5 + 0.5));
+    return Math.max(0, Math.min(1, (total / Math.max(0.0001, amplitudeSum)) * 0.5 + 0.5));
   }
 
+  /** Evaluates ridged noise for filament and shell-like detail. */
   private ridgedNoise(x: number, y: number, octaves: number): number {
     let total = 0;
     let amplitude = 1;
@@ -204,19 +225,23 @@ export class NebulaColourSampler {
     return Math.max(0, Math.min(1, total / Math.max(0.0001, amplitudeSum)));
   }
 
+  /** Samples deterministic noise and normalizes it to the zero-to-one range. */
   private normalizedNoise(x: number, y: number): number {
     return this.signedNoise(x, y) * 0.5 + 0.5;
   }
 
+  /** Converts provider noise into a signed minus-one-to-one range. */
   private signedNoise(x: number, y: number): number {
     return Math.max(-1, Math.min(1, this.nebulaNoiseGenerator.get(x, y) * 1.65));
   }
 
+  /** Smoothly interpolates a value between two thresholds. */
   private smoothstep(edge0: number, edge1: number, value: number): number {
     const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(0.0001, edge1 - edge0)));
     return t * t * (3 - 2 * t);
   }
 
+  /** Returns whether h unit is present. */
   private hashUnit(seed: string): number {
     let hash = 2166136261;
     for (let index = 0; index < seed.length; index++) {

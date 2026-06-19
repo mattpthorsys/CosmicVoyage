@@ -1,7 +1,7 @@
 // src/systems/mining_system.ts
 import { Player } from '../core/player';
 import { GameStateManager } from '../core/game_state_manager';
-import { CargoSystem } from './cargo_systems'; // Assuming path is correct
+import { CargoSystem } from './cargo_systems';
 import { eventManager, GameEvents, Unsubscribe } from '../core/event_manager';
 import { logger } from '../utils/logger';
 import { STATUS_MESSAGES } from '../constants/messages';
@@ -28,15 +28,15 @@ export class MiningSystem {
   private cargoSystem: CargoSystem;
   private readonly unsubscribeMineRequest: Unsubscribe;
 
+  /** Initializes MiningSystem. */
   constructor(player: Player, stateManager: GameStateManager, cargoSystem: CargoSystem) {
     this.player = player;
     this.stateManager = stateManager;
     this.cargoSystem = cargoSystem;
 
-    this.unsubscribeMineRequest = eventManager.subscribe(
-      GameEvents.MINE_REQUESTED,
-      () => { this.handleMineRequest(); }
-    );
+    this.unsubscribeMineRequest = eventManager.subscribe(GameEvents.MINE_REQUESTED, () => {
+      this.handleMineRequest();
+    });
 
     logger.info('[MiningSystem] Initialized and subscribed to MINE_REQUESTED.');
   }
@@ -46,6 +46,7 @@ export class MiningSystem {
     this.mine();
   }
 
+  /** Returns mining estimate. */
   getMiningEstimate(): MiningEstimate {
     if (this.stateManager.state !== 'planet') {
       return { canMine: false, maxAmount: 0, message: 'Mining requires landing on a planet surface.' };
@@ -81,6 +82,7 @@ export class MiningSystem {
     }
   }
 
+  /** Returns mining options. */
   getMiningOptions(): MiningSite[] {
     if (this.stateManager.state !== 'planet') return [];
     const planet = this.stateManager.currentPlanet;
@@ -91,21 +93,28 @@ export class MiningSystem {
     if (!elementMap) return [];
     const currentX = this.player.position.surfaceX;
     const currentY = this.player.position.surfaceY;
-    if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length) return [];
+    if (currentY < 0 || currentY >= elementMap.length || currentX < 0 || currentX >= elementMap[0].length)
+      return [];
 
     return this.getNearbyMiningCoordinates(currentX, currentY, elementMap)
       .map(({ x, y }) => this.getMiningSiteAt(planet, elementMap, x, y))
-      .filter((site): site is MiningSite & { elementKey: string; x: number; y: number } => site.canMine && !!site.elementKey && site.x !== undefined && site.y !== undefined);
+      .filter(
+        (site): site is MiningSite & { elementKey: string; x: number; y: number } =>
+          site.canMine && !!site.elementKey && site.x !== undefined && site.y !== undefined
+      );
   }
 
+  /** Mines. */
   mine(requestedAmount?: number): void {
     this.mineSelectedSite(null, requestedAmount);
   }
 
+  /** Mines at. */
   mineAt(x: number, y: number, requestedAmount?: number): void {
     this.mineSelectedSite({ x, y }, requestedAmount);
   }
 
+  /** Mines selected site. */
   private mineSelectedSite(selectedSite: { x: number; y: number } | null, requestedAmount?: number): void {
     logger.debug('[MiningSystem] Mine request started.');
 
@@ -138,14 +147,17 @@ export class MiningSystem {
         logger.error("[MiningSystem] In 'planet' state but currentPlanet is null!");
       } else {
         try {
-          const site = selectedSite ? this.getMiningSiteByCoordinate(planet, selectedSite.x, selectedSite.y) : this.getMiningSite(planet);
+          const site = selectedSite
+            ? this.getMiningSiteByCoordinate(planet, selectedSite.x, selectedSite.y)
+            : this.getMiningSite(planet);
           if (!site.canMine || !site.elementKey) {
             statusMessage = site.message || '';
             actionFailedReason = site.message || 'Cannot mine';
           } else {
             const cargoHold = this.player.getActiveSurfaceCargoHold();
             const freeCargo = cargoHold.capacity - this.cargoSystem.getTotalUnits(cargoHold);
-            const desiredAmount = requestedAmount === undefined ? site.maxAmount : Math.max(0.1, roundToTenth(requestedAmount));
+            const desiredAmount =
+              requestedAmount === undefined ? site.maxAmount : Math.max(0.1, roundToTenth(requestedAmount));
             const amountToMine = roundToTenth(Math.min(site.maxAmount, desiredAmount, freeCargo));
             if (amountToMine <= 0) {
               statusMessage = STATUS_MESSAGES.PLANET_MINE_CARGO_FULL(
@@ -190,7 +202,10 @@ export class MiningSystem {
             }
           }
         } catch (mineError) {
-          logger.error(`[MiningSystem] Error during MINE action on ${planet?.name || 'unknown planet'}:`, mineError);
+          logger.error(
+            `[MiningSystem] Error during MINE action on ${planet?.name || 'unknown planet'}:`,
+            mineError
+          );
           statusMessage = `Mining Error: ${mineError instanceof Error ? mineError.message : String(mineError)}`;
           actionFailedReason = 'Error occurred';
         }
@@ -203,7 +218,10 @@ export class MiningSystem {
 
     // Publish results
     if (actionFailedReason) {
-      logger.debug(`[MiningSystem] Publishing ACTION_FAILED event:`, { action: 'MINE', reason: actionFailedReason });
+      logger.debug(`[MiningSystem] Publishing ACTION_FAILED event:`, {
+        action: 'MINE',
+        reason: actionFailedReason,
+      });
       eventManager.publish(GameEvents.ACTION_FAILED, { action: 'MINE', reason: actionFailedReason });
     }
 
@@ -219,6 +237,7 @@ export class MiningSystem {
     logger.debug('[MiningSystem] Mine request finished.');
   }
 
+  /** Returns mining site by coordinate. */
   private getMiningSiteByCoordinate(planet: Planet, x: number, y: number): MiningSite {
     if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_INVALID_TYPE(planet.type) };
@@ -233,6 +252,7 @@ export class MiningSystem {
     return this.getMiningSiteAt(planet, elementMap, wrapIndex(x, mapWidth), wrapIndex(y, mapHeight));
   }
 
+  /** Returns mining site. */
   private getMiningSite(planet: Planet): MiningSite {
     if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_INVALID_TYPE(planet.type) };
@@ -261,6 +281,7 @@ export class MiningSystem {
     return fallback ?? { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_NO_ELEMENTS };
   }
 
+  /** Returns nearby mining coordinates. */
   private getNearbyMiningCoordinates(
     currentX: number,
     currentY: number,
@@ -293,6 +314,7 @@ export class MiningSystem {
     return coordinates;
   }
 
+  /** Returns the mining site at the supplied surface coordinates. */
   private getMiningSiteAt(planet: Planet, elementMap: string[][], x: number, y: number): MiningSite {
     if (planet.isMined(x, y)) {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
@@ -332,7 +354,13 @@ export class MiningSystem {
     const remaining = roundToTenth(Math.max(0, totalYield - alreadyMined));
     if (remaining <= 0) {
       planet.markMined(x, y);
-      return { canMine: false, maxAmount: 0, elementKey, elementName: elementInfo?.name || elementKey, message: STATUS_MESSAGES.PLANET_MINE_DEPLETED };
+      return {
+        canMine: false,
+        maxAmount: 0,
+        elementKey,
+        elementName: elementInfo?.name || elementKey,
+        message: STATUS_MESSAGES.PLANET_MINE_DEPLETED,
+      };
     }
     return {
       canMine: true,
@@ -352,10 +380,12 @@ export class MiningSystem {
   }
 } // End MiningSystem class
 
+/** Rounds a numeric value to one decimal place. */
 function roundToTenth(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/** Wraps index. */
 function wrapIndex(value: number, size: number): number {
   if (size <= 0) return 0;
   return ((value % size) + size) % size;

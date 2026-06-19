@@ -8,6 +8,7 @@ import { GameStateManager } from '../../../core/game_state_manager';
 import { Player } from '../../../core/player';
 import { eventManager, GameEvents } from '../../../core/event_manager';
 
+/** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
   return {
     diameter: 11200,
@@ -36,6 +37,7 @@ function createCharacteristics(): PlanetCharacteristics {
   };
 }
 
+/** Creates orbiting planet. */
 function createOrbitingPlanet(): Planet {
   return new Planet(
     'Moving Test',
@@ -49,6 +51,7 @@ function createOrbitingPlanet(): Planet {
   );
 }
 
+/** Creates manager. */
 function createManager() {
   const player = new Player();
   const seed = new PRNG('state-manager-test');

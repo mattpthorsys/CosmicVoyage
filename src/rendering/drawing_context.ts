@@ -9,6 +9,7 @@ import { CONFIG } from '@/config';
 export class DrawingContext {
   private screenBuffer: ScreenBuffer;
 
+  /** Initializes DrawingContext. */
   constructor(screenBuffer: ScreenBuffer) {
     this.screenBuffer = screenBuffer;
     logger.debug('[DrawingContext] Instance created.');
@@ -125,10 +126,17 @@ export class DrawingContext {
     let err = 1 - radius; // Initial error term
 
     // Helper to draw points symmetrically around the center
+    /** Draws points. */
     const drawPoints = (px: number, py: number) => {
       const points = [
-        { dx: px, dy: py }, { dx: -px, dy: py }, { dx: px, dy: -py }, { dx: -px, dy: -py },
-        { dx: py, dy: px }, { dx: -py, dy: px }, { dx: py, dy: -px }, { dx: -py, dy: -px },
+        { dx: px, dy: py },
+        { dx: -px, dy: py },
+        { dx: px, dy: -py },
+        { dx: -px, dy: -py },
+        { dx: py, dy: px },
+        { dx: -py, dy: px },
+        { dx: py, dy: -px },
+        { dx: -py, dy: -px },
       ];
       points.forEach((p) => {
         const screenX = cx + p.dx;
@@ -153,6 +161,7 @@ export class DrawingContext {
     }
   }
 
+  /** Draws orbit by viewport scan. */
   private drawOrbitByViewportScan(
     cx: number,
     cy: number,

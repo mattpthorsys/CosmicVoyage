@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { PRNG } from '../../../utils/prng';
-import { generateHydrosphere, estimateSurfaceVolatileRetention } from '../../../entities/planet/surface_descriptor';
+import {
+  generateHydrosphere,
+  estimateSurfaceVolatileRetention,
+} from '../../../entities/planet/surface_descriptor';
 import { createSurfaceLiquidOverlay } from '../../../entities/planet/surface_liquid';
 
 const heightmap = Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => x + y));
@@ -11,7 +14,11 @@ describe('scientifically constrained hydrospheres', () => {
       new PRNG('hot-greenhouse-hydro'),
       'Greenhouse',
       735,
-      { density: 'Superdense', pressure: 75, composition: { 'Carbon Dioxide': 96, Nitrogen: 3, 'Water Vapor': 1 } },
+      {
+        density: 'Superdense',
+        pressure: 75,
+        composition: { 'Carbon Dioxide': 96, Nitrogen: 3, 'Water Vapor': 1 },
+      },
       {
         surfaceTempMin: 710,
         surfaceTempMax: 760,
@@ -31,7 +38,11 @@ describe('scientifically constrained hydrospheres', () => {
       new PRNG('frozen-ocean-hydro'),
       'Oceanic',
       218,
-      { density: 'Thick', pressure: 2.5, composition: { Nitrogen: 70, 'Carbon Dioxide': 20, 'Water Vapor': 10 } },
+      {
+        density: 'Thick',
+        pressure: 2.5,
+        composition: { Nitrogen: 70, 'Carbon Dioxide': 20, 'Water Vapor': 10 },
+      },
       {
         surfaceTempMin: 190,
         surfaceTempMax: 238,

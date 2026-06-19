@@ -1,10 +1,6 @@
-// FILE: src/core/player.ts
-// MODIFIED: To use Component data structures
-
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 import { CrewMember, CrewSkill, awardCrewExperience, createStartingCrew } from './crew';
-// *** ADD: Import Component interfaces and helper functions ***
 import {
   PositionComponent,
   RenderComponent,
@@ -17,7 +13,11 @@ import {
   createDefaultCargo,
   createDefaultTerrainVehicle,
 } from './components'; // Assuming components.ts is in the same directory
-import { createDefaultShipModifications, getShipCargoCapacity, ShipModificationState } from './ship_modifications';
+import {
+  createDefaultShipModifications,
+  getShipCargoCapacity,
+  ShipModificationState,
+} from './ship_modifications';
 
 export class Player {
   // --- ADD Component Properties ---
@@ -30,6 +30,7 @@ export class Player {
   public ship: ShipModificationState;
 
   // Constructor: Initializes components with default values
+  /** Initializes Player. */
   constructor(
     // Optional: Keep startX/startY if needed for initial position setup, otherwise remove
     startX: number = CONFIG.PLAYER_START_X,
@@ -54,7 +55,10 @@ export class Player {
 
     this.ship = createDefaultShipModifications();
     this.cargoHold = createDefaultCargo(getShipCargoCapacity(this.ship));
-    this.terrainVehicle = createDefaultTerrainVehicle(CONFIG.TERRAIN_VEHICLE_CARGO_CAPACITY, CONFIG.TERRAIN_VEHICLE_MAX_FUEL);
+    this.terrainVehicle = createDefaultTerrainVehicle(
+      CONFIG.TERRAIN_VEHICLE_CARGO_CAPACITY,
+      CONFIG.TERRAIN_VEHICLE_MAX_FUEL
+    );
     this.crew = createStartingCrew(crewSeed);
 
     logger.info(
@@ -94,10 +98,12 @@ export class Player {
     }
   }
 
+  /** Awards experience to crew members whose roles match the completed activity. */
   awardCrewExperience(skill: CrewSkill, amount: number): CrewMember[] {
     return awardCrewExperience(this.crew, skill, amount);
   }
 
+  /** Returns active surface cargo hold. */
   getActiveSurfaceCargoHold(): CargoComponent {
     return this.terrainVehicle.deployed ? this.terrainVehicle.cargoHold : this.cargoHold;
   }

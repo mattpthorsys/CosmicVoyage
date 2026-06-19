@@ -3,6 +3,7 @@ import { CargoSystem } from '../../../systems/cargo_systems';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 
+/** Creates surface scan harness. */
 function createSurfaceScanHarness(): any {
   const player = new Player();
   player.terrainVehicle.deployed = true;

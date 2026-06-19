@@ -7,10 +7,24 @@ import {
 } from '../../../entities/planet/heightmap_generator';
 
 const THIN_ATMOSPHERE = { density: 'Thin', pressure: 0.08, composition: { Nitrogen: 80, Methane: 20 } };
-const THICK_ATMOSPHERE = { density: 'Thick', pressure: 8, composition: { 'Carbon Dioxide': 92, Nitrogen: 8 } };
-const SUPERDENSE_ATMOSPHERE = { density: 'Superdense', pressure: 35, composition: { Hydrogen: 72, Helium: 18, 'Water Vapor': 10 } };
+const THICK_ATMOSPHERE = {
+  density: 'Thick',
+  pressure: 8,
+  composition: { 'Carbon Dioxide': 92, Nitrogen: 8 },
+};
+const SUPERDENSE_ATMOSPHERE = {
+  density: 'Superdense',
+  pressure: 35,
+  composition: { Hydrogen: 72, Helium: 18, 'Water Vapor': 10 },
+};
 
-function stats(map: number[][]): { mean: number; roughness: number; lowFraction: number; highFraction: number } {
+/** Calculates summary statistics for a generated heightmap fixture. */
+function stats(map: number[][]): {
+  mean: number;
+  roughness: number;
+  lowFraction: number;
+  highFraction: number;
+} {
   const values = map.flat();
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   let edgeDelta = 0;
@@ -56,7 +70,10 @@ describe('realistic specialised surface generation', () => {
 
   it('widens crater footprints toward map poles for projected surface maps', () => {
     const mapSize = 64;
-    const flatMap = (value: number) => Array.from({ length: mapSize }, () => Array.from({ length: mapSize }, () => value));
+    /** Creates a square flat heightmap for crater comparisons. */
+    const flatMap = (value: number) =>
+      Array.from({ length: mapSize }, () => Array.from({ length: mapSize }, () => value));
+    /** Creates a deterministic PRNG stub with controlled crater outputs. */
     const fakePrng = (cy: number) => {
       const intValues = [1, 5, 32, cy];
       return {
@@ -79,7 +96,9 @@ describe('realistic specialised surface generation', () => {
     const equatorSpan = equator[32].filter((value) => value !== 128).length;
     const polarSpan = polar[3].filter((value) => value !== 128).length;
 
-    expect(getMercatorCraterDistanceSq(6, 0, 3, mapSize)).toBeLessThan(getMercatorCraterDistanceSq(6, 0, 32, mapSize));
+    expect(getMercatorCraterDistanceSq(6, 0, 3, mapSize)).toBeLessThan(
+      getMercatorCraterDistanceSq(6, 0, 32, mapSize)
+    );
     expect(polarSpan).toBeGreaterThan(equatorSpan);
   });
 

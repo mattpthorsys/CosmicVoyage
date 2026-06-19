@@ -27,7 +27,11 @@ type DrawCall = {
   scaleY?: number;
 };
 
-function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuffer; drawCalls: DrawCall[]; stagedFrames: readonly unknown[][] } {
+/** Creates mock screen buffer. */
+function createMockScreenBuffer(
+  cols: number,
+  rows: number
+): { buffer: ScreenBuffer; drawCalls: DrawCall[]; stagedFrames: readonly unknown[][] } {
   const drawCalls: DrawCall[] = [];
   const stagedFrames: unknown[][] = [];
   const buffer = {
@@ -38,9 +42,19 @@ function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuf
     drawChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
       drawCalls.push({ char, x, y, fg, bg });
     }),
-    drawScaledChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null, scaleX?: number, scaleY?: number) => {
-      drawCalls.push({ char, x, y, fg, bg, scaleX, scaleY });
-    }),
+    drawScaledChar: vi.fn(
+      (
+        char: string | null,
+        x: number,
+        y: number,
+        fg?: string | null,
+        bg?: string | null,
+        scaleX?: number,
+        scaleY?: number
+      ) => {
+        drawCalls.push({ char, x, y, fg, bg, scaleX, scaleY });
+      }
+    ),
     drawString: vi.fn((text: string, x: number, y: number, fg?: string | null, bg?: string | null) => {
       for (let index = 0; index < text.length; index++) {
         drawCalls.push({ char: text[index], x: x + index, y, fg, bg });
@@ -55,6 +69,7 @@ function createMockScreenBuffer(cols: number, rows: number): { buffer: ScreenBuf
   return { buffer, drawCalls, stagedFrames };
 }
 
+/** Creates scene renderer. */
 function createSceneRenderer(buffer: ScreenBuffer): SceneRenderer {
   return new SceneRenderer(
     buffer,
@@ -64,6 +79,7 @@ function createSceneRenderer(buffer: ScreenBuffer): SceneRenderer {
   );
 }
 
+/** Creates solid planet. */
 function createSolidPlanet(): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
@@ -71,7 +87,10 @@ function createSolidPlanet(): Planet {
     type: { value: 'Rock' },
     heightmap: { value: Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => 4)) },
     heightLevelColors: {
-      value: Array.from({ length: CONFIG.PLANET_HEIGHT_LEVELS }, (_, index) => `#${index.toString(16).padStart(2, '0')}4040`),
+      value: Array.from(
+        { length: CONFIG.PLANET_HEIGHT_LEVELS },
+        (_, index) => `#${index.toString(16).padStart(2, '0')}4040`
+      ),
     },
     surfaceElementMap: { value: Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => '')) },
     isMined: { value: () => false },
@@ -79,6 +98,7 @@ function createSolidPlanet(): Planet {
   return planet;
 }
 
+/** Creates gas giant planet. */
 function createGasGiantPlanet(): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
@@ -101,7 +121,12 @@ function createGasGiantPlanet(): Planet {
   return planet;
 }
 
-function createIceGiantPlanet(name = 'Regression Ice Giant', surfaceTemp = 78, orbitDistance = 2.9e12): Planet {
+/** Creates ice giant planet. */
+function createIceGiantPlanet(
+  name = 'Regression Ice Giant',
+  surfaceTemp = 78,
+  orbitDistance = 2.9e12
+): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
     name: { value: name },
@@ -123,14 +148,20 @@ function createIceGiantPlanet(name = 'Regression Ice Giant', surfaceTemp = 78, o
   return planet;
 }
 
+/** Creates orbit planet. */
 function createOrbitPlanet(): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
     name: { value: 'Regression Orbit I' },
     type: { value: 'Rock' },
-    heightmap: { value: Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => (x + y) % 8)) },
+    heightmap: {
+      value: Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => (x + y) % 8)),
+    },
     heightLevelColors: {
-      value: Array.from({ length: CONFIG.PLANET_HEIGHT_LEVELS }, (_, index) => `#${index.toString(16).padStart(2, '0')}7050`),
+      value: Array.from(
+        { length: CONFIG.PLANET_HEIGHT_LEVELS },
+        (_, index) => `#${index.toString(16).padStart(2, '0')}7050`
+      ),
     },
     diameter: { value: 11000 },
     density: { value: 5.1 },
@@ -145,6 +176,7 @@ function createOrbitPlanet(): Planet {
   return planet;
 }
 
+/** Creates atmospheric orbit planet. */
 function createAtmosphericOrbitPlanet(): Planet {
   const planet = createOrbitPlanet();
   Object.defineProperty(planet, 'atmosphere', {
@@ -157,6 +189,7 @@ function createAtmosphericOrbitPlanet(): Planet {
   return planet;
 }
 
+/** Creates featureless orbit planet. */
 function createFeaturelessOrbitPlanet(colour: string = '#B8B8B8'): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
@@ -178,11 +211,19 @@ function createFeaturelessOrbitPlanet(colour: string = '#B8B8B8'): Planet {
   return planet;
 }
 
+/** Creates system. */
 function createSystem(): SolarSystem {
   return {
     name: 'Regression',
     starType: 'G2V',
-    architecture: { kind: 'single', stars: [], primaryStarId: 'A', binarySeparation: 0, outerSeparation: 0, habitableLabel: 'A' },
+    architecture: {
+      kind: 'single',
+      stars: [],
+      primaryStarId: 'A',
+      binarySeparation: 0,
+      outerSeparation: 0,
+      habitableLabel: 'A',
+    },
     stars: [
       {
         id: 'A',
@@ -216,6 +257,7 @@ function createSystem(): SolarSystem {
   } as unknown as SolarSystem;
 }
 
+/** Creates render signature. */
 function createRenderSignature(drawCalls: DrawCall[]): {
   totalCalls: number;
   chars: Record<string, number>;
@@ -243,6 +285,7 @@ function createRenderSignature(drawCalls: DrawCall[]): {
   };
 }
 
+/** Renders text rows. */
 function renderTextRows(drawCalls: DrawCall[]): string[] {
   const rows = new Map<number, Map<number, string>>();
   for (const call of drawCalls) {
@@ -262,6 +305,7 @@ function renderTextRows(drawCalls: DrawCall[]): string[] {
     });
 }
 
+/** Calculates approximate luminance for a hexadecimal colour. */
 function hexLuma(hex: string | null | undefined): number {
   const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '');
   if (!match) return 0;
@@ -271,6 +315,7 @@ function hexLuma(hex: string | null | undefined): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+/** Parses a hexadecimal colour into numeric RGB channels. */
 function hexRgb(hex: string): { r: number; g: number; b: number } {
   const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   if (!match) return { r: 0, g: 0, b: 0 };
@@ -326,7 +371,8 @@ describe('SceneRenderer visual regressions', () => {
     renderer.drawSolarSystem(player, createSystem(), CONFIG.SYSTEM_VIEW_SCALE);
 
     const backgroundStars = drawCalls.filter(
-      (call) => call.char === GLYPHS.STAR_DIM && call.bg === CONFIG.DEFAULT_BG_COLOUR && typeof call.fg === 'string'
+      (call) =>
+        call.char === GLYPHS.STAR_DIM && call.bg === CONFIG.DEFAULT_BG_COLOUR && typeof call.fg === 'string'
     );
     expect(backgroundStars.length).toBeGreaterThan(0);
     expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
@@ -368,20 +414,36 @@ describe('SceneRenderer visual regressions', () => {
   it('uses distinct realistic texture profiles for gas and ice giants', () => {
     const { buffer } = createMockScreenBuffer(100, 54);
     const renderer = createSceneRenderer(buffer) as unknown as {
-      sampleGiantPlanetTexture: (planet: Planet, u: number, v: number, lon: number, lat: number, phase: number) => string;
+      sampleGiantPlanetTexture: (
+        planet: Planet,
+        u: number,
+        v: number,
+        lon: number,
+        lat: number,
+        phase: number
+      ) => string;
     };
     const gas = createGasGiantPlanet();
     const ice = createIceGiantPlanet('Regression Uranian', 72);
-    const gasSamples = [0.18, 0.34, 0.5, 0.66, 0.82].map((u) => hexRgb(renderer.sampleGiantPlanetTexture(gas, u, 0.5, u, 0, 0.2)));
-    const iceSamples = [0.18, 0.34, 0.5, 0.66, 0.82].map((u) => hexRgb(renderer.sampleGiantPlanetTexture(ice, u, 0.5, u, 0, 0.2)));
+    const gasSamples = [0.18, 0.34, 0.5, 0.66, 0.82].map((u) =>
+      hexRgb(renderer.sampleGiantPlanetTexture(gas, u, 0.5, u, 0, 0.2))
+    );
+    const iceSamples = [0.18, 0.34, 0.5, 0.66, 0.82].map((u) =>
+      hexRgb(renderer.sampleGiantPlanetTexture(ice, u, 0.5, u, 0, 0.2))
+    );
+    /** Calculates the arithmetic mean of sampled numeric values. */
     const average = (samples: { r: number; g: number; b: number }[], channel: 'r' | 'g' | 'b'): number =>
       samples.reduce((sum, sample) => sum + sample[channel], 0) / samples.length;
+    /** Returns the observed range of one RGB channel in rendered cells. */
     const channelRange = (samples: { r: number; g: number; b: number }[], channel: 'r' | 'g' | 'b'): number =>
-      Math.max(...samples.map((sample) => sample[channel])) - Math.min(...samples.map((sample) => sample[channel]));
+      Math.max(...samples.map((sample) => sample[channel])) -
+      Math.min(...samples.map((sample) => sample[channel]));
 
     expect(average(gasSamples, 'r')).toBeGreaterThan(average(gasSamples, 'b'));
     expect(average(iceSamples, 'b')).toBeGreaterThan(average(iceSamples, 'r'));
-    expect(channelRange(gasSamples, 'r') + channelRange(gasSamples, 'g')).toBeGreaterThan(channelRange(iceSamples, 'r') + channelRange(iceSamples, 'g'));
+    expect(channelRange(gasSamples, 'r') + channelRange(gasSamples, 'g')).toBeGreaterThan(
+      channelRange(iceSamples, 'r') + channelRange(iceSamples, 'g')
+    );
   });
 
   it('adds sparse narrow cloud ribbons whose visibility responds to giant-planet weather energy', () => {
@@ -390,6 +452,7 @@ describe('SceneRenderer visual regressions', () => {
     const warm = createIceGiantPlanet('Warm Ribbon Giant', 230, 0.55 * AU_IN_METERS);
     const coldProfile = renderer.getProfile(cold, cold.rgbPaletteCache ?? []);
     const warmProfile = renderer.getProfile(warm, warm.rgbPaletteCache ?? []);
+    /** Samples atmospheric ribbon strength across a representative field. */
     const sampleField = (planet: Planet, profile: GiantVisualProfile): { peak: number; mean: number } => {
       let peak = 0;
       let total = 0;
@@ -454,14 +517,25 @@ describe('SceneRenderer visual regressions', () => {
       columns: ['COMMODITY', 'STOCK', 'BUY CR', 'CLASS'],
       widths: [20, 7, 8, 16],
       rows: [
-        { id: 'water', cells: ['Water Ice', '12', '3', 'volatile'], detail: 'Bulk water ice for station processing.' },
+        {
+          id: 'water',
+          cells: ['Water Ice', '12', '3', 'volatile'],
+          detail: 'Bulk water ice for station processing.',
+        },
         { id: 'helium', cells: ['Helium-3', '4', '42', 'fuel'], detail: 'Fusion reserve lots.' },
-        { id: 'drones', cells: ['Survey Drones', '2', '180', 'equipment'], detail: 'Autonomous mapping packages.' },
+        {
+          id: 'drones',
+          cells: ['Survey Drones', '2', '180', 'equipment'],
+          detail: 'Autonomous mapping packages.',
+        },
       ],
       selectedIndex: 1,
       viewOffset: 0,
       visibleRowCount: 3,
-      footer: ['Cr 1,000   Fuel 500/500   Cargo 0/100', 'Up/Down select  PgUp/PgDn page  Left/Right sections  Enter use  Esc back'],
+      footer: [
+        'Cr 1,000   Fuel 500/500   Cargo 0/100',
+        'Up/Down select  PgUp/PgDn page  Left/Right sections  Enter use  Esc back',
+      ],
     });
 
     expect(drawCalls.some((call) => call.char === 'C')).toBe(true);
@@ -517,7 +591,12 @@ describe('SceneRenderer visual regressions', () => {
       rows: [
         {
           id: 'long-order',
-          cells: ['Special purpose bay', '88,000 Cr', '14d', 'A deliberately long refit order that cannot fit in a small viewport.'],
+          cells: [
+            'Special purpose bay',
+            '88,000 Cr',
+            '14d',
+            'A deliberately long refit order that cannot fit in a small viewport.',
+          ],
           detail: 'Overflow text is described in the detail area when selected.',
         },
       ],
@@ -540,9 +619,21 @@ describe('SceneRenderer visual regressions', () => {
       columns: ['TYPE', 'NAME', 'RANGE', 'BRG'],
       widths: [8, 24, 10, 5],
       rows: [
-        { id: 'star:A', cells: ['Star A', 'Regression A', '0.00 AU', 'HERE'], detail: 'Regression A | Star A | one-way signal 0.0 light-sec' },
-        { id: 'planet:Regression I', cells: ['Planet', 'I (2 moons)', '1.42 AU', 'NE'], detail: 'Regression I | Planet | one-way signal 11.8 light-min' },
-        { id: 'planet:Regression II', cells: ['Planet', 'II (0 moons)', '4.80 AU', 'SW'], detail: 'Regression II | Planet | one-way signal 39.9 light-min' },
+        {
+          id: 'star:A',
+          cells: ['Star A', 'Regression A', '0.00 AU', 'HERE'],
+          detail: 'Regression A | Star A | one-way signal 0.0 light-sec',
+        },
+        {
+          id: 'planet:Regression I',
+          cells: ['Planet', 'I (2 moons)', '1.42 AU', 'NE'],
+          detail: 'Regression I | Planet | one-way signal 11.8 light-min',
+        },
+        {
+          id: 'planet:Regression II',
+          cells: ['Planet', 'II (0 moons)', '4.80 AU', 'SW'],
+          detail: 'Regression II | Planet | one-way signal 39.9 light-min',
+        },
       ],
       selectedIndex: 1,
       viewOffset: 0,
@@ -569,7 +660,14 @@ describe('SceneRenderer visual regressions', () => {
       visibleRowCount: 18,
       dashboard: [
         { segments: [{ text: '┌──── CORE ────┐', tone: 'cyan' }] },
-        { segments: [{ text: '│', tone: 'cyan' }, { text: 'DRIVE TRUNK ', tone: 'green' }, { text: '[====..]', tone: 'amber' }, { text: '│', tone: 'cyan' }] },
+        {
+          segments: [
+            { text: '│', tone: 'cyan' },
+            { text: 'DRIVE TRUNK ', tone: 'green' },
+            { text: '[====..]', tone: 'amber' },
+            { text: '│', tone: 'cyan' },
+          ],
+        },
         { segments: [{ text: '└──────────────┘', tone: 'cyan' }] },
       ],
       footer: ['Esc/Left back'],
@@ -685,8 +783,15 @@ describe('SceneRenderer visual regressions', () => {
         'Regression Orbit I is a stable rocky test body with a restrained scan summary.',
         'Landing map and orbital sphere should remain visually framed.',
       ],
-      telemetry: ['Body Regression Orbit I', 'Class Rock | Diameter 11,000 km | Density 5.10 g/cm3', 'Tilt 13.2 deg | Incl 1.7 deg | Free rotation'],
-      footer: ['Landing site: arrows move cursor, Enter/Space confirms, Esc cancels.', 'Site X 12  Y 18  Map 32x32'],
+      telemetry: [
+        'Body Regression Orbit I',
+        'Class Rock | Diameter 11,000 km | Density 5.10 g/cm3',
+        'Tilt 13.2 deg | Incl 1.7 deg | Free rotation',
+      ],
+      footer: [
+        'Landing site: arrows move cursor, Enter/Space confirms, Esc cancels.',
+        'Site X 12  Y 18  Map 32x32',
+      ],
     });
 
     expect(drawCalls.some((call) => call.char === '+')).toBe(true);
@@ -731,6 +836,7 @@ describe('SceneRenderer visual regressions', () => {
   });
 
   it('moves the orbital stellar marker between opposite horizons', () => {
+    /** Renders at phase. */
     const renderAtPhase = (illuminationPhase: number): DrawCall[] => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
       const renderer = createSceneRenderer(buffer);
@@ -768,6 +874,7 @@ describe('SceneRenderer visual regressions', () => {
     const renderer = createSceneRenderer(buffer);
     const planet = createOrbitPlanet();
 
+    /** Draws at phase. */
     const drawAtPhase = (illuminationPhase: number): DrawCall[] => {
       const { buffer: phaseBuffer, drawCalls: phaseDrawCalls } = createMockScreenBuffer(132, 58);
       const phaseRenderer = createSceneRenderer(phaseBuffer);
@@ -814,6 +921,7 @@ describe('SceneRenderer visual regressions', () => {
   });
 
   it('adds a fading atmospheric horizon glow near orbital sunrise and sunset', () => {
+    /** Renders at phase. */
     const renderAtPhase = (illuminationPhase: number, atmospheric = true): DrawCall[] => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
       const renderer = createSceneRenderer(buffer);
@@ -838,6 +946,7 @@ describe('SceneRenderer visual regressions', () => {
       return drawCalls;
     };
 
+    /** Counts rendered cells in the left atmospheric horizon band. */
     const countLeftHorizonBand = (calls: DrawCall[]): number =>
       calls.filter(
         (call) =>
@@ -849,8 +958,10 @@ describe('SceneRenderer visual regressions', () => {
           call.x >= 11 &&
           call.x <= 13.5
       ).length;
+    /** Counts atmosphere cells extending beyond the solid globe. */
     const countAtmosphericExtra = (illuminationPhase: number): number =>
-      countLeftHorizonBand(renderAtPhase(illuminationPhase)) - countLeftHorizonBand(renderAtPhase(illuminationPhase, false));
+      countLeftHorizonBand(renderAtPhase(illuminationPhase)) -
+      countLeftHorizonBand(renderAtPhase(illuminationPhase, false));
     const horizonExtra = countAtmosphericExtra(0.278);
     const oldShadeGlyphs = renderAtPhase(0.278).filter(
       (call) =>
@@ -888,15 +999,13 @@ describe('SceneRenderer visual regressions', () => {
     });
 
     const globeCalls = drawCalls.filter(
-      (call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
+      (call) =>
+        call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
     );
     const shadeGlyphs = new Set<string>([GLYPHS.SHADE_LIGHT, GLYPHS.SHADE_MEDIUM, GLYPHS.SHADE_DARK]);
     const shadeGlobeCalls = drawCalls.filter(
       (call) =>
-        shadeGlyphs.has(call.char ?? '') &&
-        call.scaleX === 0.5 &&
-        call.scaleY === 0.5 &&
-        call.fg === call.bg
+        shadeGlyphs.has(call.char ?? '') && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
     );
 
     expect(globeCalls.length).toBeGreaterThan(200);
@@ -939,26 +1048,41 @@ describe('SceneRenderer visual regressions', () => {
     const sphereCy = 27;
     const sphereRadius = 12;
     const globeCalls = drawCalls
-      .filter((call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg)
+      .filter(
+        (call) =>
+          call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
+      )
       .map((call) => ({
         radius: Math.hypot(call.x - sphereCx, call.y - sphereCy),
         luma: hexLuma(call.fg),
       }))
       .filter((sample) => sample.radius <= sphereRadius + 2.01);
     const interior = globeCalls.filter((sample) => sample.radius <= sphereRadius - 3);
-    const rim = globeCalls.filter((sample) => sample.radius > sphereRadius && sample.radius <= sphereRadius + 1.5);
-    const innerRim = globeCalls.filter((sample) => sample.radius >= sphereRadius - 1.5 && sample.radius <= sphereRadius);
+    const rim = globeCalls.filter(
+      (sample) => sample.radius > sphereRadius && sample.radius <= sphereRadius + 1.5
+    );
+    const innerRim = globeCalls.filter(
+      (sample) => sample.radius >= sphereRadius - 1.5 && sample.radius <= sphereRadius
+    );
 
     expect(interior.length).toBeGreaterThan(100);
     expect(rim.length).toBeGreaterThan(4);
-    expect(Math.max(...rim.map((sample) => sample.luma))).toBeLessThan(Math.max(...interior.map((sample) => sample.luma)) * 0.65);
-    expect(Math.max(...innerRim.map((sample) => sample.luma))).toBeGreaterThan(Math.max(...rim.map((sample) => sample.luma)));
+    expect(Math.max(...rim.map((sample) => sample.luma))).toBeLessThan(
+      Math.max(...interior.map((sample) => sample.luma)) * 0.65
+    );
+    expect(Math.max(...innerRim.map((sample) => sample.luma))).toBeGreaterThan(
+      Math.max(...rim.map((sample) => sample.luma))
+    );
   });
 
   it('compresses atmospheric globe highlights without affecting airless worlds', () => {
     const { buffer } = createMockScreenBuffer(132, 58);
     const renderer = createSceneRenderer(buffer) as unknown as {
-      capAtmosphericGlobeHighlight: (planet: Planet, colour: { r: number; g: number; b: number }, lightGlyph: number) => { r: number; g: number; b: number };
+      capAtmosphericGlobeHighlight: (
+        planet: Planet,
+        colour: { r: number; g: number; b: number },
+        lightGlyph: number
+      ) => { r: number; g: number; b: number };
     };
     const atmosphericPlanet = createAtmosphericOrbitPlanet();
     const airlessPlanet = createOrbitPlanet();
@@ -976,6 +1100,7 @@ describe('SceneRenderer visual regressions', () => {
   });
 
   it('changes visible globe texture as the orbital viewing phase advances', () => {
+    /** Renders signature at phase. */
     const renderSignatureAtPhase = (illuminationPhase: number) => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
       const renderer = createSceneRenderer(buffer);
@@ -998,7 +1123,10 @@ describe('SceneRenderer visual regressions', () => {
         footer: ['Esc closes orbit.'],
       });
       return drawCalls
-        .filter((call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg)
+        .filter(
+          (call) =>
+            call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.fg === call.bg
+        )
         .map((call) => `${call.x.toFixed(1)},${call.y.toFixed(1)}:${call.fg}`)
         .slice(0, 400);
     };
@@ -1018,46 +1146,22 @@ describe('SceneRenderer visual regressions', () => {
       ) => { x: number; y: number; z: number };
     };
 
-    const untiltedQuarterOrbit = renderer.transformOrbitViewNormalToBodyFrame(
-      0,
-      0,
-      1,
-      0,
-      Math.PI / 2
-    );
+    const untiltedQuarterOrbit = renderer.transformOrbitViewNormalToBodyFrame(0, 0, 1, 0, Math.PI / 2);
     expect(untiltedQuarterOrbit.x).toBeCloseTo(1, 8);
     expect(untiltedQuarterOrbit.y).toBeCloseTo(0, 8);
     expect(untiltedQuarterOrbit.z).toBeCloseTo(0, 8);
 
-    const northPoleView = renderer.transformOrbitViewNormalToBodyFrame(
-      0,
-      0,
-      1,
-      Math.PI / 4,
-      0
-    );
+    const northPoleView = renderer.transformOrbitViewNormalToBodyFrame(0, 0, 1, Math.PI / 4, 0);
     expect(northPoleView.x).toBeCloseTo(0, 8);
     expect(northPoleView.y).toBeCloseTo(Math.SQRT1_2, 8);
     expect(northPoleView.z).toBeCloseTo(Math.SQRT1_2, 8);
 
-    const southPoleView = renderer.transformOrbitViewNormalToBodyFrame(
-      0,
-      0,
-      1,
-      Math.PI / 4,
-      Math.PI
-    );
+    const southPoleView = renderer.transformOrbitViewNormalToBodyFrame(0, 0, 1, Math.PI / 4, Math.PI);
     expect(southPoleView.x).toBeCloseTo(0, 8);
     expect(southPoleView.y).toBeCloseTo(-Math.SQRT1_2, 8);
     expect(southPoleView.z).toBeCloseTo(-Math.SQRT1_2, 8);
 
-    const equatorialView = renderer.transformOrbitViewNormalToBodyFrame(
-      0,
-      0,
-      1,
-      Math.PI / 4,
-      Math.PI / 2
-    );
+    const equatorialView = renderer.transformOrbitViewNormalToBodyFrame(0, 0, 1, Math.PI / 4, Math.PI / 2);
     expect(equatorialView.x).toBeCloseTo(1, 8);
     expect(equatorialView.y).toBeCloseTo(0, 8);
     expect(equatorialView.z).toBeCloseTo(0, 8);

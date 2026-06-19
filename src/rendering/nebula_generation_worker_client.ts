@@ -19,10 +19,12 @@ export class WorkerNebulaColourProvider implements NebulaColourProvider {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly fallback = new LocalNebulaColourProvider();
 
+  /** Returns background color. */
   getBackgroundColor(worldX: number, worldY: number): string {
     return this.fallback.getBackgroundColor(worldX, worldY);
   }
 
+  /** Returns background colors async. */
   getBackgroundColorsAsync(requests: readonly NebulaColourRequest[]): Promise<NebulaColourSample[]> {
     if (requests.length === 0) return Promise.resolve([]);
     if (typeof Worker === 'undefined') {
@@ -37,10 +39,12 @@ export class WorkerNebulaColourProvider implements NebulaColourProvider {
     });
   }
 
+  /** Clears cache. */
   clearCache(): void {
     this.fallback.clearCache();
   }
 
+  /** Terminates the worker and rejects any pending requests. */
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
@@ -48,6 +52,7 @@ export class WorkerNebulaColourProvider implements NebulaColourProvider {
     this.pending.clear();
   }
 
+  /** Returns worker. */
   private getWorker(): Worker {
     if (this.worker) return this.worker;
 

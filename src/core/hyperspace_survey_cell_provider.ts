@@ -13,7 +13,9 @@ export interface HyperspaceSurveyCellData {
 
 export interface HyperspaceSurveyCellProvider {
   getCellData(worldX: number, worldY: number): HyperspaceSurveyCellData;
-  getCellDataBatchAsync(requests: readonly HyperspaceSurveyCellRequest[]): Promise<HyperspaceSurveyCellData[]>;
+  getCellDataBatchAsync(
+    requests: readonly HyperspaceSurveyCellRequest[]
+  ): Promise<HyperspaceSurveyCellData[]>;
   clearCache(): void;
 }
 
@@ -34,8 +36,10 @@ const EMPTY_PHENOMENON: DeepSpacePhenomenonProperties = {
 };
 
 export class LocalHyperspaceSurveyCellProvider implements HyperspaceSurveyCellProvider {
+  /** Initializes LocalHyperspaceSurveyCellProvider. */
   constructor(private readonly systemDataGenerator: SystemDataGenerator) {}
 
+  /** Returns cell data. */
   getCellData(worldX: number, worldY: number): HyperspaceSurveyCellData {
     const system = this.systemDataGenerator.getSystemMapProperties(worldX, worldY);
     const phenomenon = system.exists
@@ -44,20 +48,27 @@ export class LocalHyperspaceSurveyCellProvider implements HyperspaceSurveyCellPr
     return { worldX, worldY, system, phenomenon };
   }
 
-  getCellDataBatchAsync(requests: readonly HyperspaceSurveyCellRequest[]): Promise<HyperspaceSurveyCellData[]> {
-    return Promise.resolve().then(() => requests.map(({ worldX, worldY }) => this.getCellData(worldX, worldY)));
+  /** Returns cell data batch async. */
+  getCellDataBatchAsync(
+    requests: readonly HyperspaceSurveyCellRequest[]
+  ): Promise<HyperspaceSurveyCellData[]> {
+    return Promise.resolve().then(() =>
+      requests.map(({ worldX, worldY }) => this.getCellData(worldX, worldY))
+    );
   }
 
+  /** Clears cache. */
   clearCache(): void {}
 }
 
 let hyperspaceSurveyCellProvider: HyperspaceSurveyCellProvider | null = null;
 
+/** Updates hyperspace survey cell provider. */
 export function setHyperspaceSurveyCellProvider(provider: HyperspaceSurveyCellProvider): void {
   hyperspaceSurveyCellProvider = provider;
 }
 
+/** Returns hyperspace survey cell provider. */
 export function getHyperspaceSurveyCellProvider(): HyperspaceSurveyCellProvider | null {
   return hyperspaceSurveyCellProvider;
 }
-

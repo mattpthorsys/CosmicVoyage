@@ -3,6 +3,7 @@ import { eventManager, GameEvents } from '../../../core/event_manager';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 
+/** Creates surface travel harness. */
 function createSurfaceTravelHarness(justPressed: boolean): any {
   const player = new Player();
   player.terrainVehicle.deployed = true;

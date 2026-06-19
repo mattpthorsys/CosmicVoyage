@@ -4,6 +4,7 @@ import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { Planet } from '../../../entities/planet';
 
+/** Creates travel harness. */
 function createTravelHarness(state: 'hyperspace' | 'system', pressed: string): any {
   return Object.assign(Object.create(Game.prototype), {
     player: new Player(),
@@ -25,7 +26,10 @@ function createTravelHarness(state: 'hyperspace' | 'system', pressed: string): a
     travelCommandMoving: true,
     travelCommandSelection: 0,
     terminalOverlay: { clear: vi.fn(), addMessageLines: vi.fn(), addMessage: vi.fn() },
-    getCurrentHyperspaceSurvey: () => ({ nearestSystemContact: null, medium: { label: 'quiet', sensorRangeMultiplier: 1 } }),
+    getCurrentHyperspaceSurvey: () => ({
+      nearestSystemContact: null,
+      medium: { label: 'quiet', sensorRangeMultiplier: 1 },
+    }),
     toNavigationContact: () => null,
     getSelectedTarget: () => null,
     getCommandStripTargetName: () => undefined,
@@ -34,6 +38,7 @@ function createTravelHarness(state: 'hyperspace' | 'system', pressed: string): a
   });
 }
 
+/** Creates planet target. */
 function createPlanetTarget(name = 'Remote I'): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.assign(planet, {
@@ -58,7 +63,10 @@ describe('travel command menu', () => {
       const moving = createTravelHarness('hyperspace', 'MOVE_RIGHT');
       expect(moving._handleTravelCommandInput()).toBe(false);
       moving._handleMovementInput();
-      expect(publish).toHaveBeenCalledWith(GameEvents.MOVE_REQUESTED, expect.objectContaining({ context: 'hyperspace', dx: 1 }));
+      expect(publish).toHaveBeenCalledWith(
+        GameEvents.MOVE_REQUESTED,
+        expect.objectContaining({ context: 'hyperspace', dx: 1 })
+      );
 
       const paused = createTravelHarness('hyperspace', 'ENTER_SYSTEM');
       expect(paused._handleTravelCommandInput()).toBe(true);
@@ -74,7 +82,9 @@ describe('travel command menu', () => {
 
   it('uses Tab as the recommended travel command hotkey', () => {
     const game = createTravelHarness('hyperspace', 'CYCLE_TARGET');
-    game.getCurrentAvailableActions = () => [{ id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true }];
+    game.getCurrentAvailableActions = () => [
+      { id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true },
+    ];
     game.executeCommandBarAction = vi.fn();
 
     expect(game._handleTravelCommandInput()).toBe(true);
@@ -84,7 +94,9 @@ describe('travel command menu', () => {
 
   it('selects the green travel command in displayed order', () => {
     const game = createTravelHarness('hyperspace', 'ENTER_SYSTEM');
-    game.getCurrentAvailableActions = () => [{ id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true }];
+    game.getCurrentAvailableActions = () => [
+      { id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true },
+    ];
     game.executeCommandBarAction = vi.fn();
 
     expect(game._handleTravelCommandInput()).toBe(true);
@@ -98,7 +110,9 @@ describe('travel command menu', () => {
 
   it('does not highlight a travel command while movement is engaged', () => {
     const game = createTravelHarness('hyperspace', 'NONE');
-    game.getCurrentAvailableActions = () => [{ id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true }];
+    game.getCurrentAvailableActions = () => [
+      { id: 'enter-system', label: 'Enter System', action: 'ENTER_SYSTEM', key: 'Enter', enabled: true },
+    ];
 
     const moving = game.createHyperspaceCommandBar(game.getCurrentAvailableActions());
     expect(moving.selectedButtonId).toBeUndefined();
@@ -182,12 +196,20 @@ describe('travel command menu', () => {
     game.completeMissionsForScan = vi.fn();
 
     game.stateManager.peekAtSystem = () => brightTarget;
-    game.systemDataGenerator.getSystemMapProperties = () => ({ exists: true, starType: 'G2V', objectKind: 'stellar' });
+    game.systemDataGenerator.getSystemMapProperties = () => ({
+      exists: true,
+      starType: 'G2V',
+      objectKind: 'stellar',
+    });
     game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: 1, dy: 0 });
     const brightLines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
 
     game.stateManager.peekAtSystem = () => faintTarget;
-    game.systemDataGenerator.getSystemMapProperties = () => ({ exists: true, starType: 'T8V', objectKind: 'brown-dwarf' });
+    game.systemDataGenerator.getSystemMapProperties = () => ({
+      exists: true,
+      starType: 'T8V',
+      objectKind: 'brown-dwarf',
+    });
     game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: 24, dy: 0 });
     const faintLines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
 

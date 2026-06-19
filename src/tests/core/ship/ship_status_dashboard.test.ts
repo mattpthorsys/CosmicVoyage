@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createStartingCrew } from '../../../core/crew';
 import { createShipStatusDashboard } from '../../../core/ship_status_dashboard';
-import {
-  createDefaultShipModifications,
-  getShipDerivedStats,
-} from '../../../core/ship_modifications';
+import { createDefaultShipModifications, getShipDerivedStats } from '../../../core/ship_modifications';
 
+/** Flattens dashboard segments into plain text for assertions. */
 function dashboardText(lines: ReturnType<typeof createShipStatusDashboard>): string {
   return lines.map((line) => line.segments.map((segment) => segment.text).join('')).join('\n');
 }

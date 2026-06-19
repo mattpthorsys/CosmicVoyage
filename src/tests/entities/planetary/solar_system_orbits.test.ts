@@ -4,23 +4,31 @@ import { SystemBasicProperties, SystemDataGenerator } from '../../../generation/
 import { PRNG } from '../../../utils/prng';
 import { Planet } from '../../../entities/planet';
 import { SolarSystem } from '../../../entities/solar_system';
-import { calculateStellarLuminosityW, StellarArchitecture, StellarBody } from '../../../entities/stellar_body';
+import {
+  calculateStellarLuminosityW,
+  StellarArchitecture,
+  StellarBody,
+} from '../../../entities/stellar_body';
 
 const SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
+/** Calculates an orbital period in seconds using Kepler’s third law. */
 function keplerPeriodSeconds(radius_m: number, centralMass_kg: number): number {
   return 2 * Math.PI * Math.sqrt(Math.pow(radius_m, 3) / (GRAVITATIONAL_CONSTANT_G * centralMass_kg));
 }
 
+/** Returns the positive wrapped difference between two angles. */
 function positiveAngularDelta(from: number, to: number): number {
-  return ((to - from) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+  return (((to - from) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 }
 
+/** Calculates the expected orbital-angle change over a test interval. */
 function expectedDelta(deltaTimeSeconds: number, radius_m: number, centralMass_kg: number): number {
   const period = keplerPeriodSeconds(radius_m, centralMass_kg);
   return ((2 * Math.PI * deltaTimeSeconds * SIMULATED_SECONDS_PER_REAL_SECOND) / period) % (Math.PI * 2);
 }
 
+/** Finds system. */
 function findSystem(predicate: (system: SolarSystem) => boolean): SolarSystem {
   const seed = new PRNG('orbital-velocity-regression');
   const generator = new SystemDataGenerator(seed);
@@ -35,6 +43,7 @@ function findSystem(predicate: (system: SolarSystem) => boolean): SolarSystem {
   throw new Error('Expected representative generated system.');
 }
 
+/** Creates a representative stellar body for orbital tests. */
 function testStar(id: StellarBody['id'], starType: string, angle: number = 0): StellarBody {
   const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
   return {
@@ -51,7 +60,11 @@ function testStar(id: StellarBody['id'], starType: string, angle: number = 0): S
   };
 }
 
-function manualSystem(architecture: StellarArchitecture, seed: string = 'manual-wide-architecture'): SolarSystem {
+/** Creates a controlled solar-system fixture for orbital tests. */
+function manualSystem(
+  architecture: StellarArchitecture,
+  seed: string = 'manual-wide-architecture'
+): SolarSystem {
   const props: SystemBasicProperties = {
     exists: true,
     starType: architecture.stars[0]?.starType ?? 'G',
@@ -90,7 +103,9 @@ describe('SolarSystem orbital velocities', () => {
     const planet = system.planets.find(Boolean) as Planet;
     const hostMass =
       planet.orbitHost.kind === 'circumbinary'
-        ? system.stars.filter((star) => star.id === 'A' || star.id === 'B').reduce((sum, star) => sum + star.massKg, 0)
+        ? system.stars
+            .filter((star) => star.id === 'A' || star.id === 'B')
+            .reduce((sum, star) => sum + star.massKg, 0)
         : system.stars.reduce((sum, star) => sum + star.massKg, 0);
 
     const oldAngle = planet.orbitAngle;
@@ -103,7 +118,9 @@ describe('SolarSystem orbital velocities', () => {
   });
 
   it('uses Kepler periods for moons around parent planet mass', () => {
-    const system = findSystem((candidate) => candidate.planets.some((planet) => planet && planet.moons.length > 0));
+    const system = findSystem((candidate) =>
+      candidate.planets.some((planet) => planet && planet.moons.length > 0)
+    );
     const parent = system.planets.find((planet) => planet && planet.moons.length > 0)!;
     const moon = parent.moons[0];
 
@@ -120,7 +137,9 @@ describe('SolarSystem orbital velocities', () => {
     const system = findSystem((candidate) =>
       candidate.planets.some((planet) => planet && planet.moons.some((moon) => moon.tidallyLocked))
     );
-    const parent = system.planets.find((planet) => planet && planet.moons.some((moon) => moon.tidallyLocked))!;
+    const parent = system.planets.find(
+      (planet) => planet && planet.moons.some((moon) => moon.tidallyLocked)
+    )!;
     const moon = parent.moons.find((candidate) => candidate.tidallyLocked)!;
     const orbitalPeriodHours = keplerPeriodSeconds(moon.orbitDistance, parent.mass) / 3600;
 
@@ -146,7 +165,10 @@ describe('SolarSystem orbital velocities', () => {
     );
 
     expect(close.tidallyLocked).toBe(true);
-    expect(close.rotationPeriodHours).toBeCloseTo(keplerPeriodSeconds(0.03 * AU_IN_METERS, SOLAR_MASS_KG) / 3600, 0);
+    expect(close.rotationPeriodHours).toBeCloseTo(
+      keplerPeriodSeconds(0.03 * AU_IN_METERS, SOLAR_MASS_KG) / 3600,
+      0
+    );
     expect(distant.tidallyLocked).toBe(false);
   });
 
@@ -165,9 +187,9 @@ describe('SolarSystem orbital velocities', () => {
     );
 
     expect(secondaryPlanet).toBeTruthy();
-    expect((system as any).getSecondaryCircumstellarPlanetHosts().map((star: StellarBody) => star.id)).toContain(
-      secondaryPlanet!.orbitHost.starId
-    );
+    expect(
+      (system as any).getSecondaryCircumstellarPlanetHosts().map((star: StellarBody) => star.id)
+    ).toContain(secondaryPlanet!.orbitHost.starId);
 
     const host = system.stars.find((star) => star.id === secondaryPlanet!.orbitHost.starId)!;
     const stableZone = (system as any).getCircumstellarStableZone(host);
@@ -175,7 +197,10 @@ describe('SolarSystem orbital velocities', () => {
     expect(secondaryPlanet!.orbitDistance).toBeGreaterThanOrEqual(stableZone.minOrbit_m);
 
     system.updateOrbits(1);
-    const hostDistance = Math.hypot(secondaryPlanet!.systemX - host.systemX, secondaryPlanet!.systemY - host.systemY);
+    const hostDistance = Math.hypot(
+      secondaryPlanet!.systemX - host.systemX,
+      secondaryPlanet!.systemY - host.systemY
+    );
     expect(hostDistance).toBeCloseTo(secondaryPlanet!.orbitDistance, -5);
   });
 
@@ -191,8 +216,10 @@ describe('SolarSystem orbital velocities', () => {
     const system = manualSystem(architecture, 'close-binary-no-local-planets');
 
     expect((system as any).getSecondaryCircumstellarPlanetHosts()).toHaveLength(0);
-    expect(system.planets.some((planet) => planet?.orbitHost.kind === 'circumstellar' && planet.orbitHost.starId === 'B')).toBe(
-      false
-    );
+    expect(
+      system.planets.some(
+        (planet) => planet?.orbitHost.kind === 'circumstellar' && planet.orbitHost.starId === 'B'
+      )
+    ).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { Player } from '../../core/player';
 import { StarbaseCommerceService } from '../../core/starbase_commerce';
 import { CargoSystem } from '../../systems/cargo_systems';
 
+/** Creates commerce. */
 function createCommerce(seed = 12345) {
   const player = new Player(0, 0, '@', 'commerce-test');
   const cargo = new CargoSystem();

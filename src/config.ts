@@ -1,6 +1,3 @@
-/* FILE: src/config.ts */
-// src/config.ts (Restored STATUS_BAR_BG_COLOUR)
-
 // Basic types for configuration values - can be expanded later if needed
 // We are letting TypeScript infer most types here for simplicity during the initial port.
 export const CONFIG = {
@@ -76,14 +73,14 @@ export const CONFIG = {
     MINE: 'm',
     TRADE: 't',
     REFUEL: 'r',
-    PEEK_SYSTEM: 's', // *** ADDED: Key for peeking at system info ***
+    PEEK_SYSTEM: 's', // Compatibility alias for the shared local survey key.
     SCAN_SYSTEM_OBJECT: 's', // Changed from PEEK_SYSTEM
     DOWNLOAD_LOG: 'p',
     INFO_TEST: 'i',
     QUIT: 'Escape',
-    ZOOM_IN: '=',       // Using '=' for the key next to backspace (often shares with '+')
-    ZOOM_OUT: '-',      // Using '-' for the key next to '0'
-    ZOOM_IN_NUMPAD: 'NumpadAdd',      // '+' on Numpad
+    ZOOM_IN: '=', // Using '=' for the key next to backspace (often shares with '+')
+    ZOOM_OUT: '-', // Using '-' for the key next to '0'
+    ZOOM_IN_NUMPAD: 'NumpadAdd', // '+' on Numpad
     ZOOM_OUT_NUMPAD: 'NumpadSubtract', // '-' on Numpad
   },
 
@@ -132,11 +129,7 @@ export const CONFIG = {
   STARBASE_ORBIT_DISTANCE: 1.496e11,
 
   // --- System View Star Background ---
-  STAR_BACKGROUND_COLORS: [
-    '#6A8DFF40',
-    '#FF9A5A40',
-    '#80808040',
-  ],
+  STAR_BACKGROUND_COLORS: ['#6A8DFF40', '#FF9A5A40', '#80808040'],
   STAR_BACKGROUND_CHARS: ['.', ',', '`'],
   STAR_BACKGROUND_LAYERS: [
     { factor: 1e-8, density: 0.006, scale: 1000 },
@@ -146,7 +139,7 @@ export const CONFIG = {
   // --- Colours ---
   DEFAULT_BG_COLOUR: '#000000',
   DEFAULT_FG_COLOUR: '#FFFFFF',
-  STATUS_BAR_BG_COLOUR: '#000000', // **** RESTORED ****
+  STATUS_BAR_BG_COLOUR: '#000000',
   ORBIT_COLOUR_MAIN: '#777777',
   ORBIT_COLOUR_MINIMAP: '#444444',
   STARBASE_COLOUR: '#00FFFF',
@@ -154,17 +147,17 @@ export const CONFIG = {
 
   // --- Status Bar Themes ---
   // -- Default Theme (Amber based) --
-  SB_FG_COLOUR_DEFAULT: '#FFA500',     // Amber
+  SB_FG_COLOUR_DEFAULT: '#FFA500', // Amber
   SB_COLOR_HEADING_DEFAULT: '#FFC864', // Lighter Amber/Yellow
-  SB_COLOR_HIGHLIGHT_DEFAULT:'#FFD700',// Gold/Bright Yellow
+  SB_COLOR_HIGHLIGHT_DEFAULT: '#FFD700', // Gold/Bright Yellow
   SB_COLOR_WARNING_DEFAULT: '#DAA520', // Goldenrod/Dark Yellow
-  SB_COLOR_EMERGENCY_DEFAULT:'#DC143C',// Crimson Red
+  SB_COLOR_EMERGENCY_DEFAULT: '#DC143C', // Crimson Red
   // -- Tan/Orangish Theme --
-  SB_FG_COLOUR_TAN: '#D2B48C',         // Tan
-  SB_COLOR_HEADING_TAN: '#FFDEAD',     // Navajo White
-  SB_COLOR_HIGHLIGHT_TAN:'#FFA07A',    // Light Salmon
-  SB_COLOR_WARNING_TAN: '#CD853F',     // Peru (Brownish-Orange)
-  SB_COLOR_EMERGENCY_TAN: '#B22222',    // Firebrick Red
+  SB_FG_COLOUR_TAN: '#D2B48C', // Tan
+  SB_COLOR_HEADING_TAN: '#FFDEAD', // Navajo White
+  SB_COLOR_HIGHLIGHT_TAN: '#FFA07A', // Light Salmon
+  SB_COLOR_WARNING_TAN: '#CD853F', // Peru (Brownish-Orange)
+  SB_COLOR_EMERGENCY_TAN: '#B22222', // Firebrick Red
 
   // --- Popup ---
   POPUP_BG_COLOUR: '#ADD8E6',

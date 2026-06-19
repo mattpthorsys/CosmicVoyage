@@ -18,10 +18,12 @@ export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvide
   private nextId = 1;
   private readonly pending = new Map<number, PendingRequest>();
 
+  /** Generates surface data. */
   generateSurfaceData(request: SurfaceGenerationRequest): SurfaceData {
     return generateSurfaceDataFromRequest(request);
   }
 
+  /** Generates surface data async. */
   generateSurfaceDataAsync(request: SurfaceGenerationRequest): Promise<SurfaceData> {
     if (typeof Worker === 'undefined') {
       return Promise.resolve(this.generateSurfaceData(request));
@@ -35,6 +37,7 @@ export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvide
     });
   }
 
+  /** Terminates the worker and rejects any pending requests. */
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
@@ -42,6 +45,7 @@ export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvide
     this.pending.clear();
   }
 
+  /** Returns worker. */
   private getWorker(): Worker {
     if (this.worker) return this.worker;
 

@@ -5,6 +5,7 @@ import { PlanetCharacteristics } from '../../../entities/planet/planet_character
 import { PRNG } from '../../../utils/prng';
 import { createOrbitScreenModel } from '../../../core/orbit_ui';
 
+/** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
   return {
     diameter: 46000,

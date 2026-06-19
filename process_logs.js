@@ -23,77 +23,77 @@ let firstFullLine = null; // Store the first line of a sequence
 
 // Function to print the consolidated or original log entry
 function outputPreviousLog() {
-    if (previousMessage === null) {
-        return; // Nothing stored yet
-    }
+  if (previousMessage === null) {
+    return; // Nothing stored yet
+  }
 
-    if (count > 1) {
-        // Output consolidated log entry for repeated messages
-        console.log(`[repeated ${count} time(s)] [${firstTimestamp} - ${lastTimestamp}] ${previousMessage}`);
-    } else if (firstFullLine) {
-        // Output the original single line if it wasn't repeated
-        // This preserves the original formatting including any prefixes
-        console.log(firstFullLine);
-    }
-    // Otherwise (count is 1 but firstFullLine is null somehow?), do nothing.
+  if (count > 1) {
+    // Output consolidated log entry for repeated messages
+    console.log(`[repeated ${count} time(s)] [${firstTimestamp} - ${lastTimestamp}] ${previousMessage}`);
+  } else if (firstFullLine) {
+    // Output the original single line if it wasn't repeated
+    // This preserves the original formatting including any prefixes
+    console.log(firstFullLine);
+  }
+  // Otherwise (count is 1 but firstFullLine is null somehow?), do nothing.
 }
 
 const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: false // Important for processing piped input
+  input: process.stdin,
+  output: process.stdout,
+  terminal: false, // Important for processing piped input
 });
 
 // Process each line from the input stream
 rl.on('line', (line) => {
-    const match = line.match(logRegex);
+  const match = line.match(logRegex);
 
-    if (match) {
-        const currentTimestamp = match[1];
-        const currentMessage = match[2].trim(); // Trim whitespace for accurate comparison
+  if (match) {
+    const currentTimestamp = match[1];
+    const currentMessage = match[2].trim(); // Trim whitespace for accurate comparison
 
-        if (currentMessage === previousMessage) {
-            // Same message as the previous one, increment count and update last timestamp
-            count++;
-            lastTimestamp = currentTimestamp;
-        } else {
-            // Different message, output the previous stored log (if any)
-            outputPreviousLog();
-
-            // Start tracking the new message sequence
-            previousMessage = currentMessage;
-            count = 1;
-            firstTimestamp = currentTimestamp;
-            lastTimestamp = currentTimestamp;
-            firstFullLine = line; // Store the raw original line
-        }
+    if (currentMessage === previousMessage) {
+      // Same message as the previous one, increment count and update last timestamp
+      count++;
+      lastTimestamp = currentTimestamp;
     } else {
-        // Line doesn't match the expected log format
-        // Output any pending log sequence first
-        outputPreviousLog();
-        // Then print the non-matching line as is
-        console.log(line);
-        // Reset tracking
-        previousMessage = null;
-        count = 0;
-        firstTimestamp = null;
-        lastTimestamp = null;
-        firstFullLine = null;
+      // Different message, output the previous stored log (if any)
+      outputPreviousLog();
+
+      // Start tracking the new message sequence
+      previousMessage = currentMessage;
+      count = 1;
+      firstTimestamp = currentTimestamp;
+      lastTimestamp = currentTimestamp;
+      firstFullLine = line; // Store the raw original line
     }
+  } else {
+    // Line doesn't match the expected log format
+    // Output any pending log sequence first
+    outputPreviousLog();
+    // Then print the non-matching line as is
+    console.log(line);
+    // Reset tracking
+    previousMessage = null;
+    count = 0;
+    firstTimestamp = null;
+    lastTimestamp = null;
+    firstFullLine = null;
+  }
 });
 
 // When the input stream closes, make sure to output the last tracked log sequence
 rl.on('close', () => {
-    outputPreviousLog();
+  outputPreviousLog();
 });
 
 // Handle potential errors on input stream
 process.stdin.on('error', (err) => {
-    if (err.code === 'EPIPE') {
-        // This happens when the pipe is closed (e.g., piping to `head`), not necessarily an error.
-        process.exit(0);
-    } else {
-        console.error("Input stream error:", err);
-        process.exit(1);
-    }
+  if (err.code === 'EPIPE') {
+    // This happens when the pipe is closed (e.g., piping to `head`), not necessarily an error.
+    process.exit(0);
+  } else {
+    console.error('Input stream error:', err);
+    process.exit(1);
+  }
 });

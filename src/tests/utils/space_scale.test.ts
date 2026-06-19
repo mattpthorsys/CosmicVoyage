@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { AU_IN_METERS } from '../../constants';
-import { formatDistanceAu, formatHyperspaceSignalDelay, formatHyperspaceSpan, formatLightTimeFromMeters } from '../../utils/space_scale';
+import {
+  formatDistanceAu,
+  formatHyperspaceSignalDelay,
+  formatHyperspaceSpan,
+  formatLightTimeFromMeters,
+} from '../../utils/space_scale';
 
 describe('space scale formatting', () => {
   it('formats solar-system distances as AU and one-way light time', () => {

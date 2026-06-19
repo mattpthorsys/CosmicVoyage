@@ -80,6 +80,7 @@ export const SHIP_COMPARTMENTS: ShipCompartment[] = [
   },
 ];
 
+/** Creates ship deck rows. */
 export function createShipDeckRows(context: ShipPlaceContext): TextTableRow[] {
   return SHIP_COMPARTMENTS.map((compartment) => {
     const current = compartment.id === context.currentCompartmentId;
@@ -95,12 +96,19 @@ export function createShipDeckRows(context: ShipPlaceContext): TextTableRow[] {
       ],
       detail: `${compartment.station}: ${compartment.function}`,
       tone: current ? 'bright' : 'green',
-      cellTones: ['cyan', current ? 'bright' : 'green', crewName === 'Uncrewed' ? 'amber' : 'cyan', current ? 'amber' : 'green', 'bright'],
+      cellTones: [
+        'cyan',
+        current ? 'bright' : 'green',
+        crewName === 'Uncrewed' ? 'amber' : 'cyan',
+        current ? 'amber' : 'green',
+        'bright',
+      ],
       detailTone: 'cyan',
     };
   });
 }
 
+/** Creates ship station rows. */
 export function createShipStationRows(context: ShipPlaceContext): TextTableRow[] {
   return SHIP_COMPARTMENTS.filter((compartment) => compartment.skill).map((compartment) => {
     const skill = compartment.skill!;
@@ -118,22 +126,31 @@ export function createShipStationRows(context: ShipPlaceContext): TextTableRow[]
       detail: `Enter focuses ${compartment.label}. ${compartment.function}`,
       disabled: rating <= 0,
       tone: rating <= 0 ? 'muted' : current ? 'bright' : 'green',
-      cellTones: ['cyan', 'green', rating <= 0 ? 'amber' : 'bright', current ? 'amber' : rating > 0 ? 'green' : 'muted', 'bright'],
+      cellTones: [
+        'cyan',
+        'green',
+        rating <= 0 ? 'amber' : 'bright',
+        current ? 'amber' : rating > 0 ? 'green' : 'muted',
+        'bright',
+      ],
       detailTone: rating <= 0 ? 'muted' : 'cyan',
     };
   });
 }
 
+/** Returns ship compartment. */
 export function getShipCompartment(id: string): ShipCompartment {
   return SHIP_COMPARTMENTS.find((compartment) => compartment.id === id) ?? SHIP_COMPARTMENTS[0];
 }
 
+/** Returns best crew name. */
 function getBestCrewName(crew: CrewMember[], skill?: CrewSkill): string {
   if (!skill || crew.length === 0) return 'Auto';
   const best = [...crew].sort((a, b) => b.skills[skill] - a.skills[skill])[0];
   return best && best.skills[skill] > 0 ? best.name.slice(0, 16) : 'Uncrewed';
 }
 
+/** Returns compartment readout. */
 function getCompartmentReadout(id: string, context: ShipPlaceContext): string {
   switch (id) {
     case 'bridge':

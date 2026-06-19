@@ -11,6 +11,7 @@ import {
   isMissionCompletedByScan,
 } from '../../../core/mission_board';
 
+/** Creates mission system. */
 function createMissionSystem(): { system: SolarSystem; starbase: Starbase } {
   const seed = new PRNG('mission-board-regression');
   const generator = new SystemDataGenerator(seed);
@@ -36,8 +37,12 @@ describe('mission board generation', () => {
     const first = createMissionSystem();
     const second = createMissionSystem();
 
-    expect(generateStarbaseNotices(first.starbase, first.system)).toEqual(generateStarbaseNotices(second.starbase, second.system));
-    expect(generateStarbaseMissions(first.starbase, first.system)).toEqual(generateStarbaseMissions(second.starbase, second.system));
+    expect(generateStarbaseNotices(first.starbase, first.system)).toEqual(
+      generateStarbaseNotices(second.starbase, second.system)
+    );
+    expect(generateStarbaseMissions(first.starbase, first.system)).toEqual(
+      generateStarbaseMissions(second.starbase, second.system)
+    );
   });
 
   it('formats mission status and details for the starbase table', () => {
@@ -53,7 +58,9 @@ describe('mission board generation', () => {
 
   it('matches scan completion against the mission target only', () => {
     const { system, starbase } = createMissionSystem();
-    const mission = generateStarbaseMissions(starbase, system).find((candidate) => candidate.objective.targetType === 'planet');
+    const mission = generateStarbaseMissions(starbase, system).find(
+      (candidate) => candidate.objective.targetType === 'planet'
+    );
     if (!mission) throw new Error('Expected at least one planet scan mission.');
 
     const target = system.planets.find((planet) => planet?.name === mission.objective.targetName);

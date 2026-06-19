@@ -45,6 +45,7 @@ export type SceneViewModel =
       model: Readonly<StarbaseScreenModel>;
     }>;
 
+/** Creates player view snapshot. */
 export function createPlayerViewSnapshot(player: Player): PlayerViewSnapshot {
   const position = Object.freeze({
     worldX: player.position.worldX,
@@ -68,6 +69,7 @@ export function createPlayerViewSnapshot(player: Player): PlayerViewSnapshot {
     position,
     render,
     resources,
+    /** Calculates squared distance from a view-model item to system coordinates. */
     distanceSqToSystemCoords(targetX: number, targetY: number): number {
       const dx = targetX - position.systemX;
       const dy = targetY - position.systemY;
@@ -76,6 +78,7 @@ export function createPlayerViewSnapshot(player: Player): PlayerViewSnapshot {
   });
 }
 
+/** Creates scene view model. */
 export function createSceneViewModel(model: SceneViewModel): SceneViewModel {
   return Object.freeze(model);
 }

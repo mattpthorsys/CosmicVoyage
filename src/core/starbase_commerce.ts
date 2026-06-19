@@ -35,6 +35,7 @@ export interface BuyNextResult extends CommerceResult {
 
 type CargoAddResult = { added: number; addedItems: Record<string, number> };
 
+/** Returns trade item info. */
 export function getTradeItemInfo(itemKey: string): { name: string; baseValue: number } | null {
   const commodity = TRADE_COMMODITIES[itemKey];
   if (commodity) return { name: commodity.name, baseValue: commodity.baseValue };
@@ -62,17 +63,23 @@ const DEPOT_KEYS = [
 ] as const;
 
 export class StarbaseCommerceService {
+  /** Initializes StarbaseCommerceService. */
   constructor(
     private readonly player: Player,
     private readonly cargoSystem: CargoSystem,
     private readonly worldSeed: number
   ) {}
 
+  /** Returns manifest. */
   getManifest(starbaseName: string): TradeDepotItem[] {
     const depotKeys = DEPOT_KEYS.filter((key) => TRADE_COMMODITIES[key]);
-    const hashOffset = Math.abs(fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.worldSeed));
+    const hashOffset = Math.abs(
+      fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.worldSeed)
+    );
     return depotKeys
-      .filter((itemKey, index) => TRADE_COMMODITIES[itemKey].rarity > 0.1 || (hashOffset + index * 23) % 100 < 18)
+      .filter(
+        (itemKey, index) => TRADE_COMMODITIES[itemKey].rarity > 0.1 || (hashOffset + index * 23) % 100 < 18
+      )
       .map((itemKey, index) => {
         const commodity = TRADE_COMMODITIES[itemKey];
         const localVariance = 0.9 + ((hashOffset + index * 17) % 34) / 100;
@@ -87,21 +94,27 @@ export class StarbaseCommerceService {
           category: commodity.category,
           units,
           buyPrice: Math.max(1, Math.ceil(commodity.baseValue * CONFIG.TRADE_BUY_MARKUP * localVariance)),
-          sellPrice: Math.max(1, Math.floor(commodity.baseValue * CONFIG.TRADE_SELL_MARKDOWN * localVariance)),
+          sellPrice: Math.max(
+            1,
+            Math.floor(commodity.baseValue * CONFIG.TRADE_SELL_MARKDOWN * localVariance)
+          ),
         };
       });
   }
 
+  /** Returns item info. */
   getItemInfo(itemKey: string): { name: string; baseValue: number } | null {
     return getTradeItemInfo(itemKey);
   }
 
+  /** Returns purchase limit. */
   getPurchaseLimit(itemKey: string, rawLimit: number): number {
     const limit = Math.max(0, Math.floor(rawLimit));
     if (itemKey !== 'FUSION_FUEL_MIX') return limit;
     return Math.floor(limit / 2) * 2;
   }
 
+  /** Formats manifest. */
   formatManifest(market: TradeDepotItem[]): string {
     const offers = market
       .slice(0, 6)
@@ -110,6 +123,7 @@ export class StarbaseCommerceService {
     return `Trade depot offers: ${offers}. Need cargo space and credits to buy.`;
   }
 
+  /** Buys item. */
   buyItem(starbaseName: string, itemKey: string, amount: number): CommerceResult {
     const item = this.getManifest(starbaseName).find((candidate) => candidate.itemKey === itemKey);
     if (!item) return { message: 'Depot item unavailable.', effects: {} };
@@ -134,6 +148,7 @@ export class StarbaseCommerceService {
     };
   }
 
+  /** Sells item. */
   sellItem(starbaseName: string, itemKey: string, amount: number): CommerceResult {
     const item = this.getManifest(starbaseName).find((candidate) => candidate.itemKey === itemKey);
     if (!item) return { message: 'Depot item unavailable.', effects: {} };
@@ -157,6 +172,7 @@ export class StarbaseCommerceService {
     };
   }
 
+  /** Buys next. */
   buyNext(starbaseName: string, selectionIndex: number): BuyNextResult {
     const market = this.getManifest(starbaseName);
     const freeCargo = this.player.cargoHold.capacity - this.cargoSystem.getTotalUnits(this.player.cargoHold);
@@ -173,7 +189,10 @@ export class StarbaseCommerceService {
       const item = market[nextSelectionIndex % market.length];
       nextSelectionIndex++;
       const affordableUnits = Math.floor(this.player.resources.credits / item.buyPrice);
-      const unitsToBuy = this.getPurchaseLimit(item.itemKey, Math.min(item.units, freeCargo, affordableUnits));
+      const unitsToBuy = this.getPurchaseLimit(
+        item.itemKey,
+        Math.min(item.units, freeCargo, affordableUnits)
+      );
       if (unitsToBuy > 0) {
         const result = this.buyItem(starbaseName, item.itemKey, unitsToBuy);
         return { ...result, nextSelectionIndex };
@@ -187,6 +206,7 @@ export class StarbaseCommerceService {
     };
   }
 
+  /** Sells all. */
   sellAll(starbaseName: string): CommerceResult {
     const market = this.getManifest(starbaseName);
     const currentCargo = { ...this.player.cargoHold.items };
@@ -227,6 +247,7 @@ export class StarbaseCommerceService {
     };
   }
 
+  /** Refuels. */
   refuel(): CommerceResult {
     const fuelNeeded = this.player.resources.maxFuel - this.player.resources.fuel;
     if (fuelNeeded <= 0) {
@@ -305,6 +326,7 @@ export class StarbaseCommerceService {
     };
   }
 
+  /** Adds purchased cargo. */
   private addPurchasedCargo(itemKey: string, amount: number): CargoAddResult {
     const requested = Math.max(0, Math.floor(amount));
     if (requested <= 0) return { added: 0, addedItems: {} };
@@ -329,6 +351,7 @@ export class StarbaseCommerceService {
     return { added: addedHelium + addedDeuterium, addedItems };
   }
 
+  /** Formats purchased cargo. */
   private formatPurchasedCargo(itemKey: string, addedItems: Record<string, number>): string {
     if (itemKey === 'FUSION_FUEL_MIX') {
       return `${addedItems.HELIUM_3 || 0} m^3 Helium-3 and ${
@@ -340,13 +363,14 @@ export class StarbaseCommerceService {
     return `${amount} m^3 ${info?.name ?? addedKey}`;
   }
 
+  /** Returns available deuterium cargo. */
   private getAvailableDeuteriumCargo(): number {
     return (
-      (this.player.cargoHold.items.DEUTERIUM || 0) +
-      (this.player.cargoHold.items.DEUTERIUM_PELLETS || 0)
+      (this.player.cargoHold.items.DEUTERIUM || 0) + (this.player.cargoHold.items.DEUTERIUM_PELLETS || 0)
     );
   }
 
+  /** Consumes fusion-fuel cargo and converts it into ship fuel. */
   private consumeFusionFuelCargo(pairUnits: number): { helium: number; deuterium: number; fuel: number } {
     const pairs = Math.max(0, Math.floor(pairUnits));
     if (pairs <= 0) return { helium: 0, deuterium: 0, fuel: 0 };
@@ -355,11 +379,7 @@ export class StarbaseCommerceService {
     let deuterium = this.cargoSystem.removeItem(this.player.cargoHold, 'DEUTERIUM', deuteriumNeeded);
     deuteriumNeeded -= deuterium;
     if (deuteriumNeeded > 0) {
-      deuterium += this.cargoSystem.removeItem(
-        this.player.cargoHold,
-        'DEUTERIUM_PELLETS',
-        deuteriumNeeded
-      );
+      deuterium += this.cargoSystem.removeItem(this.player.cargoHold, 'DEUTERIUM_PELLETS', deuteriumNeeded);
     }
     return { helium, deuterium, fuel: Math.min(helium, deuterium) * 40 };
   }

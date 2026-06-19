@@ -29,13 +29,16 @@ describe('surface liquid overlays', () => {
       composition: { Nitrogen: 80, Oxygen: 20 },
     });
 
-    const data = generator.generateSurfaceData({ IRON: 100, SILICON: 80, DEUTERIUM: 20 }, {
-      mineralRichness: MineralRichness.ULTRA_RICH,
-      baseMinerals: 120,
-      metallicityFeH: 0.4,
-      surfaceTemp: 288,
-      hydrosphere: 'Global Saline Ocean',
-    });
+    const data = generator.generateSurfaceData(
+      { IRON: 100, SILICON: 80, DEUTERIUM: 20 },
+      {
+        mineralRichness: MineralRichness.ULTRA_RICH,
+        baseMinerals: 120,
+        metallicityFeH: 0.4,
+        surfaceTemp: 288,
+        hydrosphere: 'Global Saline Ocean',
+      }
+    );
 
     expect(data.liquidOverlay).not.toBeNull();
     expect(data.heightmap).not.toBeNull();
@@ -70,8 +73,12 @@ describe('surface liquid overlays', () => {
       surfaceTemp: 288,
       hydrosphere: 'Global Saline Ocean',
     };
-    const legacy = new SurfaceGenerator('Oceanic', 'worker-compat-test', new PRNG('worker-compat-test'), atmosphere)
-      .generateSurfaceData(abundance, profile);
+    const legacy = new SurfaceGenerator(
+      'Oceanic',
+      'worker-compat-test',
+      new PRNG('worker-compat-test'),
+      atmosphere
+    ).generateSurfaceData(abundance, profile);
     const request = generateSurfaceDataFromRequest({
       planetType: 'Oceanic',
       mapSeed: 'worker-compat-test',

@@ -35,6 +35,7 @@ export interface GiantVisualProfile {
 }
 
 export class GiantAtmosphereRenderer {
+  /** Samples giant-atmosphere colour and texture for one projected cell. */
   sample(
     planet: Planet,
     palette: RgbColour[],
@@ -121,6 +122,7 @@ export class GiantAtmosphereRenderer {
     };
   }
 
+  /** Returns glyph. */
   getGlyph(sample: GiantAtmosphereSample): string {
     if (sample.storm > 0.22 || sample.texture > 0.95) return GLYPHS.SHADE_DARK;
     if (sample.texture > 0.62 || sample.edge > 0.82) return GLYPHS.SHADE_MEDIUM;
@@ -128,6 +130,7 @@ export class GiantAtmosphereRenderer {
     return ' ';
   }
 
+  /** Returns turbulence factor. */
   getTurbulenceFactor(planet: Planet): number {
     const tempStress = Math.max(0, Math.min(1, (planet.surfaceTemp - 120) / 520));
     const proximityStress = Math.max(0, Math.min(1, (1.6e11 - planet.orbitDistance) / 1.3e11));
@@ -140,26 +143,106 @@ export class GiantAtmosphereRenderer {
     );
   }
 
+  /** Returns profile. */
   getProfile(planet: Planet, fallbackPalette: RgbColour[]): GiantVisualProfile {
     const family = this.getFamily(planet);
     const palette = this.getPalette(family, fallbackPalette);
     const hotBias = this.getHeatBias(planet);
     switch (family) {
       case 'hot':
-        return { family, palette, bandCount: 11, bandSharpness: 0.72, edgeRaggedness: 0.62, streakDensity: 0.54, streakContrast: 0.16, stormCount: 4, stormTint: { r: 210, g: 190, b: 170 }, stormTone: 'warm', contrast: 0.08, haze: 0.38 };
+        return {
+          family,
+          palette,
+          bandCount: 11,
+          bandSharpness: 0.72,
+          edgeRaggedness: 0.62,
+          streakDensity: 0.54,
+          streakContrast: 0.16,
+          stormCount: 4,
+          stormTint: { r: 210, g: 190, b: 170 },
+          stormTone: 'warm',
+          contrast: 0.08,
+          haze: 0.38,
+        };
       case 'saturnian':
-        return { family, palette, bandCount: 22, bandSharpness: 0.48, edgeRaggedness: 0.34, streakDensity: 0.62, streakContrast: 0.08, stormCount: 3, stormTint: { r: 255, g: 244, b: 210 }, stormTone: 'bright', contrast: 0.055, haze: 0.32 };
+        return {
+          family,
+          palette,
+          bandCount: 22,
+          bandSharpness: 0.48,
+          edgeRaggedness: 0.34,
+          streakDensity: 0.62,
+          streakContrast: 0.08,
+          stormCount: 3,
+          stormTint: { r: 255, g: 244, b: 210 },
+          stormTone: 'bright',
+          contrast: 0.055,
+          haze: 0.32,
+        };
       case 'uranian':
-        return { family, palette, bandCount: 7, bandSharpness: 0.28, edgeRaggedness: 0.16, streakDensity: 0.08, streakContrast: 0.035, stormCount: 1, stormTint: { r: 210, g: 250, b: 255 }, stormTone: 'bright', contrast: 0.025, haze: 0.62 };
+        return {
+          family,
+          palette,
+          bandCount: 7,
+          bandSharpness: 0.28,
+          edgeRaggedness: 0.16,
+          streakDensity: 0.08,
+          streakContrast: 0.035,
+          stormCount: 1,
+          stormTint: { r: 210, g: 250, b: 255 },
+          stormTone: 'bright',
+          contrast: 0.025,
+          haze: 0.62,
+        };
       case 'neptunian':
-        return { family, palette, bandCount: 10, bandSharpness: 0.44, edgeRaggedness: 0.32, streakDensity: 0.28, streakContrast: 0.09, stormCount: 3, stormTint: { r: 34, g: 52, b: 90 }, stormTone: 'dark', contrast: 0.055, haze: 0.32 };
+        return {
+          family,
+          palette,
+          bandCount: 10,
+          bandSharpness: 0.44,
+          edgeRaggedness: 0.32,
+          streakDensity: 0.28,
+          streakContrast: 0.09,
+          stormCount: 3,
+          stormTint: { r: 34, g: 52, b: 90 },
+          stormTone: 'dark',
+          contrast: 0.055,
+          haze: 0.32,
+        };
       case 'cold':
-        return { family, palette, bandCount: planet.type === 'IceGiant' ? 8 : 13, bandSharpness: 0.34, edgeRaggedness: 0.22, streakDensity: 0.16, streakContrast: 0.055, stormCount: planet.type === 'IceGiant' ? 1 : 2, stormTint: planet.type === 'IceGiant' ? { r: 200, g: 238, b: 250 } : { r: 230, g: 222, b: 200 }, stormTone: 'bright', contrast: 0.045, haze: 0.45 };
+        return {
+          family,
+          palette,
+          bandCount: planet.type === 'IceGiant' ? 8 : 13,
+          bandSharpness: 0.34,
+          edgeRaggedness: 0.22,
+          streakDensity: 0.16,
+          streakContrast: 0.055,
+          stormCount: planet.type === 'IceGiant' ? 1 : 2,
+          stormTint: planet.type === 'IceGiant' ? { r: 200, g: 238, b: 250 } : { r: 230, g: 222, b: 200 },
+          stormTone: 'bright',
+          contrast: 0.045,
+          haze: 0.45,
+        };
       default:
-        return { family, palette, bandCount: 15 + Math.round(hotBias * 3), bandSharpness: 0.72, edgeRaggedness: 0.68, streakDensity: 0.48, streakContrast: 0.14, stormCount: 6, stormTint: { r: 255, g: 232, b: 190 }, stormTone: 'warm', contrast: 0.105, haze: 0.18 };
+        return {
+          family,
+          palette,
+          bandCount: 15 + Math.round(hotBias * 3),
+          bandSharpness: 0.72,
+          edgeRaggedness: 0.68,
+          streakDensity: 0.48,
+          streakContrast: 0.14,
+          stormCount: 6,
+          stormTint: { r: 255, g: 232, b: 190 },
+          stormTone: 'warm',
+          contrast: 0.105,
+          haze: 0.18,
+        };
     }
   }
 
+  /** Samples layered cloud ribbons in a giant planet atmosphere. */
   sampleCloudRibbons(
     planet: Planet,
     longitude01: number,
@@ -236,6 +319,7 @@ export class GiantAtmosphereRenderer {
     return { strength: strongest, tint };
   }
 
+  /** Samples deterministic storm-cell intensity in a giant atmosphere. */
   private sampleStormField(
     planet: Planet,
     longitude01: number,
@@ -272,6 +356,7 @@ export class GiantAtmosphereRenderer {
     return Math.max(-0.15, Math.min(1, field));
   }
 
+  /** Samples small-scale cloud streaks across atmospheric bands. */
   private sampleCloudStreaks(
     planet: Planet,
     longitude01: number,
@@ -285,8 +370,7 @@ export class GiantAtmosphereRenderer {
     const segment =
       Math.sin((longitude01 + phase01 * 0.012) * Math.PI * (18 + broken * 30) + broken * Math.PI * 2) *
       Math.sin(
-        longitude01 * Math.PI * (5 + profile.streakDensity * 8) +
-          this.hashUnit(seed + ':phase') * Math.PI * 2
+        longitude01 * Math.PI * (5 + profile.streakDensity * 8) + this.hashUnit(seed + ':phase') * Math.PI * 2
       );
     const gate = this.smoothstep(0.42 + profile.streakDensity * 0.16, 0.94, Math.abs(segment));
     if (gate <= 0) return 0;
@@ -296,6 +380,7 @@ export class GiantAtmosphereRenderer {
     return sign * gate * profile.streakContrast * profile.streakDensity * Math.max(0.15, latitudeEnvelope);
   }
 
+  /** Returns family. */
   private getFamily(planet: Planet): GiantVisualFamily {
     if (this.getHeatBias(planet) > 0.72) return 'hot';
     if (planet.type === 'IceGiant') {
@@ -307,16 +392,20 @@ export class GiantAtmosphereRenderer {
     return this.hashUnit(`${planet.name}:gas-family`) > 0.58 ? 'saturnian' : 'jovian';
   }
 
+  /** Returns heat bias. */
   private getHeatBias(planet: Planet): number {
     const temp = Number.isFinite(planet.surfaceTemp) ? planet.surfaceTemp : 140;
     const orbitAu =
-      Number.isFinite(planet.orbitDistance) && planet.orbitDistance > 0 ? planet.orbitDistance / AU_IN_METERS : 5;
+      Number.isFinite(planet.orbitDistance) && planet.orbitDistance > 0
+        ? planet.orbitDistance / AU_IN_METERS
+        : 5;
     return Math.max(
       Math.max(0, Math.min(1, (temp - 115) / 520)),
       Math.max(0, Math.min(1, (1.4 - orbitAu) / 1.2))
     );
   }
 
+  /** Returns palette. */
   private getPalette(family: GiantVisualFamily, fallbackPalette: RgbColour[]): RgbColour[] {
     const palettes: Record<GiantVisualFamily, string[]> = {
       jovian: ['#5B3A28', '#A36B3A', '#E0B067', '#F1DCA8', '#B37C48', '#6C4633'],
@@ -334,6 +423,7 @@ export class GiantAtmosphereRenderer {
         : [{ r: 96, g: 128, b: 128 }];
   }
 
+  /** Parses a hexadecimal colour string into RGB channels. */
   private hexToRgb(hex: string): RgbColour {
     const clean = hex.replace('#', '').slice(0, 6).padEnd(6, '8');
     return {
@@ -343,19 +433,23 @@ export class GiantAtmosphereRenderer {
     };
   }
 
+  /** Wraps unit. */
   private wrapUnit(value: number): number {
     return ((value % 1) + 1) % 1;
   }
 
+  /** Returns the shortest wrapped delta between normalized coordinates. */
   private shortestUnitDelta(value: number, target: number): number {
     return this.wrapUnit(value - target + 0.5) - 0.5;
   }
 
+  /** Smoothly interpolates a value between two thresholds. */
   private smoothstep(edge0: number, edge1: number, value: number): number {
     const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(0.000001, edge1 - edge0)));
     return t * t * (3 - 2 * t);
   }
 
+  /** Returns whether h unit is present. */
   private hashUnit(seed: string): number {
     let hash = 2166136261;
     for (let index = 0; index < seed.length; index++) {

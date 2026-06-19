@@ -1,5 +1,21 @@
-export type ShipMountKind = 'engine' | 'shield' | 'laser' | 'missileBay' | 'special' | 'landing' | 'probe' | 'cargo';
-export type ShipDamageSubsystem = 'drive' | 'shield' | 'laser' | 'missileBay' | 'cargoBay' | 'probeBay' | 'landingBay' | 'specialBay';
+export type ShipMountKind =
+  | 'engine'
+  | 'shield'
+  | 'laser'
+  | 'missileBay'
+  | 'special'
+  | 'landing'
+  | 'probe'
+  | 'cargo';
+export type ShipDamageSubsystem =
+  | 'drive'
+  | 'shield'
+  | 'laser'
+  | 'missileBay'
+  | 'cargoBay'
+  | 'probeBay'
+  | 'landingBay'
+  | 'specialBay';
 export type ShipyardKind = 'frontier' | 'commercial' | 'industrial' | 'research' | 'naval';
 
 export interface ShipSuperstructure {
@@ -80,12 +96,14 @@ export const DEFAULT_CARGO_POD_CAPACITY = 25;
 export const HULL_REPAIR_COST_PER_POINT = 12;
 export const SUBSYSTEM_REPAIR_COST_PER_POINT = 18;
 
+/** Returns engine fuel use multiplier. */
 export function getEngineFuelUseMultiplier(engineClass: number): number {
   const normalizedClass = Math.max(1, Math.min(5, Math.round(engineClass)));
   const multipliers = [0, 1.4, 1.15, 1.0, 0.85, 0.72];
   return multipliers[normalizedClass] ?? 1.4;
 }
 
+/** Creates default ship modifications. */
 export function createDefaultShipModifications(): ShipModificationState {
   const superstructure: ShipSuperstructure = {
     name: 'Survey Superstructure I',
@@ -117,32 +135,46 @@ export function createDefaultShipModifications(): ShipModificationState {
   };
 }
 
+/** Returns ship cargo capacity. */
 export function getShipCargoCapacity(ship: ShipModificationState): number {
   return ship.cargoPodsInstalled * ship.cargoPodCapacity;
 }
 
+/** Returns available cargo pod bays. */
 export function getAvailableCargoPodBays(ship: ShipModificationState): number {
   return Math.max(0, ship.superstructure.cargoBays - ship.cargoPodsInstalled);
 }
 
+/** Returns subsystem damage. */
 export function getSubsystemDamage(ship: ShipModificationState, subsystem: ShipDamageSubsystem): number {
   return Math.max(0, Math.min(100, Math.round(ship.damage.subsystemDamage[subsystem] ?? 0)));
 }
 
+/** Returns ship repair cost. */
 export function getShipRepairCost(ship: ShipModificationState): number {
   const hullDamage = Math.max(0, ship.damage.maxHullIntegrity - ship.damage.hullIntegrity);
-  const subsystemDamage = Object.values(ship.damage.subsystemDamage).reduce((sum, damage) => sum + Math.max(0, damage ?? 0), 0);
-  return Math.ceil(hullDamage * HULL_REPAIR_COST_PER_POINT + subsystemDamage * SUBSYSTEM_REPAIR_COST_PER_POINT);
+  const subsystemDamage = Object.values(ship.damage.subsystemDamage).reduce(
+    (sum, damage) => sum + Math.max(0, damage ?? 0),
+    0
+  );
+  return Math.ceil(
+    hullDamage * HULL_REPAIR_COST_PER_POINT + subsystemDamage * SUBSYSTEM_REPAIR_COST_PER_POINT
+  );
 }
 
+/** Returns ship damage summary. */
 export function getShipDamageSummary(ship: ShipModificationState): string {
   const damaged = Object.entries(ship.damage.subsystemDamage)
     .filter(([, damage]) => (damage ?? 0) > 0)
-    .map(([subsystem, damage]) => `${formatSubsystemLabel(subsystem as ShipDamageSubsystem)} ${Math.round(damage ?? 0)}%`);
+    .map(
+      ([subsystem, damage]) =>
+        `${formatSubsystemLabel(subsystem as ShipDamageSubsystem)} ${Math.round(damage ?? 0)}%`
+    );
   const hull = `${Math.round(ship.damage.hullIntegrity)}/${ship.damage.maxHullIntegrity} hull`;
   return damaged.length > 0 ? `${hull}; ${damaged.join(', ')}` : `${hull}; no subsystem damage`;
 }
 
+/** Applies ship damage. */
 export function applyShipDamage(
   ship: ShipModificationState,
   amount: number,
@@ -152,11 +184,15 @@ export function applyShipDamage(
   if (damage <= 0) return 'No ship damage registered.';
   ship.damage.hullIntegrity = Math.max(0, ship.damage.hullIntegrity - damage);
   if (subsystem) {
-    ship.damage.subsystemDamage[subsystem] = Math.min(100, getSubsystemDamage(ship, subsystem) + Math.ceil(damage * 1.5));
+    ship.damage.subsystemDamage[subsystem] = Math.min(
+      100,
+      getSubsystemDamage(ship, subsystem) + Math.ceil(damage * 1.5)
+    );
   }
   return `Ship damage recorded: ${damage} hull${subsystem ? `, ${formatSubsystemLabel(subsystem)} affected` : ''}.`;
 }
 
+/** Repairs ship damage using the supplied repair capacity. */
 export function repairShipDamage(ship: ShipModificationState): string {
   const cost = getShipRepairCost(ship);
   if (cost <= 0) return 'No ship damage requires repair.';
@@ -165,6 +201,7 @@ export function repairShipDamage(ship: ShipModificationState): string {
   return 'Hull and subsystem damage repaired.';
 }
 
+/** Returns ship derived stats. */
 export function getShipDerivedStats(ship: ShipModificationState): ShipDerivedStats {
   const superstructure = ship.superstructure;
   const occupiedMounts =
@@ -184,12 +221,20 @@ export function getShipDerivedStats(ship: ShipModificationState): ShipDerivedSta
     superstructure.probeBays +
     superstructure.cargoBays;
   const fittedLoadPercent = totalMounts > 0 ? Math.round((occupiedMounts / totalMounts) * 100) : 0;
-  const shieldRating = applyDamagePenalty(ship.shieldClass > 0 ? ship.shieldClass * ship.shieldClass * 12 : 0, getSubsystemDamage(ship, 'shield'));
-  const laserRating = applyDamagePenalty(ship.laserClass > 0 ? ship.laserClass * ship.laserClass * 10 : 0, getSubsystemDamage(ship, 'laser'));
+  const shieldRating = applyDamagePenalty(
+    ship.shieldClass > 0 ? ship.shieldClass * ship.shieldClass * 12 : 0,
+    getSubsystemDamage(ship, 'shield')
+  );
+  const laserRating = applyDamagePenalty(
+    ship.laserClass > 0 ? ship.laserClass * ship.laserClass * 10 : 0,
+    getSubsystemDamage(ship, 'laser')
+  );
   const payloadDrag = Math.round(fittedLoadPercent * 0.18);
   const engineBonus = Math.max(0, ship.engineClass - 1) * 8;
   const driveDamage = getSubsystemDamage(ship, 'drive');
-  const damagedSubsystemCount = Object.values(ship.damage.subsystemDamage).filter((damage) => (damage ?? 0) > 0).length;
+  const damagedSubsystemCount = Object.values(ship.damage.subsystemDamage).filter(
+    (damage) => (damage ?? 0) > 0
+  ).length;
 
   return {
     cargoCapacity: getShipCargoCapacity(ship),
@@ -197,37 +242,86 @@ export function getShipDerivedStats(ship: ShipModificationState): ShipDerivedSta
     shieldRating,
     laserRating,
     missileCapacity: ship.missileCapacity,
-    missileLoadPercent: ship.missileCapacity > 0 ? Math.round((ship.missileCount / ship.missileCapacity) * 100) : 0,
+    missileLoadPercent:
+      ship.missileCapacity > 0 ? Math.round((ship.missileCount / ship.missileCapacity) * 100) : 0,
     probeCapacity: superstructure.probeBays,
     emptyProbeBays: Math.max(0, superstructure.probeBays - ship.probeBaysOccupied),
     specialBayCapacity: superstructure.specialPurposeBays,
     emptySpecialPurposeBays: Math.max(0, superstructure.specialPurposeBays - ship.specialBaysOccupied),
     landingBayCapacity: superstructure.landingBays,
-    driveEfficiencyPercent: applyDamagePenalty(Math.max(65, Math.min(125, 100 + engineBonus - payloadDrag)), driveDamage),
+    driveEfficiencyPercent: applyDamagePenalty(
+      Math.max(65, Math.min(125, 100 + engineBonus - payloadDrag)),
+      driveDamage
+    ),
     fittedLoadPercent,
-    hullIntegrityPercent: ship.damage.maxHullIntegrity > 0 ? Math.round((ship.damage.hullIntegrity / ship.damage.maxHullIntegrity) * 100) : 0,
+    hullIntegrityPercent:
+      ship.damage.maxHullIntegrity > 0
+        ? Math.round((ship.damage.hullIntegrity / ship.damage.maxHullIntegrity) * 100)
+        : 0,
     damagedSubsystemCount,
   };
 }
 
+/** Returns starbase shipyard profile. */
 export function getStarbaseShipyardProfile(starbaseName: string): StarbaseShipyardProfile {
   const hash = hashString(starbaseName);
   const kindIndex = Math.abs(hash) % 100;
   if (kindIndex < 18) {
-    return { kind: 'frontier', label: 'Frontier Yard', maxShieldClass: 1, maxLaserClass: 1, sellsMissiles: true, sellsCargoPods: true, repairQuality: 'patch' };
+    return {
+      kind: 'frontier',
+      label: 'Frontier Yard',
+      maxShieldClass: 1,
+      maxLaserClass: 1,
+      sellsMissiles: true,
+      sellsCargoPods: true,
+      repairQuality: 'patch',
+    };
   }
   if (kindIndex < 46) {
-    return { kind: 'commercial', label: 'Commercial Yard', maxShieldClass: 2, maxLaserClass: 2, sellsMissiles: true, sellsCargoPods: true, repairQuality: 'standard' };
+    return {
+      kind: 'commercial',
+      label: 'Commercial Yard',
+      maxShieldClass: 2,
+      maxLaserClass: 2,
+      sellsMissiles: true,
+      sellsCargoPods: true,
+      repairQuality: 'standard',
+    };
   }
   if (kindIndex < 70) {
-    return { kind: 'industrial', label: 'Industrial Yard', maxShieldClass: 4, maxLaserClass: 3, sellsMissiles: true, sellsCargoPods: true, repairQuality: 'full' };
+    return {
+      kind: 'industrial',
+      label: 'Industrial Yard',
+      maxShieldClass: 4,
+      maxLaserClass: 3,
+      sellsMissiles: true,
+      sellsCargoPods: true,
+      repairQuality: 'full',
+    };
   }
   if (kindIndex < 88) {
-    return { kind: 'research', label: 'Research Yard', maxShieldClass: 4, maxLaserClass: 2, sellsMissiles: false, sellsCargoPods: true, repairQuality: 'standard' };
+    return {
+      kind: 'research',
+      label: 'Research Yard',
+      maxShieldClass: 4,
+      maxLaserClass: 2,
+      sellsMissiles: false,
+      sellsCargoPods: true,
+      repairQuality: 'standard',
+    };
   }
-  return { kind: 'naval', label: 'Naval Yard', maxShieldClass: 5, maxLaserClass: 5, sellsMissiles: true, sellsCargoPods: false, repairQuality: 'full' };
+  return {
+    kind: 'naval',
+    label: 'Naval Yard',
+    maxShieldClass: 5,
+    maxLaserClass: 5,
+    sellsMissiles: true,
+    sellsCargoPods: false,
+    repairQuality: 'full',
+  };
 }
 
+/** Creates shipyard upgrade options. */
 export function createShipyardUpgradeOptions(
   ship: ShipModificationState,
   profile: StarbaseShipyardProfile = getStarbaseShipyardProfile('default shipyard')
@@ -239,8 +333,14 @@ export function createShipyardUpgradeOptions(
       label: 'Damage repair',
       cost: repairCost,
       eta: profile.repairQuality === 'patch' ? '6h' : profile.repairQuality === 'standard' ? '4h' : '2h',
-      workOrder: repairCost > 0 ? `${getShipDamageSummary(ship)}; ${profile.label.toLowerCase()} crews assigned` : 'Hull and subsystems nominal',
-      detail: repairCost > 0 ? `Repair hull and subsystem damage. ${profile.label} repair quality: ${profile.repairQuality}.` : 'No repair work is currently required.',
+      workOrder:
+        repairCost > 0
+          ? `${getShipDamageSummary(ship)}; ${profile.label.toLowerCase()} crews assigned`
+          : 'Hull and subsystems nominal',
+      detail:
+        repairCost > 0
+          ? `Repair hull and subsystem damage. ${profile.label} repair quality: ${profile.repairQuality}.`
+          : 'No repair work is currently required.',
       disabled: repairCost <= 0,
     },
     {
@@ -248,8 +348,12 @@ export function createShipyardUpgradeOptions(
       label: 'Nuclear missile',
       cost: NUCLEAR_MISSILE_COST,
       eta: 'Now',
-      workOrder: profile.sellsMissiles ? `${ship.missileCount}/${ship.missileCapacity} missile magazine` : `${profile.label} has no missile locker`,
-      detail: profile.sellsMissiles ? 'Purchase one nuclear-tipped ship missile for the existing missile bay magazine.' : 'This station is not licensed or equipped to sell nuclear-tipped missiles.',
+      workOrder: profile.sellsMissiles
+        ? `${ship.missileCount}/${ship.missileCapacity} missile magazine`
+        : `${profile.label} has no missile locker`,
+      detail: profile.sellsMissiles
+        ? 'Purchase one nuclear-tipped ship missile for the existing missile bay magazine.'
+        : 'This station is not licensed or equipped to sell nuclear-tipped missiles.',
       disabled: !profile.sellsMissiles || ship.missileCount >= ship.missileCapacity,
     },
     {
@@ -257,8 +361,12 @@ export function createShipyardUpgradeOptions(
       label: 'Cargo pod',
       cost: CARGO_POD_COST,
       eta: '2h',
-      workOrder: profile.sellsCargoPods ? `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays} cargo bays fitted` : `${profile.label} does not stock pod frames`,
-      detail: profile.sellsCargoPods ? `Install one ${ship.cargoPodCapacity} m^3 modular cargo pod into an empty cargo bay.` : 'This station cannot supply standard cargo pod frames.',
+      workOrder: profile.sellsCargoPods
+        ? `${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays} cargo bays fitted`
+        : `${profile.label} does not stock pod frames`,
+      detail: profile.sellsCargoPods
+        ? `Install one ${ship.cargoPodCapacity} m^3 modular cargo pod into an empty cargo bay.`
+        : 'This station cannot supply standard cargo pod frames.',
       disabled: !profile.sellsCargoPods || getAvailableCargoPodBays(ship) <= 0,
     },
   ];
@@ -270,8 +378,14 @@ export function createShipyardUpgradeOptions(
       label: `Shield Class ${shipClass}`,
       cost: SHIELD_CLASS_COSTS[shipClass],
       eta: `${shipClass + 1}h`,
-      workOrder: available ? (ship.shieldClass >= shipClass ? 'Installed or superseded' : 'Install shield generator') : `${profile.label} max shield class ${profile.maxShieldClass}`,
-      detail: available ? `Class ${shipClass} defensive shield generator. Higher classes draw more power but absorb more damage.` : `This ${profile.label.toLowerCase()} cannot fit or certify Shield Class ${shipClass}.`,
+      workOrder: available
+        ? ship.shieldClass >= shipClass
+          ? 'Installed or superseded'
+          : 'Install shield generator'
+        : `${profile.label} max shield class ${profile.maxShieldClass}`,
+      detail: available
+        ? `Class ${shipClass} defensive shield generator. Higher classes draw more power but absorb more damage.`
+        : `This ${profile.label.toLowerCase()} cannot fit or certify Shield Class ${shipClass}.`,
       disabled: !available || ship.shieldClass >= shipClass,
     });
   }
@@ -283,8 +397,14 @@ export function createShipyardUpgradeOptions(
       label: `Laser Class ${shipClass}`,
       cost: LASER_CLASS_COSTS[shipClass],
       eta: `${shipClass + 1}h`,
-      workOrder: available ? (ship.laserClass >= shipClass ? 'Installed or superseded' : 'Install laser emitter') : `${profile.label} max laser class ${profile.maxLaserClass}`,
-      detail: available ? `Class ${shipClass} ship laser. Higher classes improve sustained beam output and combat reach.` : `This ${profile.label.toLowerCase()} cannot fit or certify Laser Class ${shipClass}.`,
+      workOrder: available
+        ? ship.laserClass >= shipClass
+          ? 'Installed or superseded'
+          : 'Install laser emitter'
+        : `${profile.label} max laser class ${profile.maxLaserClass}`,
+      detail: available
+        ? `Class ${shipClass} ship laser. Higher classes improve sustained beam output and combat reach.`
+        : `This ${profile.label.toLowerCase()} cannot fit or certify Laser Class ${shipClass}.`,
       disabled: !available || ship.laserClass >= shipClass,
     });
   }
@@ -292,6 +412,7 @@ export function createShipyardUpgradeOptions(
   return options;
 }
 
+/** Applies a purchased shipyard upgrade to the ship. */
 export function installShipyardUpgrade(ship: ShipModificationState, optionId: string): string {
   if (optionId === 'shipyard:repair') {
     return repairShipDamage(ship);
@@ -325,16 +446,17 @@ export function installShipyardUpgrade(ship: ShipModificationState, optionId: st
   return 'Shipyard order unavailable.';
 }
 
+/** Applies damage penalty. */
 function applyDamagePenalty(value: number, damagePercent: number): number {
   return Math.max(0, Math.round(value * (1 - Math.max(0, Math.min(95, damagePercent)) / 100)));
 }
 
+/** Formats subsystem label. */
 function formatSubsystemLabel(subsystem: ShipDamageSubsystem): string {
-  return subsystem
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (first) => first.toUpperCase());
+  return subsystem.replace(/([A-Z])/g, ' $1').replace(/^./, (first) => first.toUpperCase());
 }
 
+/** Returns whether h string is present. */
 function hashString(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index++) {

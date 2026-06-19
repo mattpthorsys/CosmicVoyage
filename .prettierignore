@@ -1,0 +1,6 @@
+dist
+node_modules
+coverage
+compressed_logs.txt
+console_logs.txt
+prompts

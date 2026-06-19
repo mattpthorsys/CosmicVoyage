@@ -20,6 +20,7 @@ export interface CommandBarModel {
   rightButtons?: CommandBarButton[];
 }
 
+/** Creates a command-bar button model for one gameplay action. */
 export function commandButton(
   id: string,
   label: string,

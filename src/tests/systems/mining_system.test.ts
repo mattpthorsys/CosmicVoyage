@@ -4,6 +4,7 @@ import { PRNG } from '../../utils/prng';
 import { CargoSystem } from '../../systems/cargo_systems';
 import { MiningSystem } from '../../systems/mining_system';
 
+/** Creates mining harness. */
 function createMiningHarness(): { mining: any; player: Player; planet: any } {
   const player = new Player();
   const cargoSystem = new CargoSystem();
@@ -34,7 +35,12 @@ function createMiningHarness(): { mining: any; player: Player; planet: any } {
   return { mining, player, planet };
 }
 
-function createGridMiningHarness(surfaceElementMap: string[][]): { mining: any; player: Player; planet: any } {
+/** Creates grid mining harness. */
+function createGridMiningHarness(surfaceElementMap: string[][]): {
+  mining: any;
+  player: Player;
+  planet: any;
+} {
   const harness = createMiningHarness();
   const minedAmounts = new Map<string, number>();
   const depletedSites = new Set<string>();

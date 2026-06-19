@@ -5,6 +5,7 @@ import { SolarSystem } from '../../entities/solar_system';
 import { CONFIG } from '../../config';
 import { Planet } from '../../entities/planet';
 
+/** Finds generated system. */
 function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: number } {
   for (let y = -80; y <= 80; y++) {
     for (let x = -80; x <= 80; x++) {
@@ -15,6 +16,7 @@ function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: nu
   throw new Error('Expected at least one generated system in search window.');
 }
 
+/** Finds rogue planetary mass object. */
 function findRoguePlanetaryMassObject(generator: SystemDataGenerator): { x: number; y: number } {
   for (let y = -140; y <= 140; y++) {
     for (let x = -140; x <= 140; x++) {
@@ -25,6 +27,7 @@ function findRoguePlanetaryMassObject(generator: SystemDataGenerator): { x: numb
   throw new Error('Expected at least one rogue planetary-mass object in search window.');
 }
 
+/** Creates system. */
 function createSystem(seed: PRNG, x: number, y: number): SolarSystem {
   const generator = new SystemDataGenerator(seed);
   const props = generator.getSystemProperties(x, y);
@@ -32,6 +35,7 @@ function createSystem(seed: PRNG, x: number, y: number): SolarSystem {
   return new SolarSystem(props, x, y, seed);
 }
 
+/** Returns system fingerprint. */
 function getSystemFingerprint(system: SolarSystem): unknown {
   return {
     name: system.name,
@@ -86,6 +90,7 @@ function getSystemFingerprint(system: SolarSystem): unknown {
   };
 }
 
+/** Returns surface fingerprint. */
 function getSurfaceFingerprint(planet: Planet): unknown {
   planet.ensureSurfaceReady();
   const heightmap = planet.heightmap;
@@ -324,7 +329,9 @@ describe('SystemDataGenerator', () => {
         const systemPlanets = system.planets.filter((planet) => planet !== null);
         if (systemPlanets.length > 0) systemsWithPlanets++;
         planets += systemPlanets.length;
-        giants += systemPlanets.filter((planet) => planet.type === 'GasGiant' || planet.type === 'IceGiant').length;
+        giants += systemPlanets.filter(
+          (planet) => planet.type === 'GasGiant' || planet.type === 'IceGiant'
+        ).length;
       }
     }
 

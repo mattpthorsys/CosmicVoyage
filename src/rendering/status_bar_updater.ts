@@ -1,25 +1,26 @@
-/* FILE: src/rendering/status_bar_updater.ts */
-// src/rendering/status_bar_updater.ts (Corrected Parsing Logic & DOM Update)
-
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
 import { TEXT_PALETTE } from './text_palette';
 
 // Define Markers (Ensure these match the tags you use in status messages)
 const MARKERS = {
-  HEADING_START: '<h>', HEADING_END: '</h>',
-  HIGHLIGHT_START: '<hl>', HIGHLIGHT_END: '</hl>',
-  WARNING_START: '[-W-]', WARNING_END: '</w>',
-  EMERGENCY_START: '<e>', EMERGENCY_END: '</e>',
+  HEADING_START: '<h>',
+  HEADING_END: '</h>',
+  HIGHLIGHT_START: '<hl>',
+  HIGHLIGHT_END: '</hl>',
+  WARNING_START: '[-W-]',
+  WARNING_END: '</w>',
+  EMERGENCY_START: '<e>',
+  EMERGENCY_END: '</e>',
 } as const;
 
 // Define which markers are "end" markers to revert color
 // Type the Set to accept any value from the MARKERS object initially
 const END_MARKERS: Set<(typeof MARKERS)[keyof typeof MARKERS]> = new Set([
-    MARKERS.HEADING_END,
-    MARKERS.HIGHLIGHT_END,
-    MARKERS.WARNING_END,
-    MARKERS.EMERGENCY_END,
+  MARKERS.HEADING_END,
+  MARKERS.HIGHLIGHT_END,
+  MARKERS.WARNING_END,
+  MARKERS.EMERGENCY_END,
 ] as const);
 
 // Type for colored text segments
@@ -36,6 +37,7 @@ export class StatusBarUpdater {
   private colorMap: Record<string, string> = {};
   private fgColorDefault: string = TEXT_PALETTE.text;
 
+  /** Initializes StatusBarUpdater. */
   constructor(statusBarElement: HTMLElement, initialTheme: 'default' | 'tan' = 'default') {
     if (!statusBarElement) {
       const msg = 'Status bar element not provided to StatusBarUpdater.';
@@ -58,6 +60,7 @@ export class StatusBarUpdater {
     this.updateMaxChars(0, 0); // Initial calculation
   }
 
+  /** Updates theme. */
   setTheme(theme: 'default' | 'tan'): void {
     logger.info(`[StatusBarUpdater] Setting theme to: ${theme}`);
     this.currentTheme = theme;
@@ -65,18 +68,19 @@ export class StatusBarUpdater {
     if (theme === 'tan') {
       this.fgColorDefault = TEXT_PALETTE.textSoft;
       this.colorMap = {
-          [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSoft,
-          [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.amber,
-          [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
-          [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
+        [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSoft,
+        [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.amber,
+        [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
+        [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
       };
-    } else { // Default (Amber)
+    } else {
+      // Default (Amber)
       this.fgColorDefault = TEXT_PALETTE.text;
       this.colorMap = {
-          [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSignal,
-          [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.greenBright,
-          [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
-          [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
+        [MARKERS.HEADING_START]: TEXT_PALETTE.cyanSignal,
+        [MARKERS.HIGHLIGHT_START]: TEXT_PALETTE.greenBright,
+        [MARKERS.WARNING_START]: TEXT_PALETTE.amber,
+        [MARKERS.EMERGENCY_START]: TEXT_PALETTE.red,
       };
     }
     // Update the base text color immediately
@@ -85,10 +89,12 @@ export class StatusBarUpdater {
     this.updateStatus(this.statusBarElement.textContent || '', false); // Assume no starbase on theme change redraw
   }
 
+  /** Returns status bar element. */
   public getStatusBarElement(): HTMLElement {
     return this.statusBarElement;
   }
 
+  /** Updates max chars. */
   updateMaxChars(charWidthPx: number, charHeightPx: number): void {
     if (!this.statusBarElement) return;
     const sbFontSize = charHeightPx > 0 ? charHeightPx * 0.85 : 16 * 0.85; // Fallback font size
@@ -196,7 +202,7 @@ export class StatusBarUpdater {
       // Basic truncation - find rough character limit, may cut tags badly.
       let charCount = 0;
       let cutIndex = 0;
-      while (cutIndex < fullMessage.length && charCount < (this.statusBarMaxChars - 3)) {
+      while (cutIndex < fullMessage.length && charCount < this.statusBarMaxChars - 3) {
         let markerFound = false;
         for (const marker of Object.values(MARKERS)) {
           if (fullMessage.startsWith(marker, cutIndex)) {
@@ -211,7 +217,9 @@ export class StatusBarUpdater {
         }
       }
       messageToParse = fullMessage.substring(0, cutIndex) + '...';
-      logger.warn(`[StatusBarUpdater] Status message truncated (Displayable: ${displayableLength}, Max: ${this.statusBarMaxChars}). Tags might be broken.`);
+      logger.warn(
+        `[StatusBarUpdater] Status message truncated (Displayable: ${displayableLength}, Max: ${this.statusBarMaxChars}). Tags might be broken.`
+      );
     }
     // --- End Truncation ---
 
@@ -225,7 +233,7 @@ export class StatusBarUpdater {
     }
 
     // Append new styled spans
-    segments.forEach(segment => {
+    segments.forEach((segment) => {
       if (segment.text.length === 0) return;
       const span = document.createElement('span');
       span.textContent = segment.text;

@@ -1,6 +1,4 @@
-// FILE: src/entities/planet/resource_generator.ts
 // Contains logic for generating planetary resource characteristics (element abundance, richness).
-// REFACTORED: Extracted weight adjustment logic into helper functions.
 
 import { PRNG } from '../../utils/prng';
 import { ELEMENTS, MineralRichness } from '../../constants/resources';
@@ -23,7 +21,11 @@ function _getElementTypeFactor(element: ElementInfo, planetType: string): number
 }
 
 /** Calculates weight adjustment based on temperature/melting point suitability. */
-function _getTemperatureSuitabilityFactor(element: ElementInfo, planetType: string, surfaceTemp: number): number {
+function _getTemperatureSuitabilityFactor(
+  element: ElementInfo,
+  planetType: string,
+  surfaceTemp: number
+): number {
   let factor = 1.0;
   if (element.meltingPoint !== undefined) {
     // Check if meltingPoint exists
@@ -104,13 +106,24 @@ function calculateBaseMinerals(prng: PRNG, richness: MineralRichness): number {
 }
 
 /** Determines the overall mineral richness category. */
-export function determineMineralRichness(prng: PRNG, planetType: string, metallicityFeH: number = 0): MineralRichness {
+export function determineMineralRichness(
+  prng: PRNG,
+  planetType: string,
+  metallicityFeH: number = 0
+): MineralRichness {
   let richness: MineralRichness;
   const roll = prng.random();
   // Base chance based on type
   let richChance = 0.1; // Base chance for RICH or ULTRA_RICH
   let poorChance = 0.2; // Base chance for POOR or ULTRA_POOR
-  if (planetType === 'Rock' || planetType === 'Molten' || planetType === 'Lunar' || planetType === 'CarbonRich' || planetType === 'Chthonian' || planetType === 'Greenhouse') {
+  if (
+    planetType === 'Rock' ||
+    planetType === 'Molten' ||
+    planetType === 'Lunar' ||
+    planetType === 'CarbonRich' ||
+    planetType === 'Chthonian' ||
+    planetType === 'Greenhouse'
+  ) {
     richChance = 0.25;
     poorChance = 0.15;
   } else if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce') {
@@ -170,11 +183,13 @@ export function calculateElementAbundance(
     weight *= _getLithosphereFactor(element, lithosphere);
     weight *= _getGravityFactor(element, gravity);
     if (key === 'DEUTERIUM') {
-      if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce') weight *= 4.6;
+      if (planetType === 'Frozen' || planetType === 'Cryovolcanic' || planetType === 'DwarfIce')
+        weight *= 4.6;
       else if (planetType === 'Oceanic' || planetType === 'Hycean') weight *= 2.4;
       else if (planetType === 'Lunar') weight *= 1.8;
       else if (planetType === 'Rock') weight *= 0.75;
-      else if (planetType === 'Molten' || planetType === 'Chthonian' || planetType === 'Greenhouse') weight *= 0.04;
+      else if (planetType === 'Molten' || planetType === 'Chthonian' || planetType === 'Greenhouse')
+        weight *= 0.04;
 
       if (surfaceTemp <= 140) weight *= 2.2;
       else if (surfaceTemp <= 230) weight *= 1.55;
@@ -187,7 +202,8 @@ export function calculateElementAbundance(
       if (element.group === 'Ice') weight *= 0.18;
     }
     if (planetType === 'Chthonian') {
-      if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide') weight *= 2.6;
+      if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide')
+        weight *= 2.6;
       if (element.group === 'Ice' || element.group === 'Gas' || element.group === 'Noble') weight *= 0.02;
     }
     if (planetType === 'Greenhouse') {
@@ -198,10 +214,15 @@ export function calculateElementAbundance(
       if (element.group === 'Ice') weight *= planetType === 'Cryovolcanic' ? 2.6 : 3.4;
       if (['CARBON', 'SULFUR'].includes(key)) weight *= 1.4;
     }
-    if (element.group === 'Metal' || element.group === 'Actinide' || element.group === 'Lanthanide' || element.group === 'Metalloid') {
+    if (
+      element.group === 'Metal' ||
+      element.group === 'Actinide' ||
+      element.group === 'Lanthanide' ||
+      element.group === 'Metalloid'
+    ) {
       weight *= Math.max(0.25, Math.min(2.25, Math.pow(10, metallicityFeH * 0.32)));
     }
-    // Removed the separate temperature/volatility factor as it's now part of _getTemperatureSuitabilityFactor
+    // Temperature suitability already accounts for volatile retention.
 
     weight = Math.max(0.0001, weight); // Ensure minimum chance
     abundance[key] = weight;
@@ -218,7 +239,9 @@ export function calculateElementAbundance(
       }
     }
   } else {
-    logger.warn(`[ResGen:${planetType}] Total calculated element weight was zero. Abundance map will be empty.`);
+    logger.warn(
+      `[ResGen:${planetType}] Total calculated element weight was zero. Abundance map will be empty.`
+    );
   }
 
   logger.debug(`[ResGen] Final element abundance calculated: ${Object.keys(abundance).length} elements.`);

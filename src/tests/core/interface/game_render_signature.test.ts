@@ -8,6 +8,7 @@ import {
 } from '../../../core/modes/game_mode_controllers';
 import { StarbaseController } from '../../../core/starbase_controller';
 
+/** Creates render gate harness. */
 function createRenderGateHarness(): any {
   return Object.assign(Object.create(Game.prototype), {
     forceFullRender: false,
@@ -75,7 +76,9 @@ describe('Game main render signatures', () => {
     const body = { rotationPeriodHours: 24 };
     const simulatedSecondsPerRealSecond = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
-    expect(game.getOrbitGlobeRotationPhase(body)).toBeCloseTo((40 * simulatedSecondsPerRealSecond) / (24 * 60 * 60));
+    expect(game.getOrbitGlobeRotationPhase(body)).toBeCloseTo(
+      (40 * simulatedSecondsPerRealSecond) / (24 * 60 * 60)
+    );
   });
 
   it('keeps orbital illumination cadence separate from physical globe rotation', () => {

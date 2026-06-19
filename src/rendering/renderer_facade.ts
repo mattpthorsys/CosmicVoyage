@@ -1,5 +1,3 @@
-// src/rendering/renderer_facade.ts (Subscribe to status events)
-
 import { RenderStats, ScreenBuffer } from './screen_buffer';
 import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
@@ -44,6 +42,7 @@ export class RendererFacade {
   private commandStripUpdater: CommandStripUpdater | null = null;
   private readonly eventUnsubscribers: Unsubscribe[];
 
+  /** Initializes RendererFacade. */
   constructor(
     canvasId: string,
     statusBarId: string,
@@ -91,8 +90,12 @@ export class RendererFacade {
     );
 
     this.eventUnsubscribers = [
-      eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, (data) => { this._handleStatusUpdate(data); }),
-      eventManager.subscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, (data) => { this._handleCommandStripUpdate(data); }),
+      eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, (data) => {
+        this._handleStatusUpdate(data);
+      }),
+      eventManager.subscribe(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, (data) => {
+        this._handleCommandStripUpdate(data);
+      }),
     ];
 
     logger.info('[RendererFacade] All components instantiated.');
@@ -100,36 +103,45 @@ export class RendererFacade {
     logger.info('[RendererFacade] Construction complete.');
   }
 
+  /** Returns canvas. */
   public getCanvas(): HTMLCanvasElement {
     return this.canvas;
   }
 
+  /** Returns context. */
   public getContext(): CanvasRenderingContext2D {
     return this.ctx;
   }
 
+  /** Returns char width px. */
   public getCharWidthPx(): number {
     return this.screenBuffer.getCharWidthPx();
   }
 
+  /** Returns char height px. */
   public getCharHeightPx(): number {
     return this.screenBuffer.getCharHeightPx();
   }
 
+  /** Returns grid cols. */
   public getGridCols(): number {
     return this.screenBuffer.getCols();
   }
 
+  /** Returns grid rows. */
   public getGridRows(): number {
     return this.screenBuffer.getRows();
   }
 
   /** Handler for the statusUpdateNeeded event. */
   private _handleStatusUpdate(data: StatusUpdateEvent): void {
-    logger.debug(`[RendererFacade:_handleStatusUpdate] Received STATUS_UPDATE_NEEDED with message: "${data.message}"`);
+    logger.debug(
+      `[RendererFacade:_handleStatusUpdate] Received STATUS_UPDATE_NEEDED with message: "${data.message}"`
+    );
     this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
   }
 
+  /** Handles command strip update. */
   private _handleCommandStripUpdate(data: CommandStripUpdateEvent): void {
     if (!this.commandStripUpdater) return;
     if (data.commandBar) {
@@ -148,9 +160,13 @@ export class RendererFacade {
     // Estimate status bar height based on character size BEFORE setting final canvas size
     const roughStatusBarHeightPx =
       this.statusBarUpdater.getStatusBarElement().offsetHeight || baseCharHeight * 0.85 * 1.4 * 3 + 10; // Fallback estimate
-    const roughCommandStripHeightPx = this.commandStripUpdater?.getElement().offsetHeight || baseCharHeight * 1.45 + 8;
+    const roughCommandStripHeightPx =
+      this.commandStripUpdater?.getElement().offsetHeight || baseCharHeight * 1.45 + 8;
 
-    const availableHeight = Math.max(100, window.innerHeight - roughStatusBarHeightPx - roughCommandStripHeightPx); // Subtract UI chrome
+    const availableHeight = Math.max(
+      100,
+      window.innerHeight - roughStatusBarHeightPx - roughCommandStripHeightPx
+    ); // Subtract UI chrome
     const availableWidth = Math.max(100, window.innerWidth);
 
     const cols = Math.max(1, Math.floor(availableWidth / baseCharWidth));
@@ -171,8 +187,10 @@ export class RendererFacade {
     this.commandStripUpdater?.updateMaxChars(charWidthPx, charHeightPx);
 
     // Recalculate final status bar height AFTER updateMaxChars applied styles
-    const finalStatusBarHeightPx = this.statusBarUpdater.getStatusBarElement().offsetHeight || roughStatusBarHeightPx;
-    const finalCommandStripHeightPx = this.commandStripUpdater?.getElement().offsetHeight || roughCommandStripHeightPx;
+    const finalStatusBarHeightPx =
+      this.statusBarUpdater.getStatusBarElement().offsetHeight || roughStatusBarHeightPx;
+    const finalCommandStripHeightPx =
+      this.commandStripUpdater?.getElement().offsetHeight || roughCommandStripHeightPx;
 
     // Center the canvas dynamically using margins
     this.canvas.style.marginLeft = `${Math.max(0, (window.innerWidth - this.canvas.width) / 2)}px`;
@@ -201,10 +219,12 @@ export class RendererFacade {
     this.screenBuffer.renderFull();
   }
 
+  /** Returns last render stats. */
   getLastRenderStats(): RenderStats {
     return this.screenBuffer.getLastRenderStats();
   }
 
+  /** Returns last hyperspace render stats. */
   getLastHyperspaceRenderStats(): HyperspaceRenderStats {
     return this.sceneRenderer.getLastHyperspaceRenderStats();
   }
@@ -218,13 +238,27 @@ export class RendererFacade {
   /** Draws a string horizontally starting at (x, y) using ScreenBuffer's drawString. */
   drawString(text: string, x: number, y: number, fgColor?: string | null, bgColor?: string | null): void {
     // Delegate directly to screenBuffer for basic string drawing
-    this.screenBuffer.drawString(text, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
+    this.screenBuffer.drawString(
+      text,
+      x,
+      y,
+      fgColor ?? null,
+      bgColor ?? this.screenBuffer.getDefaultBgColor()
+    );
   }
 
-  drawChar(char: string | null, x: number, y: number, fgColor?: string | null, bgColor?: string | null): void {
+  /** Draws char. */
+  drawChar(
+    char: string | null,
+    x: number,
+    y: number,
+    fgColor?: string | null,
+    bgColor?: string | null
+  ): void {
     this.screenBuffer.drawChar(char, x, y, fgColor ?? null, bgColor ?? this.screenBuffer.getDefaultBgColor());
   }
 
+  /** Draws scene. */
   drawScene(scene: SceneViewModel): void {
     switch (scene.kind) {
       case 'hyperspace':
@@ -246,22 +280,32 @@ export class RendererFacade {
   }
 
   // --- Scene Drawing Method Delegation (Remains the same) ---
+  /** Draws hyperspace. */
   drawHyperspace(player: Player): void {
     this.sceneRenderer.drawHyperspace(createPlayerViewSnapshot(player));
   }
+  /** Draws solar system. */
   drawSolarSystem(player: Player, system: SolarSystem, currentViewScale: number): void {
     //const currentViewScale = CONFIG.DEFAULT_VIEW_SCALE; // Use the newly added property
     this.sceneRenderer.drawSolarSystem(createPlayerViewSnapshot(player), system, currentViewScale);
   }
-  drawPlanetSurface(player: Player, landedObject: Planet | Starbase, surfaceOverlay?: SurfaceVehicleOverlayModel): void {
+  /** Draws planet surface. */
+  drawPlanetSurface(
+    player: Player,
+    landedObject: Planet | Starbase,
+    surfaceOverlay?: SurfaceVehicleOverlayModel
+  ): void {
     this.sceneRenderer.drawPlanetSurface(createPlayerViewSnapshot(player), landedObject, surfaceOverlay);
   }
+  /** Draws starbase interface. */
   drawStarbaseInterface(player: Player, starbase: Starbase, model: StarbaseScreenModel): void {
     this.sceneRenderer.drawStarbaseInterface(createPlayerViewSnapshot(player), starbase, model);
   }
+  /** Draws orbit interface. */
   drawOrbitInterface(model: OrbitScreenModel): void {
     this.sceneRenderer.drawOrbitInterface(model);
   }
+  /** Draws text modal table. */
   drawTextModalTable(model: TextModalTableModel): void {
     this.sceneRenderer.drawTextModalTable(model);
   }
@@ -273,7 +317,7 @@ export class RendererFacade {
     openCloseProgress: number,
     textProgress: number
   ): void {
-    // (Popup drawing logic remains the same as previous version)
+    // Animate the popup dimensions before revealing its typed text.
     if (state === 'inactive' || !lines || lines.length === 0) {
       return;
     }
@@ -341,7 +385,9 @@ export class RendererFacade {
         const isCloseLine = line === '← Close →'; // Check if it's the special close line
 
         // Calculate starting X for centering the close line
-        const textStartX = isCloseLine ? startX + Math.floor((currentWidth - line.length) / 2) : textStartXBase;
+        const textStartX = isCloseLine
+          ? startX + Math.floor((currentWidth - line.length) / 2)
+          : textStartXBase;
 
         for (let charIndex = 0; charIndex < line.length; charIndex++) {
           if (charactersDrawn >= textProgress) break; // Stop drawing characters for this frame
@@ -383,6 +429,7 @@ export class RendererFacade {
   }
 
   // Optional: Method to clean up listeners if the facade is ever destroyed
+  /** Releases resources owned by. */
   destroy(): void {
     logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
     this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());

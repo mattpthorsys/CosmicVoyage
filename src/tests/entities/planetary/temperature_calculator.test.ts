@@ -23,13 +23,21 @@ describe('calculateTemperatureProfile', () => {
       axialTiltRad: Math.PI / 4,
       tidallyLocked: false,
     });
-    const buffered = calculateTemperatureProfile('Rock', 1.496e11, 'G', thickAtmosphere, undefined, undefined, {
-      diameterKm: 6800,
-      densityGcm3: 3.4,
-      ageGyr: 4.6,
-      axialTiltRad: Math.PI / 4,
-      tidallyLocked: false,
-    });
+    const buffered = calculateTemperatureProfile(
+      'Rock',
+      1.496e11,
+      'G',
+      thickAtmosphere,
+      undefined,
+      undefined,
+      {
+        diameterKm: 6800,
+        densityGcm3: 3.4,
+        ageGyr: 4.6,
+        axialTiltRad: Math.PI / 4,
+        tidallyLocked: false,
+      }
+    );
 
     expect(airless.max - airless.min).toBeGreaterThan(buffered.max - buffered.min);
     expect(buffered.average).toBeGreaterThan(airless.average);

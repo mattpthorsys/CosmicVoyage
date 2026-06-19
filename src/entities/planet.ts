@@ -1,12 +1,14 @@
-// src/entities/planet.ts (Store Density)
-
 import { AU_IN_METERS } from '../constants/physics';
 import { ELEMENTS, MineralRichness } from '../constants/resources';
 import { PRNG } from '../utils/prng';
 import { RgbColour } from '../rendering/colour';
 import { logger } from '../utils/logger';
 // Import the specific interface from the generator file
-import { generatePlanetCharacteristics, PlanetCharacteristics, PlanetGenerationOptions } from './planet/planet_characteristics_generator';
+import {
+  generatePlanetCharacteristics,
+  PlanetCharacteristics,
+  PlanetGenerationOptions,
+} from './planet/planet_characteristics_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import { OrbitHost } from './stellar_body';
 // Import the generator and data interface
@@ -23,6 +25,7 @@ export interface Atmosphere {
   composition: AtmosphereComposition; //
 }
 
+/** Returns a player-facing description of a planet classification. */
 export function describePlanetType(type: string): string {
   switch (type) {
     case 'GasGiant':
@@ -70,7 +73,7 @@ export class Planet {
 
   // Physical Characteristics (Generated)
   public readonly diameter: number; //
-  public readonly density: number; // *** NEW: Store density ***
+  public readonly density: number;
   public readonly gravity: number; // Now calculated by generator
   public readonly surfaceTemp: number; //
   public readonly surfaceTempMin: number;
@@ -107,6 +110,7 @@ export class Planet {
   // Moons (Placeholder)
   public moons: Planet[] = []; //
 
+  /** Initializes Planet. */
   constructor(
     //
     name: string,
@@ -135,7 +139,9 @@ export class Planet {
     logger.debug(`[Planet:${this.name}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`); //
 
     // Use provided characteristics or generate new ones
-    const finalCharacteristics = characteristics ?? generatePlanetCharacteristics(
+    const finalCharacteristics =
+      characteristics ??
+      generatePlanetCharacteristics(
         this.type,
         this.orbitDistance,
         this.systemPRNG,
@@ -143,7 +149,7 @@ export class Planet {
         this.stellarEnvironment,
         totalFlux_W_m2,
         generationOptions
-    );
+      );
 
     // Assign properties from finalCharacteristics
     this.diameter = finalCharacteristics.diameter;
@@ -194,6 +200,7 @@ export class Planet {
   }
 
   // --- Getters for Lazy-Loaded Surface Data ---
+  /** Returns heightmap. */
   get heightmap(): number[][] | null {
     //
     if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
@@ -203,6 +210,7 @@ export class Planet {
     return this._surfaceData?.heightmap ?? null; //
   }
 
+  /** Returns height level colors. */
   get heightLevelColors(): string[] | null {
     //
     if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
@@ -212,6 +220,7 @@ export class Planet {
     return this._surfaceData?.heightLevelColors ?? null; //
   }
 
+  /** Returns rgb palette cache. */
   get rgbPaletteCache(): RgbColour[] | null {
     //
     if (!this._surfaceData) {
@@ -222,6 +231,7 @@ export class Planet {
   }
 
   // Getter for Surface Element Map
+  /** Returns surface element map. */
   get surfaceElementMap(): string[][] | null {
     //
     if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
@@ -231,6 +241,7 @@ export class Planet {
     return this._surfaceData?.surfaceElementMap ?? null; // Access from _surfaceData
   }
 
+  /** Returns surface liquid. */
   get surfaceLiquid(): SurfaceLiquidOverlay | null {
     if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
       this.ensureSurfaceReady();
@@ -238,10 +249,12 @@ export class Planet {
     return this._surfaceData?.liquidOverlay ?? null;
   }
 
+  /** Returns surface data if ready. */
   getSurfaceDataIfReady(): SurfaceData | null {
     return this._surfaceData;
   }
 
+  /** Returns whether submerged surface. */
   isSubmergedSurface(x: number, y: number): boolean {
     const map = this.heightmap;
     const liquid = this.surfaceLiquid;
@@ -263,7 +276,9 @@ export class Planet {
     logger.info(`[Planet:${this.name}] ensureSurfaceReady: Generating surface data...`); //
     try {
       //
-      this._surfaceData = getSurfaceGenerationProvider().generateSurfaceData(this.createSurfaceGenerationRequest()); //
+      this._surfaceData = getSurfaceGenerationProvider().generateSurfaceData(
+        this.createSurfaceGenerationRequest()
+      ); //
       this.validateSurfaceData();
       logger.info(`[Planet:${this.name}] Surface data generated successfully.`); //
     } catch (error) {
@@ -274,6 +289,7 @@ export class Planet {
     }
   }
 
+  /** Publishes validated surface data and marks it ready for use. */
   async prepareSurfaceReady(): Promise<void> {
     if (this._surfaceData) return;
     if (this._surfaceGenerationPromise) return this._surfaceGenerationPromise;
@@ -284,7 +300,8 @@ export class Planet {
       return;
     }
 
-    this._surfaceGenerationPromise = provider.generateSurfaceDataAsync(this.createSurfaceGenerationRequest())
+    this._surfaceGenerationPromise = provider
+      .generateSurfaceDataAsync(this.createSurfaceGenerationRequest())
       .then((data) => {
         this._surfaceData = data;
         this.validateSurfaceData();
@@ -301,6 +318,7 @@ export class Planet {
     return this._surfaceGenerationPromise;
   }
 
+  /** Prepares surface in background. */
   prepareSurfaceInBackground(): void {
     const provider = getSurfaceGenerationProvider();
     if (!provider.generateSurfaceDataAsync || this._surfaceData || this._surfaceGenerationPromise) return;
@@ -309,6 +327,7 @@ export class Planet {
     });
   }
 
+  /** Creates surface generation request. */
   private createSurfaceGenerationRequest(): SurfaceGenerationRequest {
     return {
       planetType: this.type,
@@ -326,6 +345,7 @@ export class Planet {
     };
   }
 
+  /** Validates surface data. */
   private validateSurfaceData(): void {
     if (!this._surfaceData) {
       throw new Error('Surface generator returned null data.');
@@ -346,14 +366,18 @@ export class Planet {
         missing.push('heightLevelColors');
       if (!this._surfaceData.surfaceElementMap || this._surfaceData.surfaceElementMap.length === 0)
         missing.push('surfaceElementMap');
-      throw new Error(`Surface generator returned incomplete data for solid planet (missing/empty: ${missing.join(', ')}).`);
+      throw new Error(
+        `Surface generator returned incomplete data for solid planet (missing/empty: ${missing.join(', ')}).`
+      );
     }
     if (!isSolid && (!this._surfaceData.rgbPaletteCache || this._surfaceData.rgbPaletteCache.length === 0)) {
-      throw new Error('Surface generator returned incomplete data for gas/ice giant (missing/empty palette).');
+      throw new Error(
+        'Surface generator returned incomplete data for gas/ice giant (missing/empty palette).'
+      );
     }
   }
 
-  /** Performs a scan, determining the primary resource based on abundance. */
+  /** Scans the planet and identifies its primary resource by abundance. */
   scan(): void {
     //
     if (this.scanned) {
@@ -443,7 +467,8 @@ export class Planet {
   /** Returns multi-line scan information for the planet, including moon summary. */
   getScanInfo(): string[] {
     logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`);
-    const orbitText = this.orbitDistance <= 0 ? 'none' : `${(this.orbitDistance / AU_IN_METERS).toFixed(3)} AU`;
+    const orbitText =
+      this.orbitDistance <= 0 ? 'none' : `${(this.orbitDistance / AU_IN_METERS).toFixed(3)} AU`;
     const infoLines: string[] = [
       `<h>--- SCAN REPORT: ${this.name} ---</h>`,
       `Type: <hl>${describePlanetType(this.type)}</hl>`,
@@ -466,7 +491,9 @@ export class Planet {
       `Rotation: <hl>${this.tidallyLocked ? 'Tidally locked' : 'Free'}</hl> | Axial Tilt: <hl>${(
         (this.axialTilt * 180) /
         Math.PI
-      ).toFixed(1)} deg</hl> | Period: <hl>${this.getRotationPeriodLabel()}</hl> | Inclination: <hl>${((this.orbitalInclination * 180) / Math.PI).toFixed(1)} deg</hl>`
+      ).toFixed(
+        1
+      )} deg</hl> | Period: <hl>${this.getRotationPeriodLabel()}</hl> | Inclination: <hl>${((this.orbitalInclination * 180) / Math.PI).toFixed(1)} deg</hl>`
     );
 
     // --- Atmosphere Details ---
@@ -487,7 +514,7 @@ export class Planet {
     infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`);
     infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`);
 
-    // --- Moon Information --- <<< NEW SECTION >>>
+    // Summarize moon counts by generated planet class.
     if (this.moons && this.moons.length > 0) {
       const moonCounts: Record<string, number> = {};
       this.moons.forEach((moon) => {
@@ -531,7 +558,9 @@ export class Planet {
         );
         infoLines.push(`Est. Deposits: <hl>${topElements || 'None Significant'}</hl>`); // Display the top elements string
       } else {
-        infoLines.push(`Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`);
+        infoLines.push(
+          `Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`
+        );
       }
     }
 
@@ -587,6 +616,7 @@ export class Planet {
     return Math.max(2, Math.round(Math.max(min, Math.min(max, adjusted))));
   }
 
+  /** Returns rotation period label. */
   public getRotationPeriodLabel(): string {
     if (this.tidallyLocked) return 'synchronous';
     const hours = this.rotationPeriodHours;

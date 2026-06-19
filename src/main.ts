@@ -15,69 +15,69 @@ import { WorkerNebulaColourProvider } from './rendering/nebula_generation_worker
 import { setHyperspaceSurveyCellProvider } from './core/hyperspace_survey_cell_provider';
 import { WorkerHyperspaceSurveyCellProvider } from './core/hyperspace_survey_worker_client';
 
-logger.info("main.ts executing...");
+logger.info('main.ts executing...');
 
 setSurfaceGenerationProvider(new WorkerSurfaceGenerationProvider());
-logger.info("Surface generation worker provider registered.");
+logger.info('Surface generation worker provider registered.');
 setNebulaColourProvider(new WorkerNebulaColourProvider());
-logger.info("Nebula generation worker provider registered.");
+logger.info('Nebula generation worker provider registered.');
 setHyperspaceSurveyCellProvider(new WorkerHyperspaceSurveyCellProvider(CONFIG.SEED));
-logger.info("Hyperspace survey worker provider registered.");
+logger.info('Hyperspace survey worker provider registered.');
 
+/** Renders fatal initialization error. */
 function renderFatalInitializationError(error: unknown): void {
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack ?? '' : '';
-    const wrapper = document.createElement('div');
-    wrapper.style.color = 'red';
-    wrapper.style.backgroundColor = 'black';
-    wrapper.style.padding = '20px';
-    wrapper.style.fontFamily = 'monospace';
-    wrapper.style.border = '2px solid red';
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? (error.stack ?? '') : '';
+  const wrapper = document.createElement('div');
+  wrapper.style.color = 'red';
+  wrapper.style.backgroundColor = 'black';
+  wrapper.style.padding = '20px';
+  wrapper.style.fontFamily = 'monospace';
+  wrapper.style.border = '2px solid red';
 
-    const heading = document.createElement('h1');
-    heading.textContent = 'Fatal Initialization Error';
-    const messageParagraph = document.createElement('p');
-    messageParagraph.textContent = message;
-    const stackPre = document.createElement('pre');
-    stackPre.textContent = stack;
+  const heading = document.createElement('h1');
+  heading.textContent = 'Fatal Initialization Error';
+  const messageParagraph = document.createElement('p');
+  messageParagraph.textContent = message;
+  const stackPre = document.createElement('pre');
+  stackPre.textContent = stack;
 
-    wrapper.appendChild(heading);
-    wrapper.appendChild(messageParagraph);
-    wrapper.appendChild(stackPre);
-    document.body.replaceChildren(wrapper);
+  wrapper.appendChild(heading);
+  wrapper.appendChild(messageParagraph);
+  wrapper.appendChild(stackPre);
+  document.body.replaceChildren(wrapper);
 }
 
 window.onload = () => {
-    logger.info("DOM fully loaded.");
-    const statusBar = document.getElementById('statusBar'); // Get status bar for errors
+  logger.info('DOM fully loaded.');
+  const statusBar = document.getElementById('statusBar'); // Get status bar for errors
 
-    try {
-        logger.info("Initializing game...");
-        // Pass the seed from config to the Game constructor
-        const game = new Game('gameCanvas', 'statusBar', CONFIG.SEED);
-        logger.info(`Game constructed with seed: "${CONFIG.SEED}"`);
+  try {
+    logger.info('Initializing game...');
+    // Pass the seed from config to the Game constructor
+    const game = new Game('gameCanvas', 'statusBar', CONFIG.SEED);
+    logger.info(`Game constructed with seed: "${CONFIG.SEED}"`);
 
-        game.startGame(); // Start the main game loop
-        logger.info("Game loop started.");
-
-    } catch (error) {
-        logger.error("Failed to initialize or start game:", error);
-        // Display error in the status bar as fallback
-        if (statusBar) {
-            statusBar.textContent = `FATAL ERROR: ${error instanceof Error ? error.message : String(error)}. See console (F12).`;
-            statusBar.style.color = 'red';
-            statusBar.style.backgroundColor = 'black'; // Ensure visibility
-        }
-        renderFatalInitializationError(error);
+    game.startGame(); // Start the main game loop
+    logger.info('Game loop started.');
+  } catch (error) {
+    logger.error('Failed to initialize or start game:', error);
+    // Display error in the status bar as fallback
+    if (statusBar) {
+      statusBar.textContent = `FATAL ERROR: ${error instanceof Error ? error.message : String(error)}. See console (F12).`;
+      statusBar.style.color = 'red';
+      statusBar.style.backgroundColor = 'black'; // Ensure visibility
     }
+    renderFatalInitializationError(error);
+  }
 };
 
 // Log any potential errors during script loading/parsing itself
 window.addEventListener('error', (event) => {
-     logger.error('Unhandled window error:', event.error, event.message);
+  logger.error('Unhandled window error:', event.error, event.message);
 });
 window.addEventListener('unhandledrejection', (event) => {
-     logger.error('Unhandled promise rejection:', event.reason);
+  logger.error('Unhandled promise rejection:', event.reason);
 });
 
-logger.info("main.ts finished initial execution.");
+logger.info('main.ts finished initial execution.');

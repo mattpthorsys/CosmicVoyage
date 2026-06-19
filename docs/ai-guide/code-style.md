@@ -1,5 +1,10 @@
 # Code Style And Commenting Standard
 
+## General coding style
+
+- Avoid convoluted code density; use indentation and blank lines to make code
+  easier to read.
+
 ## TypeScript Style
 
 - Use strict TypeScript and preserve explicit domain types.
@@ -110,12 +115,13 @@ Comments must describe current intent. Remove stale history such as “NEW,”
 
 ## Formatting And Lint
 
-The repository uses ESLint and TypeScript, not an automated formatter. Match the
-surrounding style and keep diffs focused.
+The repository uses Prettier for consistent whitespace and line wrapping,
+ESLint for code-quality rules, and TypeScript for static checking. Keep changes
+focused, and run the automated checks rather than manually approximating the
+format.
 
 Before completion:
 
 ```bash
-npm run lint
-npm run typecheck
+npm run check
 ```
