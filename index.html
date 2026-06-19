@@ -20,6 +20,12 @@
         background-color: #000000;
         /* Canvas margin is now handled by JS/TS in fitToScreen */
       }
+      #gameCanvasOverlay {
+        position: absolute;
+        z-index: 1;
+        pointer-events: none;
+        background-color: transparent;
+      }
       #statusBar {
         position: fixed; /* Keep fixed at bottom */
         bottom: 0;
@@ -60,6 +66,7 @@
   </head>
   <body>
     <canvas id="gameCanvas"></canvas>
+    <canvas id="gameCanvasOverlay" aria-hidden="true"></canvas>
     <div id="commandStrip">Arrows Move</div>
     <div id="statusBar">Initializing systems...</div>
 

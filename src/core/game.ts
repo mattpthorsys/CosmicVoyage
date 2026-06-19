@@ -5626,166 +5626,166 @@ export class Game {
   private _render(): void {
     const currentState = this.stateManager.state;
     try {
-      const directCanvasOverlayVisible =
-        (!this.shipMenuOpen &&
-          (this.terminalOverlay.hasVisibleContent() || this.astrometricOverlay.hasVisibleContent())) ||
-        this.isTravelDateTimeHudVisible() ||
-        this.profilerVisible;
       const mainRenderSignature = this.getMainRenderSignature();
-      if (this.canSkipMainRender(currentState, directCanvasOverlayVisible, mainRenderSignature)) {
-        return;
-      }
-      const renderPrepStart = performance.now();
-      const fullCanvasRepaint = this.forceFullRender || directCanvasOverlayVisible;
-      this.renderer.clear(fullCanvasRepaint);
+      const shouldRenderMainScene = !this.canSkipMainRender(currentState, mainRenderSignature);
+      if (shouldRenderMainScene) {
+        const renderPrepStart = performance.now();
+        const fullCanvasRepaint = this.forceFullRender;
+        this.renderer.clear(fullCanvasRepaint);
 
-      // Draw main content layer based on state
-      switch (currentState) {
-        case 'hyperspace':
-          this.renderer.drawScene(
-            createSceneViewModel({
-              kind: 'hyperspace',
-              player: createPlayerViewSnapshot(this.player),
-            })
-          );
-          this.drawTravelObserveCursor();
-          break;
-        case 'system':
-          const system = this.stateManager.currentSystem;
-          if (system) {
-            const currentViewScale = this.getCurrentViewScale();
+        // Draw main content layer based on state
+        switch (currentState) {
+          case 'hyperspace':
             this.renderer.drawScene(
               createSceneViewModel({
-                kind: 'system',
+                kind: 'hyperspace',
                 player: createPlayerViewSnapshot(this.player),
-                system,
-                viewScale: currentViewScale,
               })
             );
             this.drawTravelObserveCursor();
-          } else {
-            this._renderError('System data missing for render!');
-          }
-          break;
-        case 'orbit':
-          const orbitPlanet = this.stateManager.currentPlanet;
-          if (orbitPlanet) {
-            this.renderer.drawScene(
-              createSceneViewModel({
-                kind: 'orbit',
-                model: this.createCurrentOrbitScreen(),
-              })
-            );
-          } else {
-            this._renderError('Orbit data missing for render!');
-          }
-          break;
-        case 'planet':
-          const planet = this.stateManager.currentPlanet;
-          if (planet) {
-            try {
-              // Ensure surface data is ready (lazy loading)
-              planet.ensureSurfaceReady();
+            break;
+          case 'system':
+            const system = this.stateManager.currentSystem;
+            if (system) {
+              const currentViewScale = this.getCurrentViewScale();
               this.renderer.drawScene(
                 createSceneViewModel({
-                  kind: 'surface',
+                  kind: 'system',
                   player: createPlayerViewSnapshot(this.player),
-                  body: planet,
-                  overlay: this.createSurfaceVehicleOverlayModel(),
+                  system,
+                  viewScale: currentViewScale,
                 })
               );
-            } catch (surfaceError) {
-              logger.error(`[Game:_render] Error ensuring surface ready for ${planet.name}: ${surfaceError}`);
-              this._renderError(
-                `Surface Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
-              );
+              this.drawTravelObserveCursor();
+            } else {
+              this._renderError('System data missing for render!');
             }
-          } else {
-            this._renderError('Planet data missing for render!');
-          }
-          break;
-        case 'starbase':
-          const starbase = this.stateManager.currentStarbase;
-          if (starbase) {
-            try {
-              // Starbases also need ensureSurfaceReady for placeholder data
-              starbase.ensureSurfaceReady();
+            break;
+          case 'orbit':
+            const orbitPlanet = this.stateManager.currentPlanet;
+            if (orbitPlanet) {
               this.renderer.drawScene(
                 createSceneViewModel({
-                  kind: 'starbase',
-                  player: createPlayerViewSnapshot(this.player),
-                  starbase,
-                  model: this.createCurrentStarbaseScreen(),
+                  kind: 'orbit',
+                  model: this.createCurrentOrbitScreen(),
                 })
               );
-            } catch (surfaceError) {
-              logger.error(
-                `[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`
-              );
-              this._renderError(
-                `Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
-              );
+            } else {
+              this._renderError('Orbit data missing for render!');
             }
-          } else {
-            this._renderError('Starbase data missing for render!');
-          }
-          break;
-        default:
-          this._renderError(`Unknown game state: ${currentState}`);
-      }
+            break;
+          case 'planet':
+            const planet = this.stateManager.currentPlanet;
+            if (planet) {
+              try {
+                // Ensure surface data is ready (lazy loading)
+                planet.ensureSurfaceReady();
+                this.renderer.drawScene(
+                  createSceneViewModel({
+                    kind: 'surface',
+                    player: createPlayerViewSnapshot(this.player),
+                    body: planet,
+                    overlay: this.createSurfaceVehicleOverlayModel(),
+                  })
+                );
+              } catch (surfaceError) {
+                logger.error(
+                  `[Game:_render] Error ensuring surface ready for ${planet.name}: ${surfaceError}`
+                );
+                this._renderError(
+                  `Surface Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
+                );
+              }
+            } else {
+              this._renderError('Planet data missing for render!');
+            }
+            break;
+          case 'starbase':
+            const starbase = this.stateManager.currentStarbase;
+            if (starbase) {
+              try {
+                // Starbases also need ensureSurfaceReady for placeholder data
+                starbase.ensureSurfaceReady();
+                this.renderer.drawScene(
+                  createSceneViewModel({
+                    kind: 'starbase',
+                    player: createPlayerViewSnapshot(this.player),
+                    starbase,
+                    model: this.createCurrentStarbaseScreen(),
+                  })
+                );
+              } catch (surfaceError) {
+                logger.error(
+                  `[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`
+                );
+                this._renderError(
+                  `Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
+                );
+              }
+            } else {
+              this._renderError('Starbase data missing for render!');
+            }
+            break;
+          default:
+            this._renderError(`Unknown game state: ${currentState}`);
+        }
 
-      // Draw Popup (if active)
-      if (this.popupState !== 'inactive') {
-        this.renderer.drawPopup(
-          this.popupContent,
-          this.popupState,
-          this.popupOpenCloseProgress,
-          this.popupTextProgress
-        );
-      }
+        // Draw Popup (if active)
+        if (this.popupState !== 'inactive') {
+          this.renderer.drawPopup(
+            this.popupContent,
+            this.popupState,
+            this.popupOpenCloseProgress,
+            this.popupTextProgress
+          );
+        }
 
-      if (this.targetMenuOpen) {
-        this.renderer.drawTextModalTable(this.createTargetMenuModel());
-      }
+        if (this.targetMenuOpen) {
+          this.renderer.drawTextModalTable(this.createTargetMenuModel());
+        }
 
-      if (this.shipMenuOpen) {
-        this.renderer.drawTextModalTable(this.createShipMenuModel());
-      }
+        if (this.shipMenuOpen) {
+          this.renderer.drawTextModalTable(this.createShipMenuModel());
+        }
 
-      if (this.roverCargoOpen) {
-        this.renderer.drawTextModalTable(this.createRoverCargoModel());
-      }
+        if (this.roverCargoOpen) {
+          this.renderer.drawTextModalTable(this.createRoverCargoModel());
+        }
 
-      if (this.surfaceLegendOpen) {
-        this.renderer.drawTextModalTable(this.createSurfaceLegendModel());
-      }
+        if (this.surfaceLegendOpen) {
+          this.renderer.drawTextModalTable(this.createSurfaceLegendModel());
+        }
 
-      if (this.quantitySelector) {
-        this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
-      }
+        if (this.quantitySelector) {
+          this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
+        }
 
-      if (this.surfaceExtractionSelector) {
-        this.renderer.drawTextModalTable(this.createSurfaceExtractionSelectorModel());
-      }
+        if (this.surfaceExtractionSelector) {
+          this.renderer.drawTextModalTable(this.createSurfaceExtractionSelectorModel());
+        }
 
-      if (this.jettisonConfirmation) {
-        this.renderer.drawTextModalTable(this.createJettisonConfirmationModel());
-      }
+        if (this.jettisonConfirmation) {
+          this.renderer.drawTextModalTable(this.createJettisonConfirmationModel());
+        }
 
-      if (fullCanvasRepaint) {
-        this.renderer.renderBufferFull();
+        if (fullCanvasRepaint) {
+          this.renderer.renderBufferFull();
+        } else {
+          this.renderer.renderDiff();
+        }
+        this.lastFrameProfile.renderPrepMs = performance.now() - renderPrepStart;
+        this.logRenderStats();
+        this.lastMainRenderSignature = mainRenderSignature;
       } else {
-        this.renderer.renderDiff();
+        this.lastFrameProfile.renderPrepMs = 0;
       }
-      this.lastFrameProfile.renderPrepMs = performance.now() - renderPrepStart;
-      this.logRenderStats();
-      this.lastMainRenderSignature = mainRenderSignature;
 
       const overlayStart = performance.now();
+      this.renderer.clearOverlay();
       this.renderTravelDateTimeHud();
       if (!this.shouldSuppressHudForeground()) {
         this.astrometricOverlay.render(
-          this.renderer.getContext(),
+          this.renderer.getOverlayContext(),
           this.renderer.getCharWidthPx(),
           this.renderer.getCharHeightPx()
         );
@@ -5794,9 +5794,9 @@ export class Game {
       // Draw Terminal Overlay on top
       if (!this.shouldSuppressHudForeground()) {
         this.terminalOverlay.render(
-          this.renderer.getContext(),
-          this.renderer.getCanvas().width,
-          this.renderer.getCanvas().height
+          this.renderer.getOverlayContext(),
+          this.renderer.getOverlayCanvas().width,
+          this.renderer.getOverlayCanvas().height
         );
       }
       this.renderPerformanceOverlay();
@@ -5831,8 +5831,8 @@ export class Game {
   private renderTravelDateTimeHud(): void {
     if (!this.isTravelDateTimeHudVisible()) return;
     const label = this.getGameDateTimeLabel();
-    const ctx = this.renderer.getContext();
-    const canvas = this.renderer.getCanvas();
+    const ctx = this.renderer.getOverlayContext();
+    const canvas = this.renderer.getOverlayCanvas();
     const charHeight = this.renderer.getCharHeightPx();
     ctx.save();
     ctx.font = `${charHeight * 0.86}px ${CONFIG.THIN_FONT_FAMILY}`;
@@ -5867,14 +5867,9 @@ export class Game {
   }
 
   /** Returns whether skip main render is allowed. */
-  private canSkipMainRender(
-    state: GameState,
-    directCanvasOverlayVisible: boolean,
-    signature: string
-  ): boolean {
+  private canSkipMainRender(state: GameState, signature: string): boolean {
     if (
       this.forceFullRender ||
-      directCanvasOverlayVisible ||
       this.popupState !== 'inactive' ||
       this.shipMenuOpen ||
       this.roverCargoOpen ||
@@ -5899,7 +5894,6 @@ export class Game {
           this.player.position.worldX,
           this.player.position.worldY,
           this.player.render.char,
-          this.getGameDateTimeLabel(),
         ].join('|');
       case 'planet':
         return [
@@ -5962,7 +5956,7 @@ export class Game {
   /** Renders performance overlay. */
   private renderPerformanceOverlay(): void {
     if (!this.profilerVisible) return;
-    const ctx = this.renderer.getContext();
+    const ctx = this.renderer.getOverlayContext();
     const charWidth = this.renderer.getCharWidthPx();
     const charHeight = this.renderer.getCharHeightPx();
     if (charWidth <= 0 || charHeight <= 0) return;

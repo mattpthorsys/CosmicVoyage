@@ -34,6 +34,8 @@ import { createPlayerViewSnapshot, SceneViewModel } from './scene_view_model';
 export class RendererFacade {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
+  private overlayCanvas: HTMLCanvasElement;
+  private overlayCtx: CanvasRenderingContext2D;
   private screenBuffer: ScreenBuffer; // Main buffer
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
@@ -51,6 +53,7 @@ export class RendererFacade {
   ) {
     logger.info('[RendererFacade] Constructing instance...');
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
+    const overlayCanvas = document.getElementById(`${canvasId}Overlay`) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
     const commandStripElement = document.getElementById('commandStrip') as HTMLElement | null;
 
@@ -60,20 +63,33 @@ export class RendererFacade {
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
+    if (!overlayCanvas || typeof overlayCanvas.getContext !== 'function') {
+      const msg = `Overlay canvas element "#${canvasId}Overlay" not found or not supported.`;
+      logger.error(`[RendererFacade] ${msg}`);
+      throw new Error(msg);
+    }
     if (!statusBarElement) {
       const msg = `Status bar element "#${statusBarId}" not found.`;
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
     const ctx = canvas.getContext('2d', { alpha: true }); // Ensure alpha for transparency between layers
+    const overlayCtx = overlayCanvas.getContext('2d', { alpha: true });
     if (!ctx) {
       const msg = 'Failed to get 2D rendering context from canvas.';
+      logger.error(`[RendererFacade] ${msg}`);
+      throw new Error(msg);
+    }
+    if (!overlayCtx) {
+      const msg = 'Failed to get 2D rendering context from the overlay canvas.';
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
 
     this.canvas = canvas;
     this.ctx = ctx;
+    this.overlayCanvas = overlayCanvas;
+    this.overlayCtx = overlayCtx;
 
     // Initialize components (same as before)
     this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false);
@@ -111,6 +127,16 @@ export class RendererFacade {
   /** Returns context. */
   public getContext(): CanvasRenderingContext2D {
     return this.ctx;
+  }
+
+  /** Returns the transparent context used for animated HUD and terminal overlays. */
+  public getOverlayContext(): CanvasRenderingContext2D {
+    return this.overlayCtx;
+  }
+
+  /** Returns the transparent canvas layered above the main scene. */
+  public getOverlayCanvas(): HTMLCanvasElement {
+    return this.overlayCanvas;
   }
 
   /** Returns char width px. */
@@ -178,6 +204,8 @@ export class RendererFacade {
     // Set canvas physical pixel dimensions
     this.canvas.width = cols * charWidthPx;
     this.canvas.height = rows * charHeightPx;
+    this.overlayCanvas.width = this.canvas.width;
+    this.overlayCanvas.height = this.canvas.height;
 
     // Update internal buffers and context settings
     this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
@@ -193,12 +221,19 @@ export class RendererFacade {
       this.commandStripUpdater?.getElement().offsetHeight || roughCommandStripHeightPx;
 
     // Center the canvas dynamically using margins
-    this.canvas.style.marginLeft = `${Math.max(0, (window.innerWidth - this.canvas.width) / 2)}px`;
-    this.canvas.style.marginTop = `${Math.max(
+    const canvasMarginLeft = Math.max(0, (window.innerWidth - this.canvas.width) / 2);
+    const canvasMarginTop = Math.max(
       0,
       // Calculate top margin based on available space minus canvas and FINAL status bar height
       (window.innerHeight - finalStatusBarHeightPx - finalCommandStripHeightPx - this.canvas.height) / 2
-    )}px`;
+    );
+    this.canvas.style.marginLeft = `${canvasMarginLeft}px`;
+    this.canvas.style.marginTop = `${canvasMarginTop}px`;
+    this.overlayCanvas.style.left = `${canvasMarginLeft}px`;
+    this.overlayCanvas.style.top = `${canvasMarginTop}px`;
+    this.overlayCanvas.style.width = `${this.canvas.width}px`;
+    this.overlayCanvas.style.height = `${this.canvas.height}px`;
+    this.clearOverlay();
 
     this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
     this.sceneRenderer.clearCaches();
@@ -212,6 +247,11 @@ export class RendererFacade {
   /** Resets internal buffers and optionally clears the physical canvas. */
   clear(physicalClear: boolean = true): void {
     this.screenBuffer.clear(physicalClear);
+  }
+
+  /** Clears animated content without touching the cached main scene. */
+  clearOverlay(): void {
+    this.overlayCtx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
   }
 
   /** Renders the entire main scene buffer. */

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Game } from '../../../core/game';
 import {
   OrbitModeController,
@@ -40,8 +40,17 @@ describe('Game main render signatures', () => {
     const first = game.getMainRenderSignature();
     const second = game.getMainRenderSignature();
 
-    expect(first).toBe('hyperspace|12|-7|@|01 Jan 3015 AD 00:00');
+    expect(first).toBe('hyperspace|12|-7|@');
     expect(second).toBe(first);
+  });
+
+  it('does not invalidate the hyperspace scene when only the overlay clock changes', () => {
+    const game = createRenderGateHarness();
+    const first = game.getMainRenderSignature();
+
+    game.gameClockElapsedSeconds = 90 * 60;
+
+    expect(game.getMainRenderSignature()).toBe(first);
   });
 
   it('changes hyperspace signatures when the player moves', () => {
@@ -53,13 +62,50 @@ describe('Game main render signatures', () => {
     expect(game.getMainRenderSignature()).not.toBe(first);
   });
 
-  it('can skip unchanged hyperspace main renders without suppressing direct overlays', () => {
+  it('can skip unchanged hyperspace main renders while overlays use their own canvas', () => {
     const game = createRenderGateHarness();
     const signature = game.getMainRenderSignature();
     game.lastMainRenderSignature = signature;
 
-    expect(game.canSkipMainRender('hyperspace', false, signature)).toBe(true);
-    expect(game.canSkipMainRender('hyperspace', true, signature)).toBe(false);
+    expect(game.canSkipMainRender('hyperspace', signature)).toBe(true);
+
+    game.forceFullRender = true;
+    expect(game.canSkipMainRender('hyperspace', signature)).toBe(false);
+  });
+
+  it('redraws overlays without repainting an unchanged main scene', () => {
+    const game = createRenderGateHarness();
+    const overlayContext = {} as CanvasRenderingContext2D;
+    const clearMain = vi.fn();
+    const clearOverlay = vi.fn();
+    const renderAstrometric = vi.fn();
+    const renderTerminal = vi.fn();
+
+    Object.assign(game, {
+      renderer: {
+        clear: clearMain,
+        clearOverlay,
+        getOverlayContext: () => overlayContext,
+        getOverlayCanvas: () => ({ width: 640, height: 480 }),
+        getCharWidthPx: () => 8,
+        getCharHeightPx: () => 16,
+      },
+      astrometricOverlay: { render: renderAstrometric },
+      terminalOverlay: { render: renderTerminal },
+      lastFrameProfile: { renderPrepMs: 12, overlayMs: 0 },
+      renderTravelDateTimeHud: vi.fn(),
+      renderPerformanceOverlay: vi.fn(),
+      getMainRenderSignature: () => 'stable',
+      canSkipMainRender: () => true,
+    });
+
+    game._render();
+
+    expect(clearMain).not.toHaveBeenCalled();
+    expect(clearOverlay).toHaveBeenCalledOnce();
+    expect(renderAstrometric).toHaveBeenCalledWith(overlayContext, 8, 16);
+    expect(renderTerminal).toHaveBeenCalledWith(overlayContext, 640, 480);
+    expect(game.lastFrameProfile.renderPrepMs).toBe(0);
   });
 
   it('formats the in-game clock from 3015 AD', () => {
