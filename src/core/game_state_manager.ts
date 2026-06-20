@@ -1,5 +1,6 @@
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
+import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { Starbase } from '../entities/starbase';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
@@ -419,7 +420,14 @@ export class GameStateManager {
     surfaceX?: number,
     surfaceY?: number
   ): GameState | null {
-    targetObject.ensureSurfaceReady(); // Throws on failure
+    if (targetObject instanceof Planet && !targetObject.isSurfaceReady()) {
+      targetObject.prepareSurfaceInBackground();
+      this.statusMessage = `Landing data for ${targetObject.name} is still preparing.`;
+      return null;
+    }
+    if (targetObject instanceof Starbase) {
+      targetObject.ensureSurfaceReady();
+    }
 
     const oldState = this._state;
     let newState: GameState | null = null;
@@ -430,7 +438,7 @@ export class GameStateManager {
       newState = 'planet';
       this._currentOrbitReferencePlanet =
         this._currentSystem?.getOrbitParentFor(targetObject) ?? targetObject;
-      const mapSize = targetObject.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
+      const mapSize = readReadySurfaceData(targetObject)?.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
       this.player.position.surfaceX = ((Math.floor(surfaceX ?? mapSize / 2) % mapSize) + mapSize) % mapSize;
       this.player.position.surfaceY = Math.max(0, Math.min(mapSize - 1, Math.floor(surfaceY ?? mapSize / 2)));
       this.player.terrainVehicle.shipSurfaceX = this.player.position.surfaceX;

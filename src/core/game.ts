@@ -12,6 +12,7 @@ import { InputManager } from './input_manager';
 import { GameStateManager, GameState } from './game_state_manager';
 import { ActionProcessor, ActionProcessResult } from './action_processor';
 import { Planet } from '../entities/planet';
+import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { Starbase } from '../entities/starbase';
 import { SolarSystem } from '../entities/solar_system';
 import { eventManager, GameEvents, GameStateChangedEvent, Unsubscribe } from './event_manager';
@@ -221,6 +222,7 @@ export class Game {
   private lastPublishedCommandSignature: string = '';
   private lastHyperspaceUpdateSignature: string = '';
   private lastHyperspaceUpdateStatus: string = '';
+  private preparingSurfacePlanet: Planet | null = null;
   private profilerVisible: boolean = false;
   private lastFrameProfile: FrameProfile = {
     frameMs: 0,
@@ -1107,8 +1109,10 @@ export class Game {
       ) {
         if (selectedBody.type === 'GasGiant' || selectedBody.type === 'IceGiant') {
           this.orbitModeState.alert = 'No solid landing solution for giant-class atmosphere.';
+        } else if (!selectedBody.isSurfaceReady()) {
+          this.orbitModeState.alert = `Preparing ${selectedBody.name} landing data...`;
+          this.prepareOrbitLandingSurface(selectedBody);
         } else {
-          selectedBody.ensureSurfaceReady();
           this.orbitModeState.mode = 'landing';
           this.orbitModeState.alert = 'Select landing coordinates.';
         }
@@ -2239,23 +2243,18 @@ export class Game {
             return;
           }
           if (planet) {
-            try {
-              planet.ensureSurfaceReady(); // Ensure map exists for size
-              const mapSize = planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
-              if (this.player.terrainVehicle.deployed && !this.consumeTerrainVehicleFuelForMove(planet)) {
-                return;
-              }
-              if (this.player.terrainVehicle.onFoot) this.applyFootTravelRisk();
-              moveData.surfaceContext = { mapSize };
-            } catch (surfaceError) {
-              logger.error(
-                `[Game:_handleMovementInput] Error ensuring surface ready for move: ${surfaceError}`
-              );
-              this.statusMessage = STATUS_MESSAGES.ERROR_SURFACE_PREP('Cannot move');
-              // Publish update here if error prevents move event
-              this._publishStatusUpdate();
-              return; // Stop movement processing
+            const surfaceData = readReadySurfaceData(planet);
+            if (!surfaceData?.heightmap) {
+              this.requestSurfacePreparation(planet);
+              this.statusMessage = 'Surface navigation is waiting for terrain generation.';
+              return;
             }
+            const mapSize = surfaceData.heightmap.length;
+            if (this.player.terrainVehicle.deployed && !this.consumeTerrainVehicleFuelForMove(planet)) {
+              return;
+            }
+            if (this.player.terrainVehicle.onFoot) this.applyFootTravelRisk();
+            moveData.surfaceContext = { mapSize };
           } else {
             logger.error(
               '[Game:_handleMovementInput] Player in planet state but currentPlanet is null during move.'
@@ -4122,9 +4121,14 @@ export class Game {
     const planet = this.stateManager.currentPlanet;
     const cursor = this.surfaceMode.scanCursor;
     if (!planet || !cursor) return;
-    planet.ensureSurfaceReady();
-    const map = planet.heightmap;
-    const elements = planet.surfaceElementMap;
+    const surfaceData = readReadySurfaceData(planet);
+    if (!surfaceData?.heightmap || !surfaceData.surfaceElementMap) {
+      this.requestSurfacePreparation(planet);
+      this.statusMessage = 'Surface scan is waiting for terrain generation.';
+      return;
+    }
+    const map = surfaceData.heightmap;
+    const elements = surfaceData.surfaceElementMap;
     const size = map?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
     const x = ((Math.floor(this.player.position.surfaceX + cursor.dx) % size) + size) % size;
     const y = Math.max(0, Math.min(size - 1, Math.floor(this.player.position.surfaceY + cursor.dy)));
@@ -5700,9 +5704,7 @@ export class Game {
           case 'planet':
             const planet = this.stateManager.currentPlanet;
             if (planet) {
-              try {
-                // Ensure surface data is ready (lazy loading)
-                planet.ensureSurfaceReady();
+              if (planet.isSurfaceReady()) {
                 this.renderer.drawScene(
                   createSceneViewModel({
                     kind: 'surface',
@@ -5711,13 +5713,9 @@ export class Game {
                     overlay: this.createSurfaceVehicleOverlayModel(),
                   })
                 );
-              } catch (surfaceError) {
-                logger.error(
-                  `[Game:_render] Error ensuring surface ready for ${planet.name}: ${surfaceError}`
-                );
-                this._renderError(
-                  `Surface Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
-                );
+              } else {
+                this.requestSurfacePreparation(planet);
+                this.renderer.drawSurfaceLoading(planet.name);
               }
             } else {
               this._renderError('Planet data missing for render!');
@@ -6530,6 +6528,59 @@ export class Game {
       stellarSources: this.getOrbitStellarSources(selectedBody),
       alert: this.orbitModeState.alert || this.statusMessage,
     });
+  }
+
+  /** Starts worker-backed surface preparation and redraws when the current planet becomes ready. */
+  private requestSurfacePreparation(planet: Planet): void {
+    if (planet.isSurfaceReady() || this.preparingSurfacePlanet === planet) return;
+    this.preparingSurfacePlanet = planet;
+    void planet
+      .prepareSurfaceReady()
+      .then(() => {
+        if (this.stateManager.currentPlanet === planet) {
+          this.statusMessage = `${planet.name} surface data ready.`;
+          this.forceFullRender = true;
+        }
+      })
+      .catch((error) => {
+        if (this.stateManager.currentPlanet === planet) {
+          this.statusMessage = `Surface preparation failed for ${planet.name}: ${
+            error instanceof Error ? error.message : String(error)
+          }`;
+          this.forceFullRender = true;
+        }
+      })
+      .finally(() => {
+        if (this.preparingSurfacePlanet === planet) {
+          this.preparingSurfacePlanet = null;
+        }
+      });
+  }
+
+  /** Prepares the selected orbit body before exposing landing-site controls. */
+  private prepareOrbitLandingSurface(planet: Planet): void {
+    void planet
+      .prepareSurfaceReady()
+      .then(() => {
+        if (
+          this.stateManager.state === 'orbit' &&
+          this.getSelectedOrbitBody() === planet &&
+          this.orbitModeState.mode === 'overview'
+        ) {
+          this.resetOrbitLandingCursor();
+          this.orbitModeState.mode = 'landing';
+          this.orbitModeState.alert = 'Select landing coordinates.';
+          this.forceFullRender = true;
+        }
+      })
+      .catch((error) => {
+        if (this.stateManager.state === 'orbit' && this.getSelectedOrbitBody() === planet) {
+          this.orbitModeState.alert = `Landing data unavailable: ${
+            error instanceof Error ? error.message : String(error)
+          }`;
+          this.forceFullRender = true;
+        }
+      });
   }
 
   /** Returns orbit stellar sources. */

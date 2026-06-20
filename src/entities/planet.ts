@@ -202,56 +202,43 @@ export class Planet {
   // --- Getters for Lazy-Loaded Surface Data ---
   /** Returns heightmap. */
   get heightmap(): number[][] | null {
-    //
-    if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
-      //
-      this.ensureSurfaceReady(); // Generate if needed
-    }
-    return this._surfaceData?.heightmap ?? null; //
+    return this._surfaceData?.heightmap ?? null;
   }
 
   /** Returns height level colors. */
   get heightLevelColors(): string[] | null {
-    //
-    if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
-      //
-      this.ensureSurfaceReady(); // Generate if needed
-    }
-    return this._surfaceData?.heightLevelColors ?? null; //
+    return this._surfaceData?.heightLevelColors ?? null;
   }
 
   /** Returns rgb palette cache. */
   get rgbPaletteCache(): RgbColour[] | null {
-    //
-    if (!this._surfaceData) {
-      // Generate even for solid planets as height colors depend on it
-      this.ensureSurfaceReady(); // Generate if needed
-    }
-    return this._surfaceData?.rgbPaletteCache ?? null; //
+    return this._surfaceData?.rgbPaletteCache ?? null;
   }
 
   // Getter for Surface Element Map
   /** Returns surface element map. */
   get surfaceElementMap(): string[][] | null {
-    //
-    if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
-      //
-      this.ensureSurfaceReady(); // Generate if needed
-    }
-    return this._surfaceData?.surfaceElementMap ?? null; // Access from _surfaceData
+    return this._surfaceData?.surfaceElementMap ?? null;
   }
 
   /** Returns surface liquid. */
   get surfaceLiquid(): SurfaceLiquidOverlay | null {
-    if (!this._surfaceData && this.type !== 'GasGiant' && this.type !== 'IceGiant') {
-      this.ensureSurfaceReady();
-    }
     return this._surfaceData?.liquidOverlay ?? null;
   }
 
   /** Returns surface data if ready. */
   getSurfaceDataIfReady(): SurfaceData | null {
     return this._surfaceData;
+  }
+
+  /** Returns whether complete surface data is available without triggering generation. */
+  isSurfaceReady(): boolean {
+    return this._surfaceData !== null;
+  }
+
+  /** Returns whether worker-backed surface generation is currently in progress. */
+  isSurfacePreparing(): boolean {
+    return this._surfaceGenerationPromise !== null;
   }
 
   /** Returns whether submerged surface. */

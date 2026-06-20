@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 import { STATUS_MESSAGES } from '../constants/messages';
 import { ELEMENTS } from '../constants/resources';
 import { Planet } from '../entities/planet';
+import { readReadySurfaceData } from '../entities/planet/surface_data';
 
 export interface MiningEstimate {
   canMine: boolean;
@@ -88,8 +89,7 @@ export class MiningSystem {
     const planet = this.stateManager.currentPlanet;
     if (!planet || planet.type === 'GasGiant' || planet.type === 'IceGiant') return [];
 
-    planet.ensureSurfaceReady();
-    const elementMap = planet.surfaceElementMap;
+    const elementMap = readReadySurfaceData(planet)?.surfaceElementMap ?? null;
     if (!elementMap) return [];
     const currentX = this.player.position.surfaceX;
     const currentY = this.player.position.surfaceY;
@@ -242,10 +242,9 @@ export class MiningSystem {
     if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_INVALID_TYPE(planet.type) };
     }
-    planet.ensureSurfaceReady();
-    const elementMap = planet.surfaceElementMap;
+    const elementMap = readReadySurfaceData(planet)?.surfaceElementMap ?? null;
     if (!elementMap) {
-      throw new Error('Surface element map data is missing after ensureSurfaceReady.');
+      return { canMine: false, maxAmount: 0, message: 'Surface generation is still in progress.' };
     }
     const mapHeight = elementMap.length;
     const mapWidth = elementMap[0]?.length ?? 0;
@@ -258,10 +257,9 @@ export class MiningSystem {
       return { canMine: false, maxAmount: 0, message: STATUS_MESSAGES.PLANET_MINE_INVALID_TYPE(planet.type) };
     }
 
-    planet.ensureSurfaceReady();
-    const elementMap = planet.surfaceElementMap;
+    const elementMap = readReadySurfaceData(planet)?.surfaceElementMap ?? null;
     if (!elementMap) {
-      throw new Error('Surface element map data is missing after ensureSurfaceReady.');
+      return { canMine: false, maxAmount: 0, message: 'Surface generation is still in progress.' };
     }
 
     const currentX = this.player.position.surfaceX;

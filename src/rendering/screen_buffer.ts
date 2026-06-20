@@ -44,6 +44,7 @@ export class ScreenBuffer {
   private newBuffer: CellState[] = []; // Represents the desired state for the next frame
   private scaledGlyphs: ScaledGlyphState[] = [];
   private hadScaledGlyphsLastFrame = false;
+  private readonly cellStateCache = new Map<string, Readonly<CellState>>();
 
   private readonly defaultCellState: Readonly<CellState>; // Template for empty/default cells
   private readonly defaultBgColor: string;
@@ -238,12 +239,12 @@ export class ScreenBuffer {
     // Use the provided background color, or fall back to the buffer's default background
     const finalBgColor = isTransparentUpdate ? CONFIG.TRANSPARENT_COLOUR : bgColor || this.defaultBgColor;
 
-    this.newBuffer[index] = {
-      char: char || ' ', // Use space if char is null
-      fg: fgColor || this.defaultFgColor, // Use default if fg is null
-      bg: finalBgColor,
-      isTransparentBg: isTransparentUpdate,
-    };
+    this.newBuffer[index] = this.getCellState(
+      char || ' ',
+      fgColor || this.defaultFgColor,
+      finalBgColor,
+      isTransparentUpdate
+    );
   }
 
   /** Draws a string horizontally starting at (x, y) using drawChar. */
@@ -351,12 +352,9 @@ export class ScreenBuffer {
     this.drawBackgroundRuns(this.newBuffer);
     for (let i = 0; i < size; i++) {
       const newState = this.newBuffer[i];
-      const y = Math.floor(i / this.cols);
-      const x = i % this.cols;
       cellsDrawn++;
       if (!newState.isTransparentBg) backgroundsDrawn++;
       if ((newState.char || ' ') !== ' ') {
-        this._physicalDrawGlyph(newState.char, x, y, newState.fg);
         glyphsDrawn++;
       }
 
@@ -365,6 +363,7 @@ export class ScreenBuffer {
       // Reset newBuffer cell ready for the next frame's drawing operations
       this.newBuffer[i] = this.defaultCellState;
     }
+    this.drawGlyphRuns(this.screenBuffer);
 
     this.renderScaledGlyphs();
     const endTime = performance.now();
@@ -439,22 +438,8 @@ export class ScreenBuffer {
     }
 
     const backgroundsDrawn = this.drawBackgroundRunsForIndices(dirtyIndices, this.screenBuffer);
-    let glyphsDrawn = 0;
-    for (const i of dirtyIndices) {
-      const state = this.screenBuffer[i];
-      const charToDraw = state.char || ' ';
-      if (state.isTransparentBg && charToDraw !== ' ') {
-        const x = i % this.cols;
-        const y = Math.floor(i / this.cols);
-        this.ctx.clearRect(x * this.charWidthPx, y * this.charHeightPx, this.charWidthPx, this.charHeightPx);
-      }
-      if (charToDraw !== ' ') {
-        const x = i % this.cols;
-        const y = Math.floor(i / this.cols);
-        this._physicalDrawGlyph(state.char, x, y, state.fg);
-        glyphsDrawn++;
-      }
-    }
+    this.clearTransparentRunsForIndices(dirtyIndices, this.screenBuffer);
+    const glyphsDrawn = this.drawGlyphRunsForIndices(dirtyIndices, this.screenBuffer);
 
     const endTime = performance.now();
     this.lastRenderStats = {
@@ -548,12 +533,115 @@ export class ScreenBuffer {
     return backgroundsDrawn;
   }
 
-  /** Draws one glyph to the canvas at its physical pixel position. */
-  private _physicalDrawGlyph(char: string | null, x: number, y: number, fgColor: string | null): void {
-    const charToDraw = char || ' ';
-    if (charToDraw === ' ') return;
-    this.ctx.fillStyle = fgColor || this.defaultFgColor;
-    this.ctx.fillText(charToDraw, x * this.charWidthPx, y * this.charHeightPx);
+  /** Returns a shared immutable cell state to avoid allocating identical cells every frame. */
+  private getCellState(char: string, fg: string, bg: string, isTransparentBg: boolean): Readonly<CellState> {
+    const key = `${char}\u0000${fg}\u0000${bg}\u0000${isTransparentBg ? '1' : '0'}`;
+    const cached = this.cellStateCache.get(key);
+    if (cached) return cached;
+    const state = Object.freeze({ char, fg, bg, isTransparentBg });
+    this.cellStateCache.set(key, state);
+    return state;
+  }
+
+  /** Draws visible glyphs in row and colour runs to minimize Canvas fillText calls. */
+  private drawGlyphRuns(buffer: readonly CellState[]): number {
+    let glyphsDrawn = 0;
+    for (let y = 0; y < this.rows; y++) {
+      let x = 0;
+      while (x < this.cols) {
+        const state = buffer[y * this.cols + x];
+        if ((state.char || ' ') === ' ') {
+          x++;
+          continue;
+        }
+        const fg = state.fg || this.defaultFgColor;
+        const startX = x;
+        let text = '';
+        while (x < this.cols) {
+          const next = buffer[y * this.cols + x];
+          if ((next.fg || this.defaultFgColor) !== fg) break;
+          const char = next.char || ' ';
+          text += char;
+          if (char !== ' ') glyphsDrawn++;
+          x++;
+        }
+        this.ctx.fillStyle = fg;
+        this.ctx.fillText(text.trimEnd(), startX * this.charWidthPx, y * this.charHeightPx);
+      }
+    }
+    return glyphsDrawn;
+  }
+
+  /** Draws changed glyphs in contiguous row and colour runs. */
+  private drawGlyphRunsForIndices(indices: readonly number[], buffer: readonly CellState[]): number {
+    let glyphsDrawn = 0;
+    let cursor = 0;
+    while (cursor < indices.length) {
+      const startIndex = indices[cursor];
+      const startState = buffer[startIndex];
+      if ((startState.char || ' ') === ' ') {
+        cursor++;
+        continue;
+      }
+      const y = Math.floor(startIndex / this.cols);
+      const startX = startIndex % this.cols;
+      const fg = startState.fg || this.defaultFgColor;
+      let previousIndex = startIndex - 1;
+      let text = '';
+      while (cursor < indices.length) {
+        const index = indices[cursor];
+        const state = buffer[index];
+        if (
+          Math.floor(index / this.cols) !== y ||
+          index !== previousIndex + 1 ||
+          (state.fg || this.defaultFgColor) !== fg
+        ) {
+          break;
+        }
+        const char = state.char || ' ';
+        text += char;
+        if (char !== ' ') glyphsDrawn++;
+        previousIndex = index;
+        cursor++;
+      }
+      this.ctx.fillStyle = fg;
+      this.ctx.fillText(text.trimEnd(), startX * this.charWidthPx, y * this.charHeightPx);
+    }
+    return glyphsDrawn;
+  }
+
+  /** Clears contiguous transparent dirty cells before their replacement glyphs are drawn. */
+  private clearTransparentRunsForIndices(indices: readonly number[], buffer: readonly CellState[]): void {
+    let cursor = 0;
+    while (cursor < indices.length) {
+      const startIndex = indices[cursor];
+      if (!buffer[startIndex].isTransparentBg) {
+        cursor++;
+        continue;
+      }
+      const y = Math.floor(startIndex / this.cols);
+      const startX = startIndex % this.cols;
+      let endX = startX + 1;
+      cursor++;
+      while (cursor < indices.length) {
+        const index = indices[cursor];
+        if (
+          Math.floor(index / this.cols) !== y ||
+          index % this.cols !== endX ||
+          !buffer[index].isTransparentBg
+        ) {
+          break;
+        }
+        endX++;
+        cursor++;
+      }
+      this.ctx.clearRect(
+        startX * this.charWidthPx,
+        y * this.charHeightPx,
+        (endX - startX) * this.charWidthPx,
+        this.charHeightPx
+      );
+    }
   }
 
   /** Renders scaled glyphs. */
@@ -564,22 +652,39 @@ export class ScreenBuffer {
 
     this.ctx.save();
     this.ctx.textBaseline = 'top';
-    for (const glyph of glyphs) {
+    for (let index = 0; index < glyphs.length; index++) {
+      const glyph = glyphs[index];
       const charToDraw = glyph.char || ' ';
       const width = this.charWidthPx * glyph.scaleX;
       const height = this.charHeightPx * glyph.scaleY;
       const px = glyph.x * this.charWidthPx;
       const py = glyph.y * this.charHeightPx;
+      if (charToDraw === GLYPHS.BLOCK) {
+        let runWidth = width;
+        while (index + 1 < glyphs.length) {
+          const next = glyphs[index + 1];
+          if (
+            next.char !== GLYPHS.BLOCK ||
+            next.y !== glyph.y ||
+            next.x !== glyph.x + runWidth / this.charWidthPx ||
+            next.scaleX !== glyph.scaleX ||
+            next.scaleY !== glyph.scaleY ||
+            next.fg !== glyph.fg
+          ) {
+            break;
+          }
+          runWidth += this.charWidthPx * next.scaleX;
+          index++;
+        }
+        this.ctx.fillStyle = glyph.fg || this.defaultFgColor;
+        this.ctx.fillRect(px, py, runWidth, height);
+        continue;
+      }
       if (glyph.bg !== null && glyph.bg !== CONFIG.TRANSPARENT_COLOUR) {
         this.ctx.fillStyle = glyph.bg || this.defaultBgColor;
         this.ctx.fillRect(px, py, width, height);
       }
       if (charToDraw === ' ') continue;
-      if (charToDraw === GLYPHS.BLOCK) {
-        this.ctx.fillStyle = glyph.fg || this.defaultFgColor;
-        this.ctx.fillRect(px, py, width, height);
-        continue;
-      }
       this.ctx.save();
       this.ctx.translate(px, py);
       this.ctx.font = `${this.charHeightPx * glyph.scaleY}px ${CONFIG.FONT_FAMILY}`;

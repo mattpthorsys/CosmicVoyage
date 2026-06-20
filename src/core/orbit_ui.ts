@@ -2,6 +2,7 @@ import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
 import { ELEMENTS } from '../constants/resources';
 import { describePlanetType, Planet } from '../entities/planet';
+import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 
 export type OrbitInteractionMode = 'overview' | 'landing';
@@ -125,5 +126,5 @@ export function createOrbitScreenModel(args: {
 /** Returns planet map size. */
 export function getPlanetMapSize(planet: Planet): number {
   if (planet.type === 'GasGiant' || planet.type === 'IceGiant') return CONFIG.PLANET_MAP_BASE_SIZE;
-  return planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
+  return readReadySurfaceData(planet)?.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
 }

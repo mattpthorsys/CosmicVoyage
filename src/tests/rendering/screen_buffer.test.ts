@@ -115,4 +115,60 @@ describe('ScreenBuffer rendering', () => {
     expect(ctx.fillRect).toHaveBeenCalledWith(4, 0, 4, 4);
     expect(ctx.fillText).not.toHaveBeenCalledWith(GLYPHS.BLOCK, 0, 0);
   });
+
+  it('batches adjacent same-colour glyphs into one canvas text call', () => {
+    const { buffer, ctx } = createBuffer(5, 1);
+
+    buffer.clear(true);
+    buffer.drawString('HELLO', 0, 0, '#00FFFF', '#000000');
+    buffer.renderFull();
+
+    expect(ctx.fillText).toHaveBeenCalledTimes(1);
+    expect(ctx.fillText).toHaveBeenCalledWith('HELLO', 0, 0);
+    expect(buffer.getLastRenderStats().glyphsDrawn).toBe(5);
+  });
+
+  it('batches adjacent scaled blocks and avoids duplicate background fills', () => {
+    const { buffer, ctx } = createBuffer(2, 1);
+
+    buffer.clear(true);
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0, 0, '#204060', '#204060', 0.5, 0.5);
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0.5, 0, '#204060', '#204060', 0.5, 0.5);
+    buffer.renderFull();
+
+    const scaledBlockCalls = ctx.fillRect.mock.calls.filter(
+      ([x, y, width, height]) => x === 0 && y === 0 && width === 8 && height === 4
+    );
+    expect(scaledBlockCalls).toHaveLength(1);
+  });
+
+  it('clears transparent cells when a previous glyph is removed', () => {
+    const ctx = {
+      font: '',
+      textBaseline: '',
+      fillStyle: '',
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      scale: vi.fn(),
+    };
+    const canvas = { width: 16, height: 8 };
+    const buffer = new ScreenBuffer(
+      canvas as HTMLCanvasElement,
+      ctx as unknown as CanvasRenderingContext2D,
+      true
+    );
+    buffer.updateDimensions(2, 1, 8, 8);
+    buffer.drawChar('@', 0, 0, '#00FFFF', null);
+    buffer.renderFull();
+    ctx.clearRect.mockClear();
+
+    buffer.clear(false);
+    buffer.renderDiff();
+
+    expect(ctx.clearRect).toHaveBeenCalledWith(0, 0, 8, 8);
+  });
 });

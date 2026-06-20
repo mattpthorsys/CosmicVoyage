@@ -3,6 +3,7 @@ import { DrawingContext } from './drawing_context';
 import { NebulaRenderer } from './nebula_renderer';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
+import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
@@ -850,6 +851,25 @@ export class SceneRenderer {
     }
   }
 
+  /** Draws a lightweight loading scene while worker-backed surface data is being prepared. */
+  drawSurfaceLoading(planetName: string): void {
+    this.screenBuffer.clear(false);
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    const title = `PREPARING ${planetName.toUpperCase()} SURFACE`;
+    const detail = 'Worker generation active. Navigation remains responsive.';
+    const x = Math.max(1, Math.floor((cols - title.length) / 2));
+    const y = Math.max(2, Math.floor(rows / 2) - 1);
+    this.screenBuffer.drawString(title, x, y, TEXT_PALETTE.cyanSignal, CONFIG.DEFAULT_BG_COLOUR);
+    this.screenBuffer.drawString(
+      detail.slice(0, Math.max(0, cols - 4)),
+      Math.max(1, Math.floor((cols - detail.length) / 2)),
+      y + 2,
+      TEXT_PALETTE.textMuted,
+      CONFIG.DEFAULT_BG_COLOUR
+    );
+  }
+
   /** Draws the surface of a solid planet. */
   private drawSolidPlanetSurface(
     player: PlayerViewSnapshot,
@@ -857,10 +877,11 @@ export class SceneRenderer {
     surfaceOverlay?: SurfaceVehicleOverlayModel
   ): void {
     logger.debug(`[SceneRenderer.drawSolidPlanetSurface] Rendering surface: ${planet.name} (${planet.type})`);
-    const map = planet.heightmap;
-    const heightColors = planet.heightLevelColors;
-    const elementMap = planet.surfaceElementMap;
-    const liquidOverlay = this.getPlanetLiquidOverlay(planet);
+    const surfaceData = readReadySurfaceData(planet);
+    const map = surfaceData?.heightmap ?? null;
+    const heightColors = surfaceData?.heightLevelColors ?? null;
+    const elementMap = surfaceData?.surfaceElementMap ?? null;
+    const liquidOverlay = surfaceData?.liquidOverlay ?? null;
     if (!map || !heightColors || !elementMap) {
       logger.error(`[SceneRenderer.drawSolidPlanetSurface] Surface data missing for ${planet.name}.`);
       this._drawError(`Surface Error: Missing Data for ${planet.name}`);
@@ -988,7 +1009,7 @@ export class SceneRenderer {
     surfaceOverlay?: SurfaceVehicleOverlayModel
   ): void {
     logger.debug(`[SceneRenderer.drawGasGiantSurface] Drawing atmospheric view: ${planet.name}`);
-    const palette = planet.rgbPaletteCache;
+    const palette = readReadySurfaceData(planet)?.rgbPaletteCache ?? null;
     if (!palette || palette.length < 1) {
       logger.error(
         `[SceneRenderer.drawGasGiantSurface] RGB Palette cache missing or empty for ${planet.name}.`
@@ -2164,30 +2185,7 @@ export class SceneRenderer {
     heightLevelColors: string[] | null;
     liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null;
   } | null {
-    const cached = planet.getSurfaceDataIfReady?.() ?? null;
-    if (cached) return cached;
-
-    // Regression tests often use plain object fixtures with own data properties.
-    // Real Planet instances use accessors, which are intentionally not invoked here.
-    if (
-      Object.prototype.hasOwnProperty.call(planet, 'heightmap') ||
-      Object.prototype.hasOwnProperty.call(planet, 'heightLevelColors')
-    ) {
-      const fixture = planet as unknown as {
-        heightmap?: number[][] | null;
-        heightLevelColors?: string[] | null;
-        surfaceLiquid?: { seaLevel: number; colour: string; reflectiveColour: string } | null;
-      };
-      return {
-        heightmap: fixture.heightmap ?? null,
-        heightLevelColors: fixture.heightLevelColors ?? null,
-        liquidOverlay: Object.prototype.hasOwnProperty.call(planet, 'surfaceLiquid')
-          ? (fixture.surfaceLiquid ?? null)
-          : null,
-      };
-    }
-
-    return null;
+    return readReadySurfaceData(planet);
   }
 
   /** Samples a placeholder texture while solid-planet terrain is loading. */
@@ -2749,7 +2747,10 @@ export class SceneRenderer {
     planet: Planet,
     viewport: { x: number; y: number; width: number; height: number }
   ): void {
-    const mapSize = Math.max(1, planet.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE);
+    const mapSize = Math.max(
+      1,
+      readReadySurfaceData(planet)?.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE
+    );
     const lat =
       90 - (Math.max(0, Math.min(mapSize - 1, player.position.surfaceY)) / Math.max(1, mapSize - 1)) * 180;
     const lon = (player.position.surfaceX / mapSize) * 360 - 180;
@@ -3031,7 +3032,7 @@ export class SceneRenderer {
 
   /** Draws a legend for the heightmap colours on the planet surface view. */
   private drawHeightmapLegend(planet: Planet): void {
-    const heightColors = planet.heightLevelColors;
+    const heightColors = readReadySurfaceData(planet)?.heightLevelColors ?? null;
     if (!heightColors || heightColors.length === 0) return;
     const rows = this.screenBuffer.getRows();
     const cols = this.screenBuffer.getCols();

@@ -319,6 +319,11 @@ export class RendererFacade {
     }
   }
 
+  /** Draws the worker-backed surface preparation screen. */
+  drawSurfaceLoading(planetName: string): void {
+    this.sceneRenderer.drawSurfaceLoading(planetName);
+  }
+
   // --- Scene Drawing Method Delegation (Remains the same) ---
   /** Draws hyperspace. */
   drawHyperspace(player: Player): void {
