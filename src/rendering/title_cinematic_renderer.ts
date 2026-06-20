@@ -83,6 +83,13 @@ const TITLE_SEQUENCE_SECONDS = 96;
 const HORIZONTAL_FOV = (104 * Math.PI) / 180;
 const RESIZE_DEBOUNCE_MS = 140;
 const DIFFUSE_EFFECT_CACHE_SCALE = 0.5;
+const JOVIAN_SMALL_EDDIES = [
+  [-0.88, -0.38, 0.18, 0.052, 3.1, 1],
+  [-0.22, 0.34, 0.15, 0.046, -3.4, -1],
+  [0.06, -0.05, 0.13, 0.04, 3.8, 1],
+  [0.68, 0.08, 0.17, 0.048, -3.2, -1],
+  [1.02, -0.42, 0.14, 0.044, 3.6, 1],
+] as const;
 
 /** Renders a fixed panoramic title scene viewed through one continuously rotating camera. */
 export class TitleCinematicRenderer {
@@ -820,17 +827,37 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
   const greatStormLongitude = wrapAngle(facingLongitude + 0.38);
   const lesserStormLongitude = wrapAngle(facingLongitude - 0.52);
   const paleStormLongitude = wrapAngle(facingLongitude + 0.82);
+  const broadFlow = valueNoise3d(normal, 3.4, body.textureSeed + 211) - 0.5;
+  const mediumFlow = valueNoise3d(normal, 8.5, body.textureSeed + 307) - 0.5;
+  const fineFlow = valueNoise3d(normal, 21, body.textureSeed + 419) - 0.5;
+  // Jupiter-like polar convolution is confined to the extreme high latitudes.
+  const polarAmount = smoothUnit((Math.abs(latitude) - 0.96) / 0.34);
+  const globalFlowWarp =
+    broadFlow * 0.12 +
+    mediumFlow * 0.045 +
+    Math.sin(longitude * 5 + broadFlow * 7 + latitude * 3) * 0.018 +
+    polarAmount * (broadFlow * 0.1 + mediumFlow * 0.06);
   const bandWarp =
     jovianBandWarp(longitude, latitude, greatStormLongitude, -0.22, 0.72, 0.25, 0.17) +
     jovianBandWarp(longitude, latitude, lesserStormLongitude, 0.2, 0.38, 0.13, -0.065) +
     jovianBandWarp(longitude, latitude, paleStormLongitude, 0.37, 0.29, 0.1, 0.04);
-  const warpedLatitude = latitude + bandWarp;
+  const warpedLatitude = latitude + bandWarp + globalFlowWarp;
   const broadBand = Math.sin(warpedLatitude * 20);
   const narrowBand = Math.sin(warpedLatitude * 47) * 0.23;
-  const filament = Math.sin(warpedLatitude * 103) * 0.07;
+  const filament =
+    Math.sin(warpedLatitude * 103 + mediumFlow * 5) * 0.085 +
+    Math.sin(warpedLatitude * 181 - longitude * 3 + fineFlow * 7) * 0.05;
+  const fineStreaks =
+    Math.sin(warpedLatitude * 246 + longitude * 8 + fineFlow * 10) * 0.56 +
+    Math.sin(warpedLatitude * 377 - longitude * 13 + mediumFlow * 8) * 0.3 +
+    Math.sin(warpedLatitude * 613 + longitude * 21 + broadFlow * 13) * 0.14;
+  const streakEnvelope = 0.35 + Math.abs(narrowBand) * 0.65;
+  const streakDetail = fineStreaks * streakEnvelope;
   const longitudinalTexture =
     Math.sin(longitude * 7 + body.textureSeed) * 0.035 +
-    Math.sin(longitude * 17 - body.textureSeed * 0.7) * 0.018;
+    Math.sin(longitude * 17 - body.textureSeed * 0.7) * 0.018 +
+    broadFlow * 0.08 +
+    mediumFlow * 0.035;
   const equatorialCream = gaussian(latitude, 0.015, 0.095);
   const northernOchre = gaussian(latitude, 0.18, 0.075);
   const southernRust = gaussian(latitude, -0.25, 0.085);
@@ -840,7 +867,8 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
     gaussian(latitude, 0.39, 0.055) * (0.82 + Math.sin(longitude * 5.5 + body.textureSeed * 0.3) * 0.13);
   const southernSootBelt =
     gaussian(latitude, -0.46, 0.07) * (0.78 + Math.sin(longitude * 4.2 - body.textureSeed * 0.2) * 0.11);
-  const polarDarkening = Math.pow(Math.abs(normal.y), 2.6) * 0.19;
+  const polarConvolution = jovianPolarWeather(longitude, latitude, broadFlow, mediumFlow, polarAmount);
+  const polarDarkening = Math.pow(Math.abs(normal.y), 2.6) * 0.19 + polarAmount * 0.08;
   const pale = Math.max(0, broadBand + narrowBand + filament) * 0.46;
   const dark =
     Math.max(0, -(broadBand + narrowBand * 0.7)) * 0.39 +
@@ -849,14 +877,17 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
     northernSootBelt * 0.31 +
     southernSootBelt * 0.25 +
     polarDarkening;
-  const greatOval = jovianStorm(longitude, latitude, greatStormLongitude, -0.22, 0.64, 0.22, 3.4);
+  const greatOval = jovianStorm(longitude, latitude, greatStormLongitude, -0.22, 0.5, 0.16, 3.4);
   const lesserOval = jovianStorm(longitude, latitude, lesserStormLongitude, 0.2, 0.31, 0.095, -2.1);
   const paleVortex = jovianStorm(longitude, latitude, paleStormLongitude, 0.37, 0.23, 0.075, 2.7);
+  const smallEddies = sampleJovianEddies(longitude, latitude, facingLongitude);
   const stormLift = greatOval.envelope * 0.82 + lesserOval.envelope * 0.3 + paleVortex.envelope * 0.19;
   const stormWarmth =
     greatOval.envelope * 0.75 + greatOval.swirl * 0.48 + lesserOval.swirl * 0.08 - paleVortex.envelope * 0.12;
   const stormShadow = greatOval.ring * 0.42 + lesserOval.ring * 0.1 + paleVortex.ring * 0.07;
-  const stormCloudLanes = greatOval.lanes * 0.78 + lesserOval.lanes * 0.22 + paleVortex.lanes * 0.14;
+  const stormCloudLanes =
+    greatOval.lanes * 0.78 + lesserOval.lanes * 0.22 + paleVortex.lanes * 0.14 + smallEddies.lanes;
+  const atmosphericMix = broadFlow * 0.45 + mediumFlow * 0.28 + fineFlow * 0.12;
   const beltRed = northernOchre * 18 + southernRust * 31 + equatorialCream * 12;
   const beltGreen = northernOchre * 8 + southernRust * 5 + equatorialCream * 18;
   const beltBlue = northernOchre * -5 + southernRust * -10 + equatorialCream * 15;
@@ -869,7 +900,11 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
       stormLift * 42 +
       stormWarmth * 36 -
       stormShadow * 28 +
-      stormCloudLanes * 34,
+      stormCloudLanes * 34 +
+      streakDetail * 18 +
+      atmosphericMix * 17 +
+      polarConvolution * 30 +
+      smallEddies.contrast * 25,
     body.colour[1] +
       pale * 56 -
       dark * 48 +
@@ -878,7 +913,11 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
       stormLift * 25 +
       stormWarmth * 12 -
       stormShadow * 31 +
-      stormCloudLanes * 24,
+      stormCloudLanes * 24 +
+      streakDetail * 13 +
+      atmosphericMix * 11 +
+      polarConvolution * 18 +
+      smallEddies.contrast * 16,
     body.colour[2] +
       pale * 39 -
       dark * 37 +
@@ -887,7 +926,11 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
       stormLift * 13 -
       stormWarmth * 8 -
       stormShadow * 22 +
-      stormCloudLanes * 13,
+      stormCloudLanes * 13 +
+      streakDetail * 8 +
+      atmosphericMix * 7 +
+      polarConvolution * 10 +
+      smallEddies.contrast * 8,
   ];
 }
 
@@ -895,6 +938,61 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
 function gaussian(value: number, center: number, width: number): number {
   const normalized = (value - center) / Math.max(0.0001, width);
   return Math.exp(-normalized * normalized);
+}
+
+/** Smoothly clamps a normalized scalar for weather-region envelopes. */
+function smoothUnit(value: number): number {
+  const clamped = Math.max(0, Math.min(1, value));
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+/** Builds tangled high-latitude cloud lanes suggestive of Jupiter's convoluted polar weather. */
+function jovianPolarWeather(
+  longitude: number,
+  latitude: number,
+  broadFlow: number,
+  mediumFlow: number,
+  polarAmount: number
+): number {
+  if (polarAmount <= 0) return 0;
+  const poleDistance = Math.PI / 2 - Math.abs(latitude);
+  const hemisphere = latitude >= 0 ? 1 : -1;
+  const curledLane =
+    Math.sin(longitude * 7 * hemisphere + poleDistance * 31 + broadFlow * 9) * 0.58 +
+    Math.sin(longitude * 13 * hemisphere - poleDistance * 47 + mediumFlow * 11) * 0.3 +
+    Math.sin(longitude * 19 + poleDistance * 71 + (broadFlow - mediumFlow) * 8) * 0.12;
+  return curledLane * polarAmount;
+}
+
+/** Combines several small alternating vortices distributed through the temperate belts. */
+function sampleJovianEddies(
+  longitude: number,
+  latitude: number,
+  facingLongitude: number
+): { lanes: number; contrast: number } {
+  let lanes = 0;
+  let contrast = 0;
+  for (const [
+    longitudeOffset,
+    centerLatitude,
+    longitudeRadius,
+    latitudeRadius,
+    winding,
+    direction,
+  ] of JOVIAN_SMALL_EDDIES) {
+    const eddy = jovianStorm(
+      longitude,
+      latitude,
+      wrapAngle(facingLongitude + longitudeOffset),
+      centerLatitude,
+      longitudeRadius,
+      latitudeRadius,
+      winding
+    );
+    lanes += eddy.lanes * 0.22;
+    contrast += (eddy.ring * -0.34 + eddy.envelope * 0.18) * direction;
+  }
+  return { lanes, contrast };
 }
 
 /** Bends nearby horizontal belts around one elliptical circulation system. */
