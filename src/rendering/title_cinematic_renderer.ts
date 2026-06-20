@@ -151,9 +151,9 @@ export class TitleCinematicRenderer {
     const orbitalElevation = (azimuth: number): number => giantElevation + (azimuth - giantAzimuth) * 0.055;
     this.bodies = [
       giant,
-      createBody('rock', -0.18, orbitalElevation(-0.18), 0.075, 2, [137, 143, 139], 61),
-      createBody('rock', 0.42, orbitalElevation(0.42), 0.034, 3, [127, 138, 140], 41),
-      createBody('rock', 1.04, orbitalElevation(1.04), 0.052, 2, [157, 145, 126], 67),
+      createBody('rock', -0.18, orbitalElevation(-0.18), 0.075 / 3, 2, [137, 143, 139], 61),
+      createBody('rock', 0.42, orbitalElevation(0.42), 0.034 / 3, 3, [127, 138, 140], 41),
+      createBody('rock', 1.04, orbitalElevation(1.04), 0.052 / 3, 2, [157, 145, 126], 67),
       createBody('rock', Math.PI + 0.06, -0.12, 0.19, 1, [119, 108, 91], 73),
     ];
   }
