@@ -1,41 +1,67 @@
-interface CinematicStar {
+interface Vec3 {
   x: number;
   y: number;
-  radius: number;
+  z: number;
+}
+
+interface PanoramaStar {
+  azimuth: number;
+  elevation: number;
+  size: number;
   alpha: number;
-  warmth: number;
-  depth: number;
+  warm: boolean;
 }
 
-interface CinematicMoon {
-  orbitRadiusX: number;
-  orbitRadiusY: number;
-  phase: number;
+interface PanoramaBand {
+  azimuth: number;
+  widthRadians: number;
+  alpha: number;
+  tilt: number;
+}
+
+interface CelestialBody {
+  kind: 'gas' | 'rock';
+  position: Vec3;
   radius: number;
-  depth: number;
   colour: [number, number, number];
+  textureSeed: number;
 }
 
-const TITLE_FRAME_INTERVAL_MS = 1000 / 30;
-const TITLE_SEQUENCE_SECONDS = 84;
+interface ProjectedPoint {
+  x: number;
+  y: number;
+  depth: number;
+}
 
-/** Renders the slow title-screen space reveal independently from gameplay rendering. */
+interface ProjectedBody extends ProjectedPoint {
+  body: CelestialBody;
+  radius: number;
+}
+
+const TITLE_FRAME_INTERVAL_MS = 1000 / 24;
+const TITLE_SEQUENCE_SECONDS = 96;
+const HORIZONTAL_FOV = (104 * Math.PI) / 180;
+const CAMERA_POSITION: Vec3 = { x: 0, y: 0, z: 0 };
+
+/** Renders a fixed panoramic title scene viewed through one continuously rotating camera. */
 export class TitleCinematicRenderer {
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly planetCanvas: HTMLCanvasElement;
-  private readonly planetContext: CanvasRenderingContext2D;
-  private readonly stars: CinematicStar[];
-  private readonly moons: CinematicMoon[];
+  private readonly bodyCanvas: HTMLCanvasElement;
+  private readonly bodyContext: CanvasRenderingContext2D;
+  private readonly stars: PanoramaStar[];
+  private readonly bands: PanoramaBand[];
+  private readonly starPosition: Vec3;
+  private readonly bodies: CelestialBody[];
   private animationFrameId: number | null = null;
   private startedAt = 0;
   private lastFrameAt = Number.NEGATIVE_INFINITY;
   private running = false;
   private width = 0;
   private height = 0;
-  private deviceScale = 1;
+  private focalLength = 1;
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  /** Initializes the cinematic renderer with deterministic title-scene objects. */
+  /** Initializes one deterministic panorama whose contents never move in world space. */
   constructor(
     private readonly canvas: HTMLCanvasElement,
     seed: string
@@ -43,48 +69,38 @@ export class TitleCinematicRenderer {
     const context = canvas.getContext('2d', { alpha: false });
     if (!context) throw new Error('Unable to create title cinematic canvas context.');
     this.ctx = context;
-    this.planetCanvas = document.createElement('canvas');
-    const planetContext = this.planetCanvas.getContext('2d');
-    if (!planetContext) throw new Error('Unable to create title planet canvas context.');
-    this.planetContext = planetContext;
+    this.bodyCanvas = document.createElement('canvas');
+    const bodyContext = this.bodyCanvas.getContext('2d');
+    if (!bodyContext) throw new Error('Unable to create title body canvas context.');
+    this.bodyContext = bodyContext;
+
     const random = createSeededRandom(seed);
-    this.stars = Array.from({ length: 150 }, () => ({
-      x: random(),
-      y: random(),
-      radius: 0.35 + random() * 1.15,
-      alpha: 0.12 + random() * 0.58,
-      warmth: random(),
-      depth: 0.2 + random() * 0.8,
+    this.stars = Array.from({ length: 230 }, () => ({
+      azimuth: random() * Math.PI * 2,
+      elevation: (random() - 0.5) * 1.15,
+      size: random() > 0.9 ? 2 : 1,
+      alpha: 0.13 + random() * 0.56,
+      warm: random() > 0.84,
     }));
-    this.moons = [
-      {
-        orbitRadiusX: 0.52,
-        orbitRadiusY: 0.12,
-        phase: 0.42,
-        radius: 0.034,
-        depth: 0.7,
-        colour: [166, 156, 137],
-      },
-      {
-        orbitRadiusX: 0.69,
-        orbitRadiusY: 0.2,
-        phase: 2.84,
-        radius: 0.018,
-        depth: 0.45,
-        colour: [132, 143, 145],
-      },
-      {
-        orbitRadiusX: 0.82,
-        orbitRadiusY: 0.27,
-        phase: 4.72,
-        radius: 0.012,
-        depth: 0.28,
-        colour: [183, 169, 141],
-      },
+    this.bands = [
+      { azimuth: -0.58, widthRadians: 0.34, alpha: 0.13, tilt: -0.17 },
+      { azimuth: -0.19, widthRadians: 0.18, alpha: 0.075, tilt: -0.19 },
+      { azimuth: 0.18, widthRadians: 0.27, alpha: 0.09, tilt: -0.16 },
+      { azimuth: 0.49, widthRadians: 0.14, alpha: 0.055, tilt: -0.2 },
+    ];
+
+    this.starPosition = sphericalPosition(-0.52, 0.2, 95);
+    const giant = createBody('gas', 0.58, -0.18, 9.2, 4.8, [137, 108, 72], 11);
+    this.bodies = [
+      giant,
+      createOffsetBody(giant, -0.52, 0.12, 0.7, 0.3, [162, 151, 132], 29),
+      createOffsetBody(giant, 0.68, -0.17, -0.4, 0.18, [127, 138, 140], 41),
+      createOffsetBody(giant, 0.86, 0.23, 0.2, 0.12, [178, 163, 137], 53),
+      createBody('rock', Math.PI + 0.06, -0.12, 5.4, 1.04, [119, 108, 91], 73),
     ];
   }
 
-  /** Starts or resumes the cinematic animation. */
+  /** Starts or resumes the title animation. */
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -106,24 +122,25 @@ export class TitleCinematicRenderer {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
   }
 
-  /** Resizes the physical canvas while retaining CSS viewport dimensions. */
+  /** Sizes the presentation canvas and recalculates the camera projection. */
   private resize(): void {
     this.width = Math.max(1, window.innerWidth);
     this.height = Math.max(1, window.innerHeight);
-    this.deviceScale = Math.min(1.5, window.devicePixelRatio || 1);
-    this.canvas.width = Math.floor(this.width * this.deviceScale);
-    this.canvas.height = Math.floor(this.height * this.deviceScale);
+    const scale = Math.min(1.25, window.devicePixelRatio || 1);
+    this.canvas.width = Math.floor(this.width * scale);
+    this.canvas.height = Math.floor(this.height * scale);
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
-    this.ctx.setTransform(this.deviceScale, 0, 0, this.deviceScale, 0, 0);
+    this.ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    this.focalLength = this.width / (2 * Math.tan(HORIZONTAL_FOV / 2));
   }
 
-  /** Handles responsive viewport changes. */
+  /** Handles viewport changes. */
   private handleResize = (): void => {
     this.resize();
   };
 
-  /** Avoids spending title-screen CPU while the document is hidden. */
+  /** Restarts elapsed presentation time after a hidden tab becomes visible. */
   private handleVisibilityChange = (): void => {
     if (document.visibilityState === 'visible' && this.running) {
       this.startedAt = performance.now();
@@ -131,286 +148,346 @@ export class TitleCinematicRenderer {
     }
   };
 
-  /** Renders one throttled animation frame. */
+  /** Renders one throttled frame. */
   private renderFrame = (now: number): void => {
     if (!this.running) return;
     if (document.visibilityState !== 'hidden' && now - this.lastFrameAt >= TITLE_FRAME_INTERVAL_MS) {
-      const elapsed = this.reducedMotion ? 26 : (now - this.startedAt) / 1000;
-      this.drawScene(elapsed % TITLE_SEQUENCE_SECONDS);
+      const elapsed = this.reducedMotion ? 8 : (now - this.startedAt) / 1000;
+      this.drawScene((elapsed % TITLE_SEQUENCE_SECONDS) / TITLE_SEQUENCE_SECONDS);
       this.lastFrameAt = now;
     }
     this.animationFrameId = requestAnimationFrame(this.renderFrame);
   };
 
-  /** Draws the complete title composition in back-to-front order. */
-  private drawScene(seconds: number): void {
-    const ctx = this.ctx;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, this.width, this.height);
+  /** Draws one view of the fixed panorama at the supplied camera rotation. */
+  private drawScene(progress: number): void {
+    const cameraYaw = progress * Math.PI * 2;
+    this.ctx.globalCompositeOperation = 'source-over';
+    this.ctx.fillStyle = '#000000';
+    this.ctx.fillRect(0, 0, this.width, this.height);
 
-    const progress = seconds / TITLE_SEQUENCE_SECONDS;
-    const cameraAngle = progress * Math.PI * 2;
-    const cameraShift = progress * this.width;
-    const starX = this.width * (0.16 + Math.sin(cameraAngle - 0.24) * 0.09);
-    const starY = this.height * (0.27 + Math.cos(cameraAngle + 0.16) * 0.045);
-    const planetRadius = Math.max(this.height * 0.48, this.width * 0.29);
-    const planetX = this.width * (1.04 + Math.cos(cameraAngle) * 0.21);
-    const planetY = this.height * (0.67 + Math.sin(cameraAngle) * 0.045);
-    const rockyRadius = Math.min(this.width, this.height) * 0.13;
-    const rockyX = this.width * (0.08 - Math.cos(cameraAngle) * 0.28);
-    const rockyY = this.height * (0.69 - Math.sin(cameraAngle) * 0.07);
+    this.drawPanoramaStars(cameraYaw);
+    this.drawPanoramaBands(cameraYaw);
 
-    this.drawStarfield(cameraShift);
-    this.drawAmberLightBands(cameraAngle, starX, starY);
-    this.drawDistantGlow(starX, starY);
-    this.drawStarSource(cameraAngle, starX, starY);
-    this.drawMoons(cameraAngle, planetX, planetY, planetRadius, starX, starY, true);
-    this.drawGasGiant(cameraAngle, planetX, planetY, planetRadius, starX, starY);
-    this.drawMoons(cameraAngle, planetX, planetY, planetRadius, starX, starY, false);
-    this.drawRockySphere(rockyX, rockyY, rockyRadius, starX, starY, [117, 107, 91], 1, cameraAngle);
-    this.drawLensArtifacts(starX, starY);
-    this.drawExposureVeil(progress);
+    const projectedStar = this.projectWorldPoint(this.starPosition, cameraYaw);
+    const visibleStar =
+      projectedStar && isNearViewport(projectedStar, this.width, this.height, this.width * 0.12)
+        ? projectedStar
+        : null;
+    if (visibleStar) {
+      this.drawStarGlow(visibleStar.x, visibleStar.y);
+    }
+
+    const projectedBodies = this.projectBodies(cameraYaw).sort((a, b) => b.depth - a.depth);
+    for (const projected of projectedBodies) {
+      this.drawBody(projected, cameraYaw);
+    }
+
+    if (visibleStar && !isPointOcculted(visibleStar, projectedBodies)) {
+      this.drawLensArtifacts(visibleStar.x, visibleStar.y);
+    }
+    this.drawExposureVeil(cameraYaw);
   }
 
-  /** Draws deterministic stars with subtle parallax against camera motion. */
-  private drawStarfield(cameraShift: number): void {
-    const ctx = this.ctx;
+  /** Projects and draws fixed stars from their panorama coordinates. */
+  private drawPanoramaStars(cameraYaw: number): void {
     for (const star of this.stars) {
-      const parallaxLayer = star.depth > 0.76 ? 2 : 1;
-      const x = wrap(star.x * this.width - cameraShift * parallaxLayer, this.width);
-      const y = star.y * this.height;
-      const warm = star.warmth > 0.82;
-      ctx.fillStyle = warm ? `rgba(222,198,145,${star.alpha})` : `rgba(180,211,210,${star.alpha})`;
-      ctx.fillRect(x, y, star.radius, star.radius);
+      const projected = this.projectDirection(star.azimuth, star.elevation, cameraYaw);
+      if (!projected) continue;
+      const x = Math.round(projected.x);
+      const y = Math.round(projected.y);
+      this.ctx.fillStyle = star.warm ? `rgba(220,193,139,${star.alpha})` : `rgba(177,207,205,${star.alpha})`;
+      this.ctx.fillRect(x, y, star.size, star.size);
     }
   }
 
-  /** Draws several broad separated amber optical bands across the scene. */
-  private drawAmberLightBands(cameraAngle: number, starX: number, starY: number): void {
-    const ctx = this.ctx;
-    const diagonal = -0.18 + Math.sin(cameraAngle) * 0.025;
-    const drift = Math.sin(cameraAngle) * this.width * 0.05;
-    const bands = [
-      { offset: -0.31, width: 0.18, alpha: 0.13 },
-      { offset: -0.02, width: 0.095, alpha: 0.075 },
-      { offset: 0.19, width: 0.14, alpha: 0.09 },
-      { offset: 0.43, width: 0.075, alpha: 0.055 },
-    ];
-
-    ctx.save();
-    ctx.translate(starX + drift, starY);
-    ctx.rotate(diagonal);
-    ctx.globalCompositeOperation = 'lighter';
-    for (const band of bands) {
-      const x = band.offset * this.width;
-      const width = band.width * this.width;
-      const gradient = ctx.createLinearGradient(x - width, 0, x + width, 0);
-      gradient.addColorStop(0, 'rgba(24,15,5,0)');
-      gradient.addColorStop(0.34, `rgba(70,43,13,${band.alpha * 0.42})`);
+  /** Projects broad fixed amber panorama bands through the same camera transform. */
+  private drawPanoramaBands(cameraYaw: number): void {
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'lighter';
+    for (const band of this.bands) {
+      const relativeAzimuth = wrapAngle(band.azimuth - cameraYaw);
+      const halfVisible = HORIZONTAL_FOV / 2 + band.widthRadians;
+      if (Math.abs(relativeAzimuth) > halfVisible) continue;
+      const centerX = this.width / 2 + Math.tan(relativeAzimuth) * this.focalLength;
+      const width = Math.max(18, band.widthRadians * this.focalLength);
+      this.ctx.save();
+      this.ctx.translate(centerX, this.height / 2);
+      this.ctx.rotate(band.tilt);
+      const gradient = this.ctx.createLinearGradient(-width, 0, width, 0);
+      gradient.addColorStop(0, 'rgba(26,16,5,0)');
+      gradient.addColorStop(0.33, `rgba(75,46,14,${band.alpha * 0.36})`);
       gradient.addColorStop(0.5, `rgba(164,116,48,${band.alpha})`);
-      gradient.addColorStop(0.66, `rgba(78,49,16,${band.alpha * 0.4})`);
-      gradient.addColorStop(1, 'rgba(20,12,4,0)');
-      ctx.fillStyle = gradient;
-      ctx.filter = `blur(${Math.max(14, width * 0.12)}px)`;
-      ctx.fillRect(x - width, -this.height, width * 2, this.height * 2.3);
+      gradient.addColorStop(0.67, `rgba(75,46,14,${band.alpha * 0.34})`);
+      gradient.addColorStop(1, 'rgba(26,16,5,0)');
+      this.ctx.fillStyle = gradient;
+      this.ctx.filter = `blur(${Math.max(10, width * 0.1)}px)`;
+      this.ctx.fillRect(-width, -this.height, width * 2, this.height * 2);
+      this.ctx.restore();
     }
-    ctx.restore();
-    ctx.filter = 'none';
-    ctx.globalCompositeOperation = 'source-over';
+    this.ctx.restore();
+    this.ctx.filter = 'none';
   }
 
-  /** Draws the broad warm-white exposure surrounding the stellar source. */
-  private drawDistantGlow(starX: number, starY: number): void {
-    const ctx = this.ctx;
-    const radius = Math.max(this.width, this.height) * 0.5;
-    const glow = ctx.createRadialGradient(starX, starY, 0, starX, starY, radius);
-    glow.addColorStop(0, 'rgba(255,244,211,0.12)');
-    glow.addColorStop(0.08, 'rgba(195,151,79,0.055)');
-    glow.addColorStop(0.34, 'rgba(75,48,17,0.022)');
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, this.width, this.height);
+  /** Projects every fixed celestial body and rejects objects outside the camera frustum. */
+  private projectBodies(cameraYaw: number): ProjectedBody[] {
+    const projected: ProjectedBody[] = [];
+    for (const body of this.bodies) {
+      const center = this.projectWorldPoint(body.position, cameraYaw);
+      if (!center) continue;
+      const distance = vectorLength(subtract(body.position, CAMERA_POSITION));
+      const angularRadius = Math.asin(Math.min(0.98, body.radius / distance));
+      const screenRadius = Math.tan(angularRadius) * this.focalLength;
+      if (
+        center.x + screenRadius < 0 ||
+        center.x - screenRadius > this.width ||
+        center.y + screenRadius < 0 ||
+        center.y - screenRadius > this.height
+      ) {
+        continue;
+      }
+      projected.push({ ...center, body, radius: screenRadius });
+    }
+    return projected;
   }
 
-  /** Draws the large gas giant with a star-aligned terminator and atmospheric bands. */
-  private drawGasGiant(
-    cameraAngle: number,
-    centerX: number,
-    centerY: number,
-    radius: number,
-    starX: number,
-    starY: number
-  ): void {
-    const sampleScale = 0.32;
-    const diameter = Math.min(420, Math.max(64, Math.floor(radius * 2 * sampleScale)));
-    if (this.planetCanvas.width !== diameter || this.planetCanvas.height !== diameter) {
-      this.planetCanvas.width = diameter;
-      this.planetCanvas.height = diameter;
+  /** Draws one pixel-grained sphere with geometric world-space illumination. */
+  private drawBody(projected: ProjectedBody, cameraYaw: number): void {
+    const { body, x, y, radius } = projected;
+    const sampleDiameter = Math.min(360, Math.max(28, Math.round(radius * 0.7)));
+    if (this.bodyCanvas.width !== sampleDiameter || this.bodyCanvas.height !== sampleDiameter) {
+      this.bodyCanvas.width = sampleDiameter;
+      this.bodyCanvas.height = sampleDiameter;
     }
-    const image = this.planetContext.createImageData(diameter, diameter);
+    const image = this.bodyContext.createImageData(sampleDiameter, sampleDiameter);
     const pixels = image.data;
-    const light = normalize3((starX - centerX) / radius, (starY - centerY) / radius, -0.52);
-    const rotation = cameraAngle;
+    const cameraRight = cameraRightVector(cameraYaw);
+    const cameraUp: Vec3 = { x: 0, y: 1, z: 0 };
+    const viewDirection = normalize(subtract(CAMERA_POSITION, body.position));
+    const surfaceRight = normalize(reject(cameraRight, viewDirection));
+    const surfaceUp = normalize(reject(cameraUp, viewDirection));
+    const lightDirection = normalize(subtract(this.starPosition, body.position));
 
-    for (let py = 0; py < diameter; py++) {
-      const ny = (py / (diameter - 1)) * 2 - 1;
-      for (let px = 0; px < diameter; px++) {
-        const nx = (px / (diameter - 1)) * 2 - 1;
+    for (let py = 0; py < sampleDiameter; py++) {
+      const ny = (py / (sampleDiameter - 1)) * 2 - 1;
+      for (let px = 0; px < sampleDiameter; px++) {
+        const nx = (px / (sampleDiameter - 1)) * 2 - 1;
         const radiusSq = nx * nx + ny * ny;
         if (radiusSq > 1.04) continue;
         const nz = Math.sqrt(Math.max(0, 1 - radiusSq));
-        const diffuse = Math.max(0, nx * light.x + ny * light.y + nz * light.z);
-        const atmosphere = Math.pow(1 - nz, 3.2);
-        const longitude = Math.atan2(nx, nz) + rotation;
-        const turbulence =
-          Math.sin(ny * 39 + Math.sin(longitude * 3) * 2.3) * 0.5 +
-          Math.sin(ny * 83 - longitude * 5) * 0.24 +
-          Math.sin(ny * 17 + longitude * 2) * 0.18;
-        const palette = sampleGasPalette(ny, turbulence);
-        const ambient = 0.018;
-        const illumination = ambient + Math.pow(diffuse, 0.78) * 0.95;
-        const index = (py * diameter + px) * 4;
-        pixels[index] = Math.min(255, palette[0] * illumination + atmosphere * 54 * diffuse);
-        pixels[index + 1] = Math.min(255, palette[1] * illumination + atmosphere * 47 * diffuse);
-        pixels[index + 2] = Math.min(255, palette[2] * illumination + atmosphere * 31 * diffuse);
-        pixels[index + 3] = getSpherePixelCoverage(radiusSq, diameter) * 255;
+        const normal = normalize(
+          add(add(scale(surfaceRight, nx), scale(surfaceUp, -ny)), scale(viewDirection, nz))
+        );
+        const diffuse = Math.max(0, dot(normal, lightDirection));
+        const texture =
+          body.kind === 'gas' ? sampleGasTexture(normal, body) : sampleRockTexture(normal, body);
+        const ambient = 0.008;
+        const illumination = ambient + Math.pow(diffuse, 0.82) * 0.992;
+        const index = (py * sampleDiameter + px) * 4;
+        pixels[index] = clampByte(texture[0] * illumination);
+        pixels[index + 1] = clampByte(texture[1] * illumination);
+        pixels[index + 2] = clampByte(texture[2] * illumination);
+        pixels[index + 3] = sphereCoverage(radiusSq, sampleDiameter) * 255;
       }
     }
 
-    this.planetContext.putImageData(image, 0, 0);
+    this.bodyContext.putImageData(image, 0, 0);
     this.ctx.save();
-    this.ctx.imageSmoothingEnabled = true;
-    this.ctx.drawImage(this.planetCanvas, centerX - radius, centerY - radius, radius * 2, radius * 2);
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+    this.ctx.clip();
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(this.bodyCanvas, x - radius, y - radius, radius * 2, radius * 2);
     this.ctx.restore();
   }
 
-  /** Draws moons either behind or in front of the giant according to orbital depth. */
-  private drawMoons(
-    cameraAngle: number,
-    planetX: number,
-    planetY: number,
-    planetRadius: number,
-    starX: number,
-    starY: number,
-    behind: boolean
-  ): void {
-    for (const moon of this.moons) {
-      const angle = moon.phase + cameraAngle * (moon.depth > 0.6 ? 2 : 1);
-      const z = Math.sin(angle);
-      if (z < 0 !== behind) continue;
-      const x = planetX + Math.cos(angle) * planetRadius * moon.orbitRadiusX;
-      const y = planetY + Math.sin(angle) * planetRadius * moon.orbitRadiusY;
-      const radius = planetRadius * moon.radius * (0.82 + moon.depth * 0.25);
-      this.drawRockySphere(x, y, radius, starX, starY, moon.colour, 1, angle);
-    }
-  }
-
-  /** Draws an opaque rocky sphere with an antialiased limb and star-aligned crescent. */
-  private drawRockySphere(
-    x: number,
-    y: number,
-    radius: number,
-    starX: number,
-    starY: number,
-    colour: [number, number, number],
-    alpha: number,
-    rotation: number
-  ): void {
-    if (alpha <= 0.001 || radius < 1) return;
-    const diameter = Math.min(260, Math.max(24, Math.ceil(radius * 0.72)));
-    if (this.planetCanvas.width !== diameter || this.planetCanvas.height !== diameter) {
-      this.planetCanvas.width = diameter;
-      this.planetCanvas.height = diameter;
-    }
-    const image = this.planetContext.createImageData(diameter, diameter);
-    const pixels = image.data;
-    const light = normalize3((starX - x) / radius, (starY - y) / radius, -0.66);
-    for (let py = 0; py < diameter; py++) {
-      const ny = (py / (diameter - 1)) * 2 - 1;
-      for (let px = 0; px < diameter; px++) {
-        const nx = (px / (diameter - 1)) * 2 - 1;
-        const radiusSq = nx * nx + ny * ny;
-        if (radiusSq > 1.04) continue;
-        const nz = Math.sqrt(Math.max(0, 1 - radiusSq));
-        const diffuse = Math.max(0, nx * light.x + ny * light.y + nz * light.z);
-        const longitude = Math.atan2(nx, nz) + rotation;
-        const terrain =
-          Math.sin(longitude * 11 + ny * 9) * 0.12 +
-          Math.sin(longitude * 23 - ny * 17) * 0.06 +
-          Math.sin((nx + ny) * 37) * 0.035;
-        const illumination = 0.012 + Math.pow(diffuse, 0.82) * 0.98;
-        const index = (py * diameter + px) * 4;
-        pixels[index] = Math.max(0, Math.min(255, colour[0] * (illumination + terrain * diffuse)));
-        pixels[index + 1] = Math.max(0, Math.min(255, colour[1] * (illumination + terrain * diffuse)));
-        pixels[index + 2] = Math.max(0, Math.min(255, colour[2] * (illumination + terrain * diffuse)));
-        pixels[index + 3] = getSpherePixelCoverage(radiusSq, diameter) * 255 * alpha;
-      }
-    }
-    this.planetContext.putImageData(image, 0, 0);
-    this.ctx.save();
-    this.ctx.imageSmoothingEnabled = true;
-    this.ctx.drawImage(this.planetCanvas, x - radius, y - radius, radius * 2, radius * 2);
-    this.ctx.restore();
-  }
-
-  /** Draws the warm stellar source behind foreground celestial bodies. */
-  private drawStarSource(cameraAngle: number, x: number, y: number): void {
-    const ctx = this.ctx;
-    const pulse = 0.96 + Math.sin(cameraAngle * 2) * 0.025;
+  /** Draws the warm stellar source before bodies so they can occult it naturally. */
+  private drawStarGlow(x: number, y: number): void {
     const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
-    const glowRadius = coreRadius * 12;
-    const glow = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+    const glowRadius = coreRadius * 13;
+    const glow = this.ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
     glow.addColorStop(0, 'rgba(255,250,232,0.98)');
     glow.addColorStop(0.08, 'rgba(255,232,177,0.82)');
     glow.addColorStop(0.25, 'rgba(225,167,78,0.24)');
     glow.addColorStop(1, 'rgba(90,50,10,0)');
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(x, y, glowRadius * pulse, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'lighter';
+    this.ctx.fillStyle = glow;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
   }
 
-  /** Draws restrained lens artifacts after foreground bodies as an optical effect. */
+  /** Draws restrained optical artifacts only while the stellar source is unobstructed. */
   private drawLensArtifacts(x: number, y: number): void {
-    const ctx = this.ctx;
     const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const axisX = this.width * 0.5 - x;
-    const axisY = this.height * 0.5 - y;
+    const axisX = this.width / 2 - x;
+    const axisY = this.height / 2 - y;
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'lighter';
     for (const artifact of [
-      { position: 0.42, radius: coreRadius * 1.7, alpha: 0.055 },
-      { position: 0.78, radius: coreRadius * 3.1, alpha: 0.035 },
+      { position: 0.42, radius: coreRadius * 1.7, alpha: 0.05 },
+      { position: 0.78, radius: coreRadius * 3.1, alpha: 0.03 },
     ]) {
       const flareX = x + axisX * artifact.position;
       const flareY = y + axisY * artifact.position;
-      const flare = ctx.createRadialGradient(flareX, flareY, 0, flareX, flareY, artifact.radius);
+      const flare = this.ctx.createRadialGradient(flareX, flareY, 0, flareX, flareY, artifact.radius);
       flare.addColorStop(0, `rgba(218,168,89,${artifact.alpha})`);
       flare.addColorStop(1, 'rgba(80,45,12,0)');
-      ctx.fillStyle = flare;
-      ctx.beginPath();
-      ctx.arc(flareX, flareY, artifact.radius, 0, Math.PI * 2);
-      ctx.fill();
+      this.ctx.fillStyle = flare;
+      this.ctx.beginPath();
+      this.ctx.arc(flareX, flareY, artifact.radius, 0, Math.PI * 2);
+      this.ctx.fill();
     }
-    ctx.restore();
+    this.ctx.restore();
   }
 
-  /** Adds a nearly imperceptible exposure fade to prevent a uniformly digital image. */
-  private drawExposureVeil(progress: number): void {
+  /** Adds a very faint periodic exposure veil without moving scene objects. */
+  private drawExposureVeil(cameraYaw: number): void {
     const gradient = this.ctx.createLinearGradient(0, 0, this.width, this.height);
-    gradient.addColorStop(0, 'rgba(34,24,12,0.018)');
+    gradient.addColorStop(0, 'rgba(34,24,12,0.016)');
     gradient.addColorStop(0.46, 'rgba(0,0,0,0)');
-    gradient.addColorStop(1, `rgba(0,8,10,${0.025 + Math.sin(progress * Math.PI * 2) * 0.008})`);
+    gradient.addColorStop(1, `rgba(0,8,10,${0.023 + Math.sin(cameraYaw) * 0.006})`);
     this.ctx.fillStyle = gradient;
     this.ctx.fillRect(0, 0, this.width, this.height);
   }
+
+  /** Projects one world-space point through the rotating camera. */
+  private projectWorldPoint(point: Vec3, cameraYaw: number): ProjectedPoint | null {
+    const relative = subtract(point, CAMERA_POSITION);
+    const right = cameraRightVector(cameraYaw);
+    const forward = cameraForwardVector(cameraYaw);
+    const cameraX = dot(relative, right);
+    const cameraY = relative.y;
+    const cameraZ = dot(relative, forward);
+    if (cameraZ <= 0.05) return null;
+    return {
+      x: this.width / 2 + (cameraX / cameraZ) * this.focalLength,
+      y: this.height / 2 - (cameraY / cameraZ) * this.focalLength,
+      depth: cameraZ,
+    };
+  }
+
+  /** Projects a direction on the infinite panorama through the rotating camera. */
+  private projectDirection(azimuth: number, elevation: number, cameraYaw: number): ProjectedPoint | null {
+    const projected = this.projectWorldPoint(sphericalPosition(azimuth, elevation, 100), cameraYaw);
+    return projected && isNearViewport(projected, this.width, this.height, 2) ? projected : null;
+  }
 }
 
-/** Creates a deterministic floating-point generator for presentation-only title objects. */
+/** Creates a fixed celestial body from spherical world coordinates. */
+function createBody(
+  kind: CelestialBody['kind'],
+  azimuth: number,
+  elevation: number,
+  distance: number,
+  radius: number,
+  colour: [number, number, number],
+  textureSeed: number
+): CelestialBody {
+  return { kind, position: sphericalPosition(azimuth, elevation, distance), radius, colour, textureSeed };
+}
+
+/** Creates a fixed moon offset from a parent body in world space. */
+function createOffsetBody(
+  parent: CelestialBody,
+  horizontalOffset: number,
+  verticalOffset: number,
+  depthOffset: number,
+  radius: number,
+  colour: [number, number, number],
+  textureSeed: number
+): CelestialBody {
+  return {
+    kind: 'rock',
+    position: {
+      x: parent.position.x + horizontalOffset,
+      y: parent.position.y + verticalOffset,
+      z: parent.position.z + depthOffset,
+    },
+    radius,
+    colour,
+    textureSeed,
+  };
+}
+
+/** Converts panorama azimuth, elevation, and distance into a world-space point. */
+function sphericalPosition(azimuth: number, elevation: number, distance: number): Vec3 {
+  const horizontal = Math.cos(elevation) * distance;
+  return {
+    x: Math.sin(azimuth) * horizontal,
+    y: Math.sin(elevation) * distance,
+    z: Math.cos(azimuth) * horizontal,
+  };
+}
+
+/** Returns the camera forward direction for one yaw angle. */
+function cameraForwardVector(yaw: number): Vec3 {
+  return { x: Math.sin(yaw), y: 0, z: Math.cos(yaw) };
+}
+
+/** Returns the camera right direction for one yaw angle. */
+function cameraRightVector(yaw: number): Vec3 {
+  return { x: Math.cos(yaw), y: 0, z: -Math.sin(yaw) };
+}
+
+/** Returns whether a projected point falls behind any nearer opaque body disc. */
+function isPointOcculted(point: ProjectedPoint, bodies: readonly ProjectedBody[]): boolean {
+  return bodies.some((body) => {
+    if (body.depth >= point.depth) return false;
+    return Math.hypot(point.x - body.x, point.y - body.y) <= body.radius;
+  });
+}
+
+/** Returns whether a projected point lies within a viewport plus the supplied drawing margin. */
+function isNearViewport(point: ProjectedPoint, width: number, height: number, margin: number): boolean {
+  return point.x >= -margin && point.x <= width + margin && point.y >= -margin && point.y <= height + margin;
+}
+
+/** Calculates the visible illuminated fraction of a sphere from fixed camera, body, and star positions. */
+export function calculateIlluminatedFraction(
+  cameraPosition: Vec3,
+  bodyPosition: Vec3,
+  starPosition: Vec3
+): number {
+  const viewDirection = normalize(subtract(cameraPosition, bodyPosition));
+  const lightDirection = normalize(subtract(starPosition, bodyPosition));
+  return (1 + dot(viewDirection, lightDirection)) / 2;
+}
+
+/** Samples fixed gas bands from a world-space surface normal. */
+function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
+  const latitude = Math.asin(Math.max(-1, Math.min(1, normal.y)));
+  const longitude = Math.atan2(normal.x, normal.z);
+  const turbulence =
+    Math.sin(latitude * 25 + Math.sin(longitude * 3 + body.textureSeed) * 2.2) * 0.5 +
+    Math.sin(latitude * 53 - longitude * 5) * 0.23 +
+    Math.sin(latitude * 13 + longitude * 2) * 0.17;
+  const band = Math.sin(latitude * 19 + turbulence * 1.9);
+  const pale = Math.max(0, band) * 0.52;
+  const dark = Math.max(0, -band) * 0.43;
+  return [
+    body.colour[0] + pale * 70 - dark * 43,
+    body.colour[1] + pale * 58 - dark * 36,
+    body.colour[2] + pale * 43 - dark * 28,
+  ];
+}
+
+/** Samples fixed rocky grain from a world-space surface normal. */
+function sampleRockTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
+  const grain =
+    Math.sin(normal.x * 31 + normal.y * 19 + body.textureSeed) * 0.09 +
+    Math.sin(normal.z * 47 - normal.y * 23) * 0.055 +
+    Math.sin((normal.x + normal.z) * 71) * 0.025;
+  return [
+    body.colour[0] * (1 + grain),
+    body.colour[1] * (1 + grain * 0.92),
+    body.colour[2] * (1 + grain * 0.8),
+  ];
+}
+
+/** Creates a deterministic floating-point generator for fixed panorama objects. */
 function createSeededRandom(seed: string): () => number {
   let state = 2166136261;
   for (let index = 0; index < seed.length; index++) {
@@ -426,28 +503,54 @@ function createSeededRandom(seed: string): () => number {
   };
 }
 
-/** Wraps one coordinate into a positive range. */
-function wrap(value: number, size: number): number {
-  return ((value % size) + size) % size;
+/** Wraps one angle into the interval -PI through PI. */
+function wrapAngle(value: number): number {
+  return Math.atan2(Math.sin(value), Math.cos(value));
 }
 
-/** Estimates antialiased coverage at a sampled sphere limb while keeping its interior opaque. */
-function getSpherePixelCoverage(radiusSq: number, diameter: number): number {
-  const radialDistance = Math.sqrt(Math.max(0, radiusSq));
-  const edgeDistancePixels = (1 - radialDistance) * (diameter / 2);
+/** Estimates antialiased coverage at a sampled sphere limb. */
+function sphereCoverage(radiusSq: number, diameter: number): number {
+  const edgeDistancePixels = (1 - Math.sqrt(Math.max(0, radiusSq))) * (diameter / 2);
   return Math.max(0, Math.min(1, edgeDistancePixels + 0.5));
 }
 
-/** Returns a normalized three-dimensional vector. */
-function normalize3(x: number, y: number, z: number): { x: number; y: number; z: number } {
-  const length = Math.max(0.0001, Math.hypot(x, y, z));
-  return { x: x / length, y: y / length, z: z / length };
+/** Adds two vectors. */
+function add(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
 
-/** Samples a muted warm gas-giant palette from latitude and turbulent banding. */
-function sampleGasPalette(latitude: number, turbulence: number): [number, number, number] {
-  const band = Math.sin(latitude * 20 + turbulence * 1.8);
-  const pale = Math.max(0, band) * 0.5;
-  const dark = Math.max(0, -band) * 0.45;
-  return [126 + pale * 72 - dark * 45, 99 + pale * 60 - dark * 39, 66 + pale * 46 - dark * 30];
+/** Subtracts the second vector from the first. */
+function subtract(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+}
+
+/** Multiplies a vector by a scalar. */
+function scale(vector: Vec3, amount: number): Vec3 {
+  return { x: vector.x * amount, y: vector.y * amount, z: vector.z * amount };
+}
+
+/** Returns the scalar dot product of two vectors. */
+function dot(a: Vec3, b: Vec3): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+/** Removes the component of a vector parallel to the supplied normal. */
+function reject(vector: Vec3, normal: Vec3): Vec3 {
+  return subtract(vector, scale(normal, dot(vector, normal)));
+}
+
+/** Returns a vector's Euclidean length. */
+function vectorLength(vector: Vec3): number {
+  return Math.hypot(vector.x, vector.y, vector.z);
+}
+
+/** Returns a normalized vector. */
+function normalize(vector: Vec3): Vec3 {
+  const length = Math.max(0.000001, vectorLength(vector));
+  return scale(vector, 1 / length);
+}
+
+/** Clamps a numeric channel to an unsigned byte. */
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
 }
