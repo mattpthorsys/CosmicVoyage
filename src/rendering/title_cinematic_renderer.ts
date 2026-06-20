@@ -816,29 +816,78 @@ export function calculateSunwardScreenX(bodyDirection: Vec3, starDirection: Vec3
 function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
   const latitude = Math.asin(Math.max(-1, Math.min(1, normal.y)));
   const longitude = Math.atan2(normal.x, normal.z);
-  const broadBand = Math.sin(latitude * 20);
-  const narrowBand = Math.sin(latitude * 47) * 0.23;
-  const filament = Math.sin(latitude * 103) * 0.07;
+  const facingLongitude = Math.atan2(-body.direction.x, -body.direction.z);
+  const greatStormLongitude = wrapAngle(facingLongitude + 0.38);
+  const lesserStormLongitude = wrapAngle(facingLongitude - 0.52);
+  const paleStormLongitude = wrapAngle(facingLongitude + 0.82);
+  const bandWarp =
+    jovianBandWarp(longitude, latitude, greatStormLongitude, -0.22, 0.72, 0.25, 0.17) +
+    jovianBandWarp(longitude, latitude, lesserStormLongitude, 0.2, 0.38, 0.13, -0.065) +
+    jovianBandWarp(longitude, latitude, paleStormLongitude, 0.37, 0.29, 0.1, 0.04);
+  const warpedLatitude = latitude + bandWarp;
+  const broadBand = Math.sin(warpedLatitude * 20);
+  const narrowBand = Math.sin(warpedLatitude * 47) * 0.23;
+  const filament = Math.sin(warpedLatitude * 103) * 0.07;
   const longitudinalTexture =
     Math.sin(longitude * 7 + body.textureSeed) * 0.035 +
     Math.sin(longitude * 17 - body.textureSeed * 0.7) * 0.018;
+  const equatorialCream = gaussian(latitude, 0.015, 0.095);
+  const northernOchre = gaussian(latitude, 0.18, 0.075);
+  const southernRust = gaussian(latitude, -0.25, 0.085);
   const northTemperateBelt = gaussian(latitude, 0.28, 0.09);
   const southEquatorialBelt = gaussian(latitude, -0.13, 0.075);
+  const northernSootBelt =
+    gaussian(latitude, 0.39, 0.055) * (0.82 + Math.sin(longitude * 5.5 + body.textureSeed * 0.3) * 0.13);
+  const southernSootBelt =
+    gaussian(latitude, -0.46, 0.07) * (0.78 + Math.sin(longitude * 4.2 - body.textureSeed * 0.2) * 0.11);
   const polarDarkening = Math.pow(Math.abs(normal.y), 2.6) * 0.19;
   const pale = Math.max(0, broadBand + narrowBand + filament) * 0.46;
   const dark =
     Math.max(0, -(broadBand + narrowBand * 0.7)) * 0.39 +
     northTemperateBelt * 0.11 +
     southEquatorialBelt * 0.16 +
+    northernSootBelt * 0.31 +
+    southernSootBelt * 0.25 +
     polarDarkening;
-  const greatOval = jovianStorm(longitude, latitude, -0.92, -0.31, 0.3, 0.075);
-  const lesserOval = jovianStorm(longitude, latitude, 1.64, 0.21, 0.19, 0.052);
-  const stormLift = greatOval * 0.72 + lesserOval * 0.34;
-  const stormCore = greatOval * gaussian(latitude, -0.31, 0.028);
+  const greatOval = jovianStorm(longitude, latitude, greatStormLongitude, -0.22, 0.64, 0.22, 3.4);
+  const lesserOval = jovianStorm(longitude, latitude, lesserStormLongitude, 0.2, 0.31, 0.095, -2.1);
+  const paleVortex = jovianStorm(longitude, latitude, paleStormLongitude, 0.37, 0.23, 0.075, 2.7);
+  const stormLift = greatOval.envelope * 0.82 + lesserOval.envelope * 0.3 + paleVortex.envelope * 0.19;
+  const stormWarmth =
+    greatOval.envelope * 0.75 + greatOval.swirl * 0.48 + lesserOval.swirl * 0.08 - paleVortex.envelope * 0.12;
+  const stormShadow = greatOval.ring * 0.42 + lesserOval.ring * 0.1 + paleVortex.ring * 0.07;
+  const stormCloudLanes = greatOval.lanes * 0.78 + lesserOval.lanes * 0.22 + paleVortex.lanes * 0.14;
+  const beltRed = northernOchre * 18 + southernRust * 31 + equatorialCream * 12;
+  const beltGreen = northernOchre * 8 + southernRust * 5 + equatorialCream * 18;
+  const beltBlue = northernOchre * -5 + southernRust * -10 + equatorialCream * 15;
   return [
-    body.colour[0] + pale * 68 - dark * 48 + longitudinalTexture * 72 + stormLift * 54,
-    body.colour[1] + pale * 56 - dark * 42 + longitudinalTexture * 48 + stormLift * 25,
-    body.colour[2] + pale * 39 - dark * 31 + longitudinalTexture * 29 + stormLift * 10 - stormCore * 12,
+    body.colour[0] +
+      pale * 68 -
+      dark * 55 +
+      longitudinalTexture * 72 +
+      beltRed +
+      stormLift * 42 +
+      stormWarmth * 36 -
+      stormShadow * 28 +
+      stormCloudLanes * 34,
+    body.colour[1] +
+      pale * 56 -
+      dark * 48 +
+      longitudinalTexture * 48 +
+      beltGreen +
+      stormLift * 25 +
+      stormWarmth * 12 -
+      stormShadow * 31 +
+      stormCloudLanes * 24,
+    body.colour[2] +
+      pale * 39 -
+      dark * 37 +
+      longitudinalTexture * 29 +
+      beltBlue +
+      stormLift * 13 -
+      stormWarmth * 8 -
+      stormShadow * 22 +
+      stormCloudLanes * 13,
   ];
 }
 
@@ -848,22 +897,59 @@ function gaussian(value: number, center: number, width: number): number {
   return Math.exp(-normalized * normalized);
 }
 
-/** Returns one horizontally elongated deterministic Jovian storm profile. */
+/** Bends nearby horizontal belts around one elliptical circulation system. */
+function jovianBandWarp(
+  longitude: number,
+  latitude: number,
+  centerLongitude: number,
+  centerLatitude: number,
+  longitudeRadius: number,
+  latitudeRadius: number,
+  strength: number
+): number {
+  const longitudeDistance = wrapAngle(longitude - centerLongitude) / longitudeRadius;
+  const latitudeDistance = (latitude - centerLatitude) / latitudeRadius;
+  const distanceSq = longitudeDistance * longitudeDistance + latitudeDistance * latitudeDistance;
+  if (distanceSq >= 1) return 0;
+
+  // Tangential flow lifts one side of a belt and lowers the other, creating a Jovian curl.
+  const envelope = (1 - distanceSq) ** 2;
+  const circulation = longitudeDistance * envelope;
+  const spiralRipple =
+    Math.sin(Math.atan2(latitudeDistance, longitudeDistance) * 2 + Math.sqrt(distanceSq) * Math.PI * 3) *
+    envelope *
+    0.22;
+  return strength * (circulation + spiralRipple);
+}
+
+/** Returns one horizontally elongated deterministic Jovian storm with curved internal cloud lanes. */
 function jovianStorm(
   longitude: number,
   latitude: number,
   centerLongitude: number,
   centerLatitude: number,
   longitudeRadius: number,
-  latitudeRadius: number
-): number {
+  latitudeRadius: number,
+  winding: number
+): { envelope: number; swirl: number; ring: number; lanes: number } {
   const longitudeDistance = wrapAngle(longitude - centerLongitude) / longitudeRadius;
   const latitudeDistance = (latitude - centerLatitude) / latitudeRadius;
   const distanceSq = longitudeDistance * longitudeDistance + latitudeDistance * latitudeDistance;
-  if (distanceSq >= 1) return 0;
+  if (distanceSq >= 1) return { envelope: 0, swirl: 0, ring: 0, lanes: 0 };
+  const radius = Math.sqrt(distanceSq);
   const edge = 1 - distanceSq;
-  const internalShear = 0.78 + Math.sin(longitudeDistance * Math.PI * 3) * 0.12;
-  return edge * edge * internalShear;
+  const envelope = edge * edge;
+  const angle = Math.atan2(latitudeDistance, longitudeDistance);
+  const spiralLane = Math.sin(angle * 2 + radius * winding * Math.PI);
+  const secondaryLane = Math.sin(angle * 3 - radius * winding * Math.PI * 1.35);
+  const eye = gaussian(radius, 0, 0.2);
+  const ring = gaussian(radius, 0.58, 0.16) * envelope;
+  return {
+    envelope: envelope * (0.82 + spiralLane * 0.18),
+    swirl: spiralLane * envelope * (1 - eye),
+    ring,
+    lanes: (spiralLane * 0.72 + secondaryLane * 0.28) * envelope * (1 - eye * 0.7),
+  };
 }
 
 /** Samples fixed rocky colour and radial elevation from a world-space surface normal. */
