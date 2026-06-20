@@ -150,21 +150,26 @@ export class TitleCinematicRenderer {
     ctx.fillRect(0, 0, this.width, this.height);
 
     const progress = seconds / TITLE_SEQUENCE_SECONDS;
-    const reveal = smoothStep(0.01, 0.28, progress);
-    const cameraShift = smoothStep(0, 1, progress) * this.width * 0.075;
-    const starX = this.width * 0.17 - cameraShift * 0.18;
-    const starY = this.height * 0.27 + Math.sin(progress * Math.PI * 2) * this.height * 0.012;
+    const cameraAngle = progress * Math.PI * 2;
+    const cameraShift = progress * this.width;
+    const starX = this.width * (0.16 + Math.sin(cameraAngle - 0.24) * 0.09);
+    const starY = this.height * (0.27 + Math.cos(cameraAngle + 0.16) * 0.045);
     const planetRadius = Math.max(this.height * 0.48, this.width * 0.29);
-    const planetX = this.width * (1.16 - progress * 0.22);
-    const planetY = this.height * 0.67;
+    const planetX = this.width * (1.04 + Math.cos(cameraAngle) * 0.21);
+    const planetY = this.height * (0.67 + Math.sin(cameraAngle) * 0.045);
+    const rockyRadius = Math.min(this.width, this.height) * 0.13;
+    const rockyX = this.width * (0.08 - Math.cos(cameraAngle) * 0.28);
+    const rockyY = this.height * (0.69 - Math.sin(cameraAngle) * 0.07);
 
     this.drawStarfield(cameraShift);
-    this.drawAmberLightBands(seconds, starX, starY);
-    this.drawDistantGlow(starX, starY, reveal);
-    this.drawMoons(seconds, planetX, planetY, planetRadius, starX, starY, true);
-    this.drawGasGiant(seconds, planetX, planetY, planetRadius, starX, starY, reveal);
-    this.drawMoons(seconds, planetX, planetY, planetRadius, starX, starY, false);
-    this.drawStarAndFlare(seconds, starX, starY, reveal);
+    this.drawAmberLightBands(cameraAngle, starX, starY);
+    this.drawDistantGlow(starX, starY);
+    this.drawStarSource(cameraAngle, starX, starY);
+    this.drawMoons(cameraAngle, planetX, planetY, planetRadius, starX, starY, true);
+    this.drawGasGiant(cameraAngle, planetX, planetY, planetRadius, starX, starY);
+    this.drawMoons(cameraAngle, planetX, planetY, planetRadius, starX, starY, false);
+    this.drawRockySphere(rockyX, rockyY, rockyRadius, starX, starY, [117, 107, 91], 1, cameraAngle);
+    this.drawLensArtifacts(starX, starY);
     this.drawExposureVeil(progress);
   }
 
@@ -172,7 +177,8 @@ export class TitleCinematicRenderer {
   private drawStarfield(cameraShift: number): void {
     const ctx = this.ctx;
     for (const star of this.stars) {
-      const x = wrap(star.x * this.width - cameraShift * star.depth, this.width);
+      const parallaxLayer = star.depth > 0.76 ? 2 : 1;
+      const x = wrap(star.x * this.width - cameraShift * parallaxLayer, this.width);
       const y = star.y * this.height;
       const warm = star.warmth > 0.82;
       ctx.fillStyle = warm ? `rgba(222,198,145,${star.alpha})` : `rgba(180,211,210,${star.alpha})`;
@@ -181,10 +187,10 @@ export class TitleCinematicRenderer {
   }
 
   /** Draws several broad separated amber optical bands across the scene. */
-  private drawAmberLightBands(seconds: number, starX: number, starY: number): void {
+  private drawAmberLightBands(cameraAngle: number, starX: number, starY: number): void {
     const ctx = this.ctx;
-    const diagonal = -0.18;
-    const drift = Math.sin(seconds * 0.025) * this.width * 0.018;
+    const diagonal = -0.18 + Math.sin(cameraAngle) * 0.025;
+    const drift = Math.sin(cameraAngle) * this.width * 0.05;
     const bands = [
       { offset: -0.31, width: 0.18, alpha: 0.13 },
       { offset: -0.02, width: 0.095, alpha: 0.075 },
@@ -215,13 +221,13 @@ export class TitleCinematicRenderer {
   }
 
   /** Draws the broad warm-white exposure surrounding the stellar source. */
-  private drawDistantGlow(starX: number, starY: number, reveal: number): void {
+  private drawDistantGlow(starX: number, starY: number): void {
     const ctx = this.ctx;
     const radius = Math.max(this.width, this.height) * 0.5;
     const glow = ctx.createRadialGradient(starX, starY, 0, starX, starY, radius);
-    glow.addColorStop(0, `rgba(255,244,211,${0.12 * reveal})`);
-    glow.addColorStop(0.08, `rgba(195,151,79,${0.055 * reveal})`);
-    glow.addColorStop(0.34, `rgba(75,48,17,${0.022 * reveal})`);
+    glow.addColorStop(0, 'rgba(255,244,211,0.12)');
+    glow.addColorStop(0.08, 'rgba(195,151,79,0.055)');
+    glow.addColorStop(0.34, 'rgba(75,48,17,0.022)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, this.width, this.height);
@@ -229,13 +235,12 @@ export class TitleCinematicRenderer {
 
   /** Draws the large gas giant with a star-aligned terminator and atmospheric bands. */
   private drawGasGiant(
-    seconds: number,
+    cameraAngle: number,
     centerX: number,
     centerY: number,
     radius: number,
     starX: number,
-    starY: number,
-    reveal: number
+    starY: number
   ): void {
     const sampleScale = 0.32;
     const diameter = Math.min(420, Math.max(64, Math.floor(radius * 2 * sampleScale)));
@@ -246,23 +251,22 @@ export class TitleCinematicRenderer {
     const image = this.planetContext.createImageData(diameter, diameter);
     const pixels = image.data;
     const light = normalize3((starX - centerX) / radius, (starY - centerY) / radius, -0.52);
-    const rotation = seconds * 0.014;
+    const rotation = cameraAngle;
 
     for (let py = 0; py < diameter; py++) {
       const ny = (py / (diameter - 1)) * 2 - 1;
       for (let px = 0; px < diameter; px++) {
         const nx = (px / (diameter - 1)) * 2 - 1;
         const radiusSq = nx * nx + ny * ny;
-        if (radiusSq > 1) continue;
-        const nz = Math.sqrt(1 - radiusSq);
+        if (radiusSq > 1.04) continue;
+        const nz = Math.sqrt(Math.max(0, 1 - radiusSq));
         const diffuse = Math.max(0, nx * light.x + ny * light.y + nz * light.z);
-        const limb = Math.pow(Math.max(0, nz), 0.32);
         const atmosphere = Math.pow(1 - nz, 3.2);
         const longitude = Math.atan2(nx, nz) + rotation;
         const turbulence =
-          Math.sin(ny * 39 + Math.sin(longitude * 3.2) * 2.3) * 0.5 +
-          Math.sin(ny * 83 - longitude * 5.1) * 0.24 +
-          Math.sin(ny * 17 + longitude * 1.7) * 0.18;
+          Math.sin(ny * 39 + Math.sin(longitude * 3) * 2.3) * 0.5 +
+          Math.sin(ny * 83 - longitude * 5) * 0.24 +
+          Math.sin(ny * 17 + longitude * 2) * 0.18;
         const palette = sampleGasPalette(ny, turbulence);
         const ambient = 0.018;
         const illumination = ambient + Math.pow(diffuse, 0.78) * 0.95;
@@ -270,7 +274,7 @@ export class TitleCinematicRenderer {
         pixels[index] = Math.min(255, palette[0] * illumination + atmosphere * 54 * diffuse);
         pixels[index + 1] = Math.min(255, palette[1] * illumination + atmosphere * 47 * diffuse);
         pixels[index + 2] = Math.min(255, palette[2] * illumination + atmosphere * 31 * diffuse);
-        pixels[index + 3] = Math.min(255, (limb * 0.94 + atmosphere * diffuse * 0.52) * 255 * reveal);
+        pixels[index + 3] = getSpherePixelCoverage(radiusSq, diameter) * 255;
       }
     }
 
@@ -283,7 +287,7 @@ export class TitleCinematicRenderer {
 
   /** Draws moons either behind or in front of the giant according to orbital depth. */
   private drawMoons(
-    seconds: number,
+    cameraAngle: number,
     planetX: number,
     planetY: number,
     planetRadius: number,
@@ -292,52 +296,74 @@ export class TitleCinematicRenderer {
     behind: boolean
   ): void {
     for (const moon of this.moons) {
-      const angle = moon.phase + seconds * (0.008 + moon.depth * 0.006);
+      const angle = moon.phase + cameraAngle * (moon.depth > 0.6 ? 2 : 1);
       const z = Math.sin(angle);
       if (z < 0 !== behind) continue;
       const x = planetX + Math.cos(angle) * planetRadius * moon.orbitRadiusX;
-      const y = planetY + Math.sin(angle * 0.73) * planetRadius * moon.orbitRadiusY;
+      const y = planetY + Math.sin(angle) * planetRadius * moon.orbitRadiusY;
       const radius = planetRadius * moon.radius * (0.82 + moon.depth * 0.25);
-      this.drawLitMoon(x, y, radius, starX, starY, moon.colour, behind ? 0.58 : 0.9);
+      this.drawRockySphere(x, y, radius, starX, starY, moon.colour, 1, angle);
     }
   }
 
-  /** Draws one small star-lit moon with its bright limb facing the stellar source. */
-  private drawLitMoon(
+  /** Draws an opaque rocky sphere with an antialiased limb and star-aligned crescent. */
+  private drawRockySphere(
     x: number,
     y: number,
     radius: number,
     starX: number,
     starY: number,
     colour: [number, number, number],
-    alpha: number
+    alpha: number,
+    rotation: number
   ): void {
-    const dx = starX - x;
-    const dy = starY - y;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    const highlightX = x + (dx / length) * radius * 0.45;
-    const highlightY = y + (dy / length) * radius * 0.45;
-    const gradient = this.ctx.createRadialGradient(highlightX, highlightY, radius * 0.08, x, y, radius);
-    gradient.addColorStop(0, `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`);
-    gradient.addColorStop(0.42, `rgba(${colour[0] * 0.58},${colour[1] * 0.58},${colour[2] * 0.58},${alpha})`);
-    gradient.addColorStop(0.78, `rgba(12,13,13,${alpha})`);
-    gradient.addColorStop(1, 'rgba(0,0,0,0)');
-    this.ctx.fillStyle = gradient;
-    this.ctx.beginPath();
-    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-    this.ctx.fill();
+    if (alpha <= 0.001 || radius < 1) return;
+    const diameter = Math.min(260, Math.max(24, Math.ceil(radius * 0.72)));
+    if (this.planetCanvas.width !== diameter || this.planetCanvas.height !== diameter) {
+      this.planetCanvas.width = diameter;
+      this.planetCanvas.height = diameter;
+    }
+    const image = this.planetContext.createImageData(diameter, diameter);
+    const pixels = image.data;
+    const light = normalize3((starX - x) / radius, (starY - y) / radius, -0.66);
+    for (let py = 0; py < diameter; py++) {
+      const ny = (py / (diameter - 1)) * 2 - 1;
+      for (let px = 0; px < diameter; px++) {
+        const nx = (px / (diameter - 1)) * 2 - 1;
+        const radiusSq = nx * nx + ny * ny;
+        if (radiusSq > 1.04) continue;
+        const nz = Math.sqrt(Math.max(0, 1 - radiusSq));
+        const diffuse = Math.max(0, nx * light.x + ny * light.y + nz * light.z);
+        const longitude = Math.atan2(nx, nz) + rotation;
+        const terrain =
+          Math.sin(longitude * 11 + ny * 9) * 0.12 +
+          Math.sin(longitude * 23 - ny * 17) * 0.06 +
+          Math.sin((nx + ny) * 37) * 0.035;
+        const illumination = 0.012 + Math.pow(diffuse, 0.82) * 0.98;
+        const index = (py * diameter + px) * 4;
+        pixels[index] = Math.max(0, Math.min(255, colour[0] * (illumination + terrain * diffuse)));
+        pixels[index + 1] = Math.max(0, Math.min(255, colour[1] * (illumination + terrain * diffuse)));
+        pixels[index + 2] = Math.max(0, Math.min(255, colour[2] * (illumination + terrain * diffuse)));
+        pixels[index + 3] = getSpherePixelCoverage(radiusSq, diameter) * 255 * alpha;
+      }
+    }
+    this.planetContext.putImageData(image, 0, 0);
+    this.ctx.save();
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.drawImage(this.planetCanvas, x - radius, y - radius, radius * 2, radius * 2);
+    this.ctx.restore();
   }
 
-  /** Draws the warm stellar source and restrained screen-space lens artifacts. */
-  private drawStarAndFlare(seconds: number, x: number, y: number, reveal: number): void {
+  /** Draws the warm stellar source behind foreground celestial bodies. */
+  private drawStarSource(cameraAngle: number, x: number, y: number): void {
     const ctx = this.ctx;
-    const pulse = 0.96 + Math.sin(seconds * 0.23) * 0.025;
+    const pulse = 0.96 + Math.sin(cameraAngle * 2) * 0.025;
     const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
     const glowRadius = coreRadius * 12;
     const glow = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
-    glow.addColorStop(0, `rgba(255,250,232,${0.98 * reveal})`);
-    glow.addColorStop(0.08, `rgba(255,232,177,${0.82 * reveal})`);
-    glow.addColorStop(0.25, `rgba(225,167,78,${0.24 * reveal})`);
+    glow.addColorStop(0, 'rgba(255,250,232,0.98)');
+    glow.addColorStop(0.08, 'rgba(255,232,177,0.82)');
+    glow.addColorStop(0.25, 'rgba(225,167,78,0.24)');
     glow.addColorStop(1, 'rgba(90,50,10,0)');
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -345,7 +371,15 @@ export class TitleCinematicRenderer {
     ctx.beginPath();
     ctx.arc(x, y, glowRadius * pulse, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  }
 
+  /** Draws restrained lens artifacts after foreground bodies as an optical effect. */
+  private drawLensArtifacts(x: number, y: number): void {
+    const ctx = this.ctx;
+    const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     const axisX = this.width * 0.5 - x;
     const axisY = this.height * 0.5 - y;
     for (const artifact of [
@@ -355,7 +389,7 @@ export class TitleCinematicRenderer {
       const flareX = x + axisX * artifact.position;
       const flareY = y + axisY * artifact.position;
       const flare = ctx.createRadialGradient(flareX, flareY, 0, flareX, flareY, artifact.radius);
-      flare.addColorStop(0, `rgba(218,168,89,${artifact.alpha * reveal})`);
+      flare.addColorStop(0, `rgba(218,168,89,${artifact.alpha})`);
       flare.addColorStop(1, 'rgba(80,45,12,0)');
       ctx.fillStyle = flare;
       ctx.beginPath();
@@ -392,15 +426,16 @@ function createSeededRandom(seed: string): () => number {
   };
 }
 
-/** Returns a smoothly eased value between two normalized boundaries. */
-function smoothStep(start: number, end: number, value: number): number {
-  const normalized = Math.max(0, Math.min(1, (value - start) / Math.max(0.0001, end - start)));
-  return normalized * normalized * (3 - 2 * normalized);
-}
-
 /** Wraps one coordinate into a positive range. */
 function wrap(value: number, size: number): number {
   return ((value % size) + size) % size;
+}
+
+/** Estimates antialiased coverage at a sampled sphere limb while keeping its interior opaque. */
+function getSpherePixelCoverage(radiusSq: number, diameter: number): number {
+  const radialDistance = Math.sqrt(Math.max(0, radiusSq));
+  const edgeDistancePixels = (1 - radialDistance) * (diameter / 2);
+  return Math.max(0, Math.min(1, edgeDistancePixels + 0.5));
 }
 
 /** Returns a normalized three-dimensional vector. */
