@@ -338,10 +338,7 @@ export class TitleCinematicRenderer {
   /** Draws one pixel-grained sphere with geometric world-space illumination. */
   private drawBody(projected: ProjectedBody): void {
     const { body, x, y, radius } = projected;
-    const sampleDiameter =
-      body.kind === 'rock'
-        ? Math.min(420, Math.max(72, Math.round(radius * 1.15)))
-        : Math.min(420, Math.max(64, Math.round(radius * 0.72)));
+    const sampleDiameter = Math.min(420, Math.max(64, Math.round(radius * 0.72)));
     if (this.bodyCanvas.width !== sampleDiameter || this.bodyCanvas.height !== sampleDiameter) {
       this.bodyCanvas.width = sampleDiameter;
       this.bodyCanvas.height = sampleDiameter;
@@ -375,7 +372,7 @@ export class TitleCinematicRenderer {
     this.ctx.beginPath();
     this.ctx.arc(x, y, radius, 0, Math.PI * 2);
     this.ctx.clip();
-    this.ctx.imageSmoothingEnabled = body.kind === 'rock';
+    this.ctx.imageSmoothingEnabled = false;
     this.ctx.drawImage(this.bodyCanvas, x - radius, y - radius, radius * 2, radius * 2);
     this.ctx.restore();
   }
@@ -433,7 +430,8 @@ export class TitleCinematicRenderer {
     glow.addColorStop(0.25, 'rgba(225,167,78,0.24)');
     glow.addColorStop(1, 'rgba(90,50,10,0)');
     this.ctx.save();
-    this.ctx.globalCompositeOperation = 'lighter';
+    // Source-over keeps this atmospheric haze beneath the later additive foreground beams.
+    this.ctx.globalCompositeOperation = 'source-over';
     this.ctx.fillStyle = glow;
     this.ctx.beginPath();
     this.ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
@@ -575,23 +573,9 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
 
 /** Samples fixed rocky grain from a world-space surface normal. */
 function sampleRockTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
-  const broadTerrain =
-    Math.sin(normal.x * 5.3 + normal.z * 3.7 + body.textureSeed) * 0.075 +
-    Math.sin(normal.y * 8.1 - normal.x * 4.4) * 0.05;
-  const maria =
-    Math.max(
-      0,
-      Math.sin(normal.x * 7.2 + normal.z * 5.1 + body.textureSeed * 0.31) +
-        Math.sin(normal.y * 6.4 - normal.z * 3.8) -
-        1.05
-    ) * -0.13;
-  let relief =
-    broadTerrain +
-    maria +
-    Math.sin(normal.x * 31 + normal.y * 19 + body.textureSeed) * 0.09 +
-    Math.sin(normal.z * 47 - normal.y * 23) * 0.055 +
-    Math.sin((normal.x + normal.z) * 71) * 0.025 +
-    Math.sin((normal.x - normal.z) * 137 + normal.y * 61) * 0.014;
+  const broadTerrain = fractalRockNoise(normal, body.textureSeed);
+  const maria = Math.max(0, valueNoise3d(normal, 3.2, body.textureSeed + 41) - 0.58) * -0.42;
+  let relief = broadTerrain * 0.24 + maria + (valueNoise3d(normal, 34, body.textureSeed + 113) - 0.5) * 0.12;
   for (const crater of body.craters) {
     const angularDistance = Math.acos(Math.max(-1, Math.min(1, dot(normal, crater.center))));
     const normalizedDistance = angularDistance / crater.angularRadius;
@@ -614,6 +598,50 @@ function sampleRockTexture(normal: Vec3, body: CelestialBody): [number, number, 
     body.colour[1] * (1 + relief * 0.92),
     body.colour[2] * (1 + relief * 0.8),
   ];
+}
+
+/** Builds direction-neutral multi-scale rocky terrain without latitude or diagonal sine bands. */
+function fractalRockNoise(normal: Vec3, seed: number): number {
+  const broad = valueNoise3d(normal, 4.5, seed) - 0.5;
+  const medium = valueNoise3d(normal, 11, seed + 17) - 0.5;
+  const fine = valueNoise3d(normal, 24, seed + 31) - 0.5;
+  return broad + medium * 0.52 + fine * 0.24;
+}
+
+/** Samples smoothly interpolated deterministic value noise in three dimensions. */
+function valueNoise3d(point: Vec3, frequency: number, seed: number): number {
+  const x = point.x * frequency;
+  const y = point.y * frequency;
+  const z = point.z * frequency;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const z0 = Math.floor(z);
+  const tx = smoothNoiseStep(x - x0);
+  const ty = smoothNoiseStep(y - y0);
+  const tz = smoothNoiseStep(z - z0);
+  const x00 = lerp(latticeNoise(x0, y0, z0, seed), latticeNoise(x0 + 1, y0, z0, seed), tx);
+  const x10 = lerp(latticeNoise(x0, y0 + 1, z0, seed), latticeNoise(x0 + 1, y0 + 1, z0, seed), tx);
+  const x01 = lerp(latticeNoise(x0, y0, z0 + 1, seed), latticeNoise(x0 + 1, y0, z0 + 1, seed), tx);
+  const x11 = lerp(latticeNoise(x0, y0 + 1, z0 + 1, seed), latticeNoise(x0 + 1, y0 + 1, z0 + 1, seed), tx);
+  return lerp(lerp(x00, x10, ty), lerp(x01, x11, ty), tz);
+}
+
+/** Produces a stable unit value for one integer noise-lattice coordinate. */
+function latticeNoise(x: number, y: number, z: number, seed: number): number {
+  let value = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 2147483647);
+  value = Math.imul(value ^ Math.trunc(seed * 1013), 1274126177);
+  value ^= value >>> 16;
+  return (value >>> 0) / 4294967295;
+}
+
+/** Applies a cubic interpolation curve to one normalized noise coordinate. */
+function smoothNoiseStep(value: number): number {
+  return value * value * (3 - 2 * value);
+}
+
+/** Linearly interpolates between two scalar values. */
+function lerp(start: number, end: number, amount: number): number {
+  return start + (end - start) * amount;
 }
 
 /** Creates deterministic crater centres and profiles for cached lunar-style albedo. */
