@@ -60,10 +60,17 @@ export class HyperspaceSurveyService {
   private readonly systemDataGenerator: SystemDataGenerator;
   private readonly cellProvider: HyperspaceSurveyCellProvider;
   private cellCache: Map<string, Omit<HyperspaceSurveyCell, 'rangeCells'>> = new Map();
-  private readonly pendingPrefetchKeys = new Set<string>();
+  private readonly pendingPrefetchKeys = new Map<string, number>();
   private surveyCache: HyperspaceSurvey | null = null;
   private overlayContactsCache: { signature: string; contacts: HyperspaceSurveyContact[] } | null = null;
   private readonly maxCellCacheSize = 80000;
+  private readonly maxPrefetchBatchSize = 512;
+  private prefetchGeneration = 0;
+  private surveyPrefetchActive = false;
+  private queuedSurveyPrefetch: {
+    generation: number;
+    requests: Array<{ worldX: number; worldY: number }>;
+  } | null = null;
 
   /** Initializes HyperspaceSurveyService. */
   constructor(
@@ -80,6 +87,8 @@ export class HyperspaceSurveyService {
     this.pendingPrefetchKeys.clear();
     this.surveyCache = null;
     this.overlayContactsCache = null;
+    this.queuedSurveyPrefetch = null;
+    this.prefetchGeneration++;
     this.cellProvider.clearCache();
   }
 
@@ -252,6 +261,8 @@ export class HyperspaceSurveyService {
     rows: number,
     scanRadius: number
   ): void {
+    const generation = ++this.prefetchGeneration;
+    this.pendingPrefetchKeys.clear();
     const availableCacheSlots = this.maxCellCacheSize - this.cellCache.size - this.pendingPrefetchKeys.size;
     if (availableCacheSlots <= 0) return;
 
@@ -281,21 +292,51 @@ export class HyperspaceSurveyService {
     }
 
     if (requests.length === 0) return;
+    const prefetch = { generation, requests };
+    if (this.surveyPrefetchActive) {
+      this.queuedSurveyPrefetch = prefetch;
+      return;
+    }
+    this.startSurveyPrefetch(prefetch);
+  }
+
+  /** Runs one bounded survey prefetch and then starts only the newest queued viewport. */
+  private startSurveyPrefetch(prefetch: {
+    generation: number;
+    requests: Array<{ worldX: number; worldY: number }>;
+  }): void {
+    this.surveyPrefetchActive = true;
     void this.cellProvider
-      .getCellDataBatchAsync(requests)
+      .getCellDataBatchAsync(prefetch.requests)
       .then((cells) => {
+        if (prefetch.generation !== this.prefetchGeneration) return;
         for (const cell of cells) {
-          this.pendingPrefetchKeys.delete(this.getCellKey(cell.worldX, cell.worldY));
-          if (!this.cellCache.has(this.getCellKey(cell.worldX, cell.worldY))) {
+          const key = this.getCellKey(cell.worldX, cell.worldY);
+          if (this.pendingPrefetchKeys.get(key) === prefetch.generation) {
+            this.pendingPrefetchKeys.delete(key);
+          }
+          if (!this.cellCache.has(key)) {
             this.cacheCellData(cell);
           }
         }
       })
       .catch((error) => {
-        for (const request of requests) {
-          this.pendingPrefetchKeys.delete(this.getCellKey(request.worldX, request.worldY));
+        if (prefetch.generation !== this.prefetchGeneration) return;
+        for (const request of prefetch.requests) {
+          const key = this.getCellKey(request.worldX, request.worldY);
+          if (this.pendingPrefetchKeys.get(key) === prefetch.generation) {
+            this.pendingPrefetchKeys.delete(key);
+          }
         }
         logger.debug(`[HyperspaceSurveyService.prefetchSurveyCells] Survey prefetch failed: ${error}`);
+      })
+      .finally(() => {
+        this.surveyPrefetchActive = false;
+        const queued = this.queuedSurveyPrefetch;
+        this.queuedSurveyPrefetch = null;
+        if (queued && queued.generation === this.prefetchGeneration) {
+          this.startSurveyPrefetch(queued);
+        }
       });
   }
 
@@ -308,9 +349,9 @@ export class HyperspaceSurveyService {
   ): boolean {
     const key = this.getCellKey(worldX, worldY);
     if (this.cellCache.has(key) || this.pendingPrefetchKeys.has(key)) return false;
-    this.pendingPrefetchKeys.add(key);
+    this.pendingPrefetchKeys.set(key, this.prefetchGeneration);
     requests.push({ worldX, worldY });
-    return requests.length >= availableCacheSlots;
+    return requests.length >= Math.min(availableCacheSlots, this.maxPrefetchBatchSize);
   }
 
   /** Stores generated survey-cell data and enforces the cache limit. */

@@ -4,6 +4,7 @@ import { HyperspaceTileProvider } from '../../rendering/hyperspace_tile_provider
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { CONFIG } from '../../config';
 import { HyperspaceTileGenerationProvider } from '../../rendering/hyperspace_tile_generation_provider';
+import { HyperspaceTileSample } from '../../rendering/hyperspace_tile_generation';
 
 /** Creates nebula renderer. */
 function createNebulaRenderer(): NebulaRenderer {
@@ -16,6 +17,18 @@ function createNebulaRenderer(): NebulaRenderer {
 /** Waits for the next queued asynchronous task to complete. */
 function nextTask(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Creates a promise whose completion is controlled by the test. */
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
 }
 
 describe('HyperspaceTileProvider', () => {
@@ -143,5 +156,57 @@ describe('HyperspaceTileProvider', () => {
     await nextTask();
 
     expect(workerCalls).toBe(1);
+  });
+
+  it('bounds tile batches and drops remaining work for a superseded viewport', async () => {
+    const firstBatch = deferred<HyperspaceTileSample[]>();
+    const batches: Array<readonly { worldX: number; worldY: number; rangeCells: number }[]> = [];
+    const generator = {
+      getSystemMapProperties: () => ({
+        exists: false,
+        starType: null,
+        name: null,
+        hasStarbase: false,
+        objectKind: null,
+      }),
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const tileGenerationProvider: HyperspaceTileGenerationProvider = {
+      getTilesAsync: (requests) => {
+        batches.push(requests);
+        if (batches.length === 1) return firstBatch.promise;
+        return Promise.resolve(
+          requests.map(({ worldX, worldY, rangeCells }) => ({
+            worldX,
+            worldY,
+            rangeCells,
+            tile: { bg: '#010203', starChar: null, starColor: null },
+          }))
+        );
+      },
+      clearCache: () => undefined,
+    };
+    const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator, tileGenerationProvider);
+
+    provider.prefetchTileRegion(0, 0, 20, 10, 10, 5);
+    provider.prefetchTileRegion(1000, 1000, 20, 10, 10, 5);
+    firstBatch.resolve(
+      batches[0].map(({ worldX, worldY, rangeCells }) => ({
+        worldX,
+        worldY,
+        rangeCells,
+        tile: { bg: '#010203', starChar: null, starColor: null },
+      }))
+    );
+    await nextTask();
+
+    expect(batches[0]).toHaveLength(128);
+    expect(batches.slice(1).every((batch) => batch.length <= 128)).toBe(true);
+    expect(
+      batches
+        .slice(1)
+        .flat()
+        .every((request) => request.worldX >= 1000)
+    ).toBe(true);
   });
 });

@@ -2,6 +2,8 @@ import { SurfaceGenerationProvider } from './surface_generation_provider';
 import { generateSurfaceDataFromRequest, SurfaceData, SurfaceGenerationRequest } from './surface_generator';
 
 interface PendingRequest {
+  id: number;
+  request: SurfaceGenerationRequest;
   resolve: (data: SurfaceData) => void;
   reject: (error: Error) => void;
 }
@@ -16,7 +18,8 @@ interface SurfaceWorkerResponse {
 export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvider {
   private worker: Worker | null = null;
   private nextId = 1;
-  private readonly pending = new Map<number, PendingRequest>();
+  private activeRequest: PendingRequest | null = null;
+  private queuedRequest: PendingRequest | null = null;
 
   /** Generates surface data. */
   generateSurfaceData(request: SurfaceGenerationRequest): SurfaceData {
@@ -29,11 +32,13 @@ export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvide
       return Promise.resolve(this.generateSurfaceData(request));
     }
 
-    const worker = this.getWorker();
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      worker.postMessage({ id, request });
+      if (this.queuedRequest) {
+        this.queuedRequest.reject(new Error('Surface generation superseded by a newer request.'));
+      }
+      this.queuedRequest = { id, request, resolve, reject };
+      this.dispatchNextRequest();
     });
   }
 
@@ -41,8 +46,22 @@ export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvide
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
-    this.pending.forEach(({ reject }) => reject(new Error('Surface generation worker disposed.')));
-    this.pending.clear();
+    this.activeRequest?.reject(new Error('Surface generation worker disposed.'));
+    this.queuedRequest?.reject(new Error('Surface generation worker disposed.'));
+    this.activeRequest = null;
+    this.queuedRequest = null;
+  }
+
+  /** Sends the newest queued surface request when the worker becomes idle. */
+  private dispatchNextRequest(): void {
+    if (this.activeRequest || !this.queuedRequest) return;
+    const worker = this.getWorker();
+    this.activeRequest = this.queuedRequest;
+    this.queuedRequest = null;
+    worker.postMessage({
+      id: this.activeRequest.id,
+      request: this.activeRequest.request,
+    });
   }
 
   /** Returns worker. */
@@ -52,19 +71,22 @@ export class WorkerSurfaceGenerationProvider implements SurfaceGenerationProvide
     this.worker = new Worker(new URL('./surface_generation_worker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (event: MessageEvent<SurfaceWorkerResponse>) => {
       const response = event.data;
-      const pending = this.pending.get(response.id);
-      if (!pending) return;
-      this.pending.delete(response.id);
+      const pending = this.activeRequest;
+      if (!pending || pending.id !== response.id) return;
+      this.activeRequest = null;
       if (response.ok && response.data) {
         pending.resolve(response.data);
       } else {
         pending.reject(new Error(response.error ?? 'Surface generation worker failed.'));
       }
+      this.dispatchNextRequest();
     };
     this.worker.onerror = (event) => {
       const error = new Error(event.message || 'Surface generation worker error.');
-      this.pending.forEach(({ reject }) => reject(error));
-      this.pending.clear();
+      this.activeRequest?.reject(error);
+      this.queuedRequest?.reject(error);
+      this.activeRequest = null;
+      this.queuedRequest = null;
       this.worker?.terminate();
       this.worker = null;
     };

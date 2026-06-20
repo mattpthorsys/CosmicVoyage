@@ -13,10 +13,17 @@ export type { HyperspaceTile } from './hyperspace_tile_generation';
 /** Builds and caches complete hyperspace cells from survey, nebula, and starfield data. */
 export class HyperspaceTileProvider {
   private readonly tileCache: Map<string, HyperspaceTile> = new Map();
-  private readonly pendingTilePrefetchKeys = new Set<string>();
+  private readonly pendingTilePrefetchKeys = new Map<string, number>();
   private readonly maxTileCacheSize = 60000;
+  private readonly maxTilePrefetchBatchSize = 128;
   private prefetchGeneration = 0;
   private lastTilePrefetchSignature = '';
+  private tilePrefetchActive = false;
+  private queuedTilePrefetch: {
+    generation: number;
+    signature: string;
+    requests: Array<{ worldX: number; worldY: number; rangeCells: number }>;
+  } | null = null;
 
   /** Initializes HyperspaceTileProvider. */
   constructor(
@@ -30,6 +37,7 @@ export class HyperspaceTileProvider {
     this.tileCache.clear();
     this.pendingTilePrefetchKeys.clear();
     this.lastTilePrefetchSignature = '';
+    this.queuedTilePrefetch = null;
     this.prefetchGeneration++;
     this.tileGenerationProvider.clearCache();
   }
@@ -58,6 +66,8 @@ export class HyperspaceTileProvider {
     const signature = `${startWorldX},${startWorldY}|${cols}x${rows}|${viewCenterX},${viewCenterY}|${margin}`;
     if (signature === this.lastTilePrefetchSignature) return;
     this.lastTilePrefetchSignature = signature;
+    const generation = ++this.prefetchGeneration;
+    this.pendingTilePrefetchKeys.clear();
 
     const availableCacheSlots =
       this.maxTileCacheSize - this.tileCache.size - this.pendingTilePrefetchKeys.size;
@@ -72,38 +82,76 @@ export class HyperspaceTileProvider {
         const key = this.getTileKey(worldX, worldY, rangeCells);
         if (this.tileCache.has(key) || this.pendingTilePrefetchKeys.has(key)) continue;
 
-        this.pendingTilePrefetchKeys.add(key);
+        this.pendingTilePrefetchKeys.set(key, generation);
         requests.push({ worldX, worldY, rangeCells });
         if (requests.length >= availableCacheSlots) break collect;
       }
     }
 
     if (requests.length === 0) return;
-    const generation = this.prefetchGeneration;
-    void this.tileGenerationProvider
-      .getTilesAsync(requests)
-      .then((samples) => {
-        if (generation !== this.prefetchGeneration) return;
-        for (const sample of samples) {
-          const key = this.getTileKey(sample.worldX, sample.worldY, sample.rangeCells);
-          this.pendingTilePrefetchKeys.delete(key);
-          if (!this.tileCache.has(key)) {
-            this.cacheTile(key, sample.tile);
-          }
-        }
-      })
+    const prefetch = { generation, signature, requests };
+    if (this.tilePrefetchActive) {
+      this.queuedTilePrefetch = prefetch;
+      return;
+    }
+    this.startTilePrefetch(prefetch);
+  }
+
+  /** Processes one viewport in bounded chunks and stops when a newer viewport supersedes it. */
+  private startTilePrefetch(prefetch: {
+    generation: number;
+    signature: string;
+    requests: Array<{ worldX: number; worldY: number; rangeCells: number }>;
+  }): void {
+    this.tilePrefetchActive = true;
+    void this.processTilePrefetchChunks(prefetch)
       .catch((error) => {
-        if (generation !== this.prefetchGeneration) return;
-        if (this.lastTilePrefetchSignature === signature) {
+        if (prefetch.generation !== this.prefetchGeneration) return;
+        if (this.lastTilePrefetchSignature === prefetch.signature) {
           this.lastTilePrefetchSignature = '';
         }
-        for (const request of requests) {
-          this.pendingTilePrefetchKeys.delete(
-            this.getTileKey(request.worldX, request.worldY, request.rangeCells)
-          );
+        for (const request of prefetch.requests) {
+          const key = this.getTileKey(request.worldX, request.worldY, request.rangeCells);
+          if (this.pendingTilePrefetchKeys.get(key) === prefetch.generation) {
+            this.pendingTilePrefetchKeys.delete(key);
+          }
         }
         logger.debug(`[HyperspaceTileProvider.prefetchTileRegion] Tile prefetch failed: ${error}`);
+      })
+      .finally(() => {
+        this.tilePrefetchActive = false;
+        const queued = this.queuedTilePrefetch;
+        this.queuedTilePrefetch = null;
+        if (queued && queued.generation === this.prefetchGeneration) {
+          this.startTilePrefetch(queued);
+        }
       });
+  }
+
+  /** Generates bounded tile chunks so higher-priority survey work can run between them. */
+  private async processTilePrefetchChunks(prefetch: {
+    generation: number;
+    requests: Array<{ worldX: number; worldY: number; rangeCells: number }>;
+  }): Promise<void> {
+    for (
+      let offset = 0;
+      offset < prefetch.requests.length && prefetch.generation === this.prefetchGeneration;
+      offset += this.maxTilePrefetchBatchSize
+    ) {
+      const chunk = prefetch.requests.slice(offset, offset + this.maxTilePrefetchBatchSize);
+      const samples = await this.tileGenerationProvider.getTilesAsync(chunk);
+      if (prefetch.generation !== this.prefetchGeneration) return;
+
+      for (const sample of samples) {
+        const key = this.getTileKey(sample.worldX, sample.worldY, sample.rangeCells);
+        if (this.pendingTilePrefetchKeys.get(key) === prefetch.generation) {
+          this.pendingTilePrefetchKeys.delete(key);
+        }
+        if (!this.tileCache.has(key)) {
+          this.cacheTile(key, sample.tile);
+        }
+      }
+    }
   }
 
   /** Returns tile. */

@@ -14,6 +14,18 @@ const emptySystem: SystemMapProperties = {
   objectKind: null,
 };
 
+/** Creates a promise whose completion is controlled by the test. */
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 describe('HyperspaceSurveyService', () => {
   it('reuses a complete survey for the same player position and viewport', () => {
     let mapCalls = 0;
@@ -184,6 +196,7 @@ describe('HyperspaceSurveyService', () => {
     class AsyncProvider implements HyperspaceSurveyCellProvider {
       syncCalls = 0;
       asyncCalls = 0;
+      largestBatch = 0;
 
       /** Returns cell data. */
       getCellData(worldX: number, worldY: number): HyperspaceSurveyCellData {
@@ -213,6 +226,7 @@ describe('HyperspaceSurveyService', () => {
         requests: readonly { worldX: number; worldY: number }[]
       ): Promise<HyperspaceSurveyCellData[]> {
         this.asyncCalls++;
+        this.largestBatch = Math.max(this.largestBatch, requests.length);
         return Promise.resolve(
           requests.map(({ worldX, worldY }) => ({
             worldX,
@@ -263,6 +277,76 @@ describe('HyperspaceSurveyService', () => {
     service.getSurvey(1, 0, 5, 5);
 
     expect(provider.asyncCalls).toBeGreaterThan(0);
+    expect(provider.largestBatch).toBeLessThanOrEqual(512);
     expect(provider.syncCalls).toBe(syncAfterFirstSurvey);
+  });
+
+  it('keeps only the newest queued survey prefetch during rapid movement', async () => {
+    const firstBatch = deferred<HyperspaceSurveyCellData[]>();
+    const batches: Array<readonly { worldX: number; worldY: number }[]> = [];
+    const provider: HyperspaceSurveyCellProvider = {
+      getCellData: (worldX, worldY) => ({
+        worldX,
+        worldY,
+        system: emptySystem,
+        phenomenon: {
+          exists: false,
+          type: null,
+          name: null,
+          classification: null,
+          signal: null,
+          char: null,
+          colour: null,
+          rarity: null,
+        },
+      }),
+      getCellDataBatchAsync: (requests) => {
+        batches.push(requests);
+        if (batches.length === 1) return firstBatch.promise;
+        return Promise.resolve(
+          requests.map(({ worldX, worldY }) => ({
+            worldX,
+            worldY,
+            system: emptySystem,
+            phenomenon: {
+              exists: false,
+              type: null,
+              name: null,
+              classification: null,
+              signal: null,
+              char: null,
+              colour: null,
+              rarity: null,
+            },
+          }))
+        );
+      },
+      clearCache: () => undefined,
+    };
+    const generator = {
+      getInterstellarMediumProperties: () => ({
+        kind: 'diffuse-hydrogen',
+        label: 'diffuse neutral hydrogen',
+        summary: 'ordinary low-density interstellar hydrogen',
+        density: 1,
+        electronDensity: 0.03,
+        dustExtinction: 0,
+        radiation: 0.04,
+        gravitationalShear: 0,
+        sensorRangeMultiplier: 1,
+        driftBiasX: 0,
+        driftBiasY: 0,
+      }),
+    } as unknown as SystemDataGenerator;
+    const service = new HyperspaceSurveyService(generator, provider);
+
+    service.getSurvey(0, 0, 5, 5);
+    service.getSurvey(1000, 0, 5, 5);
+    service.getSurvey(2000, 0, 5, 5);
+    firstBatch.resolve([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(batches).toHaveLength(2);
+    expect(batches[1].every((request) => request.worldX > 1900)).toBe(true);
   });
 });
