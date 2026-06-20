@@ -8,8 +8,7 @@ interface PanoramaStar {
   azimuth: number;
   elevation: number;
   size: number;
-  alpha: number;
-  warm: boolean;
+  colour: string;
 }
 
 interface PanoramaBand {
@@ -65,22 +64,44 @@ interface RockSurfaceSample {
   elevation: number;
 }
 
-const TITLE_FRAME_INTERVAL_MS = 1000 / 24;
+interface PanoramaEffectSprite {
+  canvas: HTMLCanvasElement;
+  displayWidth: number;
+  displayHeight: number;
+  azimuth: number;
+  elevation: number;
+  angularMargin: number;
+}
+
+interface LensArtifactSprite {
+  canvas: HTMLCanvasElement;
+  position: number;
+}
+
+const TITLE_FRAME_INTERVAL_MS = 1000 / 60;
 const TITLE_SEQUENCE_SECONDS = 96;
 const HORIZONTAL_FOV = (104 * Math.PI) / 180;
+const RESIZE_DEBOUNCE_MS = 140;
+const DIFFUSE_EFFECT_CACHE_SCALE = 0.5;
 
 /** Renders a fixed panoramic title scene viewed through one continuously rotating camera. */
 export class TitleCinematicRenderer {
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly bodyCanvas: HTMLCanvasElement;
-  private readonly bodyContext: CanvasRenderingContext2D;
   private readonly stars: PanoramaStar[];
   private readonly bands: PanoramaBand[];
   private readonly nebulae: PanoramaNebula[];
   private readonly starDirection: Vec3;
   private readonly bodies: CelestialBody[];
   private readonly surfaceCache = new Map<string, CachedBodySurface>();
+  private readonly bodyImageCache = new Map<string, HTMLCanvasElement>();
+  private nebulaSprites: PanoramaEffectSprite[] = [];
+  private bandSprites: PanoramaEffectSprite[] = [];
+  private starGlowSprite: HTMLCanvasElement | null = null;
+  private lensArtifactSprites: LensArtifactSprite[] = [];
+  private exposureWarmSprite: HTMLCanvasElement | null = null;
+  private exposureCoolSprite: HTMLCanvasElement | null = null;
   private animationFrameId: number | null = null;
+  private resizeTimer: number | null = null;
   private startedAt = 0;
   private lastFrameAt = Number.NEGATIVE_INFINITY;
   private running = false;
@@ -97,19 +118,21 @@ export class TitleCinematicRenderer {
     const context = canvas.getContext('2d', { alpha: false });
     if (!context) throw new Error('Unable to create title cinematic canvas context.');
     this.ctx = context;
-    this.bodyCanvas = document.createElement('canvas');
-    const bodyContext = this.bodyCanvas.getContext('2d');
-    if (!bodyContext) throw new Error('Unable to create title body canvas context.');
-    this.bodyContext = bodyContext;
 
     const random = createSeededRandom(seed);
-    this.stars = Array.from({ length: 430 }, () => ({
-      azimuth: random() * Math.PI * 2,
-      elevation: (random() - 0.5) * 1.15,
-      size: random() > 0.9 ? 2 : 1,
-      alpha: 0.13 + random() * 0.56,
-      warm: random() > 0.84,
-    }));
+    this.stars = Array.from({ length: 430 }, () => {
+      const azimuth = random() * Math.PI * 2;
+      const elevation = (random() - 0.5) * 1.15;
+      const size = random() > 0.9 ? 2 : 1;
+      const alpha = 0.13 + random() * 0.56;
+      const warm = random() > 0.84;
+      return {
+        azimuth,
+        elevation,
+        size,
+        colour: warm ? `rgba(220,193,139,${alpha})` : `rgba(177,207,205,${alpha})`,
+      };
+    });
     this.bands = [
       { azimuth: -0.58, widthRadians: 0.34, alpha: 0.13, tilt: -0.17 },
       { azimuth: -0.19, widthRadians: 0.18, alpha: 0.075, tilt: -0.19 },
@@ -167,6 +190,10 @@ export class TitleCinematicRenderer {
     window.addEventListener('resize', this.handleResize);
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     this.resize();
+    if (this.reducedMotion) {
+      this.drawScene(8 / TITLE_SEQUENCE_SECONDS);
+      return;
+    }
     this.animationFrameId = requestAnimationFrame(this.renderFrame);
   }
 
@@ -176,26 +203,47 @@ export class TitleCinematicRenderer {
     this.running = false;
     if (this.animationFrameId !== null) cancelAnimationFrame(this.animationFrameId);
     this.animationFrameId = null;
+    if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+    this.resizeTimer = null;
     window.removeEventListener('resize', this.handleResize);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
   }
 
   /** Sizes the presentation canvas and recalculates the camera projection. */
   private resize(): void {
-    this.width = Math.max(1, window.innerWidth);
-    this.height = Math.max(1, window.innerHeight);
+    const nextWidth = Math.max(1, window.innerWidth);
+    const nextHeight = Math.max(1, window.innerHeight);
     const scale = Math.min(1.25, window.devicePixelRatio || 1);
-    this.canvas.width = Math.floor(this.width * scale);
-    this.canvas.height = Math.floor(this.height * scale);
+    const physicalWidth = Math.floor(nextWidth * scale);
+    const physicalHeight = Math.floor(nextHeight * scale);
+    const dimensionsChanged =
+      nextWidth !== this.width ||
+      nextHeight !== this.height ||
+      this.canvas.width !== physicalWidth ||
+      this.canvas.height !== physicalHeight;
+    this.width = nextWidth;
+    this.height = nextHeight;
+    this.canvas.width = physicalWidth;
+    this.canvas.height = physicalHeight;
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx.setTransform(scale, 0, 0, scale, 0, 0);
     this.pixelsPerRadian = this.width / HORIZONTAL_FOV;
+    if (dimensionsChanged || this.bodyImageCache.size === 0) {
+      this.rebuildRenderCaches();
+    }
   }
 
-  /** Handles viewport changes. */
+  /** Debounces viewport changes so live browser resizing does not repeatedly rebuild expensive caches. */
   private handleResize = (): void => {
-    this.resize();
+    if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+    this.resizeTimer = window.setTimeout(() => {
+      this.resizeTimer = null;
+      this.resize();
+      if (this.reducedMotion && this.running) {
+        this.drawScene(8 / TITLE_SEQUENCE_SECONDS);
+      }
+    }, RESIZE_DEBOUNCE_MS);
   };
 
   /** Restarts elapsed presentation time after a hidden tab becomes visible. */
@@ -210,7 +258,7 @@ export class TitleCinematicRenderer {
   private renderFrame = (now: number): void => {
     if (!this.running) return;
     if (document.visibilityState !== 'hidden' && now - this.lastFrameAt >= TITLE_FRAME_INTERVAL_MS) {
-      const elapsed = this.reducedMotion ? 8 : (now - this.startedAt) / 1000;
+      const elapsed = (now - this.startedAt) / 1000;
       this.drawScene((elapsed % TITLE_SEQUENCE_SECONDS) / TITLE_SEQUENCE_SECONDS);
       this.lastFrameAt = now;
     }
@@ -252,11 +300,16 @@ export class TitleCinematicRenderer {
   /** Projects and draws fixed stars from their panorama coordinates. */
   private drawPanoramaStars(cameraYaw: number): void {
     for (const star of this.stars) {
-      const projected = this.projectDirection(star.azimuth, star.elevation, cameraYaw);
-      if (!projected) continue;
+      const relativeAzimuth = wrapAngle(star.azimuth - cameraYaw);
+      if (Math.abs(relativeAzimuth) > HORIZONTAL_FOV / 2) continue;
+      const projected = {
+        x: this.width / 2 + relativeAzimuth * this.pixelsPerRadian,
+        y: this.height / 2 - star.elevation * this.pixelsPerRadian,
+      };
+      if (!isNearViewport(projected, this.width, this.height, 2)) continue;
       const x = Math.round(projected.x);
       const y = Math.round(projected.y);
-      this.ctx.fillStyle = star.warm ? `rgba(220,193,139,${star.alpha})` : `rgba(177,207,205,${star.alpha})`;
+      this.ctx.fillStyle = star.colour;
       this.ctx.fillRect(x, y, star.size, star.size);
     }
   }
@@ -265,59 +318,36 @@ export class TitleCinematicRenderer {
   private drawPanoramaNebulae(cameraYaw: number): void {
     this.ctx.save();
     this.ctx.globalCompositeOperation = 'lighter';
-    for (const nebula of this.nebulae) {
-      const width = Math.max(40, nebula.widthRadians * this.pixelsPerRadian);
-      const height = Math.max(18, nebula.heightRadians * this.pixelsPerRadian);
-      const relativeAzimuth = wrapAngle(nebula.azimuth - cameraYaw);
-      if (Math.abs(relativeAzimuth) > HORIZONTAL_FOV / 2 + nebula.widthRadians) continue;
-      const projectedX = projectPanoramaX(nebula.azimuth, cameraYaw, this.width, HORIZONTAL_FOV);
-      const projectedY = this.height / 2 - nebula.elevation * this.pixelsPerRadian;
-      this.ctx.save();
-      this.ctx.translate(projectedX, projectedY);
-      this.ctx.rotate(nebula.tilt);
-      this.ctx.scale(1, height / width);
-      const glow = this.ctx.createRadialGradient(0, 0, width * 0.06, 0, 0, width);
-      glow.addColorStop(0, `rgba(68,113,132,${nebula.alpha})`);
-      glow.addColorStop(0.36, `rgba(32,79,103,${nebula.alpha * 0.62})`);
-      glow.addColorStop(0.72, `rgba(18,53,74,${nebula.alpha * 0.24})`);
-      glow.addColorStop(1, 'rgba(5,20,31,0)');
-      this.ctx.fillStyle = glow;
-      this.ctx.filter = `blur(${Math.max(7, width * 0.045)}px)`;
-      this.ctx.beginPath();
-      this.ctx.arc(0, 0, width, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.restore();
+    for (const sprite of this.nebulaSprites) {
+      const projected = this.projectEffectSprite(sprite, cameraYaw);
+      if (!projected) continue;
+      this.ctx.drawImage(
+        sprite.canvas,
+        projected.x - sprite.displayWidth / 2,
+        projected.y - sprite.displayHeight / 2,
+        sprite.displayWidth,
+        sprite.displayHeight
+      );
     }
     this.ctx.restore();
-    this.ctx.filter = 'none';
   }
 
   /** Projects broad fixed amber panorama bands through the same camera transform. */
   private drawPanoramaBands(cameraYaw: number): void {
     this.ctx.save();
     this.ctx.globalCompositeOperation = 'lighter';
-    for (const band of this.bands) {
-      const relativeAzimuth = wrapAngle(band.azimuth - cameraYaw);
-      const halfVisible = HORIZONTAL_FOV / 2 + band.widthRadians;
-      if (Math.abs(relativeAzimuth) > halfVisible) continue;
-      const centerX = projectPanoramaX(band.azimuth, cameraYaw, this.width, HORIZONTAL_FOV);
-      const width = Math.max(18, band.widthRadians * this.pixelsPerRadian);
-      this.ctx.save();
-      this.ctx.translate(centerX, this.height / 2);
-      this.ctx.rotate(band.tilt);
-      const gradient = this.ctx.createLinearGradient(-width, 0, width, 0);
-      gradient.addColorStop(0, 'rgba(26,16,5,0)');
-      gradient.addColorStop(0.33, `rgba(75,46,14,${band.alpha * 0.36})`);
-      gradient.addColorStop(0.5, `rgba(164,116,48,${band.alpha})`);
-      gradient.addColorStop(0.67, `rgba(75,46,14,${band.alpha * 0.34})`);
-      gradient.addColorStop(1, 'rgba(26,16,5,0)');
-      this.ctx.fillStyle = gradient;
-      this.ctx.filter = `blur(${Math.max(10, width * 0.1)}px)`;
-      this.ctx.fillRect(-width, -this.height, width * 2, this.height * 2);
-      this.ctx.restore();
+    for (const sprite of this.bandSprites) {
+      const projected = this.projectEffectSprite(sprite, cameraYaw);
+      if (!projected) continue;
+      this.ctx.drawImage(
+        sprite.canvas,
+        projected.x - sprite.displayWidth / 2,
+        projected.y - sprite.displayHeight / 2,
+        sprite.displayWidth,
+        sprite.displayHeight
+      );
     }
     this.ctx.restore();
-    this.ctx.filter = 'none';
   }
 
   /** Projects every fixed celestial body and rejects objects outside the camera frustum. */
@@ -344,25 +374,41 @@ export class TitleCinematicRenderer {
   private drawBody(projected: ProjectedBody): void {
     const { body, x, y, radius } = projected;
     const sampleDiameter = Math.min(420, Math.max(64, Math.round(radius * 0.72)));
-    if (this.bodyCanvas.width !== sampleDiameter || this.bodyCanvas.height !== sampleDiameter) {
-      this.bodyCanvas.width = sampleDiameter;
-      this.bodyCanvas.height = sampleDiameter;
-    }
-    const image = this.bodyContext.createImageData(sampleDiameter, sampleDiameter);
+    const image = this.getCachedBodyImage(body, sampleDiameter);
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+    this.ctx.clip();
+    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.drawImage(image, x - radius, y - radius, radius * 2, radius * 2);
+    this.ctx.restore();
+  }
+
+  /** Returns a fully lit body bitmap so per-pixel shading runs only once per viewport size. */
+  private getCachedBodyImage(body: CelestialBody, sampleDiameter: number): HTMLCanvasElement {
+    const key = `${body.textureSeed}:${sampleDiameter}`;
+    const cached = this.bodyImageCache.get(key);
+    if (cached) return cached;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = sampleDiameter;
+    canvas.height = sampleDiameter;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Unable to create cached title body context.');
+    const image = context.createImageData(sampleDiameter, sampleDiameter);
     const pixels = image.data;
     const surface = this.getCachedBodySurface(body, sampleDiameter);
-    const lightDirection = this.starDirection;
 
     for (let pixel = 0; pixel < sampleDiameter * sampleDiameter; pixel++) {
       const coverage = surface.coverage[pixel];
       if (coverage === 0) continue;
       const normalIndex = pixel * 3;
-      const normal = {
-        x: surface.normals[normalIndex],
-        y: surface.normals[normalIndex + 1],
-        z: surface.normals[normalIndex + 2],
-      };
-      const diffuse = Math.max(0, dot(normal, lightDirection));
+      const diffuse = Math.max(
+        0,
+        surface.normals[normalIndex] * this.starDirection.x +
+          surface.normals[normalIndex + 1] * this.starDirection.y +
+          surface.normals[normalIndex + 2] * this.starDirection.z
+      );
       const illumination = 0.008 + Math.pow(diffuse, 0.82) * 0.992;
       const colourIndex = pixel * 3;
       const outputIndex = pixel * 4;
@@ -372,14 +418,9 @@ export class TitleCinematicRenderer {
       pixels[outputIndex + 3] = coverage;
     }
 
-    this.bodyContext.putImageData(image, 0, 0);
-    this.ctx.save();
-    this.ctx.beginPath();
-    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-    this.ctx.clip();
-    this.ctx.imageSmoothingEnabled = false;
-    this.ctx.drawImage(this.bodyCanvas, x - radius, y - radius, radius * 2, radius * 2);
-    this.ctx.restore();
+    context.putImageData(image, 0, 0);
+    this.bodyImageCache.set(key, canvas);
+    return canvas;
   }
 
   /** Returns cached world-oriented normals, coverage, and albedo for one body resolution. */
@@ -437,57 +478,215 @@ export class TitleCinematicRenderer {
     return surface;
   }
 
-  /** Draws the warm stellar source before bodies so they can occult it naturally. */
-  private drawStarGlow(x: number, y: number): void {
+  /** Rebuilds all resolution-dependent sprites once after a settled viewport change. */
+  private rebuildRenderCaches(): void {
+    this.surfaceCache.clear();
+    this.bodyImageCache.clear();
+    this.nebulaSprites = this.nebulae.map((nebula) => this.createNebulaSprite(nebula));
+    this.bandSprites = this.bands.map((band) => this.createBandSprite(band));
+    this.starGlowSprite = this.createStarGlowSprite();
+    this.lensArtifactSprites = [
+      { position: 0.42, canvas: this.createLensArtifactSprite(1.7, 0.05) },
+      { position: 0.78, canvas: this.createLensArtifactSprite(3.1, 0.03) },
+    ];
+    [this.exposureWarmSprite, this.exposureCoolSprite] = this.createExposureSprites();
+
+    // Prewarm every fixed body so none can cause a generation hitch when entering the viewport.
+    for (const body of this.bodies) {
+      const radius = body.angularRadius * this.pixelsPerRadian;
+      const sampleDiameter = Math.min(420, Math.max(64, Math.round(radius * 0.72)));
+      this.getCachedBodyImage(body, sampleDiameter);
+    }
+  }
+
+  /** Creates one pre-blurred blue nebula sprite at the current panorama scale. */
+  private createNebulaSprite(nebula: PanoramaNebula): PanoramaEffectSprite {
+    const width = Math.max(40, nebula.widthRadians * this.pixelsPerRadian);
+    const height = Math.max(18, nebula.heightRadians * this.pixelsPerRadian);
+    const blur = Math.max(7, width * 0.045);
+    const rectWidth = width * 2;
+    const rectHeight = height * 2;
+    const cosine = Math.abs(Math.cos(nebula.tilt));
+    const sine = Math.abs(Math.sin(nebula.tilt));
+    const displayWidth = rectWidth * cosine + rectHeight * sine + blur * 6;
+    const displayHeight = rectWidth * sine + rectHeight * cosine + blur * 6;
+    const canvas = createCanvas(
+      Math.ceil(displayWidth * DIFFUSE_EFFECT_CACHE_SCALE),
+      Math.ceil(displayHeight * DIFFUSE_EFFECT_CACHE_SCALE)
+    );
+    const context = getCanvasContext(canvas, 'cached title nebula');
+    context.scale(DIFFUSE_EFFECT_CACHE_SCALE, DIFFUSE_EFFECT_CACHE_SCALE);
+    context.translate(displayWidth / 2, displayHeight / 2);
+    context.rotate(nebula.tilt);
+    context.scale(1, height / width);
+    const glow = context.createRadialGradient(0, 0, width * 0.06, 0, 0, width);
+    glow.addColorStop(0, `rgba(68,113,132,${nebula.alpha})`);
+    glow.addColorStop(0.36, `rgba(32,79,103,${nebula.alpha * 0.62})`);
+    glow.addColorStop(0.72, `rgba(18,53,74,${nebula.alpha * 0.24})`);
+    glow.addColorStop(1, 'rgba(5,20,31,0)');
+    context.fillStyle = glow;
+    context.filter = `blur(${blur * DIFFUSE_EFFECT_CACHE_SCALE}px)`;
+    context.beginPath();
+    context.arc(0, 0, width, 0, Math.PI * 2);
+    context.fill();
+    return {
+      canvas,
+      displayWidth,
+      displayHeight,
+      azimuth: nebula.azimuth,
+      elevation: nebula.elevation,
+      angularMargin: displayWidth / (2 * this.pixelsPerRadian),
+    };
+  }
+
+  /** Creates one pre-blurred amber optical band covering the current viewport height. */
+  private createBandSprite(band: PanoramaBand): PanoramaEffectSprite {
+    const width = Math.max(18, band.widthRadians * this.pixelsPerRadian);
+    const blur = Math.max(10, width * 0.1);
+    const rectWidth = width * 2;
+    const rectHeight = this.height * 2;
+    const cosine = Math.abs(Math.cos(band.tilt));
+    const sine = Math.abs(Math.sin(band.tilt));
+    const displayWidth = rectWidth * cosine + rectHeight * sine + blur * 6;
+    const displayHeight = rectWidth * sine + rectHeight * cosine + blur * 6;
+    const canvas = createCanvas(
+      Math.ceil(displayWidth * DIFFUSE_EFFECT_CACHE_SCALE),
+      Math.ceil(displayHeight * DIFFUSE_EFFECT_CACHE_SCALE)
+    );
+    const context = getCanvasContext(canvas, 'cached title optical band');
+    context.scale(DIFFUSE_EFFECT_CACHE_SCALE, DIFFUSE_EFFECT_CACHE_SCALE);
+    context.translate(displayWidth / 2, displayHeight / 2);
+    context.rotate(band.tilt);
+    const gradient = context.createLinearGradient(-width, 0, width, 0);
+    gradient.addColorStop(0, 'rgba(26,16,5,0)');
+    gradient.addColorStop(0.33, `rgba(75,46,14,${band.alpha * 0.36})`);
+    gradient.addColorStop(0.5, `rgba(164,116,48,${band.alpha})`);
+    gradient.addColorStop(0.67, `rgba(75,46,14,${band.alpha * 0.34})`);
+    gradient.addColorStop(1, 'rgba(26,16,5,0)');
+    context.fillStyle = gradient;
+    context.filter = `blur(${blur * DIFFUSE_EFFECT_CACHE_SCALE}px)`;
+    context.fillRect(-width, -this.height, width * 2, this.height * 2);
+    return {
+      canvas,
+      displayWidth,
+      displayHeight,
+      azimuth: band.azimuth,
+      elevation: 0,
+      angularMargin: displayWidth / (2 * this.pixelsPerRadian),
+    };
+  }
+
+  /** Creates the fixed warm stellar core and haze bitmap. */
+  private createStarGlowSprite(): HTMLCanvasElement {
     const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
     const glowRadius = coreRadius * 13;
-    const glow = this.ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+    const canvas = createCanvas(Math.ceil(glowRadius * 2), Math.ceil(glowRadius * 2));
+    const context = getCanvasContext(canvas, 'cached title star glow');
+    const center = canvas.width / 2;
+    const glow = context.createRadialGradient(center, center, 0, center, center, glowRadius);
     glow.addColorStop(0, 'rgba(255,250,232,0.98)');
     glow.addColorStop(0.08, 'rgba(255,232,177,0.82)');
     glow.addColorStop(0.25, 'rgba(225,167,78,0.24)');
     glow.addColorStop(1, 'rgba(90,50,10,0)');
+    context.fillStyle = glow;
+    context.beginPath();
+    context.arc(center, center, glowRadius, 0, Math.PI * 2);
+    context.fill();
+    return canvas;
+  }
+
+  /** Creates one cached radial lens artifact bitmap. */
+  private createLensArtifactSprite(radiusMultiplier: number, alpha: number): HTMLCanvasElement {
+    const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
+    const radius = coreRadius * radiusMultiplier;
+    const canvas = createCanvas(Math.ceil(radius * 2), Math.ceil(radius * 2));
+    const context = getCanvasContext(canvas, 'cached title lens artifact');
+    const center = canvas.width / 2;
+    const flare = context.createRadialGradient(center, center, 0, center, center, radius);
+    flare.addColorStop(0, `rgba(218,168,89,${alpha})`);
+    flare.addColorStop(1, 'rgba(80,45,12,0)');
+    context.fillStyle = flare;
+    context.beginPath();
+    context.arc(center, center, radius, 0, Math.PI * 2);
+    context.fill();
+    return canvas;
+  }
+
+  /** Creates low-resolution full-screen exposure gradients for cheap per-frame compositing. */
+  private createExposureSprites(): [HTMLCanvasElement, HTMLCanvasElement] {
+    const scale = 0.25;
+    const width = Math.max(1, Math.ceil(this.width * scale));
+    const height = Math.max(1, Math.ceil(this.height * scale));
+    const warm = createCanvas(width, height);
+    const warmContext = getCanvasContext(warm, 'cached title warm exposure');
+    const warmGradient = warmContext.createLinearGradient(0, 0, width, height);
+    warmGradient.addColorStop(0, 'rgba(34,24,12,0.016)');
+    warmGradient.addColorStop(0.46, 'rgba(0,0,0,0)');
+    warmGradient.addColorStop(1, 'rgba(0,0,0,0)');
+    warmContext.fillStyle = warmGradient;
+    warmContext.fillRect(0, 0, width, height);
+
+    const cool = createCanvas(width, height);
+    const coolContext = getCanvasContext(cool, 'cached title cool exposure');
+    const coolGradient = coolContext.createLinearGradient(0, 0, width, height);
+    coolGradient.addColorStop(0, 'rgba(0,0,0,0)');
+    coolGradient.addColorStop(0.46, 'rgba(0,0,0,0)');
+    coolGradient.addColorStop(1, 'rgba(0,8,10,1)');
+    coolContext.fillStyle = coolGradient;
+    coolContext.fillRect(0, 0, width, height);
+    return [warm, cool];
+  }
+
+  /** Projects one cached panorama effect without regenerating its gradient or blur. */
+  private projectEffectSprite(sprite: PanoramaEffectSprite, cameraYaw: number): ProjectedPoint | null {
+    const relativeAzimuth = wrapAngle(sprite.azimuth - cameraYaw);
+    if (!isPanoramaDiscVisible(relativeAzimuth, sprite.angularMargin, HORIZONTAL_FOV)) return null;
+    return {
+      x: this.width / 2 + relativeAzimuth * this.pixelsPerRadian,
+      y: this.height / 2 - sprite.elevation * this.pixelsPerRadian,
+    };
+  }
+
+  /** Draws the cached warm stellar source before bodies so they can occult it naturally. */
+  private drawStarGlow(x: number, y: number): void {
+    if (!this.starGlowSprite) return;
     this.ctx.save();
     // Source-over keeps this atmospheric haze beneath the later additive foreground beams.
     this.ctx.globalCompositeOperation = 'source-over';
-    this.ctx.fillStyle = glow;
-    this.ctx.beginPath();
-    this.ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
-    this.ctx.fill();
+    this.ctx.drawImage(
+      this.starGlowSprite,
+      x - this.starGlowSprite.width / 2,
+      y - this.starGlowSprite.height / 2
+    );
     this.ctx.restore();
   }
 
   /** Draws restrained optical artifacts only while the stellar source is unobstructed. */
   private drawLensArtifacts(x: number, y: number): void {
-    const coreRadius = Math.max(3, Math.min(this.width, this.height) * 0.008);
     const axisX = this.width / 2 - x;
     const axisY = this.height / 2 - y;
     this.ctx.save();
     this.ctx.globalCompositeOperation = 'lighter';
-    for (const artifact of [
-      { position: 0.42, radius: coreRadius * 1.7, alpha: 0.05 },
-      { position: 0.78, radius: coreRadius * 3.1, alpha: 0.03 },
-    ]) {
+    for (const artifact of this.lensArtifactSprites) {
       const flareX = x + axisX * artifact.position;
       const flareY = y + axisY * artifact.position;
-      const flare = this.ctx.createRadialGradient(flareX, flareY, 0, flareX, flareY, artifact.radius);
-      flare.addColorStop(0, `rgba(218,168,89,${artifact.alpha})`);
-      flare.addColorStop(1, 'rgba(80,45,12,0)');
-      this.ctx.fillStyle = flare;
-      this.ctx.beginPath();
-      this.ctx.arc(flareX, flareY, artifact.radius, 0, Math.PI * 2);
-      this.ctx.fill();
+      this.ctx.drawImage(
+        artifact.canvas,
+        flareX - artifact.canvas.width / 2,
+        flareY - artifact.canvas.height / 2
+      );
     }
     this.ctx.restore();
   }
 
   /** Adds a very faint periodic exposure veil without moving scene objects. */
   private drawExposureVeil(cameraYaw: number): void {
-    const gradient = this.ctx.createLinearGradient(0, 0, this.width, this.height);
-    gradient.addColorStop(0, 'rgba(34,24,12,0.016)');
-    gradient.addColorStop(0.46, 'rgba(0,0,0,0)');
-    gradient.addColorStop(1, `rgba(0,8,10,${0.023 + Math.sin(cameraYaw) * 0.006})`);
-    this.ctx.fillStyle = gradient;
-    this.ctx.fillRect(0, 0, this.width, this.height);
+    if (!this.exposureWarmSprite || !this.exposureCoolSprite) return;
+    this.ctx.drawImage(this.exposureWarmSprite, 0, 0, this.width, this.height);
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.023 + Math.sin(cameraYaw) * 0.006;
+    this.ctx.drawImage(this.exposureCoolSprite, 0, 0, this.width, this.height);
+    this.ctx.restore();
   }
 
   /** Projects one world-space point through the rotating camera. */
@@ -505,12 +704,21 @@ export class TitleCinematicRenderer {
       y: this.height / 2 - elevation * this.pixelsPerRadian,
     };
   }
+}
 
-  /** Projects a direction on the infinite panorama through the rotating camera. */
-  private projectDirection(azimuth: number, elevation: number, cameraYaw: number): ProjectedPoint | null {
-    const projected = this.projectWorldDirection(sphericalDirection(azimuth, elevation), cameraYaw);
-    return projected && isNearViewport(projected, this.width, this.height, 2) ? projected : null;
-  }
+/** Creates an offscreen canvas with valid positive integer dimensions. */
+function createCanvas(width: number, height: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(width));
+  canvas.height = Math.max(1, Math.ceil(height));
+  return canvas;
+}
+
+/** Returns a required 2D context for one cached title-rendering canvas. */
+function getCanvasContext(canvas: HTMLCanvasElement, purpose: string): CanvasRenderingContext2D {
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error(`Unable to create ${purpose} context.`);
+  return context;
 }
 
 /** Creates a fixed celestial body from spherical world coordinates. */
