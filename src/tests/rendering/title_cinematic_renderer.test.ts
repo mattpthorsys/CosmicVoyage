@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculatePanoramaStripSourceStart,
   calculateIlluminatedFraction,
   calculateSunwardScreenX,
   isPanoramaDiscVisible,
@@ -63,5 +64,17 @@ describe('title cinematic panorama projection', () => {
 
     expect(isPanoramaDiscVisible(fov / 2 + 0.08, 0.1, fov)).toBe(true);
     expect(isPanoramaDiscVisible(fov / 2 + 0.12, 0.1, fov)).toBe(false);
+  });
+
+  it('wraps a cached panorama strip continuously through a complete camera rotation', () => {
+    const stripWidth = 4096;
+    const sourceSpan = 1200;
+
+    expect(calculatePanoramaStripSourceStart(0, sourceSpan, stripWidth)).toBe(
+      calculatePanoramaStripSourceStart(Math.PI * 2, sourceSpan, stripWidth)
+    );
+    expect(calculatePanoramaStripSourceStart(Math.PI, sourceSpan, stripWidth)).toBeCloseTo(
+      stripWidth / 2 - sourceSpan / 2
+    );
   });
 });

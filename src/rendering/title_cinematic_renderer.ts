@@ -94,6 +94,7 @@ export class TitleCinematicRenderer {
   private readonly bodies: CelestialBody[];
   private readonly surfaceCache = new Map<string, CachedBodySurface>();
   private readonly bodyImageCache = new Map<string, HTMLCanvasElement>();
+  private starPanoramaCanvas: HTMLCanvasElement | null = null;
   private nebulaSprites: PanoramaEffectSprite[] = [];
   private bandSprites: PanoramaEffectSprite[] = [];
   private starGlowSprite: HTMLCanvasElement | null = null;
@@ -299,18 +300,32 @@ export class TitleCinematicRenderer {
 
   /** Projects and draws fixed stars from their panorama coordinates. */
   private drawPanoramaStars(cameraYaw: number): void {
-    for (const star of this.stars) {
-      const relativeAzimuth = wrapAngle(star.azimuth - cameraYaw);
-      if (Math.abs(relativeAzimuth) > HORIZONTAL_FOV / 2) continue;
-      const projected = {
-        x: this.width / 2 + relativeAzimuth * this.pixelsPerRadian,
-        y: this.height / 2 - star.elevation * this.pixelsPerRadian,
-      };
-      if (!isNearViewport(projected, this.width, this.height, 2)) continue;
-      const x = Math.round(projected.x);
-      const y = Math.round(projected.y);
-      this.ctx.fillStyle = star.colour;
-      this.ctx.fillRect(x, y, star.size, star.size);
+    if (!this.starPanoramaCanvas) return;
+    const stripWidth = this.starPanoramaCanvas.width;
+    const sourceSpan = (HORIZONTAL_FOV / (Math.PI * 2)) * stripWidth;
+    const sourceStart = calculatePanoramaStripSourceStart(cameraYaw, sourceSpan, stripWidth);
+    let sourceX = sourceStart;
+    let destinationX = 0;
+    let remainingSource = sourceSpan;
+
+    // Copy at most two wrapped strip sections; no stars are projected or styled during normal frames.
+    while (remainingSource > 0) {
+      const sourceWidth = Math.min(remainingSource, stripWidth - sourceX);
+      const destinationWidth = (sourceWidth / sourceSpan) * this.width;
+      this.ctx.drawImage(
+        this.starPanoramaCanvas,
+        sourceX,
+        0,
+        sourceWidth,
+        this.height,
+        destinationX,
+        0,
+        destinationWidth,
+        this.height
+      );
+      destinationX += destinationWidth;
+      remainingSource -= sourceWidth;
+      sourceX = 0;
     }
   }
 
@@ -482,6 +497,7 @@ export class TitleCinematicRenderer {
   private rebuildRenderCaches(): void {
     this.surfaceCache.clear();
     this.bodyImageCache.clear();
+    this.starPanoramaCanvas = this.createStarPanorama();
     this.nebulaSprites = this.nebulae.map((nebula) => this.createNebulaSprite(nebula));
     this.bandSprites = this.bands.map((band) => this.createBandSprite(band));
     this.starGlowSprite = this.createStarGlowSprite();
@@ -497,6 +513,24 @@ export class TitleCinematicRenderer {
       const sampleDiameter = Math.min(420, Math.max(64, Math.round(radius * 0.72)));
       this.getCachedBodyImage(body, sampleDiameter);
     }
+  }
+
+  /** Bakes every fixed star into one cylindrical strip reused by all animation frames. */
+  private createStarPanorama(): HTMLCanvasElement {
+    const stripWidth = Math.max(1, Math.round(Math.PI * 2 * this.pixelsPerRadian));
+    const canvas = createCanvas(stripWidth, this.height);
+    const context = getCanvasContext(canvas, 'cached title star panorama');
+    for (const star of this.stars) {
+      const x = Math.round((positiveModulo(star.azimuth, Math.PI * 2) / (Math.PI * 2)) * stripWidth);
+      const y = Math.round(this.height / 2 - star.elevation * this.pixelsPerRadian);
+      if (y + star.size < 0 || y > this.height) continue;
+      context.fillStyle = star.colour;
+      context.fillRect(x, y, star.size, star.size);
+      if (x + star.size > stripWidth) {
+        context.fillRect(x - stripWidth, y, star.size, star.size);
+      }
+    }
+    return canvas;
   }
 
   /** Creates one pre-blurred blue nebula sprite at the current panorama scale. */
@@ -782,18 +816,54 @@ export function calculateSunwardScreenX(bodyDirection: Vec3, starDirection: Vec3
 function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
   const latitude = Math.asin(Math.max(-1, Math.min(1, normal.y)));
   const longitude = Math.atan2(normal.x, normal.z);
-  const turbulence =
-    Math.sin(latitude * 25 + Math.sin(longitude * 3 + body.textureSeed) * 2.2) * 0.5 +
-    Math.sin(latitude * 53 - longitude * 5) * 0.23 +
-    Math.sin(latitude * 13 + longitude * 2) * 0.17;
-  const band = Math.sin(latitude * 19 + turbulence * 1.9);
-  const pale = Math.max(0, band) * 0.52;
-  const dark = Math.max(0, -band) * 0.43;
+  const broadBand = Math.sin(latitude * 20);
+  const narrowBand = Math.sin(latitude * 47) * 0.23;
+  const filament = Math.sin(latitude * 103) * 0.07;
+  const longitudinalTexture =
+    Math.sin(longitude * 7 + body.textureSeed) * 0.035 +
+    Math.sin(longitude * 17 - body.textureSeed * 0.7) * 0.018;
+  const northTemperateBelt = gaussian(latitude, 0.28, 0.09);
+  const southEquatorialBelt = gaussian(latitude, -0.13, 0.075);
+  const polarDarkening = Math.pow(Math.abs(normal.y), 2.6) * 0.19;
+  const pale = Math.max(0, broadBand + narrowBand + filament) * 0.46;
+  const dark =
+    Math.max(0, -(broadBand + narrowBand * 0.7)) * 0.39 +
+    northTemperateBelt * 0.11 +
+    southEquatorialBelt * 0.16 +
+    polarDarkening;
+  const greatOval = jovianStorm(longitude, latitude, -0.92, -0.31, 0.3, 0.075);
+  const lesserOval = jovianStorm(longitude, latitude, 1.64, 0.21, 0.19, 0.052);
+  const stormLift = greatOval * 0.72 + lesserOval * 0.34;
+  const stormCore = greatOval * gaussian(latitude, -0.31, 0.028);
   return [
-    body.colour[0] + pale * 70 - dark * 43,
-    body.colour[1] + pale * 58 - dark * 36,
-    body.colour[2] + pale * 43 - dark * 28,
+    body.colour[0] + pale * 68 - dark * 48 + longitudinalTexture * 72 + stormLift * 54,
+    body.colour[1] + pale * 56 - dark * 42 + longitudinalTexture * 48 + stormLift * 25,
+    body.colour[2] + pale * 39 - dark * 31 + longitudinalTexture * 29 + stormLift * 10 - stormCore * 12,
   ];
+}
+
+/** Returns a normalized Gaussian profile around one scalar centre. */
+function gaussian(value: number, center: number, width: number): number {
+  const normalized = (value - center) / Math.max(0.0001, width);
+  return Math.exp(-normalized * normalized);
+}
+
+/** Returns one horizontally elongated deterministic Jovian storm profile. */
+function jovianStorm(
+  longitude: number,
+  latitude: number,
+  centerLongitude: number,
+  centerLatitude: number,
+  longitudeRadius: number,
+  latitudeRadius: number
+): number {
+  const longitudeDistance = wrapAngle(longitude - centerLongitude) / longitudeRadius;
+  const latitudeDistance = (latitude - centerLatitude) / latitudeRadius;
+  const distanceSq = longitudeDistance * longitudeDistance + latitudeDistance * latitudeDistance;
+  if (distanceSq >= 1) return 0;
+  const edge = 1 - distanceSq;
+  const internalShear = 0.78 + Math.sin(longitudeDistance * Math.PI * 3) * 0.12;
+  return edge * edge * internalShear;
 }
 
 /** Samples fixed rocky colour and radial elevation from a world-space surface normal. */
@@ -955,6 +1025,21 @@ function createSeededRandom(seed: string): () => number {
 /** Wraps one angle into the interval -PI through PI. */
 function wrapAngle(value: number): number {
   return Math.atan2(Math.sin(value), Math.cos(value));
+}
+
+/** Wraps a scalar into a positive zero-to-modulus interval. */
+function positiveModulo(value: number, modulus: number): number {
+  return ((value % modulus) + modulus) % modulus;
+}
+
+/** Returns the wrapped source offset for a camera-centred cylindrical panorama slice. */
+export function calculatePanoramaStripSourceStart(
+  cameraYaw: number,
+  sourceSpan: number,
+  stripWidth: number
+): number {
+  const cameraCenter = (positiveModulo(cameraYaw, Math.PI * 2) / (Math.PI * 2)) * stripWidth;
+  return positiveModulo(cameraCenter - sourceSpan / 2, stripWidth);
 }
 
 /** Projects fixed panorama azimuth with constant pixels-per-radian camera motion. */
