@@ -36,6 +36,10 @@ documents relevant to the task.
 9. Preserve the sparse CGA terminal visual identity and scientific tone.
 10. Do not silently change generated-world outputs. Treat those changes as
     migrations and update deterministic fingerprints intentionally.
+11. Treat darkness, empty space, restrained motion, and gradual revelation as
+    deliberate parts of the game's mood rather than gaps to fill.
+12. Astronomical credibility is part of the visual style. Calculate projection,
+    phases, lighting, occultation, and motion instead of arranging them by eye.
 
 ## Source Of Truth
 
