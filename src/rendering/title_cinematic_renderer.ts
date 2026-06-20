@@ -60,6 +60,11 @@ interface CachedBodySurface {
   coverage: Uint8ClampedArray;
 }
 
+interface RockSurfaceSample {
+  colour: [number, number, number];
+  elevation: number;
+}
+
 const TITLE_FRAME_INTERVAL_MS = 1000 / 24;
 const TITLE_SEQUENCE_SECONDS = 96;
 const HORIZONTAL_FOV = (104 * Math.PI) / 180;
@@ -386,6 +391,7 @@ export class TitleCinematicRenderer {
     const albedo = new Uint8ClampedArray(sampleDiameter * sampleDiameter * 3);
     const normals = new Float32Array(sampleDiameter * sampleDiameter * 3);
     const coverage = new Uint8ClampedArray(sampleDiameter * sampleDiameter);
+    const elevations = body.kind === 'rock' ? new Float32Array(sampleDiameter * sampleDiameter) : null;
     const viewDirection = scale(body.direction, -1);
     const worldUp: Vec3 = { x: 0, y: 1, z: 0 };
     const surfaceRight = normalize(cross(viewDirection, worldUp));
@@ -401,18 +407,29 @@ export class TitleCinematicRenderer {
         const normal = normalize(
           add(add(scale(surfaceRight, nx), scale(surfaceUp, -ny)), scale(viewDirection, nz))
         );
-        const texture =
-          body.kind === 'gas' ? sampleGasTexture(normal, body) : sampleRockTexture(normal, body);
         const pixel = py * sampleDiameter + px;
         const index = pixel * 3;
         normals[index] = normal.x;
         normals[index + 1] = normal.y;
         normals[index + 2] = normal.z;
-        albedo[index] = clampByte(texture[0]);
-        albedo[index + 1] = clampByte(texture[1]);
-        albedo[index + 2] = clampByte(texture[2]);
+        if (body.kind === 'gas') {
+          const colour = sampleGasTexture(normal, body);
+          albedo[index] = clampByte(colour[0]);
+          albedo[index + 1] = clampByte(colour[1]);
+          albedo[index + 2] = clampByte(colour[2]);
+        } else {
+          const rock = sampleRockSurface(normal, body);
+          albedo[index] = clampByte(rock.colour[0]);
+          albedo[index + 1] = clampByte(rock.colour[1]);
+          albedo[index + 2] = clampByte(rock.colour[2]);
+          elevations![pixel] = rock.elevation;
+        }
         coverage[pixel] = sphereCoverage(radiusSq, sampleDiameter) * 255;
       }
+    }
+
+    if (elevations) {
+      applyTerrainNormals(normals, elevations, coverage, sampleDiameter, surfaceRight, surfaceUp);
     }
 
     const surface = { albedo, normals, coverage };
@@ -571,33 +588,86 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
   ];
 }
 
-/** Samples fixed rocky grain from a world-space surface normal. */
-function sampleRockTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
+/** Samples fixed rocky colour and radial elevation from a world-space surface normal. */
+function sampleRockSurface(normal: Vec3, body: CelestialBody): RockSurfaceSample {
   const broadTerrain = fractalRockNoise(normal, body.textureSeed);
   const maria = Math.max(0, valueNoise3d(normal, 3.2, body.textureSeed + 41) - 0.58) * -0.42;
-  let relief = broadTerrain * 0.24 + maria + (valueNoise3d(normal, 34, body.textureSeed + 113) - 0.5) * 0.12;
+  const fineTerrain = valueNoise3d(normal, 34, body.textureSeed + 113) - 0.5;
+  let albedoRelief = broadTerrain * 0.24 + maria + fineTerrain * 0.12;
+  let elevation = broadTerrain * 0.018 + fineTerrain * 0.003;
   for (const crater of body.craters) {
     const angularDistance = Math.acos(Math.max(-1, Math.min(1, dot(normal, crater.center))));
     const normalizedDistance = angularDistance / crater.angularRadius;
     if (normalizedDistance >= 1.35) continue;
     if (normalizedDistance < 0.82) {
-      relief -= crater.depth * (1 - normalizedDistance / 0.82);
+      const bowl = 1 - normalizedDistance / 0.82;
+      albedoRelief -= crater.depth * bowl;
+      elevation -= crater.depth * 0.075 * bowl;
     } else {
       const rimDistance = Math.abs(normalizedDistance - 1);
-      relief += crater.depth * 0.72 * Math.max(0, 1 - rimDistance / 0.35);
+      const rim = Math.max(0, 1 - rimDistance / 0.35);
+      albedoRelief += crater.depth * 0.72 * rim;
+      elevation += crater.depth * 0.045 * rim;
       if (normalizedDistance < 1.28) {
         const ray = Math.abs(
           Math.sin(Math.atan2(normal.y - crater.center.y, normal.x - crater.center.x) * 9)
         );
-        relief += crater.depth * 0.08 * ray * (1 - (normalizedDistance - 0.82) / 0.46);
+        albedoRelief += crater.depth * 0.08 * ray * (1 - (normalizedDistance - 0.82) / 0.46);
       }
     }
   }
-  return [
-    body.colour[0] * (1 + relief),
-    body.colour[1] * (1 + relief * 0.92),
-    body.colour[2] * (1 + relief * 0.8),
-  ];
+  return {
+    colour: [
+      body.colour[0] * (1 + albedoRelief),
+      body.colour[1] * (1 + albedoRelief * 0.92),
+      body.colour[2] * (1 + albedoRelief * 0.8),
+    ],
+    elevation,
+  };
+}
+
+/** Perturbs cached spherical normals from neighbouring lunar elevation samples. */
+function applyTerrainNormals(
+  normals: Float32Array,
+  elevations: Float32Array,
+  coverage: Uint8ClampedArray,
+  diameter: number,
+  surfaceRight: Vec3,
+  surfaceUp: Vec3
+): void {
+  const coordinateStep = 2 / (diameter - 1);
+  for (let py = 1; py < diameter - 1; py++) {
+    for (let px = 1; px < diameter - 1; px++) {
+      const pixel = py * diameter + px;
+      const left = pixel - 1;
+      const right = pixel + 1;
+      const above = pixel - diameter;
+      const below = pixel + diameter;
+      if (
+        coverage[pixel] === 0 ||
+        coverage[left] === 0 ||
+        coverage[right] === 0 ||
+        coverage[above] === 0 ||
+        coverage[below] === 0
+      ) {
+        continue;
+      }
+      const slopeX = (elevations[right] - elevations[left]) / (2 * coordinateStep);
+      const slopeY = (elevations[below] - elevations[above]) / (2 * coordinateStep);
+      const index = pixel * 3;
+      const sphericalNormal = {
+        x: normals[index],
+        y: normals[index + 1],
+        z: normals[index + 2],
+      };
+      const terrainNormal = normalize(
+        add(sphericalNormal, add(scale(surfaceRight, -slopeX), scale(surfaceUp, slopeY)))
+      );
+      normals[index] = terrainNormal.x;
+      normals[index + 1] = terrainNormal.y;
+      normals[index + 2] = terrainNormal.z;
+    }
+  }
 }
 
 /** Builds direction-neutral multi-scale rocky terrain without latitude or diagonal sine bands. */
