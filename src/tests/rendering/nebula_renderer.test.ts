@@ -216,4 +216,21 @@ describe('NebulaRenderer', () => {
     expect(cachedPass).toEqual(firstPass);
     expect(afterClear).toEqual(firstPass);
   });
+
+  it('keeps world colours stable when coordinates are sampled in a different viewport order', () => {
+    const coordinates = [
+      [-140.25, 62.75],
+      [18.5, -94.125],
+      [77.875, 131.25],
+      [-3.25, -8.5],
+      [206.625, 44.375],
+    ] as const;
+    const forward = new NebulaColourSampler('resize-order-nebula');
+    const reverse = new NebulaColourSampler('resize-order-nebula');
+    const expected = new Map(coordinates.map(([x, y]) => [`${x},${y}`, forward.sample(x, y)] as const));
+
+    for (const [x, y] of [...coordinates].reverse()) {
+      expect(reverse.sample(x, y)).toBe(expected.get(`${x},${y}`));
+    }
+  });
 });

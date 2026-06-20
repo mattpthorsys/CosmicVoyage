@@ -41,7 +41,8 @@ export class NebulaColourSampler {
 
   /** Initializes NebulaColourSampler. */
   constructor(seed = CONFIG.SEED + '_nebula') {
-    this.nebulaNoiseGenerator = new PerlinNoise(seed);
+    // Nebula gradients are coordinate-derived so resize and worker request order cannot change space.
+    this.nebulaNoiseGenerator = new PerlinNoise(seed, { coordinateHashedGradients: true });
     this.palettesRgb = {
       emission: NEBULA_PALETTES.emission.map(hexToRgb),
       reflection: NEBULA_PALETTES.reflection.map(hexToRgb),

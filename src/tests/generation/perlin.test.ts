@@ -19,4 +19,22 @@ describe('PerlinNoise', () => {
     expect(cachedPass).toEqual(firstPass);
     expect(afterClear).toEqual(firstPass);
   });
+
+  it('makes coordinate-hashed gradients independent of sampling order', () => {
+    const coordinates = [
+      [-14.75, 3.125],
+      [8.5, -12.25],
+      [0.375, 0.625],
+      [41.25, 18.875],
+    ] as const;
+    const forward = new PerlinNoise('coordinate-order', { coordinateHashedGradients: true });
+    const reverse = new PerlinNoise('coordinate-order', { coordinateHashedGradients: true });
+
+    const forwardSamples = new Map(coordinates.map(([x, y]) => [`${x},${y}`, forward.get(x, y)] as const));
+    const reverseSamples = new Map(
+      [...coordinates].reverse().map(([x, y]) => [`${x},${y}`, reverse.get(x, y)] as const)
+    );
+
+    expect(reverseSamples).toEqual(forwardSamples);
+  });
 });

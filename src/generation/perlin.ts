@@ -1,5 +1,6 @@
 import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger';
+import { fastHash } from '../utils/hash';
 import { CONFIG } from '@/config';
 
 // Define types for internal state (remain the same)
@@ -7,19 +8,27 @@ type GradientVector = { x: number; y: number };
 type GradientCache = Record<string, GradientVector>;
 type MemoryCache = Record<string, number>;
 
+export interface PerlinNoiseOptions {
+  coordinateHashedGradients?: boolean;
+}
+
 export class PerlinNoise {
   private gradients: GradientCache = {}; // Cache for gradient vectors (instance specific)
   private memory: MemoryCache = {}; // Cache for computed noise values (instance specific)
   private prng: PRNG; // Instance-specific PRNG
   private readonly seed: string;
+  private readonly seedHash: number;
+  private readonly coordinateHashedGradients: boolean;
 
   /**
    * Creates a new PerlinNoise generator instance.
    * @param seed A string seed used to initialize the internal PRNG.
    */
-  constructor(seed: string) {
+  constructor(seed: string, options: PerlinNoiseOptions = {}) {
     logger.info(`[PerlinNoise] Initializing instance with seed: "${seed}"`);
     this.seed = seed;
+    this.seedHash = hashString(seed);
+    this.coordinateHashedGradients = options.coordinateHashedGradients ?? false;
     // Seed the instance-specific PRNG
     this.prng = new PRNG(seed);
     // Clear caches (done implicitly by creating new empty objects above)
@@ -28,10 +37,13 @@ export class PerlinNoise {
     logger.info(`[PerlinNoise:${seed}] Instance created and PRNG seeded.`);
   }
 
-  /** Generates a random 2D unit vector using the instance's PRNG. */
-  private rand_vect(): GradientVector {
-    // Use the instance's PRNG now
-    const theta = this.prng.next() * 2 * Math.PI; // Use deterministic PRNG
+  /** Generates a deterministic 2D unit vector for one noise-lattice coordinate. */
+  private rand_vect(vx: number, vy: number): GradientVector {
+    // Coordinate hashing makes viewport traversal and cache history irrelevant where requested.
+    const unit = this.coordinateHashedGradients
+      ? fastHash(vx, vy, this.seedHash) / 4294967296
+      : this.prng.next();
+    const theta = unit * 2 * Math.PI;
     return { x: Math.cos(theta), y: Math.sin(theta) };
   }
 
@@ -46,7 +58,7 @@ export class PerlinNoise {
       g_vect = this.gradients[gridKey];
     } else {
       // Generate using instance method
-      g_vect = this.rand_vect();
+      g_vect = this.rand_vect(vx, vy);
       this.gradients[gridKey] = g_vect; // Store in instance cache
     }
     return d_vect.x * g_vect.x + d_vect.y * g_vect.y;
@@ -99,6 +111,16 @@ export class PerlinNoise {
     this.memory = {};
     this.prng = new PRNG(this.seed);
   }
+}
+
+/** Hashes a string seed into a stable unsigned integer for coordinate mixing. */
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 // Remove the old static object export and the immediate call to Perlin.seed()
