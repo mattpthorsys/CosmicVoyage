@@ -117,7 +117,7 @@ export class TitleCinematicRenderer {
         elevation: 0.14,
         widthRadians: 0.56,
         heightRadians: 0.19,
-        alpha: 0.055,
+        alpha: 0.095,
         tilt: -0.14,
       },
       {
@@ -125,7 +125,7 @@ export class TitleCinematicRenderer {
         elevation: -0.21,
         widthRadians: 0.32,
         heightRadians: 0.13,
-        alpha: 0.038,
+        alpha: 0.064,
         tilt: 0.19,
       },
       {
@@ -133,7 +133,7 @@ export class TitleCinematicRenderer {
         elevation: 0.27,
         widthRadians: 0.42,
         heightRadians: 0.16,
-        alpha: 0.032,
+        alpha: 0.052,
         tilt: -0.08,
       },
     ];
@@ -221,9 +221,8 @@ export class TitleCinematicRenderer {
 
     this.drawPanoramaStars(cameraYaw);
     this.drawPanoramaNebulae(cameraYaw);
-    this.drawPanoramaBands(cameraYaw);
 
-    const projectedStar = this.projectWorldDirection(this.starDirection, cameraYaw);
+    const projectedStar = this.projectWorldDirection(this.starDirection, cameraYaw, 0.12);
     const visibleStar =
       projectedStar && isNearViewport(projectedStar, this.width, this.height, this.width * 0.12)
         ? projectedStar
@@ -240,6 +239,8 @@ export class TitleCinematicRenderer {
     if (visibleStar && !isPointOcculted(visibleStar, projectedBodies)) {
       this.drawLensArtifacts(visibleStar.x, visibleStar.y);
     }
+    // The amber columns are optical scattering, so they sit over the completed astronomical scene.
+    this.drawPanoramaBands(cameraYaw);
     this.drawExposureVeil(cameraYaw);
   }
 
@@ -318,7 +319,7 @@ export class TitleCinematicRenderer {
   private projectBodies(cameraYaw: number): ProjectedBody[] {
     const projected: ProjectedBody[] = [];
     for (const body of this.bodies) {
-      const center = this.projectWorldDirection(body.direction, cameraYaw);
+      const center = this.projectWorldDirection(body.direction, cameraYaw, body.angularRadius);
       if (!center) continue;
       const screenRadius = body.angularRadius * this.pixelsPerRadian;
       if (
@@ -337,7 +338,10 @@ export class TitleCinematicRenderer {
   /** Draws one pixel-grained sphere with geometric world-space illumination. */
   private drawBody(projected: ProjectedBody): void {
     const { body, x, y, radius } = projected;
-    const sampleDiameter = Math.min(360, Math.max(28, Math.round(radius * 0.7)));
+    const sampleDiameter =
+      body.kind === 'rock'
+        ? Math.min(420, Math.max(72, Math.round(radius * 1.15)))
+        : Math.min(420, Math.max(64, Math.round(radius * 0.72)));
     if (this.bodyCanvas.width !== sampleDiameter || this.bodyCanvas.height !== sampleDiameter) {
       this.bodyCanvas.width = sampleDiameter;
       this.bodyCanvas.height = sampleDiameter;
@@ -371,7 +375,7 @@ export class TitleCinematicRenderer {
     this.ctx.beginPath();
     this.ctx.arc(x, y, radius, 0, Math.PI * 2);
     this.ctx.clip();
-    this.ctx.imageSmoothingEnabled = false;
+    this.ctx.imageSmoothingEnabled = body.kind === 'rock';
     this.ctx.drawImage(this.bodyCanvas, x - radius, y - radius, radius * 2, radius * 2);
     this.ctx.restore();
   }
@@ -472,11 +476,15 @@ export class TitleCinematicRenderer {
   }
 
   /** Projects one world-space point through the rotating camera. */
-  private projectWorldDirection(direction: Vec3, cameraYaw: number): ProjectedPoint | null {
+  private projectWorldDirection(
+    direction: Vec3,
+    cameraYaw: number,
+    angularMargin: number = 0
+  ): ProjectedPoint | null {
     const azimuth = Math.atan2(direction.x, direction.z);
     const elevation = Math.asin(Math.max(-1, Math.min(1, direction.y)));
     const relativeAzimuth = wrapAngle(azimuth - cameraYaw);
-    if (Math.abs(relativeAzimuth) > HORIZONTAL_FOV / 2) return null;
+    if (!isPanoramaDiscVisible(relativeAzimuth, angularMargin, HORIZONTAL_FOV)) return null;
     return {
       x: projectPanoramaX(azimuth, cameraYaw, this.width, HORIZONTAL_FOV),
       y: this.height / 2 - elevation * this.pixelsPerRadian,
@@ -567,10 +575,23 @@ function sampleGasTexture(normal: Vec3, body: CelestialBody): [number, number, n
 
 /** Samples fixed rocky grain from a world-space surface normal. */
 function sampleRockTexture(normal: Vec3, body: CelestialBody): [number, number, number] {
+  const broadTerrain =
+    Math.sin(normal.x * 5.3 + normal.z * 3.7 + body.textureSeed) * 0.075 +
+    Math.sin(normal.y * 8.1 - normal.x * 4.4) * 0.05;
+  const maria =
+    Math.max(
+      0,
+      Math.sin(normal.x * 7.2 + normal.z * 5.1 + body.textureSeed * 0.31) +
+        Math.sin(normal.y * 6.4 - normal.z * 3.8) -
+        1.05
+    ) * -0.13;
   let relief =
+    broadTerrain +
+    maria +
     Math.sin(normal.x * 31 + normal.y * 19 + body.textureSeed) * 0.09 +
     Math.sin(normal.z * 47 - normal.y * 23) * 0.055 +
-    Math.sin((normal.x + normal.z) * 71) * 0.025;
+    Math.sin((normal.x + normal.z) * 71) * 0.025 +
+    Math.sin((normal.x - normal.z) * 137 + normal.y * 61) * 0.014;
   for (const crater of body.craters) {
     const angularDistance = Math.acos(Math.max(-1, Math.min(1, dot(normal, crater.center))));
     const normalizedDistance = angularDistance / crater.angularRadius;
@@ -580,6 +601,12 @@ function sampleRockTexture(normal: Vec3, body: CelestialBody): [number, number, 
     } else {
       const rimDistance = Math.abs(normalizedDistance - 1);
       relief += crater.depth * 0.72 * Math.max(0, 1 - rimDistance / 0.35);
+      if (normalizedDistance < 1.28) {
+        const ray = Math.abs(
+          Math.sin(Math.atan2(normal.y - crater.center.y, normal.x - crater.center.x) * 9)
+        );
+        relief += crater.depth * 0.08 * ray * (1 - (normalizedDistance - 0.82) / 0.46);
+      }
     }
   }
   return [
@@ -632,6 +659,15 @@ export function projectPanoramaX(
   horizontalFov: number
 ): number {
   return width / 2 + wrapAngle(azimuth - cameraYaw) * (width / horizontalFov);
+}
+
+/** Returns whether any portion of an angular disc intersects the camera's horizontal panorama view. */
+export function isPanoramaDiscVisible(
+  relativeAzimuth: number,
+  angularRadius: number,
+  horizontalFov: number
+): boolean {
+  return Math.abs(wrapAngle(relativeAzimuth)) <= horizontalFov / 2 + angularRadius;
 }
 
 /** Estimates antialiased coverage at a sampled sphere limb. */

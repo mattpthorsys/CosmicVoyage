@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateIlluminatedFraction,
   calculateSunwardScreenX,
+  isPanoramaDiscVisible,
   projectPanoramaX,
 } from '../../rendering/title_cinematic_renderer';
 
@@ -55,5 +56,12 @@ describe('title cinematic panorama projection', () => {
     const secondShift = projectPanoramaX(0.6, rotation, width, fov) - projectPanoramaX(0.6, 0, width, fov);
 
     expect(firstShift).toBeCloseTo(secondShift);
+  });
+
+  it('keeps a body visible while its limb enters before its centre', () => {
+    const fov = Math.PI / 2;
+
+    expect(isPanoramaDiscVisible(fov / 2 + 0.08, 0.1, fov)).toBe(true);
+    expect(isPanoramaDiscVisible(fov / 2 + 0.12, 0.1, fov)).toBe(false);
   });
 });
