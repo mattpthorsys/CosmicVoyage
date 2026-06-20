@@ -91,6 +91,13 @@ import {
   TravelObserveCursor,
 } from './modes/game_mode_controllers';
 import {
+  findSystemPlanetPath,
+  GameSave,
+  getSystemPlanetPaths,
+  PlanetMutationSaveData,
+  SAVE_GAME_VERSION,
+} from './save_game';
+import {
   DEFAULT_SYSTEM_ZOOM_INDEX,
   getSystemSimulationSpeedMultiplier,
   getSystemViewScale,
@@ -164,6 +171,18 @@ interface SurfaceVehicleMenuItem {
   status: string;
 }
 
+/** Clones a JSON-compatible save value without retaining mutable runtime references. */
+function cloneSaveValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** Returns the registry key for one persistent generated-body mutation record. */
+function getPlanetMutationKey(
+  mutation: Pick<PlanetMutationSaveData, 'worldX' | 'worldY' | 'bodyPath'>
+): string {
+  return `${mutation.worldX},${mutation.worldY}/${mutation.bodyPath}`;
+}
+
 /** Main game class - Coordinates components and manages the loop. */
 export class Game {
   // Core Components
@@ -196,6 +215,7 @@ export class Game {
   private acceptedMissionIds: Set<string> = new Set();
   private completedMissionIds: Set<string> = new Set();
   private activeMissions: Record<string, StarbaseMission> = {};
+  private planetMutationRegistry = new Map<string, PlanetMutationSaveData>();
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
   private static readonly SYSTEM_RENDER_INTERVAL_MS = 1000 / 60;
@@ -648,6 +668,178 @@ export class Game {
     );
   }
 
+  /** Creates a versioned JSON-compatible snapshot of persistent game progress. */
+  createSaveGame(): GameSave {
+    this.captureCurrentPlanetMutations();
+    const system = this.stateManager.currentSystem;
+    const planetMutations = [...this.planetMutationRegistry.values()].map((mutation) =>
+      cloneSaveValue(mutation)
+    );
+
+    return {
+      version: SAVE_GAME_VERSION,
+      savedAt: new Date().toISOString(),
+      seed: this.gameSeedPRNG.getInitialSeed(),
+      gameClockElapsedSeconds: this.gameClockElapsedSeconds,
+      player: cloneSaveValue({
+        position: this.player.position,
+        render: this.player.render,
+        resources: this.player.resources,
+        cargoHold: this.player.cargoHold,
+        terrainVehicle: this.player.terrainVehicle,
+        crew: this.player.crew,
+        ship: this.player.ship,
+      }),
+      location: {
+        state: this.stateManager.state,
+        worldX: this.player.position.worldX,
+        worldY: this.player.position.worldY,
+        bodyPath: system ? findSystemPlanetPath(system, this.stateManager.currentPlanet) : null,
+        orbitReferencePath: system
+          ? findSystemPlanetPath(system, this.stateManager.currentOrbitReferencePlanet)
+          : null,
+        atStarbase: this.stateManager.state === 'starbase',
+      },
+      systemOrbit: system
+        ? {
+            stars: system.stars.map((star) => ({
+              id: star.id,
+              orbitAngle: star.orbit?.angle ?? null,
+              systemX: star.systemX,
+              systemY: star.systemY,
+            })),
+            starbase: system.starbase
+              ? {
+                  orbitAngle: system.starbase.orbitAngle,
+                  systemX: system.starbase.systemX,
+                  systemY: system.starbase.systemY,
+                }
+              : null,
+          }
+        : null,
+      planetMutations,
+      acceptedMissionIds: [...this.acceptedMissionIds],
+      completedMissionIds: [...this.completedMissionIds],
+      activeMissions: cloneSaveValue(this.activeMissions),
+      tutorialHintsShown: [...this.tutorialHintsShown],
+    };
+  }
+
+  /** Restores validated persistent progress into this freshly constructed game instance. */
+  restoreSaveGame(save: GameSave): void {
+    if (save.seed !== this.gameSeedPRNG.getInitialSeed()) {
+      throw new Error('Save seed does not match the constructed game universe.');
+    }
+
+    this.planetMutationRegistry = new Map(
+      save.planetMutations.map((mutation) => [getPlanetMutationKey(mutation), cloneSaveValue(mutation)])
+    );
+    const system = this.stateManager.restoreLocation(
+      save.location.state,
+      save.location.worldX,
+      save.location.worldY,
+      save.location.bodyPath,
+      save.location.orbitReferencePath,
+      save.location.atStarbase
+    );
+    if (system) {
+      this.applyPlanetMutations(system, true);
+      if (save.systemOrbit) {
+        for (const starState of save.systemOrbit.stars) {
+          const star = system.stars.find((candidate) => candidate.id === starState.id);
+          if (!star) continue;
+          if (star.orbit && starState.orbitAngle !== null) star.orbit.angle = starState.orbitAngle;
+          star.systemX = starState.systemX;
+          star.systemY = starState.systemY;
+        }
+        if (system.starbase && save.systemOrbit.starbase) {
+          system.starbase.orbitAngle = save.systemOrbit.starbase.orbitAngle;
+          system.starbase.systemX = save.systemOrbit.starbase.systemX;
+          system.starbase.systemY = save.systemOrbit.starbase.systemY;
+        }
+      }
+    }
+
+    this.player.position = cloneSaveValue(save.player.position);
+    this.player.render = cloneSaveValue(save.player.render);
+    this.player.resources = cloneSaveValue(save.player.resources);
+    this.player.cargoHold = cloneSaveValue(save.player.cargoHold);
+    this.player.terrainVehicle = cloneSaveValue(save.player.terrainVehicle);
+    this.player.crew = cloneSaveValue(save.player.crew);
+    this.player.ship = cloneSaveValue(save.player.ship);
+    this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
+    this.acceptedMissionIds = new Set(save.acceptedMissionIds);
+    this.completedMissionIds = new Set(save.completedMissionIds);
+    this.activeMissions = cloneSaveValue(save.activeMissions);
+    this.tutorialHintsShown = new Set(save.tutorialHintsShown);
+    this.statusMessage = `Loaded save from ${new Date(save.savedAt).toLocaleString()}.`;
+    this.forceFullRender = true;
+    this.lastMainRenderSignature = '';
+    this._publishStatusUpdate();
+  }
+
+  /** Captures mutable planet state from the active generated system into the persistent registry. */
+  private captureCurrentPlanetMutations(): void {
+    const system = this.stateManager.currentSystem;
+    if (!system) return;
+    for (const { path, planet } of getSystemPlanetPaths(system)) {
+      const mutation: PlanetMutationSaveData = {
+        worldX: system.starX,
+        worldY: system.starY,
+        bodyPath: path,
+        orbitAngle: planet.orbitAngle,
+        systemX: planet.systemX,
+        systemY: planet.systemY,
+        scanned: planet.scanned,
+        primaryResource: planet.primaryResource,
+        minedLocations: [...planet.minedLocations],
+        minedLocationAmounts: { ...planet.minedLocationAmounts },
+      };
+      this.planetMutationRegistry.set(getPlanetMutationKey(mutation), mutation);
+    }
+  }
+
+  /** Applies saved scan, mining, and orbital deltas to a regenerated system. */
+  private applyPlanetMutations(system: SolarSystem, restoreOrbit: boolean = false): void {
+    for (const { path, planet } of getSystemPlanetPaths(system)) {
+      const mutation = this.planetMutationRegistry.get(
+        getPlanetMutationKey({ worldX: system.starX, worldY: system.starY, bodyPath: path })
+      );
+      if (!mutation) continue;
+      if (restoreOrbit) {
+        planet.orbitAngle = mutation.orbitAngle;
+        planet.systemX = mutation.systemX;
+        planet.systemY = mutation.systemY;
+      }
+      planet.scanned = mutation.scanned;
+      planet.primaryResource = mutation.primaryResource;
+      planet.minedLocations = new Set(mutation.minedLocations);
+      planet.minedLocationAmounts = { ...mutation.minedLocationAmounts };
+    }
+  }
+
+  /** Pauses simulation and keyboard handling while retaining the current game instance. */
+  pauseGame(): void {
+    if (!this.isRunning || this.isDestroyed) return;
+    this.isRunning = false;
+    this.inputManager.stopListening();
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+  }
+
+  /** Resumes a paused game without resetting progress or status. */
+  resumeGame(): void {
+    if (this.isRunning || this.isDestroyed) return;
+    this.isRunning = true;
+    this.lastUpdateTime = performance.now();
+    this.inputManager.clearState();
+    this.inputManager.startListening();
+    this.forceFullRender = true;
+    this.animationFrameId = requestAnimationFrame(this._loop.bind(this));
+  }
+
   // --- Event Handlers ---
   /** Handles game state change. */
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
@@ -655,6 +847,9 @@ export class Game {
     this.lastHyperspaceUpdateSignature = '';
     this.lastHyperspaceUpdateStatus = '';
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
+    if (this.stateManager.currentSystem) {
+      this.applyPlanetMutations(this.stateManager.currentSystem);
+    }
     // Reset zoom to default when leaving system view
     if (previousState === 'system' && newState !== 'system') {
       this.currentZoomLevelIndex = DEFAULT_SYSTEM_ZOOM_INDEX;
@@ -806,7 +1001,9 @@ export class Game {
     this.inputManager.clearState(); // Clear any lingering input state
     this.forceFullRender = true; // Ensure initial render is complete
     // Initial status update
-    this.statusMessage = 'Welcome to Cosmic Voyage!';
+    if (this.statusMessage === 'Initializing Systems...') {
+      this.statusMessage = 'Welcome to Cosmic Voyage!';
+    }
     this._publishStatusUpdate();
     // Start the loop
     this.animationFrameId = requestAnimationFrame(this._loop.bind(this));
@@ -2940,6 +3137,7 @@ export class Game {
   // --- Game State Update ---
   /** Updates. */
   private _update(deltaTime: number): void {
+    this.captureCurrentPlanetMutations();
     let blockGameUpdates = false;
     if (!this.isGameClockPaused()) {
       this.gameClockElapsedSeconds += deltaTime * Game.SIMULATED_SECONDS_PER_REAL_SECOND;

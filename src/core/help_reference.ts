@@ -21,6 +21,7 @@ export function createHelpReferenceLines(state: GameState, actions: AvailableAct
     `${formatKey(CONFIG.KEY_BINDINGS.SCAN_SYSTEM_OBJECT)}  Scan local space or current contact`,
     `Numpad 1/3/7/9  Diagonal drift, works with NumLock off`,
     `${formatKey(CONFIG.KEY_BINDINGS.TOGGLE_PROFILER)}  Toggle performance profiler`,
+    `${formatKey(CONFIG.KEY_BINDINGS.GAME_MENU)}  Open game and save menu`,
     '',
     'SYSTEM',
     `${formatKey(CONFIG.KEY_BINDINGS.CYCLE_TARGET)}  Cycle navigation target`,

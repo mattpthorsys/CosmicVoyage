@@ -10,6 +10,7 @@ import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from './event_manager';
 import { SystemDataGenerator } from '../generation/system_data_generator';
+import { findSystemPlanetByPath } from './save_game';
 
 // Define GameState type here or import from a shared types file
 export type GameState = 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase';
@@ -75,6 +76,42 @@ export class GameStateManager {
   /** Returns current starbase. */
   get currentStarbase(): Starbase | null {
     return this._currentStarbase;
+  }
+
+  /** Reconstructs the active generated system and location from validated save data. */
+  restoreLocation(
+    state: GameState,
+    worldX: number,
+    worldY: number,
+    bodyPath: string | null,
+    orbitReferencePath: string | null,
+    atStarbase: boolean
+  ): SolarSystem | null {
+    if (state === 'hyperspace') {
+      this._changeState('hyperspace', null, null, null);
+      return null;
+    }
+
+    const basicProps =
+      this.systemDataGenerator.getRoguePlanetSystemProperties(worldX, worldY) ??
+      this.systemDataGenerator.getSystemProperties(worldX, worldY);
+    if (!basicProps.exists) throw new Error(`Saved system no longer exists at ${worldX},${worldY}.`);
+
+    const system = new SolarSystem(basicProps, worldX, worldY, this.gameSeedPRNG);
+    const planet = findSystemPlanetByPath(system, bodyPath);
+    const orbitReference = findSystemPlanetByPath(system, orbitReferencePath);
+    const starbase = atStarbase ? system.starbase : null;
+
+    if ((state === 'orbit' || state === 'planet') && !planet) {
+      throw new Error(`Saved planetary body "${bodyPath ?? ''}" could not be restored.`);
+    }
+    if (state === 'starbase' && !starbase) {
+      throw new Error('Saved starbase could not be restored.');
+    }
+
+    this._changeState(state, system, planet, starbase);
+    this._currentOrbitReferencePlanet = orbitReference ?? planet;
+    return system;
   }
 
   // --- State Transition Logic ---

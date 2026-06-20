@@ -62,6 +62,328 @@
       .command-disabled {
         color: #506060;
       }
+      .app-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 13% 22%, rgba(100, 185, 190, 0.16) 0 1px, transparent 1.5px),
+          radial-gradient(circle at 82% 17%, rgba(185, 205, 185, 0.12) 0 1px, transparent 1.5px),
+          radial-gradient(circle at 73% 78%, rgba(100, 160, 170, 0.1) 0 1px, transparent 1.5px),
+          radial-gradient(circle at 24% 84%, rgba(150, 175, 165, 0.08) 0 1px, transparent 1.5px),
+          linear-gradient(90deg, rgba(0, 8, 8, 0.98), rgba(0, 0, 0, 0.88) 48%, rgba(0, 4, 5, 0.98));
+        background-size:
+          311px 257px,
+          419px 353px,
+          521px 431px,
+          607px 503px,
+          100% 100%;
+        font-family: 'PxPlus_IBM_CGA', 'Courier New', Courier, monospace;
+      }
+      .app-overlay[hidden] {
+        display: none;
+      }
+      .app-panel {
+        position: relative;
+        width: min(620px, calc(100vw - 48px));
+        border-top: 1px solid #006a6a;
+        border-bottom: 1px solid #003c3c;
+        background: rgba(0, 5, 6, 0.88);
+        padding: 24px 0 20px;
+        box-sizing: border-box;
+      }
+      .app-panel::before,
+      .app-panel::after {
+        position: absolute;
+        top: -7px;
+        color: #006a6a;
+        font-size: 12px;
+        content: '+';
+      }
+      .app-panel::before {
+        left: -1px;
+      }
+      .app-panel::after {
+        right: -1px;
+      }
+      .app-panel h1,
+      .app-panel h2 {
+        margin: 0;
+        color: #8cffff;
+        font-size: 1.05rem;
+        font-weight: normal;
+        letter-spacing: 0.14em;
+      }
+      .app-header,
+      .app-copy,
+      .app-hint {
+        margin-left: 22px;
+        margin-right: 22px;
+      }
+      .app-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #003838;
+      }
+      .app-eyebrow {
+        margin: 0 0 7px;
+        color: #397b72;
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+      }
+      .app-bearing {
+        color: #3d6d68;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-align: right;
+      }
+      .app-subtitle,
+      .app-message,
+      .app-hint {
+        color: #538b80;
+        line-height: 1.5;
+      }
+      .app-subtitle {
+        margin: 6px 0 0;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+      }
+      .app-copy {
+        padding-top: 10px;
+      }
+      .app-message {
+        min-height: 1.5em;
+        margin-top: 0;
+        color: #a5a533;
+        font-size: 0.78rem;
+      }
+      .app-actions {
+        display: grid;
+        margin-top: 12px;
+        border-top: 1px solid #002929;
+      }
+      .app-actions button {
+        border: 0;
+        border-bottom: 1px solid #002929;
+        background: transparent;
+        color: #79b8a7;
+        padding: 10px 22px;
+        font: inherit;
+        text-align: left;
+        letter-spacing: 0.035em;
+      }
+      .app-actions button::before {
+        content: '[ ] ';
+        color: #315f59;
+      }
+      .app-actions button:hover:not(:disabled),
+      .app-actions button:focus-visible {
+        background: #001616;
+        color: #9fffe0;
+        outline: none;
+      }
+      .app-actions button:hover:not(:disabled)::before,
+      .app-actions button:focus-visible::before {
+        content: '[*] ';
+        color: #ffd060;
+      }
+      .app-actions button:disabled {
+        color: #294842;
+      }
+      .menu-key {
+        color: #a5a533;
+      }
+      .app-hint {
+        margin-top: 18px;
+        margin-bottom: 0;
+        color: #365f59;
+        font-size: 0.7rem;
+        letter-spacing: 0.04em;
+      }
+      .title-overlay {
+        display: block;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 18% 31%, rgba(150, 195, 200, 0.22) 0 1px, transparent 1.4px),
+          radial-gradient(circle at 76% 20%, rgba(220, 225, 205, 0.16) 0 1px, transparent 1.4px),
+          radial-gradient(circle at 63% 72%, rgba(105, 165, 180, 0.15) 0 1px, transparent 1.4px),
+          radial-gradient(circle at 31% 83%, rgba(185, 195, 180, 0.11) 0 1px, transparent 1.4px),
+          radial-gradient(ellipse at 50% 46%, #061012 0, #010506 32%, #000 70%);
+        background-size:
+          397px 331px,
+          521px 419px,
+          683px 557px,
+          809px 677px,
+          100% 100%;
+      }
+      .title-overlay[hidden] {
+        display: none;
+      }
+      .title-cinematic {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        min-height: 520px;
+      }
+      .title-name {
+        position: absolute;
+        top: 29%;
+        left: 50%;
+        width: min(94vw, 1100px);
+        margin: 0;
+        transform: translate(-50%, -50%);
+        color: #b9f3ed;
+        font-size: clamp(2.4rem, 7vw, 6.7rem);
+        font-weight: normal;
+        letter-spacing: clamp(0.12em, 1.3vw, 0.28em);
+        line-height: 1;
+        text-align: center;
+        text-indent: 0.2em;
+        text-shadow: 0 0 24px rgba(80, 205, 200, 0.16);
+        opacity: 0;
+        animation: title-arrival 1.7s ease-out 0.15s forwards;
+      }
+      .title-menu {
+        position: absolute;
+        top: 52%;
+        left: 50%;
+        display: flex;
+        width: min(760px, 88vw);
+        transform: translateX(-50%);
+        justify-content: center;
+        gap: clamp(28px, 5vw, 76px);
+        opacity: 0;
+        animation: title-options 0.55s ease-out 1.35s forwards;
+      }
+      .title-menu button {
+        position: relative;
+        border: 0;
+        background: transparent;
+        color: #618f8a;
+        padding: 12px 2px;
+        font: inherit;
+        font-size: clamp(0.72rem, 1.2vw, 0.95rem);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        transition:
+          color 160ms ease,
+          text-shadow 160ms ease;
+      }
+      .title-menu button::after {
+        position: absolute;
+        right: 45%;
+        bottom: 2px;
+        left: 45%;
+        height: 1px;
+        background: #8fded5;
+        content: '';
+        opacity: 0;
+        transition:
+          right 180ms ease,
+          left 180ms ease,
+          opacity 180ms ease;
+      }
+      .title-menu button:hover:not(:disabled),
+      .title-menu button:focus-visible {
+        color: #d3fff7;
+        text-shadow: 0 0 12px rgba(125, 230, 220, 0.28);
+        outline: none;
+      }
+      .title-menu button:hover:not(:disabled)::after,
+      .title-menu button:focus-visible::after {
+        right: 8%;
+        left: 8%;
+        opacity: 0.8;
+      }
+      .title-menu button:disabled {
+        color: #263b39;
+      }
+      .title-status {
+        position: absolute;
+        top: calc(52% - 33px);
+        left: 50%;
+        transform: translateX(-50%);
+        color: #536b55;
+        font-size: 0.62rem;
+        letter-spacing: 0.2em;
+        opacity: 0;
+        animation: title-options 0.55s ease-out 1.35s forwards;
+      }
+      .title-detail {
+        position: absolute;
+        bottom: 9%;
+        left: 50%;
+        width: min(720px, 84vw);
+        min-height: 2em;
+        transform: translateX(-50%);
+        color: #56726e;
+        font-family: 'PxPlus_IBM_CGAthin', 'Courier New', Courier, monospace;
+        font-size: clamp(0.72rem, 1.1vw, 0.9rem);
+        letter-spacing: 0.06em;
+        line-height: 1.6;
+        text-align: center;
+        opacity: 0;
+        animation: title-detail 0.65s ease-out 1.55s forwards;
+      }
+      .title-key {
+        position: absolute;
+        right: 3vw;
+        bottom: 3vh;
+        color: #253d3a;
+        font-size: 0.62rem;
+        letter-spacing: 0.13em;
+        opacity: 0;
+        animation: title-detail 0.65s ease-out 1.8s forwards;
+      }
+      @keyframes title-arrival {
+        from {
+          transform: translate(-50%, -46%);
+          filter: blur(7px);
+          opacity: 0;
+        }
+        to {
+          transform: translate(-50%, -50%);
+          filter: blur(0);
+          opacity: 1;
+        }
+      }
+      @keyframes title-options {
+        from {
+          transform: translate(-50%, 8px);
+          opacity: 0;
+        }
+        to {
+          transform: translate(-50%, 0);
+          opacity: 1;
+        }
+      }
+      @keyframes title-detail {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @media (max-width: 680px) {
+        .title-menu {
+          top: 48%;
+          flex-direction: column;
+          align-items: center;
+          gap: 5px;
+        }
+        .title-status {
+          top: calc(48% - 27px);
+        }
+        .title-detail {
+          bottom: 7%;
+        }
+      }
     </style>
   </head>
   <body>
@@ -69,6 +391,53 @@
     <canvas id="gameCanvasOverlay" aria-hidden="true"></canvas>
     <div id="commandStrip">Arrows Move</div>
     <div id="statusBar">Initializing systems...</div>
+    <section id="splashScreen" class="app-overlay title-overlay" aria-label="Cosmic Voyage title screen">
+      <div class="title-cinematic">
+        <h1 class="title-name">COSMIC VOYAGE</h1>
+        <p id="splashMessage" class="title-status"></p>
+        <nav class="title-menu" aria-label="Main menu">
+          <button id="continueSessionButton" type="button" data-detail="Resume the current session">
+            Continue
+          </button>
+          <button id="newGameButton" type="button" data-detail="Begin a new voyage">New Game</button>
+          <button id="loadManualButton" type="button" data-detail="Load the browser save">Load Game</button>
+          <button id="importSplashButton" type="button" data-detail="Import a portable JSON save">
+            Import
+          </button>
+        </nav>
+        <p id="splashDetail" class="title-detail"></p>
+        <p class="title-key">ARROWS // SELECT&nbsp;&nbsp;&nbsp;ENTER // CONFIRM</p>
+      </div>
+    </section>
+    <section id="gameMenu" class="app-overlay" aria-label="Game menu" hidden>
+      <div class="app-panel">
+        <header class="app-header">
+          <div>
+            <p class="app-eyebrow">SHIP COMPUTER // COMMAND SUSPENDED</p>
+            <h2>VOYAGE CONTROL</h2>
+            <p class="app-subtitle">Simulation held at present navigation state</p>
+          </div>
+          <div class="app-bearing"><span class="menu-key">F10</span><br />RETURN</div>
+        </header>
+        <div class="app-copy">
+          <p id="gameMenuMessage" class="app-message">Game paused.</p>
+        </div>
+        <div class="app-actions">
+          <button id="resumeGameButton" type="button">Resume</button>
+          <button id="checkpointButton" type="button">Save Session Checkpoint</button>
+          <button id="saveManualButton" type="button">Save to Browser</button>
+          <button id="loadManualMenuButton" type="button">Load Browser Save</button>
+          <button id="exportSaveButton" type="button">Export Save File</button>
+          <button id="importMenuButton" type="button">Import Save File</button>
+          <button id="titleButton" type="button">Return to Title</button>
+          <button id="newGameMenuButton" type="button">Start New Game</button>
+        </div>
+        <p class="app-hint">
+          ARROWS SELECT&nbsp;&nbsp;·&nbsp;&nbsp;ENTER CONFIRM&nbsp;&nbsp;·&nbsp;&nbsp;F10 RESUME
+        </p>
+      </div>
+    </section>
+    <input id="saveImportInput" type="file" accept="application/json,.json" hidden />
 
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -6,6 +6,7 @@
 main.ts
   |
   +-- installs worker-backed providers
+  +-- ApplicationController owns title/menu and save lifecycle
   |
   v
 Game
@@ -28,6 +29,11 @@ Game
 `main.ts` installs worker providers before constructing `Game`. Tests may use
 synchronous providers, so provider interfaces must preserve identical inputs
 and outputs.
+
+`ApplicationController` constructs and destroys `Game` instances. It owns the
+F10 menu, startup splash, session checkpoints, persistent browser saves, and
+JSON import/export. `Game` exposes explicit versioned snapshot/restore methods;
+storage code must not serialize private class instances directly.
 
 ## Responsibility Layers
 

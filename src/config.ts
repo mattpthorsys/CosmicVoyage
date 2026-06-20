@@ -65,6 +65,7 @@ export const CONFIG = {
     SHIP_MENU: 'o',
     HELP: '?',
     TOGGLE_PROFILER: 'F3',
+    GAME_MENU: 'F10',
     APPROACH_TARGET: 'a',
     LEAVE_SYSTEM: 'Backspace',
     // Assign 'l' to a single, representative action name

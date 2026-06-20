@@ -6,8 +6,8 @@ import './assets/fonts/fonts.css';
 import { logger } from './utils/logger';
 
 // Import other necessary modules
-import { Game } from './core/game';
 import { CONFIG } from './config'; // CONFIG needed for seed reporting
+import { ApplicationController } from './core/application_controller';
 import { setSurfaceGenerationProvider } from './entities/planet/surface_generation_provider';
 import { WorkerSurfaceGenerationProvider } from './entities/planet/surface_generation_worker_client';
 import { setNebulaColourProvider } from './rendering/nebula_colour_provider';
@@ -57,13 +57,9 @@ window.onload = () => {
   const statusBar = document.getElementById('statusBar'); // Get status bar for errors
 
   try {
-    logger.info('Initializing game...');
-    // Pass the seed from config to the Game constructor
-    const game = new Game('gameCanvas', 'statusBar', CONFIG.SEED);
-    logger.info(`Game constructed with seed: "${CONFIG.SEED}"`);
-
-    game.startGame(); // Start the main game loop
-    logger.info('Game loop started.');
+    logger.info('Initializing application controller...');
+    new ApplicationController();
+    logger.info(`Application ready with default seed: "${CONFIG.SEED}"`);
   } catch (error) {
     logger.error('Failed to initialize or start game:', error);
     // Display error in the status bar as fallback

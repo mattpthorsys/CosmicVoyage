@@ -50,12 +50,29 @@ Common controls:
 - `a`: approach selected target automatically.
 - `=` / `-`: zoom system view.
 - `F3`: performance profiler.
+- `F10`: pause and open the save/game menu.
 
 Travel command strips:
 
 - Interstellar: Move, Scan, Operations, Observe, with a green Enter System button when available.
 - Planetary: Move, Scan, Operations, Observe, Targets, with a green Orbit/Dock/Leave button when available.
 - Surface: Map, Move, Cargo, Mine, Scan, Icon, with a green Embark button only when parked at the ship.
+
+## Saving Progress
+
+The title screen can continue the current tab session, load a persistent browser
+save, import a JSON save file, or start a new voyage.
+
+During play, `F10` opens the game menu. It provides:
+
+- automatic/session checkpoints stored in `sessionStorage`;
+- explicit browser saves stored in `localStorage`;
+- portable JSON export and import;
+- return-to-title and new-game controls.
+
+Session checkpoints are updated periodically, when the tab is hidden, and on
+major location transitions. Generated universe data is reconstructed from the
+saved seed while player progress and mutable world changes are restored.
 
 Starbase screens use arrows, Page Up/Page Down, Left/Right section changes, Enter to use a row, and Escape or `l` to leave/cancel where appropriate.
 
