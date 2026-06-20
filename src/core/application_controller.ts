@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { eventManager, GameEvents } from './event_manager';
 import { Game } from './game';
 import { GameSave, parseGameSave, SaveGameStorage } from './save_game';
+import { TitleCinematicRenderer } from '../rendering/title_cinematic_renderer';
 
 const AUTOSAVE_INTERVAL_MS = 10_000;
 
@@ -12,6 +13,10 @@ export class ApplicationController {
   private autosaveTimer: number | null = null;
   private menuOpen = false;
   private readonly storage = new SaveGameStorage(window.sessionStorage, window.localStorage);
+  private readonly titleRenderer = new TitleCinematicRenderer(
+    requireElement<HTMLCanvasElement>('titleCinematicCanvas'),
+    CONFIG.SEED
+  );
   private readonly splash = requireElement<HTMLElement>('splashScreen');
   private readonly gameMenu = requireElement<HTMLElement>('gameMenu');
   private readonly splashMessage = requireElement<HTMLElement>('splashMessage');
@@ -29,6 +34,7 @@ export class ApplicationController {
       queueMicrotask(() => this.saveSession(''));
     });
     this.refreshSplash();
+    this.titleRenderer.start();
   }
 
   /** Wires title and in-game menu controls. */
@@ -95,6 +101,7 @@ export class ApplicationController {
       this.game = new Game('gameCanvas', 'statusBar', seed);
       if (save) this.game.restoreSaveGame(save);
       this.splash.hidden = true;
+      this.titleRenderer.stop();
       this.gameMenu.hidden = true;
       this.menuOpen = false;
       this.game.startGame();
@@ -103,6 +110,7 @@ export class ApplicationController {
     } catch (error) {
       this.destroyCurrentGame();
       this.splash.hidden = false;
+      this.titleRenderer.start();
       this.splashMessage.textContent = `Unable to start: ${formatError(error)}`;
       logger.error('[ApplicationController] Unable to start game.', error);
     }
@@ -231,6 +239,7 @@ export class ApplicationController {
     this.menuOpen = false;
     this.splash.hidden = false;
     this.refreshSplash();
+    this.titleRenderer.start();
   }
 
   /** Updates title-screen button availability from validated browser saves. */

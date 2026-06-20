@@ -207,27 +207,25 @@
       .title-overlay {
         display: block;
         overflow: hidden;
-        background:
-          radial-gradient(circle at 18% 31%, rgba(150, 195, 200, 0.22) 0 1px, transparent 1.4px),
-          radial-gradient(circle at 76% 20%, rgba(220, 225, 205, 0.16) 0 1px, transparent 1.4px),
-          radial-gradient(circle at 63% 72%, rgba(105, 165, 180, 0.15) 0 1px, transparent 1.4px),
-          radial-gradient(circle at 31% 83%, rgba(185, 195, 180, 0.11) 0 1px, transparent 1.4px),
-          radial-gradient(ellipse at 50% 46%, #061012 0, #010506 32%, #000 70%);
-        background-size:
-          397px 331px,
-          521px 419px,
-          683px 557px,
-          809px 677px,
-          100% 100%;
+        background: #000;
       }
       .title-overlay[hidden] {
         display: none;
       }
       .title-cinematic {
         position: relative;
+        z-index: 1;
         width: 100%;
         height: 100%;
         min-height: 520px;
+      }
+      #titleCinematicCanvas {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
       }
       .title-name {
         position: absolute;
@@ -392,6 +390,7 @@
     <div id="commandStrip">Arrows Move</div>
     <div id="statusBar">Initializing systems...</div>
     <section id="splashScreen" class="app-overlay title-overlay" aria-label="Cosmic Voyage title screen">
+      <canvas id="titleCinematicCanvas" aria-hidden="true"></canvas>
       <div class="title-cinematic">
         <h1 class="title-name">COSMIC VOYAGE</h1>
         <p id="splashMessage" class="title-status"></p>
