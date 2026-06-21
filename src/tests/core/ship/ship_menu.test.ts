@@ -119,6 +119,7 @@ describe('ship menu', () => {
   it('formats cargo, crew, and ship status as readable instrument panels', () => {
     const game = createShipMenuHarness();
     game.cargoSystem.addItem(game.player.cargoHold, 'IRON', 25);
+    game.cargoSystem.addItem(game.player.cargoHold, 'DEUTERIUM', 0.3);
 
     game.shipMenuSection = 'cargo';
     const cargo = game.createShipMenuModel();
@@ -128,6 +129,10 @@ describe('ship menu', () => {
     expect(cargo.rows[0].cellTones).toEqual(expect.arrayContaining(['cyan', 'bright']));
     expect(cargo.rows.some((row: any) => row.cells[3].includes('Enter to arm ejector'))).toBe(true);
     expect(cargo.rows.some((row: any) => row.cellTones?.includes('amber'))).toBe(true);
+    const deuterium = cargo.rows.find((row: any) => row.id === 'cargo:DEUTERIUM');
+    expect(deuterium.cells[1]).toBe('0.3');
+    expect(deuterium.cells[2]).toMatch(/^\d+\.\d$/);
+    expect(deuterium.detail).toMatch(/Estimated lot value \d+\.\d Cr/);
 
     game.shipMenuSection = 'crew';
     const crew = game.createShipMenuModel();

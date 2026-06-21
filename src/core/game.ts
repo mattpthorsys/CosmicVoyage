@@ -7215,7 +7215,7 @@ export class Game {
               id: itemKey,
               cells: [
                 quote?.name ?? itemKey,
-                String(amount),
+                this.formatCargoAmount(amount),
                 quote ? String(quote.sellPrice) : '--',
                 quote?.category ?? 'unassayed',
               ],
@@ -7505,8 +7505,13 @@ export class Game {
       const value = (marketItem?.sellPrice ?? info?.baseValue ?? 1) * amount;
       return {
         id: itemKey,
-        cells: [info?.name ?? itemKey, String(amount), String(value), marketItem?.category ?? 'mineral'],
-        detail: `Estimated lot value ${value} Cr.`,
+        cells: [
+          info?.name ?? itemKey,
+          this.formatCargoAmount(amount),
+          value.toFixed(1),
+          marketItem?.category ?? 'mineral',
+        ],
+        detail: `Estimated lot value ${value.toFixed(1)} Cr.`,
       };
     });
   }
