@@ -163,8 +163,8 @@ export class GameStateManager {
       throw new Error(`Saved starbase "${location.starbaseName}" no longer matches this location.`);
     }
 
-    this._changeState(location.kind, system, planet, starbase);
     this._currentOrbitReferencePlanet = orbitReference ?? planet;
+    this._changeState(location.kind, system, planet, starbase);
     return system;
   }
 

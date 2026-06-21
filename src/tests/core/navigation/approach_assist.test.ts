@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../../../config';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { Starbase } from '../../../entities/starbase';
 import { GLYPHS } from '../../../constants';
+import { Planet } from '../../../entities/planet';
 
 /** Creates approach harness. */
 function createApproachHarness(zoomIndex: number): any {
@@ -109,5 +110,26 @@ describe('approach assist', () => {
 
     expect(game.player.render.directionGlyph).toBe(GLYPHS.SHIP_NORTH);
     expect(game.player.render.char).toBe(GLYPHS.SHIP_NORTH);
+  });
+
+  it('prefetches the approached planet and first two moons', () => {
+    const game = createApproachHarness(3);
+    const parent = Object.assign(Object.create(Planet.prototype), {
+      name: 'Parent',
+      systemX: 1e12,
+      systemY: 0,
+      moons: [
+        Object.assign(Object.create(Planet.prototype), { name: 'Moon I' }),
+        Object.assign(Object.create(Planet.prototype), { name: 'Moon II' }),
+        Object.assign(Object.create(Planet.prototype), { name: 'Moon III' }),
+      ],
+    }) as Planet;
+    game.getSelectedTarget = () => parent;
+    game.stateManager.currentSystem = { getOrbitParentFor: () => parent };
+    game.enqueueSurfacePrefetch = vi.fn();
+
+    game._startApproachAssist();
+
+    expect(game.enqueueSurfacePrefetch).toHaveBeenCalledWith([parent, parent.moons[0], parent.moons[1]]);
   });
 });

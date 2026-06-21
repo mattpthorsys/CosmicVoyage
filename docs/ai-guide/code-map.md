@@ -34,6 +34,8 @@ Use this file to find the likely owner of a change before searching globally.
   hand-in state.
 - `src/core/discovery.ts`: ordered knowledge levels and discovery helpers.
 - `src/core/scan_service.ts`: planetary and catalogue discovery progression.
+- `src/core/surface_prefetch.ts`: serialized predictive preparation for orbital
+  planet and moon rendering data.
 - `src/core/save_game.ts`: versioned save schema, strict runtime validation,
   discriminated location snapshots, and migrations.
 - `src/core/game_state_manager.ts`: transition authority and typed active

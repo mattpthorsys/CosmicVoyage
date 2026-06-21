@@ -124,6 +124,11 @@ fuel, cargo, and nearby deposits. Surface X wraps; latitude-like Y behavior must
 be checked before changing movement because some generators and views treat it
 differently.
 
+Surface generation uses a single worker with a bounded queue. Predictive work
+must go through `SurfacePrefetchService`, which serializes requests so newer
+moon previews do not supersede older queued work. System approach warms the
+target planet and first two moons; orbital selection warms nearby bodies.
+
 Mining yield is derived from stable planet and coordinate seeds. Extraction
 order must not alter deposits elsewhere.
 

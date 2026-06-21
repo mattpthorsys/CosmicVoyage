@@ -109,6 +109,7 @@ import {
 } from './starbase_commerce';
 import { StarbaseController } from './starbase_controller';
 import { getOperationalCapabilities } from './operational_capabilities';
+import { SurfacePrefetchService } from './surface_prefetch';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -199,6 +200,7 @@ export class Game {
   private readonly hyperspaceSurveyService: HyperspaceSurveyService;
   private _scanService?: ScanService;
   private _missionProgress?: MissionProgressService;
+  private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
   private _travelMode?: TravelModeController;
@@ -235,6 +237,12 @@ export class Game {
   private get missionProgress(): MissionProgressService {
     this._missionProgress ??= new MissionProgressService();
     return this._missionProgress;
+  }
+
+  /** Returns the serialized predictive surface-generation queue. */
+  private get surfacePrefetch(): SurfacePrefetchService {
+    this._surfacePrefetch ??= new SurfacePrefetchService();
+    return this._surfacePrefetch;
   }
 
   // Game Loop State, Status, Flags
@@ -623,6 +631,7 @@ export class Game {
     this.hyperspaceSurveyService = new HyperspaceSurveyService(this.systemDataGenerator);
     this._scanService = new ScanService();
     this._missionProgress = new MissionProgressService();
+    this._surfacePrefetch = new SurfacePrefetchService();
     this.renderer = new RendererFacade(
       canvasId,
       statusBarId,
@@ -903,6 +912,7 @@ export class Game {
         const bodies = this.getOrbitBodies();
         const selectedIndex = bodies.indexOf(planet);
         this.orbitModeState.reset(selectedIndex >= 0 ? selectedIndex : 0, getPlanetMapSize(planet));
+        this.prefetchInitialOrbitSurfaces();
       } else {
         this.orbitModeState.reset();
       }
@@ -1321,6 +1331,7 @@ export class Game {
           (this.orbitModeState.selectedBodyIndex - 1 + bodies.length) % bodies.length;
         this.resetOrbitLandingCursor();
         this.surveySelectedOrbitBody();
+        this.prefetchOrbitSelectionWindow();
         this.forceFullRender = true;
         return true;
       }
@@ -1331,6 +1342,7 @@ export class Game {
         this.orbitModeState.selectedBodyIndex = (this.orbitModeState.selectedBodyIndex + 1) % bodies.length;
         this.resetOrbitLandingCursor();
         this.surveySelectedOrbitBody();
+        this.prefetchOrbitSelectionWindow();
         this.forceFullRender = true;
         return true;
       }
@@ -2357,6 +2369,7 @@ export class Game {
     this.travelMode.currentTargetSignature = signature;
     this.travelMode.approachTargetSignature = startApproach ? signature : null;
     if (startApproach) {
+      this.prefetchApproachSurfaces(target);
       this.setShipFacingTowardTarget(target);
       this.player.awardCrewExperience('navigation', 4);
       this.player.awardCrewExperience('piloting', 2);
@@ -2378,6 +2391,7 @@ export class Game {
       return;
     }
     this.travelMode.approachTargetSignature = this.getTargetSignature(target);
+    this.prefetchApproachSurfaces(target);
     this.setShipFacingTowardTarget(target);
     this.player.awardCrewExperience('navigation', 4);
     this.player.awardCrewExperience('piloting', 2);
@@ -3508,6 +3522,13 @@ export class Game {
     // Determine status message based on proximity
     const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
     const selectedTarget = this.getSelectedTarget();
+    if (
+      selectedTarget instanceof Planet &&
+      this.player.distanceSqToSystemCoords(selectedTarget.systemX, selectedTarget.systemY) <
+        (CONFIG.LANDING_DISTANCE * 8) ** 2
+    ) {
+      this.prefetchApproachSurfaces(selectedTarget);
+    }
     const systemKindLabel = system.isStarless
       ? 'starless rogue planetary-mass object'
       : `${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}`;
@@ -6791,11 +6812,47 @@ export class Game {
     this.completeMissionsForDiscovery(selected, resolution.current.level);
   }
 
+  /** Starts preparing the approached planet and its first two moons before orbital entry. */
+  private prefetchApproachSurfaces(target: NavigationTarget): void {
+    if (!(target instanceof Planet)) return;
+    const system = this.stateManager.currentSystem;
+    const parent = system?.getOrbitParentFor(target) ?? target;
+    this.enqueueSurfacePrefetch([parent, ...parent.moons.slice(0, 2)]);
+  }
+
+  /** Prepares the primary body and first two moons on initial orbital entry. */
+  private prefetchInitialOrbitSurfaces(): void {
+    this.enqueueSurfacePrefetch(this.getOrbitBodies().slice(0, 3));
+  }
+
+  /** Keeps the selected orbital body and nearby moons prepared ahead of navigation. */
+  private prefetchOrbitSelectionWindow(): void {
+    const bodies = this.getOrbitBodies();
+    if (bodies.length === 0) return;
+    const selected = clampIndex(this.orbitModeState.selectedBodyIndex, bodies.length);
+    const candidates = [
+      bodies[selected],
+      bodies[selected + 1],
+      bodies[selected - 1],
+      bodies[selected + 2],
+    ].filter((planet): planet is Planet => Boolean(planet));
+    this.enqueueSurfacePrefetch(candidates);
+  }
+
+  /** Queues unique planetary rendering data and redraws orbit as bodies become ready. */
+  private enqueueSurfacePrefetch(planets: Planet[]): void {
+    const unique = [...new Set(planets)];
+    this.surfacePrefetch.enqueue(unique, (planet) => {
+      if (this.stateManager.state === 'orbit' && this.getOrbitBodies().includes(planet)) {
+        this.forceFullRender = true;
+      }
+    });
+  }
+
   /** Creates current orbit screen. */
   private createCurrentOrbitScreen(): OrbitScreenModel {
     const parentPlanet = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
     const selectedBody = this.getSelectedOrbitBody();
-    selectedBody.prepareSurfaceInBackground();
     return createOrbitScreenModel({
       parentPlanet,
       selectedBody,
