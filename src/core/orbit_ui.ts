@@ -4,6 +4,7 @@ import { ELEMENTS } from '../constants/resources';
 import { describePlanetType, Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
+import { hasDiscoveryLevel } from './discovery';
 
 export type OrbitInteractionMode = 'overview' | 'landing';
 
@@ -58,7 +59,11 @@ export function createOrbitScreenModel(args: {
     .filter(([, abundance]) => abundance > 0.1)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 4)
-    .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} ${abundance.toFixed(1)}%`);
+    .map(([key, abundance]) =>
+      hasDiscoveryLevel(selected.discovery.level, 'sampled')
+        ? `${ELEMENTS[key]?.name || key} ${abundance.toFixed(1)}%`
+        : ELEMENTS[key]?.name || key
+    );
 
   const pressure = selected.atmosphere.pressure < 0.001 ? '~0' : selected.atmosphere.pressure.toFixed(3);
   const parentSeparation =

@@ -171,6 +171,7 @@ export class MiningSystem {
 
               if (actuallyAdded > 0) {
                 this.player.awardCrewExperience('geology', 8 + Math.ceil(actuallyAdded));
+                planet.advanceDiscovery('sampled', 100, 'sample-analysis');
                 const mineX = site.x ?? this.player.position.surfaceX;
                 const mineY = site.y ?? this.player.position.surfaceY;
                 planet.recordMinedAmount(mineX, mineY, actuallyAdded, site.totalYield ?? site.maxAmount);

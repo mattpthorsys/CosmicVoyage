@@ -2,6 +2,7 @@ import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { StellarBody } from '../entities/stellar_body';
+import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
 export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'COMPLETE';
@@ -20,6 +21,7 @@ export interface ScanMissionObjective {
   targetName: string;
   targetLabel: string;
   targetType: 'star' | 'planet' | 'system';
+  requiredDiscoveryLevel: DiscoveryLevel;
 }
 
 export interface StarbaseMission {
@@ -61,12 +63,14 @@ export function formatMissionDetail(mission: StarbaseMission, status: MissionSta
   ].join(' | ');
 }
 
-/** Returns whether mission completed by scan. */
-export function isMissionCompletedByScan(
+/** Returns whether a mission objective is satisfied by target knowledge. */
+export function isMissionCompletedByDiscovery(
   mission: StarbaseMission,
-  target: Planet | StellarBody | SolarSystem
+  target: Planet | StellarBody | SolarSystem,
+  discoveryLevel: DiscoveryLevel
 ): boolean {
   if (mission.objective.kind !== 'scan') return false;
+  if (!hasDiscoveryLevel(discoveryLevel, mission.objective.requiredDiscoveryLevel)) return false;
   if (target instanceof Planet) {
     return mission.objective.targetType === 'planet' && target.name === mission.objective.targetName;
   }
@@ -166,6 +170,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
         targetName: target.name,
         targetLabel: `Scan ${target.name}`,
         targetType: 'planet',
+        requiredDiscoveryLevel: 'surveyed',
       },
     });
   }
@@ -188,6 +193,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
         targetName: target.name,
         targetLabel: `Scan ${target.name}`,
         targetType: 'planet',
+        requiredDiscoveryLevel: 'surveyed',
       },
     });
   }
@@ -208,6 +214,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
       targetName: primaryStar.name,
       targetLabel: `Scan ${primaryStar.name}`,
       targetType: 'star',
+      requiredDiscoveryLevel: 'observed',
     },
   });
 
@@ -231,6 +238,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
           targetName: target.name,
           targetLabel: `Scan ${target.name}`,
           targetType: 'planet',
+          requiredDiscoveryLevel: 'observed',
         },
       });
     }

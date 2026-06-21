@@ -15,6 +15,15 @@ import { OrbitHost } from './stellar_body';
 import { SurfaceData, SurfaceGenerationRequest } from './planet/surface_generator';
 import { getSurfaceGenerationProvider } from './planet/surface_generation_provider';
 import { isLiquidCovered, SurfaceLiquidOverlay } from './planet/surface_liquid';
+import {
+  advanceDiscoveryRecord,
+  createDiscoveryRecord,
+  DiscoveryLevel,
+  DiscoveryMethod,
+  DiscoveryRecord,
+  formatDiscoveryLevel,
+  hasDiscoveryLevel,
+} from '../core/discovery';
 // Re-export needed types if they aren't in a shared file
 export type AtmosphereComposition = Record<string, number>;
 //
@@ -93,7 +102,7 @@ export class Planet {
   public readonly mineralRichness: MineralRichness; // Kept for summary/potential use
   public readonly baseMinerals: number; // Kept for summary/potential use
   public readonly elementAbundance: Record<string, number>; // Overall planet abundance
-  public scanned: boolean = false; //
+  public discovery: DiscoveryRecord = createDiscoveryRecord();
   public primaryResource: string | null = null; // Determined by scan()
   public minedLocations: Set<string> = new Set(); // Track depleted locations (key: "x,y")
   public minedLocationAmounts: Record<string, number> = {}; // Track partially extracted deposit units.
@@ -109,6 +118,21 @@ export class Planet {
 
   // Moons (Placeholder)
   public moons: Planet[] = []; //
+
+  /** Returns legacy binary scan state for code that only needs survey availability. */
+  get scanned(): boolean {
+    return hasDiscoveryLevel(this.discovery.level, 'surveyed');
+  }
+
+  /** Restores legacy binary scan state while preserving the layered discovery model. */
+  set scanned(value: boolean) {
+    this.discovery = createDiscoveryRecord(
+      value ? 'surveyed' : 'detected',
+      value ? 100 : 0,
+      value ? 1 : 0,
+      value ? 'orbital-survey' : 'passive'
+    );
+  }
 
   /** Initializes Planet. */
   constructor(
@@ -373,7 +397,7 @@ export class Planet {
       return; //
     }
     logger.info(`[Planet:${this.name}] Scanning planet...`); //
-    this.scanned = true; //
+    this.discovery = advanceDiscoveryRecord(this.discovery, 'surveyed', 100, 'orbital-survey');
 
     let highestAbundance = -1; //
     let potentialResource = 'None Detected'; //
@@ -451,16 +475,35 @@ export class Planet {
     ); //
   }
 
+  /** Advances planetary knowledge and resolves resource data once survey quality is reached. */
+  advanceDiscovery(level: DiscoveryLevel, confidence: number, method: DiscoveryMethod): void {
+    const requiresResourceSurvey =
+      hasDiscoveryLevel(level, 'surveyed') && !hasDiscoveryLevel(this.discovery.level, 'surveyed');
+    if (requiresResourceSurvey) {
+      this.scan();
+      this.discovery = advanceDiscoveryRecord(this.discovery, level, confidence, method);
+      return;
+    }
+    this.discovery = advanceDiscoveryRecord(this.discovery, level, confidence, method);
+  }
+
   /** Returns multi-line scan information for the planet, including moon summary. */
   getScanInfo(): string[] {
-    logger.debug(`[Planet:${this.name}] getScanInfo called (Scanned: ${this.scanned})`);
+    logger.debug(`[Planet:${this.name}] getScanInfo called (Discovery: ${this.discovery.level})`);
     const orbitText =
       this.orbitDistance <= 0 ? 'none' : `${(this.orbitDistance / AU_IN_METERS).toFixed(3)} AU`;
     const infoLines: string[] = [
       `<h>--- SCAN REPORT: ${this.name} ---</h>`,
+      `Knowledge: <hl>${formatDiscoveryLevel(this.discovery.level)}</hl> | Confidence: <hl>${this.discovery.confidence}%</hl>`,
       `Type: <hl>${describePlanetType(this.type)}</hl>`,
       `Orbit: <hl>${orbitText}</hl>`,
     ];
+
+    if (!hasDiscoveryLevel(this.discovery.level, 'observed')) {
+      infoLines.push('Fine physical telemetry remains below reliable local resolution.');
+      infoLines.push('<h>--- OBSERVATION RECORDED ---</h>');
+      return infoLines;
+    }
 
     // --- Common Physical Properties ---
     // Use toLocaleString for diameter, toFixed for others
@@ -482,6 +525,12 @@ export class Planet {
         1
       )} deg</hl> | Period: <hl>${this.getRotationPeriodLabel()}</hl> | Inclination: <hl>${((this.orbitalInclination * 180) / Math.PI).toFixed(1)} deg</hl>`
     );
+
+    if (!hasDiscoveryLevel(this.discovery.level, 'surveyed')) {
+      infoLines.push('Atmospheric composition, surface structure, and resource data require orbital survey.');
+      infoLines.push('<h>--- OBSERVATION COMPLETE ---</h>');
+      return infoLines;
+    }
 
     // --- Atmosphere Details ---
     const pressureText = this.atmosphere.pressure < 0.001 ? '~0' : this.atmosphere.pressure.toFixed(3);
@@ -533,17 +582,23 @@ export class Planet {
       infoLines.push(`Mining: [-W-]N/A (Gas Giant)</w>`);
     } else {
       // Solid planet resource info
-      if (this.scanned) {
+      if (hasDiscoveryLevel(this.discovery.level, 'surveyed')) {
         const topElements = Object.entries(this.elementAbundance)
           .filter(([, abundance]) => abundance > 0.1) // Show elements > 0.1%
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5) // Show top 5 perhaps
-          .map(([key, abundance]) => `${ELEMENTS[key]?.name || key} (${abundance.toFixed(1)}%)`) // Show name and abundance %
+          .map(([key, abundance]) =>
+            hasDiscoveryLevel(this.discovery.level, 'sampled')
+              ? `${ELEMENTS[key]?.name || key} (${abundance.toFixed(1)}%)`
+              : ELEMENTS[key]?.name || key
+          )
           .join(', ');
         infoLines.push(
           `Mineral Scan: <hl>${this.mineralRichness}</hl>. Primary: <hl>${this.primaryResource || 'N/A'}</hl>.`
         );
-        infoLines.push(`Est. Deposits: <hl>${topElements || 'None Significant'}</hl>`); // Display the top elements string
+        infoLines.push(
+          `${hasDiscoveryLevel(this.discovery.level, 'sampled') ? 'Sample Assay' : 'Est. Deposits'}: <hl>${topElements || 'None Significant'}</hl>`
+        );
       } else {
         infoLines.push(
           `Mineral Scan: Requires planetary scan. Richness potential: <hl>${this.mineralRichness}</hl>.`

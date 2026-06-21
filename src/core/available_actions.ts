@@ -4,6 +4,7 @@ import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { StellarBody } from '../entities/stellar_body';
+import { hasDiscoveryLevel } from './discovery';
 import { Player } from './player';
 import { GameState } from './game_state_manager';
 
@@ -260,7 +261,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       break;
     case 'planet':
       if (context.planet && context.planet.type !== 'GasGiant' && context.planet.type !== 'IceGiant') {
-        if (!context.planet.scanned) {
+        if (!hasDiscoveryLevel(context.planet.discovery.level, 'mapped')) {
           actions.push(
             action(
               'scan-surface',

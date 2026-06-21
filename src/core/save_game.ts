@@ -11,10 +11,13 @@ import type { StarbaseMission } from './mission_board';
 import type { ShipModificationState } from './ship_modifications';
 import { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
+import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './discovery';
 
-export const SAVE_GAME_VERSION = 1;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v1';
+export const SAVE_GAME_VERSION = 2;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v2';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v2';
+const LEGACY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
+const LEGACY_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v1';
 
 export interface PlayerSaveData {
   position: PositionComponent;
@@ -33,10 +36,14 @@ export interface PlanetMutationSaveData {
   orbitAngle: number;
   systemX: number;
   systemY: number;
-  scanned: boolean;
+  discovery: DiscoveryRecord;
   primaryResource: string | null;
   minedLocations: string[];
   minedLocationAmounts: Record<string, number>;
+}
+
+export interface PlanetMutationSaveDataV1 extends Omit<PlanetMutationSaveData, 'discovery'> {
+  scanned: boolean;
 }
 
 export interface SystemOrbitSaveData {
@@ -61,14 +68,20 @@ export interface GameSaveV1 {
   player: PlayerSaveData;
   location: LocationSaveData;
   systemOrbit: SystemOrbitSaveData | null;
-  planetMutations: PlanetMutationSaveData[];
+  planetMutations: PlanetMutationSaveDataV1[];
   acceptedMissionIds: string[];
   completedMissionIds: string[];
   activeMissions: Record<string, StarbaseMission>;
   tutorialHintsShown: string[];
 }
 
-export type GameSave = GameSaveV1;
+export interface GameSaveV2 extends Omit<GameSaveV1, 'version' | 'planetMutations'> {
+  version: 2;
+  planetMutations: PlanetMutationSaveData[];
+  catalogueDiscoveries: Record<string, DiscoveryRecord>;
+}
+
+export type GameSave = GameSaveV2;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -99,8 +112,8 @@ export function findSystemPlanetPath(system: SolarSystem, target: Planet | null)
 export function parseGameSave(value: string | unknown): GameSave {
   const candidate = typeof value === 'string' ? JSON.parse(value) : value;
   if (!isRecord(candidate)) throw new Error('Save data is not an object.');
-  const record = candidate as Partial<GameSaveV1>;
-  if (record.version !== SAVE_GAME_VERSION) {
+  const record = candidate as Partial<GameSaveV1 | GameSaveV2>;
+  if (record.version !== 1 && record.version !== SAVE_GAME_VERSION) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
   }
   if (typeof record.seed !== 'string' || record.seed.length === 0) throw new Error('Save seed is missing.');
@@ -134,7 +147,57 @@ export function parseGameSave(value: string | unknown): GameSave {
   ) {
     throw new Error('Save player components are invalid.');
   }
-  return candidate as unknown as GameSaveV1;
+  if (record.version === 1) return migrateV1Save(candidate as unknown as GameSaveV1);
+  const save = candidate as unknown as GameSaveV2;
+  if (!isRecord(save.catalogueDiscoveries)) {
+    throw new Error('Save discovery catalogue is invalid.');
+  }
+  for (const discovery of Object.values(save.catalogueDiscoveries)) {
+    if (!isDiscoveryRecord(discovery)) throw new Error('Save discovery record is invalid.');
+  }
+  for (const mutation of save.planetMutations) {
+    if (!isDiscoveryRecord(mutation.discovery)) {
+      throw new Error('Save planet discovery record is invalid.');
+    }
+  }
+  return normalizeMissionObjectives(save);
+}
+
+/** Migrates binary scan progress from a version-one save into layered discovery state. */
+function migrateV1Save(save: GameSaveV1): GameSave {
+  return normalizeMissionObjectives({
+    ...save,
+    version: SAVE_GAME_VERSION,
+    planetMutations: save.planetMutations.map(({ scanned, ...mutation }) => ({
+      ...mutation,
+      discovery: createDiscoveryRecord(
+        scanned ? 'surveyed' : 'detected',
+        scanned ? 100 : 0,
+        scanned ? 1 : 0,
+        scanned ? 'orbital-survey' : 'passive'
+      ),
+    })),
+    catalogueDiscoveries: {},
+  });
+}
+
+/** Adds required discovery levels to missions created before layered objectives existed. */
+function normalizeMissionObjectives(save: GameSave): GameSave {
+  const activeMissions = Object.fromEntries(
+    Object.entries(save.activeMissions).map(([id, mission]) => [
+      id,
+      {
+        ...mission,
+        objective: {
+          ...mission.objective,
+          requiredDiscoveryLevel:
+            mission.objective.requiredDiscoveryLevel ??
+            (mission.objective.targetType === 'star' ? 'observed' : 'surveyed'),
+        },
+      },
+    ])
+  );
+  return { ...save, activeMissions };
 }
 
 /** Returns whether a value is a non-null object record. */
@@ -163,7 +226,7 @@ export class SaveGameStorage {
 
   /** Reads the current tab's automatic checkpoint. */
   loadSession(): GameSave | null {
-    return this.read(this.sessionStore, SESSION_SAVE_KEY);
+    return this.readCurrentOrLegacy(this.sessionStore, SESSION_SAVE_KEY, LEGACY_SESSION_SAVE_KEY);
   }
 
   /** Writes the current tab's automatic checkpoint. */
@@ -174,11 +237,12 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(LEGACY_SESSION_SAVE_KEY);
   }
 
   /** Reads the explicit persistent browser save. */
   loadManual(): GameSave | null {
-    return this.read(this.persistentStore, MANUAL_SAVE_KEY);
+    return this.readCurrentOrLegacy(this.persistentStore, MANUAL_SAVE_KEY, LEGACY_MANUAL_SAVE_KEY);
   }
 
   /** Writes the explicit persistent browser save. */
@@ -189,6 +253,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(LEGACY_MANUAL_SAVE_KEY);
   }
 
   /** Reads and validates one save, removing corrupt data that cannot be loaded. */
@@ -201,5 +266,16 @@ export class SaveGameStorage {
       store.removeItem(key);
       return null;
     }
+  }
+
+  /** Loads a current save or migrates and rewrites the previous storage key. */
+  private readCurrentOrLegacy(store: Storage, currentKey: string, legacyKey: string): GameSave | null {
+    const current = this.read(store, currentKey);
+    if (current) return current;
+    const legacy = this.read(store, legacyKey);
+    if (!legacy) return null;
+    store.setItem(currentKey, JSON.stringify(legacy));
+    store.removeItem(legacyKey);
+    return legacy;
   }
 }

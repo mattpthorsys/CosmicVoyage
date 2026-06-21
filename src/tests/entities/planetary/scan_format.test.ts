@@ -45,6 +45,7 @@ describe('Planet scan formatting', () => {
       createCharacteristics(),
       { starType: 'ROGUE', ageGyr: 8.5, metallicityFeH: -0.3 }
     );
+    planet.advanceDiscovery('observed', 90, 'local-scan');
 
     const scan = planet.getScanInfo();
 

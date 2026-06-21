@@ -43,14 +43,10 @@ import {
 } from './quantity_selector';
 import { createHelpReferenceLines } from './help_reference';
 import { createOrbitScreenModel, getPlanetMapSize, OrbitScreenModel } from './orbit_ui';
-import {
-  formatMissionDetail,
-  generateStarbaseMissions,
-  generateStarbaseNotices,
-  getMissionStatus,
-  isMissionCompletedByScan,
-  StarbaseMission,
-} from './mission_board';
+import { formatMissionDetail, generateStarbaseMissions, generateStarbaseNotices } from './mission_board';
+import { MissionProgressService } from './mission_progress';
+import { ScanService } from './scan_service';
+import { DiscoveryLevel, formatDiscoveryLevel } from './discovery';
 import {
   CREW_SKILL_LABELS,
   CREW_SKILLS,
@@ -199,6 +195,8 @@ export class Game {
   private readonly astrometricOverlay: AstrometricOverlay;
   private readonly systemDataGenerator: SystemDataGenerator;
   private readonly hyperspaceSurveyService: HyperspaceSurveyService;
+  private _scanService?: ScanService;
+  private _missionProgress?: MissionProgressService;
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
   private _travelMode?: TravelModeController;
@@ -212,9 +210,6 @@ export class Game {
     SurfaceExtractionSelectorState,
     JettisonConfirmationState
   >;
-  private acceptedMissionIds: Set<string> = new Set();
-  private completedMissionIds: Set<string> = new Set();
-  private activeMissions: Record<string, StarbaseMission> = {};
   private planetMutationRegistry = new Map<string, PlanetMutationSaveData>();
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
@@ -227,6 +222,18 @@ export class Game {
   private currentShipCompartmentId: string = 'bridge';
   private autoScannedSystemName: string | null = null;
   private tutorialHintsShown: Set<string> = new Set();
+
+  /** Returns the scan service, including for lightweight prototype-based test harnesses. */
+  private get scanService(): ScanService {
+    this._scanService ??= new ScanService();
+    return this._scanService;
+  }
+
+  /** Returns mission progression, including for lightweight prototype-based test harnesses. */
+  private get missionProgress(): MissionProgressService {
+    this._missionProgress ??= new MissionProgressService();
+    return this._missionProgress;
+  }
 
   // Game Loop State, Status, Flags
   private lastUpdateTime: number = 0;
@@ -612,6 +619,8 @@ export class Game {
     this.gameSeedPRNG = new PRNG(initialSeed);
     this.systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG);
     this.hyperspaceSurveyService = new HyperspaceSurveyService(this.systemDataGenerator);
+    this._scanService = new ScanService();
+    this._missionProgress = new MissionProgressService();
     this.renderer = new RendererFacade(
       canvasId,
       statusBarId,
@@ -718,9 +727,8 @@ export class Game {
           }
         : null,
       planetMutations,
-      acceptedMissionIds: [...this.acceptedMissionIds],
-      completedMissionIds: [...this.completedMissionIds],
-      activeMissions: cloneSaveValue(this.activeMissions),
+      ...this.missionProgress.createSnapshot(),
+      catalogueDiscoveries: this.scanService.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
     };
   }
@@ -768,9 +776,12 @@ export class Game {
     this.player.crew = cloneSaveValue(save.player.crew);
     this.player.ship = cloneSaveValue(save.player.ship);
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
-    this.acceptedMissionIds = new Set(save.acceptedMissionIds);
-    this.completedMissionIds = new Set(save.completedMissionIds);
-    this.activeMissions = cloneSaveValue(save.activeMissions);
+    this.missionProgress.restoreSnapshot({
+      acceptedMissionIds: save.acceptedMissionIds,
+      completedMissionIds: save.completedMissionIds,
+      activeMissions: save.activeMissions,
+    });
+    this.scanService.restoreSnapshot(save.catalogueDiscoveries);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
     this.statusMessage = `Loaded save from ${new Date(save.savedAt).toLocaleString()}.`;
     this.forceFullRender = true;
@@ -790,7 +801,7 @@ export class Game {
         orbitAngle: planet.orbitAngle,
         systemX: planet.systemX,
         systemY: planet.systemY,
-        scanned: planet.scanned,
+        discovery: { ...planet.discovery },
         primaryResource: planet.primaryResource,
         minedLocations: [...planet.minedLocations],
         minedLocationAmounts: { ...planet.minedLocationAmounts },
@@ -811,7 +822,7 @@ export class Game {
         planet.systemX = mutation.systemX;
         planet.systemY = mutation.systemY;
       }
-      planet.scanned = mutation.scanned;
+      planet.discovery = { ...mutation.discovery };
       planet.primaryResource = mutation.primaryResource;
       planet.minedLocations = new Set(mutation.minedLocations);
       planet.minedLocationAmounts = { ...mutation.minedLocationAmounts };
@@ -849,6 +860,15 @@ export class Game {
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
     if (this.stateManager.currentSystem) {
       this.applyPlanetMutations(this.stateManager.currentSystem);
+      if (newState === 'system') {
+        const system = this.stateManager.currentSystem;
+        this.scanService.resolveCatalogueTarget(
+          `system:${system.starX},${system.starY}`,
+          'classified',
+          85,
+          'passive'
+        );
+      }
     }
     // Reset zoom to default when leaving system view
     if (previousState === 'system' && newState !== 'system') {
@@ -867,6 +887,8 @@ export class Game {
     if (newState === 'orbit') {
       const planet = this.stateManager.currentPlanet;
       if (planet) {
+        const resolution = this.scanService.resolvePlanet(planet, 'surveyed', 100, 'orbital-survey');
+        this.completeMissionsForDiscovery(planet, resolution.current.level);
         const bodies = this.getOrbitBodies();
         const selectedIndex = bodies.indexOf(planet);
         this.orbitModeState.reset(selectedIndex >= 0 ? selectedIndex : 0, getPlanetMapSize(planet));
@@ -1287,6 +1309,7 @@ export class Game {
         this.orbitModeState.selectedBodyIndex =
           (this.orbitModeState.selectedBodyIndex - 1 + bodies.length) % bodies.length;
         this.resetOrbitLandingCursor();
+        this.surveySelectedOrbitBody();
         this.forceFullRender = true;
         return true;
       }
@@ -1296,6 +1319,7 @@ export class Game {
       ) {
         this.orbitModeState.selectedBodyIndex = (this.orbitModeState.selectedBodyIndex + 1) % bodies.length;
         this.resetOrbitLandingCursor();
+        this.surveySelectedOrbitBody();
         this.forceFullRender = true;
         return true;
       }
@@ -2619,8 +2643,9 @@ export class Game {
         targetName = `Star (${(target as StellarBody).name})`;
       } else if (target instanceof Planet || target instanceof Starbase) {
         targetName = target.name;
-        if (target instanceof Planet && !target.scanned) {
-          target.scan(); // Perform scan if needed
+        if (target instanceof Planet) {
+          const resolution = this.scanService.resolvePlanet(target, 'observed', 92, 'local-scan');
+          this.completeMissionsForDiscovery(target, resolution.current.level);
         }
         lines = target.getScanInfo(); // Get formatted lines
       } else {
@@ -2642,7 +2667,10 @@ export class Game {
             target instanceof Planet ? 8 : 10
           );
           this.player.awardCrewExperience('communication', 3);
-          this.completeMissionsForScan(target as Planet | SolarSystem | StellarBody);
+          if (!(target instanceof Planet)) {
+            const discoveryLevel = this.recordLocalCatalogueScan(target as SolarSystem | StellarBody);
+            this.completeMissionsForDiscovery(target as SolarSystem | StellarBody, discoveryLevel);
+          }
         }
       } else {
         logger.error(
@@ -2757,7 +2785,15 @@ export class Game {
     this.terminalOverlay.addMessageLines(lines);
     this.player.awardCrewExperience('astroscience', quality.confidence >= 60 ? 6 : 3);
     this.player.awardCrewExperience('communication', 2);
-    if (quality.confidence >= 70) this.completeMissionsForScan(target);
+    const discoveryLevel: DiscoveryLevel =
+      quality.confidence >= 70 ? 'observed' : quality.confidence >= 40 ? 'classified' : 'detected';
+    const resolution = this.scanService.resolveCatalogueTarget(
+      `system:${worldX},${worldY}`,
+      discoveryLevel,
+      quality.confidence,
+      'long-range'
+    );
+    this.completeMissionsForDiscovery(target, resolution.current.level);
     this.statusMessage = `Observed ${quality.label}.`;
   }
 
@@ -3032,21 +3068,25 @@ export class Game {
     this.statusMessage = `Observed ${nameLabel}.`;
   }
 
-  /** Completes missions whose objectives are satisfied by the latest scan. */
-  private completeMissionsForScan(target: Planet | SolarSystem | StellarBody): void {
+  /** Records a local stellar or system scan and returns its resulting knowledge level. */
+  private recordLocalCatalogueScan(target: SolarSystem | StellarBody): DiscoveryLevel {
     const system = this.stateManager.currentSystem;
-    const completed: StarbaseMission[] = [];
+    const worldX = system?.starX ?? this.player.position.worldX;
+    const worldY = system?.starY ?? this.player.position.worldY;
+    const key =
+      target instanceof SolarSystem ? `system:${worldX},${worldY}` : `star:${worldX},${worldY}/${target.id}`;
+    return this.scanService.resolveCatalogueTarget(key, 'observed', 98, 'local-scan').current.level;
+  }
 
-    for (const mission of Object.values(this.activeMissions)) {
-      if (this.completedMissionIds.has(mission.id)) continue;
-      if (system && mission.systemName !== system.name) continue;
-      if (!isMissionCompletedByScan(mission, target)) continue;
-      completed.push(mission);
-    }
-
+  /** Applies rewards for missions satisfied by a discovery update. */
+  private completeMissionsForDiscovery(
+    target: Planet | SolarSystem | StellarBody,
+    discoveryLevel: DiscoveryLevel
+  ): void {
+    const systemName =
+      target instanceof SolarSystem ? target.name : (this.stateManager.currentSystem?.name ?? null);
+    const completed = this.missionProgress.completeForDiscovery(target, systemName, discoveryLevel);
     for (const mission of completed) {
-      this.completedMissionIds.add(mission.id);
-      delete this.activeMissions[mission.id];
       this.player.resources.credits += mission.rewardCredits;
       this.player.awardCrewExperience('communication', 12);
       this.player.awardCrewExperience('astroscience', 8);
@@ -4351,6 +4391,8 @@ export class Game {
     this.addSurfaceNotification(
       `Temp ${planet.getCurrentTemperature()} K. Gravity ${planet.gravity.toFixed(2)}g. ${planet.atmosphere.density} atmosphere.`
     );
+    const resolution = this.scanService.resolvePlanet(planet, 'mapped', 100, 'surface-map');
+    this.completeMissionsForDiscovery(planet, resolution.current.level);
     this.statusMessage = 'Surface scan complete.';
     this.forceFullRender = true;
   }
@@ -5267,7 +5309,7 @@ export class Game {
     const planet = this.stateManager.currentPlanet;
     const target = this.getSelectedTarget();
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
-    const activeMissionCount = Object.keys(this.activeMissions).length;
+    const activeMissionCount = this.missionProgress.getActiveCount();
 
     rows.push(
       this.createShipLogRow(
@@ -5346,7 +5388,7 @@ export class Game {
         this.createShipLogRow(
           '006',
           'PLANET',
-          planet.scanned ? 'SCANNED' : 'UNSCANNED',
+          formatDiscoveryLevel(planet.discovery.level),
           `${planet.name} | ${planet.getRotationPeriodLabel()} rotation | ${planet.surfaceTempMin}-${planet.surfaceTempMax} K surface range.`,
           'Current landed body record. Full mineral details require a surface scan.'
         )
@@ -5419,7 +5461,7 @@ export class Game {
   /** Returns ship log summary. */
   private getShipLogSummary(): string {
     const alerts = this.statusMessage ? 'watch note' : 'nominal';
-    const missionCount = Object.keys(this.activeMissions).length;
+    const missionCount = this.missionProgress.getActiveCount();
     return missionCount > 0 ? `${missionCount} mission${missionCount === 1 ? '' : 's'} | ${alerts}` : alerts;
   }
 
@@ -5800,7 +5842,7 @@ export class Game {
       if (planet.scanned) {
         status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;
       } else {
-        status += ` | Scan: Required (Potential: ${planet.mineralRichness})`;
+        status += ` | Scan: ${formatDiscoveryLevel(planet.discovery.level)} (Potential: ${planet.mineralRichness})`;
       }
     } else {
       status += ` | Scan: N/A (${planet.type})`;
@@ -6149,7 +6191,7 @@ export class Game {
           this.player.position.surfaceX,
           this.player.position.surfaceY,
           this.player.render.char,
-          this.stateManager.currentPlanet?.scanned ? 'scanned' : 'unscanned',
+          this.stateManager.currentPlanet?.discovery.level ?? 'detected',
           this.player.terrainVehicle.deployed ? 'rover' : 'ship',
           this.player.terrainVehicle.available ? 'available' : 'lost',
           this.player.terrainVehicle.onFoot ? 'foot' : 'notfoot',
@@ -6708,11 +6750,17 @@ export class Game {
     this.orbitModeState.alert = '';
   }
 
+  /** Records an orbital survey for the currently selected local body. */
+  private surveySelectedOrbitBody(): void {
+    const selected = this.getSelectedOrbitBody();
+    const resolution = this.scanService.resolvePlanet(selected, 'surveyed', 100, 'orbital-survey');
+    this.completeMissionsForDiscovery(selected, resolution.current.level);
+  }
+
   /** Creates current orbit screen. */
   private createCurrentOrbitScreen(): OrbitScreenModel {
     const parentPlanet = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
     const selectedBody = this.getSelectedOrbitBody();
-    if (!selectedBody.scanned) selectedBody.scan();
     selectedBody.prepareSurfaceInBackground();
     return createOrbitScreenModel({
       parentPlanet,
@@ -7017,10 +7065,7 @@ export class Game {
       return;
     }
 
-    const status = getMissionStatus(mission, {
-      acceptedMissionIds: this.acceptedMissionIds,
-      completedMissionIds: this.completedMissionIds,
-    });
+    const status = this.missionProgress.getStatus(mission);
     if (status === 'COMPLETE') {
       this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
@@ -7030,8 +7075,7 @@ export class Game {
       return;
     }
 
-    this.acceptedMissionIds.add(mission.id);
-    this.activeMissions[mission.id] = mission;
+    this.missionProgress.accept(mission);
     this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objective.targetLabel}.`;
     this.statusMessage = this.starbaseMode.alert;
   }
@@ -7117,10 +7161,7 @@ export class Game {
           ];
         }
         return generateStarbaseMissions(starbase, this.stateManager.currentSystem).map((mission) => {
-          const status = getMissionStatus(mission, {
-            acceptedMissionIds: this.acceptedMissionIds,
-            completedMissionIds: this.completedMissionIds,
-          });
+          const status = this.missionProgress.getStatus(mission);
           return {
             id: mission.id,
             cells: [mission.title, `${mission.rewardCredits} Cr`, mission.risk, status, mission.summary],
@@ -7352,9 +7393,7 @@ export class Game {
     if (sectionId === 'sell')
       return this.cargoSystem.getTotalUnits(this.player.cargoHold) > 0 ? 'Ready' : 'No cargo';
     if (sectionId === 'missions') {
-      const active = Object.keys(this.activeMissions).filter(
-        (id) => !this.completedMissionIds.has(id)
-      ).length;
+      const active = this.missionProgress.getActiveCount();
       return active > 0 ? `${active} Active` : 'Available';
     }
     if (sectionId === 'crew') {

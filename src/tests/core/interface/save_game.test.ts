@@ -7,6 +7,8 @@ import {
   SaveGameStorage,
   SESSION_SAVE_KEY,
 } from '../../../core/save_game';
+import { MissionProgressService } from '../../../core/mission_progress';
+import { ScanService } from '../../../core/scan_service';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -45,7 +47,7 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 1,
+    version: 2,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -112,6 +114,7 @@ function createSave(): GameSave {
     acceptedMissionIds: [],
     completedMissionIds: [],
     activeMissions: {},
+    catalogueDiscoveries: {},
     tutorialHintsShown: ['hyperspace'],
   };
 }
@@ -142,6 +145,33 @@ describe('save game persistence', () => {
     expect(() => parseGameSave('{"version":99}')).toThrow('Unsupported save version');
   });
 
+  it('migrates version-one binary planet scans into layered discovery records', () => {
+    const current = createSave();
+    const { catalogueDiscoveries: _catalogueDiscoveries, ...legacyBase } = current;
+    const migrated = parseGameSave({
+      ...legacyBase,
+      version: 1,
+      planetMutations: [
+        {
+          worldX: 3,
+          worldY: -2,
+          bodyPath: 'planet:0',
+          orbitAngle: 0,
+          systemX: 10,
+          systemY: 20,
+          scanned: true,
+          primaryResource: 'Iron',
+          minedLocations: [],
+          minedLocationAmounts: {},
+        },
+      ],
+    });
+
+    expect(migrated.version).toBe(2);
+    expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
+    expect(migrated.catalogueDiscoveries).toEqual({});
+  });
+
   it('restores player and mission data through explicit Game APIs', () => {
     const save = createSave();
     const player = {
@@ -160,9 +190,8 @@ describe('save game persistence', () => {
       },
       player,
       planetMutationRegistry: new Map(),
-      acceptedMissionIds: new Set(),
-      completedMissionIds: new Set(),
-      activeMissions: {},
+      _missionProgress: new MissionProgressService(),
+      _scanService: new ScanService(),
       tutorialHintsShown: new Set(),
       statusMessage: '',
       forceFullRender: false,

@@ -8,7 +8,7 @@ import {
   generateStarbaseMissions,
   generateStarbaseNotices,
   getMissionStatus,
-  isMissionCompletedByScan,
+  isMissionCompletedByDiscovery,
 } from '../../../core/mission_board';
 
 /** Creates mission system. */
@@ -67,7 +67,10 @@ describe('mission board generation', () => {
     const other = system.planets.find((planet) => planet && planet.name !== mission.objective.targetName);
     if (!target) throw new Error('Expected mission target in generated system.');
 
-    expect(isMissionCompletedByScan(mission, target)).toBe(true);
-    if (other) expect(isMissionCompletedByScan(mission, other)).toBe(false);
+    expect(isMissionCompletedByDiscovery(mission, target, 'surveyed')).toBe(true);
+    expect(isMissionCompletedByDiscovery(mission, target, 'observed')).toBe(
+      mission.objective.requiredDiscoveryLevel === 'observed'
+    );
+    if (other) expect(isMissionCompletedByDiscovery(mission, other, 'surveyed')).toBe(false);
   });
 });

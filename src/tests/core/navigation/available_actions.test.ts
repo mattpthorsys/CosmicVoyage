@@ -68,7 +68,14 @@ describe('available actions', () => {
     Object.defineProperties(planet, {
       name: { value: 'Test I' },
       type: { value: 'Rock' },
-      scanned: { value: true },
+      discovery: {
+        value: {
+          level: 'mapped',
+          confidence: 100,
+          observations: 2,
+          lastMethod: 'surface-map',
+        },
+      },
       mineralRichness: { value: MineralRichness.RICH },
       isMined: { value: () => false },
     });

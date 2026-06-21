@@ -16,6 +16,7 @@ function createMiningHarness(): { mining: any; player: Player; planet: any } {
     systemPRNG: new PRNG('partial-mining'),
     depleted: false,
     minedAmount: 0,
+    advanceDiscovery: () => undefined,
     isMined: () => planet.depleted,
     getMinedAmount: () => planet.minedAmount,
     recordMinedAmount: (_x: number, _y: number, amount: number, totalYield: number) => {

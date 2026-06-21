@@ -14,6 +14,20 @@ function createSurfaceScanHarness(): any {
     type: 'Rock',
     gravity: 0.91,
     atmosphere: { density: 'Thin', pressure: 0.4, composition: { Nitrogen: 80 } },
+    discovery: {
+      level: 'surveyed',
+      confidence: 100,
+      observations: 1,
+      lastMethod: 'orbital-survey',
+    },
+    advanceDiscovery: function (level: 'mapped', confidence: number, lastMethod: 'surface-map') {
+      this.discovery = {
+        level,
+        confidence,
+        observations: this.discovery.observations + 1,
+        lastMethod,
+      };
+    },
     heightmap: Array.from({ length: 32 }, () => Array.from({ length: 32 }, () => 128)),
     surfaceElementMap: Array.from({ length: 32 }, () => Array.from({ length: 32 }, () => 'IRON')),
     ensureSurfaceReady: () => undefined,
