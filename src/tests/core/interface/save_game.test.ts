@@ -47,7 +47,7 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 3,
+    version: 4,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -97,7 +97,8 @@ function createSave(): GameSave {
         cargoPodsInstalled: 1,
         cargoPodCapacity: 100,
         probeBaysOccupied: 0,
-        specialBaysOccupied: 0,
+        specialBaysOccupied: 1,
+        surveyEquipmentClass: 1,
         damage: { hullIntegrity: 100, maxHullIntegrity: 100, subsystemDamage: {} },
       },
     },
@@ -116,6 +117,7 @@ function createSave(): GameSave {
     completedMissionIds: [],
     activeMissions: {},
     missionObjectiveProgress: {},
+    economy: {},
     catalogueDiscoveries: {},
     tutorialHintsShown: ['hyperspace'],
   };
@@ -153,6 +155,7 @@ describe('save game persistence', () => {
       catalogueDiscoveries: _catalogueDiscoveries,
       readyMissionIds: _readyMissionIds,
       missionObjectiveProgress: _missionObjectiveProgress,
+      economy: _economy,
       ...legacyBase
     } = current;
     const migrated = parseGameSave({
@@ -174,7 +177,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(4);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
   });
@@ -184,6 +187,7 @@ describe('save game persistence', () => {
     const {
       readyMissionIds: _readyMissionIds,
       missionObjectiveProgress: _missionObjectiveProgress,
+      economy: _economy,
       ...legacy
     } = current;
     const migrated = parseGameSave({
@@ -213,10 +217,25 @@ describe('save game persistence', () => {
       },
     });
 
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(4);
     expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
     expect(migrated.readyMissionIds).toEqual([]);
     expect(migrated.missionObjectiveProgress).toEqual({});
+  });
+
+  it('migrates version-three saves with a starter survey suite and empty economy', () => {
+    const current = createSave();
+    const { economy: _economy, ...legacy } = current;
+    const { surveyEquipmentClass: _surveyEquipmentClass, ...legacyShip } = legacy.player.ship;
+    const migrated = parseGameSave({
+      ...legacy,
+      version: 3,
+      player: { ...legacy.player, ship: legacyShip },
+    });
+
+    expect(migrated.version).toBe(4);
+    expect(migrated.player.ship.surveyEquipmentClass).toBe(1);
+    expect(migrated.economy).toEqual({});
   });
 
   it('restores player and mission data through explicit Game APIs', () => {

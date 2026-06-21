@@ -5,6 +5,7 @@ import { TRADE_COMMODITIES } from '../constants/trade';
 import { fastHash } from '../utils/hash';
 import { Player } from './player';
 import { CargoSystem } from '../systems/cargo_systems';
+import { getOperationalCapabilities } from './operational_capabilities';
 
 export interface TradeDepotItem {
   itemKey: string;
@@ -35,6 +36,12 @@ export interface BuyNextResult extends CommerceResult {
 
 type CargoAddResult = { added: number; addedItems: Record<string, number> };
 
+export interface StationEconomyState {
+  items: Record<string, TradeDepotItem>;
+}
+
+export type EconomySnapshot = Record<string, StationEconomyState>;
+
 /** Returns trade item info. */
 export function getTradeItemInfo(itemKey: string): { name: string; baseValue: number } | null {
   const commodity = TRADE_COMMODITIES[itemKey];
@@ -63,6 +70,8 @@ const DEPOT_KEYS = [
 ] as const;
 
 export class StarbaseCommerceService {
+  private stations = new Map<string, StationEconomyState>();
+
   /** Initializes StarbaseCommerceService. */
   constructor(
     private readonly player: Player,
@@ -72,11 +81,24 @@ export class StarbaseCommerceService {
 
   /** Returns manifest. */
   getManifest(starbaseName: string): TradeDepotItem[] {
+    const station = this.getOrCreateStation(starbaseName);
+    const capabilities = getOperationalCapabilities(this.player.crew, this.player.ship);
+    return Object.values(station.items).map((item) => ({
+      ...item,
+      buyPrice: Math.max(1, Math.ceil(item.buyPrice * capabilities.buyPriceMultiplier)),
+      sellPrice: Math.max(1, Math.floor(item.sellPrice * capabilities.sellPriceMultiplier)),
+    }));
+  }
+
+  /** Returns or creates the persistent base market for one station. */
+  private getOrCreateStation(starbaseName: string): StationEconomyState {
+    const existing = this.stations.get(starbaseName);
+    if (existing) return existing;
     const depotKeys = DEPOT_KEYS.filter((key) => TRADE_COMMODITIES[key]);
     const hashOffset = Math.abs(
       fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.worldSeed)
     );
-    return depotKeys
+    const manifest = depotKeys
       .filter(
         (itemKey, index) => TRADE_COMMODITIES[itemKey].rarity > 0.1 || (hashOffset + index * 23) % 100 < 18
       )
@@ -100,6 +122,23 @@ export class StarbaseCommerceService {
           ),
         };
       });
+    const station = {
+      items: Object.fromEntries(manifest.map((item) => [item.itemKey, item])),
+    };
+    this.stations.set(starbaseName, station);
+    return station;
+  }
+
+  /** Returns persistent station stock and base price state for saving. */
+  createSnapshot(): EconomySnapshot {
+    return Object.fromEntries(
+      [...this.stations.entries()].map(([name, state]) => [name, structuredClone(state)])
+    );
+  }
+
+  /** Restores persistent station stock and base price state. */
+  restoreSnapshot(snapshot: EconomySnapshot): void {
+    this.stations = new Map(Object.entries(snapshot).map(([name, state]) => [name, structuredClone(state)]));
   }
 
   /** Returns item info. */
@@ -139,6 +178,7 @@ export class StarbaseCommerceService {
     const purchase = this.addPurchasedCargo(item.itemKey, unitsToBuy);
     const cost = purchase.added * item.buyPrice;
     this.player.resources.credits -= cost;
+    this.adjustStock(starbaseName, item.itemKey, -purchase.added);
     return {
       message: `Bought ${this.formatPurchasedCargo(item.itemKey, purchase.addedItems)} for ${cost} Cr.`,
       effects: {
@@ -159,6 +199,7 @@ export class StarbaseCommerceService {
     const removed = this.cargoSystem.removeItem(this.player.cargoHold, item.itemKey, unitsToSell);
     const creditsEarned = removed * item.sellPrice;
     this.player.resources.credits += creditsEarned;
+    this.adjustStock(starbaseName, item.itemKey, removed);
     return {
       message: `Sold ${removed} m^3 ${item.name} for ${creditsEarned} Cr.`,
       effects: {
@@ -223,6 +264,7 @@ export class StarbaseCommerceService {
         depotItem?.sellPrice ?? Math.max(1, Math.floor(itemInfo.baseValue * CONFIG.TRADE_SELL_MARKDOWN));
       totalCreditsEarned += amount * valuePerUnit;
       soldItemsLog.push(`${amount} ${itemInfo.name}`);
+      if (depotItem) this.adjustStock(starbaseName, itemKey, amount);
     }
 
     this.player.resources.credits += totalCreditsEarned;
@@ -245,6 +287,13 @@ export class StarbaseCommerceService {
         },
       },
     };
+  }
+
+  /** Applies a stock delta to a persistent station commodity. */
+  private adjustStock(starbaseName: string, itemKey: string, delta: number): void {
+    const item = this.getOrCreateStation(starbaseName).items[itemKey];
+    if (!item) return;
+    item.units = Math.max(0, Math.round((item.units + delta) * 10) / 10);
   }
 
   /** Refuels. */

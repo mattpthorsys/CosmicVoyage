@@ -142,7 +142,7 @@ function buildReadout(context: ShipStatusDashboardContext, fuelUseMultiplier: nu
         `Special   ${context.stats.emptySpecialPurposeBays}/${context.stats.specialBayCapacity} free`,
         'cyan'
       ),
-      textLine(`Probe     ${context.stats.emptyProbeBays}/${context.stats.probeCapacity} free`, 'cyan'),
+      textLine(`Survey    C${context.ship.surveyEquipmentClass} / ${context.stats.sensorRating}`, 'cyan'),
     ]),
     spacer(),
     ...box(READOUT_BOX_WIDTH, 'WATCH', [

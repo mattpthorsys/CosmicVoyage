@@ -107,6 +107,7 @@ import {
   TradeDepotItem,
 } from './starbase_commerce';
 import { StarbaseController } from './starbase_controller';
+import { getOperationalCapabilities } from './operational_capabilities';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -729,6 +730,7 @@ export class Game {
       planetMutations,
       ...this.missionProgress.createSnapshot(),
       catalogueDiscoveries: this.scanService.createSnapshot(),
+      economy: this.starbaseCommerce.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
     };
   }
@@ -784,6 +786,7 @@ export class Game {
       missionObjectiveProgress: save.missionObjectiveProgress,
     });
     this.scanService.restoreSnapshot(save.catalogueDiscoveries);
+    this.starbaseCommerce.restoreSnapshot(save.economy);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
     this.statusMessage = `Loaded save from ${new Date(save.savedAt).toLocaleString()}.`;
     this.forceFullRender = true;
@@ -2646,7 +2649,11 @@ export class Game {
       } else if (target instanceof Planet || target instanceof Starbase) {
         targetName = target.name;
         if (target instanceof Planet) {
-          const resolution = this.scanService.resolvePlanet(target, 'observed', 92, 'local-scan');
+          const confidence = Math.min(
+            100,
+            78 + getOperationalCapabilities(this.player.crew, this.player.ship).scanConfidenceBonus
+          );
+          const resolution = this.scanService.resolvePlanet(target, 'observed', confidence, 'local-scan');
           this.completeMissionsForDiscovery(target, resolution.current.level);
         }
         lines = target.getScanInfo(); // Get formatted lines
@@ -2866,7 +2873,14 @@ export class Game {
       objectKind === 'rogue-planet'
         ? 0.18
         : Math.max(0.12, Math.min(1.35, brightnessSignal * 0.66 + radiusSignal * 0.34));
-    const confidence = Math.max(8, Math.min(98, Math.round((104 - rangeCells * 2.55) * sourceStrength)));
+    const capabilityBonus = getOperationalCapabilities(
+      this.player.crew,
+      this.player.ship
+    ).scanConfidenceBonus;
+    const confidence = Math.max(
+      8,
+      Math.min(98, Math.round((104 - rangeCells * 2.55) * sourceStrength + capabilityBonus))
+    );
     const label =
       confidence >= 72
         ? 'resolved interstellar contact'
@@ -3048,7 +3062,17 @@ export class Game {
     const coords = this.getTargetCoords(target);
     const range = Math.sqrt(this.player.distanceSqToSystemCoords(coords.x, coords.y));
     const rangeAu = range / AU_IN_METERS;
-    const confidence = Math.max(10, Math.min(99, Math.round(99 - rangeAu * 7)));
+    const confidence = Math.max(
+      10,
+      Math.min(
+        99,
+        Math.round(
+          82 -
+            rangeAu * 7 +
+            getOperationalCapabilities(this.player.crew, this.player.ship).scanConfidenceBonus
+        )
+      )
+    );
     const classLabel = confidence > 45 ? this.getTargetClassLabel(target) : 'distant body';
     const nameLabel = confidence > 35 ? this.getTargetName(target) : 'unresolved target';
     const lines = [
@@ -7231,12 +7255,6 @@ export class Game {
               'Stub: future superstructure replacement and expansion refits. No frame swap is available yet.',
             disabled: true,
           },
-          {
-            id: 's2',
-            cells: ['Survey mast overhaul', '1,250 Cr', '5h', 'Improved scan reach placeholder.'],
-            detail: 'Stub: scanner upgrade path.',
-            disabled: true,
-          },
         ];
       case 'crew':
         return this.getCrewRows(starbase);
@@ -7295,6 +7313,18 @@ export class Game {
         ],
         detail:
           'Primary drive is fitted. Future engine refits can use this slot without changing the superstructure.',
+        disabled: true,
+      },
+      {
+        id: 'refit:survey',
+        cells: [
+          'Survey suite',
+          '--',
+          '--',
+          `Class ${ship.surveyEquipmentClass}; sensor rating ${stats.sensorRating}`,
+        ],
+        detail:
+          'Integrated spectrometry, terrain radar, and sample analysis. Higher classes improve scan confidence and extraction throughput.',
         disabled: true,
       },
       {

@@ -8,6 +8,7 @@ import { STATUS_MESSAGES } from '../constants/messages';
 import { ELEMENTS } from '../constants/resources';
 import { Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
+import { getOperationalCapabilities } from '../core/operational_capabilities';
 
 export interface MiningEstimate {
   canMine: boolean;
@@ -361,11 +362,15 @@ export class MiningSystem {
         message: STATUS_MESSAGES.PLANET_MINE_DEPLETED,
       };
     }
+    const throughput = getOperationalCapabilities(
+      this.player.crew,
+      this.player.ship
+    ).miningThroughputMultiplier;
     return {
       canMine: true,
       elementKey,
       elementName: elementInfo?.name || elementKey,
-      maxAmount: remaining,
+      maxAmount: roundToTenth(Math.min(remaining, 4 * throughput)),
       totalYield,
       x,
       y,

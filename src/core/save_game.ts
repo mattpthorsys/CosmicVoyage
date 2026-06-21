@@ -12,14 +12,17 @@ import type { ShipModificationState } from './ship_modifications';
 import { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './discovery';
+import type { EconomySnapshot } from './starbase_commerce';
 
-export const SAVE_GAME_VERSION = 3;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v3';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v3';
+export const SAVE_GAME_VERSION = 4;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v4';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v4';
 const LEGACY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
 const LEGACY_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v1';
 const PREVIOUS_SESSION_SAVE_KEY = 'cosmic-voyage.session.v2';
 const PREVIOUS_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v2';
+const VERSION_THREE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v3';
+const VERSION_THREE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v3';
 
 type LegacyScanMissionObjective = Omit<ScanMissionObjective, 'id'>;
 type LegacyStarbaseMission = Omit<StarbaseMission, 'objectives'> & {
@@ -96,7 +99,12 @@ export interface GameSaveV3 extends Omit<GameSaveV2, 'version' | 'activeMissions
   missionObjectiveProgress: Record<string, string[]>;
 }
 
-export type GameSave = GameSaveV3;
+export interface GameSaveV4 extends Omit<GameSaveV3, 'version'> {
+  version: 4;
+  economy: EconomySnapshot;
+}
+
+export type GameSave = GameSaveV4;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -127,8 +135,13 @@ export function findSystemPlanetPath(system: SolarSystem, target: Planet | null)
 export function parseGameSave(value: string | unknown): GameSave {
   const candidate = typeof value === 'string' ? JSON.parse(value) : value;
   if (!isRecord(candidate)) throw new Error('Save data is not an object.');
-  const record = candidate as Partial<GameSaveV1 | GameSaveV2 | GameSaveV3>;
-  if (record.version !== 1 && record.version !== 2 && record.version !== SAVE_GAME_VERSION) {
+  const record = candidate as Partial<GameSaveV1 | GameSaveV2 | GameSaveV3 | GameSaveV4>;
+  if (
+    record.version !== 1 &&
+    record.version !== 2 &&
+    record.version !== 3 &&
+    record.version !== SAVE_GAME_VERSION
+  ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
   }
   if (typeof record.seed !== 'string' || record.seed.length === 0) throw new Error('Save seed is missing.');
@@ -164,7 +177,8 @@ export function parseGameSave(value: string | unknown): GameSave {
   }
   if (record.version === 1) return migrateV1Save(candidate as unknown as GameSaveV1);
   if (record.version === 2) return migrateV2Save(candidate as unknown as GameSaveV2);
-  const save = candidate as unknown as GameSaveV3;
+  if (record.version === 3) return migrateV3Save(candidate as unknown as GameSaveV3);
+  const save = candidate as unknown as GameSaveV4;
   if (!isRecord(save.catalogueDiscoveries)) {
     throw new Error('Save discovery catalogue is invalid.');
   }
@@ -179,6 +193,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   if (!Array.isArray(save.readyMissionIds) || !isRecord(save.missionObjectiveProgress)) {
     throw new Error('Save mission objective progress is invalid.');
   }
+  if (!isRecord(save.economy)) throw new Error('Save economy state is invalid.');
   return save;
 }
 
@@ -223,12 +238,29 @@ function migrateV2Save(save: GameSaveV2): GameSave {
       },
     ])
   ) as Record<string, StarbaseMission>;
-  return {
+  return migrateV3Save({
     ...save,
-    version: SAVE_GAME_VERSION,
+    version: 3,
     activeMissions,
     readyMissionIds: [],
     missionObjectiveProgress: {},
+  });
+}
+
+/** Adds persistent economy state and normalizes survey equipment on older ships. */
+function migrateV3Save(save: GameSaveV3): GameSave {
+  return {
+    ...save,
+    version: SAVE_GAME_VERSION,
+    player: {
+      ...save.player,
+      ship: {
+        ...save.player.ship,
+        surveyEquipmentClass: save.player.ship.surveyEquipmentClass ?? 1,
+        specialBaysOccupied: Math.max(1, save.player.ship.specialBaysOccupied ?? 0),
+      },
+    },
+    economy: {},
   };
 }
 
@@ -261,6 +293,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_THREE_SESSION_SAVE_KEY,
       PREVIOUS_SESSION_SAVE_KEY,
       LEGACY_SESSION_SAVE_KEY
     );
@@ -275,6 +308,7 @@ export class SaveGameStorage {
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
     this.sessionStore.removeItem(PREVIOUS_SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_THREE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(LEGACY_SESSION_SAVE_KEY);
   }
 
@@ -283,6 +317,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_THREE_MANUAL_SAVE_KEY,
       PREVIOUS_MANUAL_SAVE_KEY,
       LEGACY_MANUAL_SAVE_KEY
     );
@@ -297,6 +332,7 @@ export class SaveGameStorage {
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(PREVIOUS_MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_THREE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(LEGACY_MANUAL_SAVE_KEY);
   }
 

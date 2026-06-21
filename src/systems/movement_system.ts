@@ -7,6 +7,7 @@ import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from '../core/event_manager';
 import { getEngineFuelUseMultiplier } from '../core/ship_modifications';
+import { getOperationalCapabilities } from '../core/operational_capabilities';
 
 // Define or import the event data structure expected by handleMoveRequest
 export interface MoveRequestData {
@@ -115,7 +116,8 @@ export class MovementSystem {
     const fuelCost =
       CONFIG.HYPERSPACE_MOVE_FUEL_COST *
       cellDistance *
-      getEngineFuelUseMultiplier(this.player.ship.engineClass);
+      getEngineFuelUseMultiplier(this.player.ship.engineClass) *
+      getOperationalCapabilities(this.player.crew, this.player.ship).hyperspaceFuelMultiplier;
     if (fuelCost > 0 && this.player.resources.fuel < fuelCost) {
       logger.warn(
         `[MovementSystem] Hyperspace move refused: fuel ${this.player.resources.fuel.toFixed(2)} below required ${fuelCost.toFixed(2)}.`

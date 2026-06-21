@@ -39,6 +39,39 @@ describe('StarbaseCommerceService', () => {
     expect(result.effects.creditsChanged?.amountChanged).toBeLessThan(0);
   });
 
+  it('persists stock changes and restores them into a new commerce service', () => {
+    const first = createCommerce();
+    first.player.resources.credits = 10_000;
+    const before = first.commerce.getManifest('Fuel Dock').find((item) => item.itemKey === 'WATER_ICE')!;
+
+    first.commerce.buyItem('Fuel Dock', 'WATER_ICE', 2);
+    const after = first.commerce.getManifest('Fuel Dock').find((item) => item.itemKey === 'WATER_ICE')!;
+    const restored = createCommerce();
+    restored.commerce.restoreSnapshot(first.commerce.createSnapshot());
+
+    expect(after.units).toBe(before.units - 2);
+    expect(
+      restored.commerce.getManifest('Fuel Dock').find((item) => item.itemKey === 'WATER_ICE')?.units
+    ).toBe(after.units);
+  });
+
+  it('uses trade and communication skill to improve station prices', () => {
+    const skilled = createCommerce();
+    const baseline = createCommerce();
+    skilled.player.crew.forEach((member) => {
+      member.skills.trade = 10;
+      member.skills.communication = 10;
+    });
+
+    const skilledMarket = skilled.commerce.getManifest('Fuel Dock');
+    const baselineMarket = baseline.commerce.getManifest('Fuel Dock');
+    const baselineItem = [...baselineMarket].sort((a, b) => b.buyPrice - a.buyPrice)[0];
+    const skilledItem = skilledMarket.find((item) => item.itemKey === baselineItem.itemKey)!;
+
+    expect(skilledItem.buyPrice).toBeLessThan(baselineItem.buyPrice);
+    expect(skilledItem.sellPrice).toBeGreaterThan(baselineItem.sellPrice);
+  });
+
   it('sells a requested cargo amount and reports resulting effects', () => {
     const { player, cargo, commerce } = createCommerce();
     const item = commerce.getManifest('Fuel Dock').find((candidate) => candidate.itemKey === 'WATER_ICE')!;

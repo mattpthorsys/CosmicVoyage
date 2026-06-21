@@ -26,6 +26,7 @@ describe('ship modifications', () => {
     expect(ship.superstructure.probeBays).toBe(3);
     expect(ship.superstructure.cargoBays).toBe(16);
     expect(ship.cargoPodsInstalled).toBe(4);
+    expect(ship.surveyEquipmentClass).toBe(1);
     expect(getShipCargoCapacity(ship)).toBe(100);
     expect(ship.missileCount).toBe(5);
     expect(ship.shieldClass).toBe(0);
@@ -40,8 +41,9 @@ describe('ship modifications', () => {
       probeCapacity: 3,
       emptyProbeBays: 3,
       specialBayCapacity: 4,
-      emptySpecialPurposeBays: 4,
+      emptySpecialPurposeBays: 3,
       landingBayCapacity: 1,
+      sensorRating: 25,
     });
   });
 
@@ -65,12 +67,15 @@ describe('ship modifications', () => {
     expect(ship.laserClass).toBe(2);
     expect(installShipyardUpgrade(ship, 'shipyard:missile')).toContain('Loaded nuclear missile');
     expect(ship.missileCount).toBe(6);
+    expect(installShipyardUpgrade(ship, 'shipyard:survey:3')).toBe('Installed Survey Suite Class 3.');
+    expect(ship.surveyEquipmentClass).toBe(3);
 
     const stats = getShipDerivedStats(ship);
     expect(stats.cargoCapacity).toBe(125);
     expect(stats.shieldRating).toBeGreaterThan(0);
     expect(stats.laserRating).toBeGreaterThan(0);
     expect(stats.driveEfficiencyPercent).toBeGreaterThanOrEqual(65);
+    expect(stats.sensorRating).toBe(75);
   });
 
   it('marks unavailable shipyard upgrades disabled', () => {

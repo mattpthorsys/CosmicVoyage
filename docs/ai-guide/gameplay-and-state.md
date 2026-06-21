@@ -86,6 +86,21 @@ Mission rewards are not granted remotely. Discovery completes typed objectives;
 the finished telemetry must be returned to the issuing starbase and explicitly
 handed in before credits and final crew experience are awarded.
 
+Station markets are persistent state. Buying reduces local stock and selling
+returns stocked commodities to that station; this state must be included in
+saves rather than regenerated after every transaction.
+
+Crew and equipment are operational systems rather than descriptive ratings:
+
+- astroscience and the fitted survey suite improve scan confidence;
+- geology and the survey suite improve extraction throughput;
+- navigation and engineering reduce hyperspace fuel use;
+- trade and communication improve station buy and sell prices;
+- engine class, cargo pods, damage, shields, weapons, and survey-suite class
+  continue to alter their corresponding ship capabilities.
+
+Keep these effects bounded and visible in the relevant instrument or menu.
+
 ## Surface
 
 Surface operation depends on explicit planet surface data, rover deployment,

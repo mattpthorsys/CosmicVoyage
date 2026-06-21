@@ -47,6 +47,7 @@ export interface ShipModificationState {
   cargoPodCapacity: number;
   probeBaysOccupied: number;
   specialBaysOccupied: number;
+  surveyEquipmentClass: number;
   damage: ShipDamageState;
 }
 
@@ -63,6 +64,7 @@ export interface ShipDerivedStats {
   emptySpecialPurposeBays: number;
   landingBayCapacity: number;
   driveEfficiencyPercent: number;
+  sensorRating: number;
   fittedLoadPercent: number;
   hullIntegrityPercent: number;
   damagedSubsystemCount: number;
@@ -126,7 +128,8 @@ export function createDefaultShipModifications(): ShipModificationState {
     cargoPodsInstalled: 4,
     cargoPodCapacity: DEFAULT_CARGO_POD_CAPACITY,
     probeBaysOccupied: 0,
-    specialBaysOccupied: 0,
+    specialBaysOccupied: 1,
+    surveyEquipmentClass: 1,
     damage: {
       hullIntegrity: 100,
       maxHullIntegrity: 100,
@@ -253,6 +256,7 @@ export function getShipDerivedStats(ship: ShipModificationState): ShipDerivedSta
       Math.max(65, Math.min(125, 100 + engineBonus - payloadDrag)),
       driveDamage
     ),
+    sensorRating: Math.max(0, ship.surveyEquipmentClass ?? 0) * 25,
     fittedLoadPercent,
     hullIntegrityPercent:
       ship.damage.maxHullIntegrity > 0
@@ -328,6 +332,18 @@ export function createShipyardUpgradeOptions(
 ): ShipyardUpgradeOption[] {
   const repairCost = getShipRepairCost(ship);
   const options: ShipyardUpgradeOption[] = [
+    ...[1, 2, 3].map(
+      (equipmentClass): ShipyardUpgradeOption => ({
+        id: `shipyard:survey:${equipmentClass}`,
+        label: `Survey Suite Class ${equipmentClass}`,
+        cost: equipmentClass * equipmentClass * 1400,
+        eta: `${equipmentClass + 1}h`,
+        workOrder: `Improves scan confidence and surface extraction throughput.`,
+        detail: `Integrated spectrometry, terrain radar, and sample-analysis package. Current class ${ship.surveyEquipmentClass ?? 0}.`,
+        disabled:
+          equipmentClass <= (ship.surveyEquipmentClass ?? 0) || ship.superstructure.specialPurposeBays <= 0,
+      })
+    ),
     {
       id: 'shipyard:repair',
       label: 'Damage repair',
@@ -426,6 +442,17 @@ export function installShipyardUpgrade(ship: ShipModificationState, optionId: st
     if (getAvailableCargoPodBays(ship) <= 0) return 'All cargo bays already have cargo pods.';
     ship.cargoPodsInstalled += 1;
     return `Installed cargo pod ${ship.cargoPodsInstalled}/${ship.superstructure.cargoBays}.`;
+  }
+  const surveyMatch = optionId.match(/^shipyard:survey:(\d)$/);
+  if (surveyMatch) {
+    const equipmentClass = Number(surveyMatch[1]);
+    if (equipmentClass < 1 || equipmentClass > 3) return 'Unsupported survey equipment class.';
+    if ((ship.surveyEquipmentClass ?? 0) >= equipmentClass) {
+      return `Survey Suite Class ${ship.surveyEquipmentClass} is already installed.`;
+    }
+    ship.surveyEquipmentClass = equipmentClass;
+    ship.specialBaysOccupied = Math.max(1, ship.specialBaysOccupied);
+    return `Installed Survey Suite Class ${equipmentClass}.`;
   }
   const shieldMatch = optionId.match(/^shipyard:shield:(\d)$/);
   if (shieldMatch) {

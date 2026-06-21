@@ -34,6 +34,10 @@ Use this file to find the likely owner of a change before searching globally.
   hand-in state.
 - `src/core/discovery.ts`: ordered knowledge levels and discovery helpers.
 - `src/core/scan_service.ts`: planetary and catalogue discovery progression.
+- `src/core/operational_capabilities.ts`: bounded crew and equipment modifiers
+  shared by scanning, travel, mining, and trade.
+- `src/core/starbase_commerce.ts`: persistent station stock, skilled pricing,
+  buying, selling, and refueling.
 - `src/core/crew.ts`: crew generation, skills, experience, and training.
 - `src/core/ship_modifications.ts`: ship modules, derived statistics, upgrades.
 
