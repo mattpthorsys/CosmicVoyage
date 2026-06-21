@@ -36,19 +36,34 @@ describe('mission progression service', () => {
       risk: 'Low',
       originStarbaseName: 'Test Base',
       systemName: 'Test System',
-      objective: {
-        kind: 'scan',
-        targetName: planet.name,
-        targetLabel: `Survey ${planet.name}`,
-        targetType: 'planet',
-        requiredDiscoveryLevel: 'surveyed',
-      },
+      objectives: [
+        {
+          id: 'observe',
+          kind: 'scan',
+          targetName: planet.name,
+          targetLabel: `Observe ${planet.name}`,
+          targetType: 'planet',
+          requiredDiscoveryLevel: 'observed',
+        },
+        {
+          id: 'survey',
+          kind: 'scan',
+          targetName: planet.name,
+          targetLabel: `Survey ${planet.name}`,
+          targetType: 'planet',
+          requiredDiscoveryLevel: 'surveyed',
+        },
+      ],
     };
     const progress = new MissionProgressService();
 
     expect(progress.accept(mission)).toBe(true);
-    expect(progress.completeForDiscovery(planet, 'Test System', 'observed')).toEqual([]);
-    expect(progress.completeForDiscovery(planet, 'Test System', 'surveyed')).toEqual([mission]);
+    expect(progress.recordDiscovery(planet, 'Test System', 'observed')[0].readyForReturn).toBe(false);
+    expect(progress.getObjectiveCounts(mission)).toEqual({ completed: 1, total: 2 });
+    expect(progress.recordDiscovery(planet, 'Test System', 'surveyed')[0].readyForReturn).toBe(true);
+    expect(progress.getStatus(mission)).toBe('READY');
+    expect(progress.handIn(mission.id, 'Wrong Base')).toBeNull();
+    expect(progress.handIn(mission.id, 'Test Base')).toEqual(mission);
     expect(progress.getStatus(mission)).toBe('COMPLETE');
   });
 });

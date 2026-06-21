@@ -778,8 +778,10 @@ export class Game {
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
     this.missionProgress.restoreSnapshot({
       acceptedMissionIds: save.acceptedMissionIds,
+      readyMissionIds: save.readyMissionIds,
       completedMissionIds: save.completedMissionIds,
       activeMissions: save.activeMissions,
+      missionObjectiveProgress: save.missionObjectiveProgress,
     });
     this.scanService.restoreSnapshot(save.catalogueDiscoveries);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
@@ -3078,25 +3080,24 @@ export class Game {
     return this.scanService.resolveCatalogueTarget(key, 'observed', 98, 'local-scan').current.level;
   }
 
-  /** Applies rewards for missions satisfied by a discovery update. */
+  /** Records mission objective progress produced by a discovery update. */
   private completeMissionsForDiscovery(
     target: Planet | SolarSystem | StellarBody,
     discoveryLevel: DiscoveryLevel
   ): void {
     const systemName =
       target instanceof SolarSystem ? target.name : (this.stateManager.currentSystem?.name ?? null);
-    const completed = this.missionProgress.completeForDiscovery(target, systemName, discoveryLevel);
-    for (const mission of completed) {
-      this.player.resources.credits += mission.rewardCredits;
-      this.player.awardCrewExperience('communication', 12);
-      this.player.awardCrewExperience('astroscience', 8);
-      this.statusMessage = `Mission complete: ${mission.title}. Payment authorised: ${mission.rewardCredits} Cr.`;
+    const updates = this.missionProgress.recordDiscovery(target, systemName, discoveryLevel);
+    for (const update of updates) {
+      const counts = this.missionProgress.getObjectiveCounts(update.mission);
+      this.player.awardCrewExperience('astroscience', 5);
+      this.statusMessage = update.readyForReturn
+        ? `Contract telemetry complete: ${update.mission.title}. Return to ${update.mission.originStarbaseName}.`
+        : `Contract updated: ${update.mission.title} (${counts.completed}/${counts.total}).`;
       this.terminalOverlay.addMessage(`<h>${this.statusMessage}</h>`);
-      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
-        newCredits: this.player.resources.credits,
-        amountChanged: mission.rewardCredits,
-      });
-      logger.info(`[Game] Mission completed: ${mission.id} (${mission.rewardCredits} Cr).`);
+      logger.info(
+        `[Game] Mission objectives updated: ${update.mission.id} (${counts.completed}/${counts.total}).`
+      );
     }
   }
 
@@ -5310,6 +5311,7 @@ export class Game {
     const target = this.getSelectedTarget();
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
     const activeMissionCount = this.missionProgress.getActiveCount();
+    const readyMissionCount = this.missionProgress.getReadyCount();
 
     rows.push(
       this.createShipLogRow(
@@ -5399,10 +5401,12 @@ export class Game {
       this.createShipLogRow(
         '007',
         'MISSION',
-        activeMissionCount > 0 ? 'ACTIVE' : 'QUIET',
-        activeMissionCount > 0
-          ? `${activeMissionCount} accepted mission${activeMissionCount === 1 ? '' : 's'} in ship memory.`
-          : 'No active contracts. Notice boards may hold new work at starbases.',
+        readyMissionCount > 0 ? 'RETURN' : activeMissionCount > 0 ? 'ACTIVE' : 'QUIET',
+        readyMissionCount > 0
+          ? `${readyMissionCount} contract${readyMissionCount === 1 ? '' : 's'} ready for station hand-in.`
+          : activeMissionCount > 0
+            ? `${activeMissionCount} accepted mission${activeMissionCount === 1 ? '' : 's'} in ship memory.`
+            : 'No active contracts. Notice boards may hold new work at starbases.',
         'Mission/notices integration point for the shipboard memory system.'
       )
     );
@@ -7070,13 +7074,30 @@ export class Game {
       this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
     }
+    if (status === 'READY') {
+      const handedIn = this.missionProgress.handIn(mission.id, starbase.name);
+      if (!handedIn) {
+        this.starbaseMode.alert = `Telemetry is complete. Return to ${mission.originStarbaseName} for settlement.`;
+        return;
+      }
+      this.player.resources.credits += handedIn.rewardCredits;
+      this.player.awardCrewExperience('communication', 12);
+      this.player.awardCrewExperience('astroscience', 8);
+      this.starbaseMode.alert = `Contract settled: ${handedIn.title}. Payment ${handedIn.rewardCredits.toLocaleString()} Cr.`;
+      this.statusMessage = this.starbaseMode.alert;
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: handedIn.rewardCredits,
+      });
+      return;
+    }
     if (status === 'ACTIVE') {
       this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
     }
 
     this.missionProgress.accept(mission);
-    this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objective.targetLabel}.`;
+    this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objectives[0]?.targetLabel ?? 'Review contract objectives'}.`;
     this.statusMessage = this.starbaseMode.alert;
   }
 
@@ -7162,9 +7183,16 @@ export class Game {
         }
         return generateStarbaseMissions(starbase, this.stateManager.currentSystem).map((mission) => {
           const status = this.missionProgress.getStatus(mission);
+          const progress = this.missionProgress.getObjectiveCounts(mission);
           return {
             id: mission.id,
-            cells: [mission.title, `${mission.rewardCredits} Cr`, mission.risk, status, mission.summary],
+            cells: [
+              mission.title,
+              `${mission.rewardCredits} Cr`,
+              mission.risk,
+              status === 'ACTIVE' ? `${progress.completed}/${progress.total}` : status,
+              mission.summary,
+            ],
             detail: formatMissionDetail(mission, status),
           };
         });
@@ -7394,6 +7422,8 @@ export class Game {
       return this.cargoSystem.getTotalUnits(this.player.cargoHold) > 0 ? 'Ready' : 'No cargo';
     if (sectionId === 'missions') {
       const active = this.missionProgress.getActiveCount();
+      const ready = this.missionProgress.getReadyCount();
+      if (ready > 0) return `${ready} Ready`;
       return active > 0 ? `${active} Active` : 'Available';
     }
     if (sectionId === 'crew') {

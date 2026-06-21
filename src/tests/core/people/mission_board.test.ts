@@ -8,7 +8,7 @@ import {
   generateStarbaseMissions,
   generateStarbaseNotices,
   getMissionStatus,
-  isMissionCompletedByDiscovery,
+  isMissionObjectiveCompletedByDiscovery,
 } from '../../../core/mission_board';
 
 /** Creates mission system. */
@@ -50,7 +50,11 @@ describe('mission board generation', () => {
     const mission = generateStarbaseMissions(starbase, system)[0];
     const acceptedMissionIds = new Set<string>([mission.id]);
     const completedMissionIds = new Set<string>();
-    const status = getMissionStatus(mission, { acceptedMissionIds, completedMissionIds });
+    const status = getMissionStatus(mission, {
+      acceptedMissionIds,
+      readyMissionIds: new Set(),
+      completedMissionIds,
+    });
 
     expect(status).toBe('ACTIVE');
     expect(formatMissionDetail(mission, status)).toContain(mission.title);
@@ -58,19 +62,21 @@ describe('mission board generation', () => {
 
   it('matches scan completion against the mission target only', () => {
     const { system, starbase } = createMissionSystem();
-    const mission = generateStarbaseMissions(starbase, system).find(
-      (candidate) => candidate.objective.targetType === 'planet'
+    const mission = generateStarbaseMissions(starbase, system).find((candidate) =>
+      candidate.objectives.some((objective) => objective.targetType === 'planet')
     );
     if (!mission) throw new Error('Expected at least one planet scan mission.');
 
-    const target = system.planets.find((planet) => planet?.name === mission.objective.targetName);
-    const other = system.planets.find((planet) => planet && planet.name !== mission.objective.targetName);
+    const objective = mission.objectives.find((candidate) => candidate.targetType === 'planet');
+    if (!objective) throw new Error('Expected a planet objective.');
+    const target = system.planets.find((planet) => planet?.name === objective.targetName);
+    const other = system.planets.find((planet) => planet && planet.name !== objective.targetName);
     if (!target) throw new Error('Expected mission target in generated system.');
 
-    expect(isMissionCompletedByDiscovery(mission, target, 'surveyed')).toBe(true);
-    expect(isMissionCompletedByDiscovery(mission, target, 'observed')).toBe(
-      mission.objective.requiredDiscoveryLevel === 'observed'
+    expect(isMissionObjectiveCompletedByDiscovery(objective, target, 'sampled')).toBe(true);
+    expect(isMissionObjectiveCompletedByDiscovery(objective, target, 'observed')).toBe(
+      objective.requiredDiscoveryLevel === 'observed'
     );
-    if (other) expect(isMissionCompletedByDiscovery(mission, other, 'surveyed')).toBe(false);
+    if (other) expect(isMissionObjectiveCompletedByDiscovery(objective, other, 'sampled')).toBe(false);
   });
 });

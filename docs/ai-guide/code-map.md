@@ -30,6 +30,10 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/core/system_zoom.ts`: canonical system zoom levels and speed factors.
 - `src/core/hyperspace_survey.ts`: survey models and contact lookup.
 - `src/core/mission_board.ts`: deterministic notices and missions.
+- `src/core/mission_progress.ts`: multi-stage objective progress and station
+  hand-in state.
+- `src/core/discovery.ts`: ordered knowledge levels and discovery helpers.
+- `src/core/scan_service.ts`: planetary and catalogue discovery progression.
 - `src/core/crew.ts`: crew generation, skills, experience, and training.
 - `src/core/ship_modifications.ts`: ship modules, derived statistics, upgrades.
 

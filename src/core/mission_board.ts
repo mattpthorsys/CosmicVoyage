@@ -5,7 +5,7 @@ import { StellarBody } from '../entities/stellar_body';
 import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
-export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'COMPLETE';
+export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'READY' | 'COMPLETE';
 
 export interface StarbaseNotice {
   id: string;
@@ -17,6 +17,7 @@ export interface StarbaseNotice {
 }
 
 export interface ScanMissionObjective {
+  id: string;
   kind: 'scan';
   targetName: string;
   targetLabel: string;
@@ -35,27 +36,30 @@ export interface StarbaseMission {
   risk: MissionRisk;
   originStarbaseName: string;
   systemName: string;
-  objective: ScanMissionObjective;
+  objectives: ScanMissionObjective[];
 }
 
 export interface MissionProgressState {
   acceptedMissionIds: Set<string>;
+  readyMissionIds: Set<string>;
   completedMissionIds: Set<string>;
 }
 
 /** Returns mission status. */
 export function getMissionStatus(mission: StarbaseMission, progress: MissionProgressState): MissionStatus {
   if (progress.completedMissionIds.has(mission.id)) return 'COMPLETE';
+  if (progress.readyMissionIds.has(mission.id)) return 'READY';
   if (progress.acceptedMissionIds.has(mission.id)) return 'ACTIVE';
   return 'AVAILABLE';
 }
 
 /** Formats mission detail. */
 export function formatMissionDetail(mission: StarbaseMission, status: MissionStatus): string {
+  const objectiveText = mission.objectives.map((objective) => objective.targetLabel).join(' -> ');
   return [
     `CONTRACT: ${mission.title}`,
     `ISSUER: ${mission.issuer}`,
-    `OBJECTIVE: ${mission.objective.targetLabel}`,
+    `OBJECTIVES: ${objectiveText} -> Return to ${mission.originStarbaseName}`,
     `PAYMENT: ${mission.rewardCredits.toLocaleString()} Cr`,
     `RISK: ${mission.risk}`,
     `STATUS: ${status}`,
@@ -64,20 +68,19 @@ export function formatMissionDetail(mission: StarbaseMission, status: MissionSta
 }
 
 /** Returns whether a mission objective is satisfied by target knowledge. */
-export function isMissionCompletedByDiscovery(
-  mission: StarbaseMission,
+export function isMissionObjectiveCompletedByDiscovery(
+  objective: ScanMissionObjective,
   target: Planet | StellarBody | SolarSystem,
   discoveryLevel: DiscoveryLevel
 ): boolean {
-  if (mission.objective.kind !== 'scan') return false;
-  if (!hasDiscoveryLevel(discoveryLevel, mission.objective.requiredDiscoveryLevel)) return false;
+  if (!hasDiscoveryLevel(discoveryLevel, objective.requiredDiscoveryLevel)) return false;
   if (target instanceof Planet) {
-    return mission.objective.targetType === 'planet' && target.name === mission.objective.targetName;
+    return objective.targetType === 'planet' && target.name === objective.targetName;
   }
   if (target instanceof SolarSystem) {
-    return mission.objective.targetType === 'system' && target.name === mission.objective.targetName;
+    return objective.targetType === 'system' && target.name === objective.targetName;
   }
-  return mission.objective.targetType === 'star' && target.name === mission.objective.targetName;
+  return objective.targetType === 'star' && target.name === objective.targetName;
 }
 
 /** Generates starbase notices. */
@@ -160,18 +163,30 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
       type: 'survey',
       issuer: 'Port Survey Office',
       summary: `Scan ${target.type.toLowerCase()} body and return telemetry.`,
-      detail: 'Routine contract. Mineral, atmosphere, and thermal records are enough for payment authority.',
+      detail:
+        'Complete an orbital survey, map one surface site, then return the telemetry to the issuing station.',
       rewardCredits: 760 + target.moons.length * 85,
       risk: target.surfaceTemp > 650 || target.gravity > 1.6 ? 'Med' : 'Low',
       originStarbaseName: starbase.name,
       systemName: system.name,
-      objective: {
-        kind: 'scan',
-        targetName: target.name,
-        targetLabel: `Scan ${target.name}`,
-        targetType: 'planet',
-        requiredDiscoveryLevel: 'surveyed',
-      },
+      objectives: [
+        {
+          id: 'orbital-survey',
+          kind: 'scan',
+          targetName: target.name,
+          targetLabel: `Complete orbital survey of ${target.name}`,
+          targetType: 'planet',
+          requiredDiscoveryLevel: 'surveyed',
+        },
+        {
+          id: 'surface-map',
+          kind: 'scan',
+          targetName: target.name,
+          targetLabel: `Map one surface site on ${target.name}`,
+          targetType: 'planet',
+          requiredDiscoveryLevel: 'mapped',
+        },
+      ],
     });
   }
 
@@ -183,18 +198,34 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
       type: 'survey',
       issuer: 'Volatile Traffic Desk',
       summary: 'Confirm upper-atmosphere bands for tanker routing.',
-      detail: 'The station wants a fresh remote scan before authorising tighter fuel-hauler approaches.',
+      detail:
+        'Record the giant atmosphere and any listed navigation reference, then return the package to the station.',
       rewardCredits: 980 + Math.min(12, target.moons.length) * 45,
       risk: target.surfaceTemp > 420 ? 'Med' : 'Low',
       originStarbaseName: starbase.name,
       systemName: system.name,
-      objective: {
-        kind: 'scan',
-        targetName: target.name,
-        targetLabel: `Scan ${target.name}`,
-        targetType: 'planet',
-        requiredDiscoveryLevel: 'surveyed',
-      },
+      objectives: [
+        {
+          id: 'weather-survey',
+          kind: 'scan',
+          targetName: target.name,
+          targetLabel: `Survey ${target.name} cloud bands`,
+          targetType: 'planet',
+          requiredDiscoveryLevel: 'surveyed',
+        },
+        ...(target.moons[0]
+          ? [
+              {
+                id: 'moon-reference',
+                kind: 'scan' as const,
+                targetName: target.moons[0].name,
+                targetLabel: `Observe ${target.moons[0].name} as a navigation reference`,
+                targetType: 'planet' as const,
+                requiredDiscoveryLevel: 'observed' as const,
+              },
+            ]
+          : []),
+      ],
     });
   }
 
@@ -204,18 +235,22 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
     type: 'charting',
     issuer: 'Navigation Registry',
     summary: `Verify ${primaryStar.name} scan data for station charts.`,
-    detail: 'A clean stellar scan is sufficient; registry clerks will fold it into outbound route tables.',
+    detail:
+      'Acquire a clean stellar observation and return it to the registry desk for validation and payment.',
     rewardCredits: system.architecture.kind === 'single' ? 640 : 1120,
     risk: system.architecture.kind === 'single' ? 'Low' : 'Med',
     originStarbaseName: starbase.name,
     systemName: system.name,
-    objective: {
-      kind: 'scan',
-      targetName: primaryStar.name,
-      targetLabel: `Scan ${primaryStar.name}`,
-      targetType: 'star',
-      requiredDiscoveryLevel: 'observed',
-    },
+    objectives: [
+      {
+        id: 'stellar-observation',
+        kind: 'scan',
+        targetName: primaryStar.name,
+        targetLabel: `Resolve ${primaryStar.name} stellar telemetry`,
+        targetType: 'star',
+        requiredDiscoveryLevel: 'observed',
+      },
+    ],
   });
 
   if (system.architecture.kind !== 'single' || giants.length > 0) {
@@ -228,18 +263,33 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
         issuer: 'Station Communications',
         summary: `Investigate weak relay returns near ${target.name}.`,
         detail:
-          'No docking required. A close scan pass should confirm whether the returns are natural noise.',
+          'Localise the return, complete any listed surface confirmation, and deliver the record to station communications.',
         rewardCredits: 1680,
         risk: system.architecture.kind === 'triple' ? 'High' : 'Med',
         originStarbaseName: starbase.name,
         systemName: system.name,
-        objective: {
-          kind: 'scan',
-          targetName: target.name,
-          targetLabel: `Scan ${target.name}`,
-          targetType: 'planet',
-          requiredDiscoveryLevel: 'observed',
-        },
+        objectives: [
+          {
+            id: 'signal-localisation',
+            kind: 'scan',
+            targetName: target.name,
+            targetLabel: `Localise the signal near ${target.name}`,
+            targetType: 'planet',
+            requiredDiscoveryLevel: 'observed',
+          },
+          ...(!giants.includes(target)
+            ? [
+                {
+                  id: 'surface-confirmation',
+                  kind: 'scan' as const,
+                  targetName: target.name,
+                  targetLabel: `Map a surface return on ${target.name}`,
+                  targetType: 'planet' as const,
+                  requiredDiscoveryLevel: 'mapped' as const,
+                },
+              ]
+            : []),
+        ],
       });
     }
   }

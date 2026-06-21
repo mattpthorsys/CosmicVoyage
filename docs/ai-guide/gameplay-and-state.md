@@ -75,10 +75,16 @@ react.
 
 - `StarbaseController` owns section and table interaction state.
 - `StarbaseCommerceService` owns market and refueling rules.
-- `mission_board.ts` owns mission generation and formatting.
+- `mission_board.ts` owns deterministic mission definitions and formatting.
+- `MissionProgressService` owns accepted contracts, per-objective progress,
+  ready-for-return state, and station hand-in.
 - `crew.ts` owns recruitment and training.
 - `ship_modifications.ts` owns upgrades and derived ship statistics.
 - `Game` currently delegates and publishes resulting effects.
+
+Mission rewards are not granted remotely. Discovery completes typed objectives;
+the finished telemetry must be returned to the issuing starbase and explicitly
+handed in before credits and final crew experience are awarded.
 
 ## Surface
 

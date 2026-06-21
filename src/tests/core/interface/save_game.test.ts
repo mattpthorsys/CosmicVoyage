@@ -47,7 +47,7 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 2,
+    version: 3,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -112,8 +112,10 @@ function createSave(): GameSave {
     systemOrbit: null,
     planetMutations: [],
     acceptedMissionIds: [],
+    readyMissionIds: [],
     completedMissionIds: [],
     activeMissions: {},
+    missionObjectiveProgress: {},
     catalogueDiscoveries: {},
     tutorialHintsShown: ['hyperspace'],
   };
@@ -147,7 +149,12 @@ describe('save game persistence', () => {
 
   it('migrates version-one binary planet scans into layered discovery records', () => {
     const current = createSave();
-    const { catalogueDiscoveries: _catalogueDiscoveries, ...legacyBase } = current;
+    const {
+      catalogueDiscoveries: _catalogueDiscoveries,
+      readyMissionIds: _readyMissionIds,
+      missionObjectiveProgress: _missionObjectiveProgress,
+      ...legacyBase
+    } = current;
     const migrated = parseGameSave({
       ...legacyBase,
       version: 1,
@@ -167,9 +174,49 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
+  });
+
+  it('migrates version-two mission objectives into staged progress state', () => {
+    const current = createSave();
+    const {
+      readyMissionIds: _readyMissionIds,
+      missionObjectiveProgress: _missionObjectiveProgress,
+      ...legacy
+    } = current;
+    const migrated = parseGameSave({
+      ...legacy,
+      version: 2,
+      acceptedMissionIds: ['legacy-mission'],
+      activeMissions: {
+        'legacy-mission': {
+          id: 'legacy-mission',
+          title: 'Legacy survey',
+          type: 'survey',
+          issuer: 'Survey Office',
+          summary: 'Survey target.',
+          detail: 'Legacy contract.',
+          rewardCredits: 500,
+          risk: 'Low',
+          originStarbaseName: 'Legacy Base',
+          systemName: 'Legacy System',
+          objective: {
+            kind: 'scan',
+            targetName: 'Legacy I',
+            targetLabel: 'Scan Legacy I',
+            targetType: 'planet',
+            requiredDiscoveryLevel: 'surveyed',
+          },
+        },
+      },
+    });
+
+    expect(migrated.version).toBe(3);
+    expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
+    expect(migrated.readyMissionIds).toEqual([]);
+    expect(migrated.missionObjectiveProgress).toEqual({});
   });
 
   it('restores player and mission data through explicit Game APIs', () => {
