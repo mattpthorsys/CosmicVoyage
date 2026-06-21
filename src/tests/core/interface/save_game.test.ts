@@ -47,7 +47,7 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 4,
+    version: 5,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -103,12 +103,9 @@ function createSave(): GameSave {
       },
     },
     location: {
-      state: 'hyperspace',
+      kind: 'hyperspace',
       worldX: 3,
       worldY: -2,
-      bodyPath: null,
-      orbitReferencePath: null,
-      atStarbase: false,
     },
     systemOrbit: null,
     planetMutations: [],
@@ -120,6 +117,18 @@ function createSave(): GameSave {
     economy: {},
     catalogueDiscoveries: {},
     tutorialHintsShown: ['hyperspace'],
+  };
+}
+
+/** Returns the pre-v5 location representation for migration tests. */
+function createLegacyLocation() {
+  return {
+    state: 'hyperspace' as const,
+    worldX: 3,
+    worldY: -2,
+    bodyPath: null,
+    orbitReferencePath: null,
+    atStarbase: false,
   };
 }
 
@@ -161,6 +170,7 @@ describe('save game persistence', () => {
     const migrated = parseGameSave({
       ...legacyBase,
       version: 1,
+      location: createLegacyLocation(),
       planetMutations: [
         {
           worldX: 3,
@@ -177,7 +187,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(4);
+    expect(migrated.version).toBe(5);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
   });
@@ -193,6 +203,7 @@ describe('save game persistence', () => {
     const migrated = parseGameSave({
       ...legacy,
       version: 2,
+      location: createLegacyLocation(),
       acceptedMissionIds: ['legacy-mission'],
       activeMissions: {
         'legacy-mission': {
@@ -217,7 +228,7 @@ describe('save game persistence', () => {
       },
     });
 
-    expect(migrated.version).toBe(4);
+    expect(migrated.version).toBe(5);
     expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
     expect(migrated.readyMissionIds).toEqual([]);
     expect(migrated.missionObjectiveProgress).toEqual({});
@@ -230,12 +241,74 @@ describe('save game persistence', () => {
     const migrated = parseGameSave({
       ...legacy,
       version: 3,
+      location: createLegacyLocation(),
       player: { ...legacy.player, ship: legacyShip },
     });
 
-    expect(migrated.version).toBe(4);
+    expect(migrated.version).toBe(5);
     expect(migrated.player.ship.surveyEquipmentClass).toBe(1);
     expect(migrated.economy).toEqual({});
+  });
+
+  it('migrates version-four location fields into a discriminated location record', () => {
+    const current = createSave();
+    const migrated = parseGameSave({
+      ...current,
+      version: 4,
+      location: {
+        state: 'orbit',
+        worldX: 3,
+        worldY: -2,
+        bodyPath: 'planet:0/moon:1',
+        orbitReferencePath: 'planet:0',
+        atStarbase: false,
+      },
+    });
+
+    expect(migrated.location).toEqual({
+      kind: 'orbit',
+      worldX: 3,
+      worldY: -2,
+      bodyPath: 'planet:0/moon:1',
+      orbitReferencePath: 'planet:0',
+    });
+  });
+
+  it('rejects impossible typed locations and malformed nested state', () => {
+    const save = createSave();
+
+    expect(() =>
+      parseGameSave({
+        ...save,
+        location: { kind: 'orbit', worldX: 3, worldY: -2 },
+      })
+    ).toThrow('body path');
+    expect(() =>
+      parseGameSave({
+        ...save,
+        location: {
+          kind: 'hyperspace',
+          worldX: 3,
+          worldY: -2,
+          bodyPath: 'planet:0',
+        },
+      })
+    ).toThrow('incompatible');
+    expect(() =>
+      parseGameSave({
+        ...save,
+        player: {
+          ...save.player,
+          resources: { ...save.player.resources, fuel: Number.NaN },
+        },
+      })
+    ).toThrow('player fuel');
+    expect(() =>
+      parseGameSave({
+        ...save,
+        missionObjectiveProgress: { missing: ['objective'] },
+      })
+    ).toThrow('inconsistent');
   });
 
   it('restores player and mission data through explicit Game APIs', () => {

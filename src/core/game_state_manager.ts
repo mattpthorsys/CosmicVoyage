@@ -10,10 +10,27 @@ import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from './event_manager';
 import { SystemDataGenerator } from '../generation/system_data_generator';
-import { findSystemPlanetByPath } from './save_game';
+import { findSystemPlanetByPath, LocationSaveData } from './save_game';
 
 // Define GameState type here or import from a shared types file
 export type GameState = 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase';
+
+export type ActiveGameLocation =
+  | { kind: 'hyperspace' }
+  | { kind: 'system'; system: SolarSystem }
+  | {
+      kind: 'orbit';
+      system: SolarSystem;
+      planet: Planet;
+      orbitReference: Planet;
+    }
+  | {
+      kind: 'planet';
+      system: SolarSystem;
+      planet: Planet;
+      orbitReference: Planet;
+    }
+  | { kind: 'starbase'; system: SolarSystem; starbase: Starbase };
 
 /** Manages the game's current state, context (system/planet/starbase), and transitions. */
 export class GameStateManager {
@@ -78,38 +95,75 @@ export class GameStateManager {
     return this._currentStarbase;
   }
 
+  /** Returns a discriminated location view and rejects inconsistent internal context. */
+  get location(): ActiveGameLocation {
+    if (this._state === 'hyperspace') return { kind: 'hyperspace' };
+    if (!this._currentSystem) {
+      throw new Error(`Location invariant failed: ${this._state} requires a current system.`);
+    }
+    if (this._state === 'system') return { kind: 'system', system: this._currentSystem };
+    if (this._state === 'starbase') {
+      if (!this._currentStarbase) {
+        throw new Error('Location invariant failed: starbase state requires a current starbase.');
+      }
+      return {
+        kind: 'starbase',
+        system: this._currentSystem,
+        starbase: this._currentStarbase,
+      };
+    }
+    if (!this._currentPlanet) {
+      throw new Error(`Location invariant failed: ${this._state} requires a current planet.`);
+    }
+    const orbitReference = this._currentOrbitReferencePlanet ?? this._currentPlanet;
+    return {
+      kind: this._state,
+      system: this._currentSystem,
+      planet: this._currentPlanet,
+      orbitReference,
+    };
+  }
+
   /** Reconstructs the active generated system and location from validated save data. */
-  restoreLocation(
-    state: GameState,
-    worldX: number,
-    worldY: number,
-    bodyPath: string | null,
-    orbitReferencePath: string | null,
-    atStarbase: boolean
-  ): SolarSystem | null {
-    if (state === 'hyperspace') {
+  restoreLocation(location: LocationSaveData): SolarSystem | null {
+    if (location.kind === 'hyperspace') {
       this._changeState('hyperspace', null, null, null);
       return null;
     }
 
     const basicProps =
-      this.systemDataGenerator.getRoguePlanetSystemProperties(worldX, worldY) ??
-      this.systemDataGenerator.getSystemProperties(worldX, worldY);
-    if (!basicProps.exists) throw new Error(`Saved system no longer exists at ${worldX},${worldY}.`);
-
-    const system = new SolarSystem(basicProps, worldX, worldY, this.gameSeedPRNG);
-    const planet = findSystemPlanetByPath(system, bodyPath);
-    const orbitReference = findSystemPlanetByPath(system, orbitReferencePath);
-    const starbase = atStarbase ? system.starbase : null;
-
-    if ((state === 'orbit' || state === 'planet') && !planet) {
-      throw new Error(`Saved planetary body "${bodyPath ?? ''}" could not be restored.`);
+      this.systemDataGenerator.getRoguePlanetSystemProperties(location.worldX, location.worldY) ??
+      this.systemDataGenerator.getSystemProperties(location.worldX, location.worldY);
+    if (!basicProps.exists) {
+      throw new Error(`Saved system no longer exists at ${location.worldX},${location.worldY}.`);
     }
-    if (state === 'starbase' && !starbase) {
+
+    const system = new SolarSystem(basicProps, location.worldX, location.worldY, this.gameSeedPRNG);
+    const planet =
+      location.kind === 'orbit' || location.kind === 'planet'
+        ? findSystemPlanetByPath(system, location.bodyPath)
+        : null;
+    const orbitReference =
+      location.kind === 'orbit' || location.kind === 'planet'
+        ? findSystemPlanetByPath(system, location.orbitReferencePath)
+        : null;
+    const starbase = location.kind === 'starbase' ? system.starbase : null;
+
+    if ((location.kind === 'orbit' || location.kind === 'planet') && !planet) {
+      throw new Error(`Saved planetary body "${location.bodyPath}" could not be restored.`);
+    }
+    if (location.kind === 'starbase' && !starbase) {
       throw new Error('Saved starbase could not be restored.');
     }
+    if (
+      location.kind === 'starbase' &&
+      location.starbaseName !== 'legacy-current-starbase' &&
+      starbase?.name !== location.starbaseName
+    ) {
+      throw new Error(`Saved starbase "${location.starbaseName}" no longer matches this location.`);
+    }
 
-    this._changeState(state, system, planet, starbase);
+    this._changeState(location.kind, system, planet, starbase);
     this._currentOrbitReferencePlanet = orbitReference ?? planet;
     return system;
   }

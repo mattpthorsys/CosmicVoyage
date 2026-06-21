@@ -11,6 +11,11 @@ type GameState = 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase';
 `GameStateManager` owns transitions and current object references. Call its
 transition methods rather than assigning location fields externally.
 
+`GameStateManager.location` exposes the active context as a discriminated
+union. Code that needs coherent mode-specific context should prefer it over
+reading several nullable getters independently. It fails immediately if an
+internal state invariant has been broken.
+
 Important transitions:
 
 ```text
@@ -26,6 +31,17 @@ starbase -> system
 
 State changes publish both previous and new state. Transition-dependent cleanup
 must use that payload rather than inspecting already-mutated state.
+
+Save locations use a separate discriminated union:
+
+- hyperspace and system records contain only world coordinates;
+- orbit and planet records require stable body and orbit-reference paths;
+- starbase records require the station identity.
+
+Do not reintroduce independent flags such as `atStarbase` or nullable body paths
+shared by every state. Save parsing validates nested player, mission, discovery,
+planet mutation, and economy state before restoration. Schema changes require a
+new save version and an explicit migration from the previous version.
 
 ## Input
 

@@ -79,6 +79,22 @@ describe('GameStateManager orbital exits', () => {
     }
   });
 
+  it('exposes mode-specific location context and rejects impossible internal state', () => {
+    const { manager, system } = createManager();
+    const planet = createOrbitingPlanet();
+    (manager as any)._changeState('orbit', system, planet, null);
+
+    expect(manager.location).toMatchObject({
+      kind: 'orbit',
+      system,
+      planet,
+      orbitReference: planet,
+    });
+
+    (manager as any)._currentPlanet = null;
+    expect(() => manager.location).toThrow('requires a current planet');
+  });
+
   it('breaks orbit at the orbiting body current coordinates', () => {
     const { player, manager, system } = createManager();
     const planet = createOrbitingPlanet();

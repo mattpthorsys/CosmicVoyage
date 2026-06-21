@@ -90,6 +90,7 @@ import {
   findSystemPlanetPath,
   GameSave,
   getSystemPlanetPaths,
+  LocationSaveData,
   PlanetMutationSaveData,
   SAVE_GAME_VERSION,
 } from './save_game';
@@ -700,16 +701,7 @@ export class Game {
         crew: this.player.crew,
         ship: this.player.ship,
       }),
-      location: {
-        state: this.stateManager.state,
-        worldX: this.player.position.worldX,
-        worldY: this.player.position.worldY,
-        bodyPath: system ? findSystemPlanetPath(system, this.stateManager.currentPlanet) : null,
-        orbitReferencePath: system
-          ? findSystemPlanetPath(system, this.stateManager.currentOrbitReferencePlanet)
-          : null,
-        atStarbase: this.stateManager.state === 'starbase',
-      },
+      location: this.createLocationSaveData(),
       systemOrbit: system
         ? {
             stars: system.stars.map((star) => ({
@@ -744,14 +736,7 @@ export class Game {
     this.planetMutationRegistry = new Map(
       save.planetMutations.map((mutation) => [getPlanetMutationKey(mutation), cloneSaveValue(mutation)])
     );
-    const system = this.stateManager.restoreLocation(
-      save.location.state,
-      save.location.worldX,
-      save.location.worldY,
-      save.location.bodyPath,
-      save.location.orbitReferencePath,
-      save.location.atStarbase
-    );
+    const system = this.stateManager.restoreLocation(save.location);
     if (system) {
       this.applyPlanetMutations(system, true);
       if (save.systemOrbit) {
@@ -792,6 +777,27 @@ export class Game {
     this.forceFullRender = true;
     this.lastMainRenderSignature = '';
     this._publishStatusUpdate();
+  }
+
+  /** Creates a location snapshot whose fields are constrained by the active mode. */
+  private createLocationSaveData(): LocationSaveData {
+    const base = {
+      worldX: this.player.position.worldX,
+      worldY: this.player.position.worldY,
+    };
+    const location = this.stateManager.location;
+    if (location.kind === 'hyperspace' || location.kind === 'system') {
+      return { ...base, kind: location.kind };
+    }
+    if (location.kind === 'starbase') {
+      return { ...base, kind: 'starbase', starbaseName: location.starbase.name };
+    }
+    const bodyPath = findSystemPlanetPath(location.system, location.planet);
+    const orbitReferencePath = findSystemPlanetPath(location.system, location.orbitReference);
+    if (!bodyPath || !orbitReferencePath) {
+      throw new Error(`Cannot save ${location.kind} state without stable planetary paths.`);
+    }
+    return { ...base, kind: location.kind, bodyPath, orbitReferencePath };
   }
 
   /** Captures mutable planet state from the active generated system into the persistent registry. */
