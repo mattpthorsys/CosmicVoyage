@@ -55,7 +55,7 @@ describe('StarbaseCommerceService', () => {
     ).toBe(after.units);
   });
 
-  it('uses trade and communication skill to improve station prices', () => {
+  it('uses trade and communication skill to improve station purchase prices', () => {
     const skilled = createCommerce();
     const baseline = createCommerce();
     skilled.player.crew.forEach((member) => {
@@ -69,7 +69,8 @@ describe('StarbaseCommerceService', () => {
     const skilledItem = skilledMarket.find((item) => item.itemKey === baselineItem.itemKey)!;
 
     expect(skilledItem.buyPrice).toBeLessThan(baselineItem.buyPrice);
-    expect(skilledItem.sellPrice).toBeGreaterThan(baselineItem.sellPrice);
+    expect(skilledItem.sellPrice).toBe(Math.floor(skilledItem.buyPrice / 2));
+    expect(baselineItem.sellPrice).toBe(Math.floor(baselineItem.buyPrice / 2));
   });
 
   it('sells a requested cargo amount and reports resulting effects', () => {
@@ -84,6 +85,36 @@ describe('StarbaseCommerceService', () => {
     expect(player.resources.credits).toBe(oldCredits + 3 * item.sellPrice);
     expect(result.effects.cargoSold?.itemsSold).toEqual({ [item.itemKey]: 3 });
     expect(result.effects.creditsChanged?.amountChanged).toBe(3 * item.sellPrice);
+  });
+
+  it('buys any recognized mined element for half its local resale price', () => {
+    const { player, cargo, commerce } = createCommerce();
+    cargo.addItem(player.cargoHold, 'IRON', 4);
+    const before = commerce.getManifest('Remote Dock');
+    expect(before.some((item) => item.itemKey === 'IRON')).toBe(false);
+    const quote = commerce.getTradeQuote('Remote Dock', 'IRON');
+    if (!quote) throw new Error('Expected an iron assay quote.');
+
+    const result = commerce.sellItem('Remote Dock', 'IRON', 3);
+    const stocked = commerce.getManifest('Remote Dock').find((item) => item.itemKey === 'IRON');
+
+    expect(quote.sellPrice).toBe(Math.floor(quote.buyPrice / 2));
+    expect(result.effects.creditsChanged?.amountChanged).toBe(3 * quote.sellPrice);
+    expect(player.cargoHold.items.IRON).toBe(1);
+    expect(stocked?.units).toBe(3);
+    expect(stocked?.buyPrice).toBe(quote.buyPrice);
+  });
+
+  it('leaves unidentified cargo aboard when selling all recognized material', () => {
+    const { player, cargo, commerce } = createCommerce();
+    cargo.addItem(player.cargoHold, 'IRON', 2);
+    cargo.addItem(player.cargoHold, 'UNKNOWN_RELIC', 1);
+
+    const result = commerce.sellAll('Remote Dock');
+
+    expect(result.effects.cargoSold?.itemsSold).toEqual({ IRON: 2 });
+    expect(player.cargoHold.items.IRON).toBeUndefined();
+    expect(player.cargoHold.items.UNKNOWN_RELIC).toBe(1);
   });
 
   it('uses carried reactor feedstock before station credits', () => {

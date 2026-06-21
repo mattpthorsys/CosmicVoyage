@@ -83,11 +83,20 @@ export class StarbaseCommerceService {
   getManifest(starbaseName: string): TradeDepotItem[] {
     const station = this.getOrCreateStation(starbaseName);
     const capabilities = getOperationalCapabilities(this.player.crew, this.player.ship);
-    return Object.values(station.items).map((item) => ({
-      ...item,
-      buyPrice: Math.max(1, Math.ceil(item.buyPrice * capabilities.buyPriceMultiplier)),
-      sellPrice: Math.max(1, Math.floor(item.sellPrice * capabilities.sellPriceMultiplier)),
-    }));
+    return Object.values(station.items).map((item) =>
+      this.applyPlayerPricing(item, capabilities.buyPriceMultiplier)
+    );
+  }
+
+  /** Returns the station quote for any recognized cargo, including unstocked mined material. */
+  getTradeQuote(starbaseName: string, itemKey: string): TradeDepotItem | null {
+    const station = this.getOrCreateStation(starbaseName);
+    const item = station.items[itemKey] ?? this.createLocalItem(starbaseName, itemKey, 0);
+    if (!item) return null;
+    return this.applyPlayerPricing(
+      item,
+      getOperationalCapabilities(this.player.crew, this.player.ship).buyPriceMultiplier
+    );
   }
 
   /** Returns or creates the persistent base market for one station. */
@@ -190,8 +199,8 @@ export class StarbaseCommerceService {
 
   /** Sells item. */
   sellItem(starbaseName: string, itemKey: string, amount: number): CommerceResult {
-    const item = this.getManifest(starbaseName).find((candidate) => candidate.itemKey === itemKey);
-    if (!item) return { message: 'Depot item unavailable.', effects: {} };
+    const item = this.getTradeQuote(starbaseName, itemKey);
+    if (!item) return { message: 'Station assay cannot identify this cargo.', effects: {} };
     const held = this.player.cargoHold.items[item.itemKey] || 0;
     const unitsToSell = Math.min(held, Math.max(1, Math.floor(amount)));
     if (unitsToSell <= 0) return { message: `No ${item.name} in cargo.`, effects: {} };
@@ -199,6 +208,7 @@ export class StarbaseCommerceService {
     const removed = this.cargoSystem.removeItem(this.player.cargoHold, item.itemKey, unitsToSell);
     const creditsEarned = removed * item.sellPrice;
     this.player.resources.credits += creditsEarned;
+    this.ensureStationListing(starbaseName, item.itemKey);
     this.adjustStock(starbaseName, item.itemKey, removed);
     return {
       message: `Sold ${removed} m^3 ${item.name} for ${creditsEarned} Cr.`,
@@ -251,24 +261,34 @@ export class StarbaseCommerceService {
   sellAll(starbaseName: string): CommerceResult {
     const market = this.getManifest(starbaseName);
     const currentCargo = { ...this.player.cargoHold.items };
-    const totalUnitsSold = this.cargoSystem.getTotalUnits(this.player.cargoHold);
-    if (totalUnitsSold <= 0) return { message: this.formatManifest(market), effects: {} };
+    if (this.cargoSystem.getTotalUnits(this.player.cargoHold) <= 0) {
+      return { message: this.formatManifest(market), effects: {} };
+    }
 
     let totalCreditsEarned = 0;
+    let totalUnitsSold = 0;
     const soldItemsLog: string[] = [];
+    const removedCargo: Record<string, number> = {};
     for (const [itemKey, amount] of Object.entries(currentCargo)) {
       const itemInfo = getTradeItemInfo(itemKey);
       if (amount <= 0 || !itemInfo) continue;
-      const depotItem = market.find((item) => item.itemKey === itemKey);
-      const valuePerUnit =
-        depotItem?.sellPrice ?? Math.max(1, Math.floor(itemInfo.baseValue * CONFIG.TRADE_SELL_MARKDOWN));
-      totalCreditsEarned += amount * valuePerUnit;
-      soldItemsLog.push(`${amount} ${itemInfo.name}`);
-      if (depotItem) this.adjustStock(starbaseName, itemKey, amount);
+      const depotItem = this.getTradeQuote(starbaseName, itemKey);
+      if (!depotItem) continue;
+      const valuePerUnit = depotItem.sellPrice;
+      const removed = this.cargoSystem.removeItem(this.player.cargoHold, itemKey, amount);
+      if (removed <= 0) continue;
+      totalUnitsSold += removed;
+      totalCreditsEarned += removed * valuePerUnit;
+      removedCargo[itemKey] = removed;
+      soldItemsLog.push(`${removed} ${itemInfo.name}`);
+      this.ensureStationListing(starbaseName, itemKey);
+      this.adjustStock(starbaseName, itemKey, removed);
+    }
+    if (totalUnitsSold <= 0) {
+      return { message: 'Station assay found no recognized saleable cargo.', effects: {} };
     }
 
     this.player.resources.credits += totalCreditsEarned;
-    const removedCargo = this.cargoSystem.clearAllItems(this.player.cargoHold);
     return {
       message: STATUS_MESSAGES.STARBASE_TRADE_SUCCESS(
         soldItemsLog.join(', '),
@@ -294,6 +314,46 @@ export class StarbaseCommerceService {
     const item = this.getOrCreateStation(starbaseName).items[itemKey];
     if (!item) return;
     item.units = Math.max(0, Math.round((item.units + delta) * 10) / 10);
+  }
+
+  /** Adds a recognized unstocked material to a station before stock mutation. */
+  private ensureStationListing(starbaseName: string, itemKey: string): void {
+    const station = this.getOrCreateStation(starbaseName);
+    if (station.items[itemKey]) return;
+    const item = this.createLocalItem(starbaseName, itemKey, 0);
+    if (item) station.items[itemKey] = item;
+  }
+
+  /** Creates a deterministic local listing for a commodity or mined element. */
+  private createLocalItem(starbaseName: string, itemKey: string, units: number): TradeDepotItem | null {
+    const info = getTradeItemInfo(itemKey);
+    if (!info) return null;
+    const hash = Math.abs(
+      fastHash(starbaseName.length, itemKey.length + (itemKey.charCodeAt(0) || 0), this.worldSeed)
+    );
+    const localVariance = 0.9 + (hash % 34) / 100;
+    const buyPrice = Math.max(2, Math.ceil(info.baseValue * CONFIG.TRADE_BUY_MARKUP * localVariance));
+    const commodity = TRADE_COMMODITIES[itemKey];
+    return {
+      itemKey,
+      name: info.name,
+      description:
+        commodity?.description ?? 'Assayed planetary material accepted for industrial resale and processing.',
+      category: commodity?.category ?? 'mined material',
+      units,
+      buyPrice,
+      sellPrice: Math.max(1, Math.floor(buyPrice / 2)),
+    };
+  }
+
+  /** Applies negotiated retail pricing while retaining a strict fifty-percent buyback rate. */
+  private applyPlayerPricing(item: TradeDepotItem, buyMultiplier: number): TradeDepotItem {
+    const buyPrice = Math.max(2, Math.ceil(item.buyPrice * buyMultiplier));
+    return {
+      ...item,
+      buyPrice,
+      sellPrice: Math.max(1, Math.floor(buyPrice / 2)),
+    };
   }
 
   /** Refuels. */

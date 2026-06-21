@@ -7207,18 +7207,22 @@ export class Game {
           detail: item.description,
         }));
       case 'sell':
-        return market
-          .filter((item) => (this.player.cargoHold.items[item.itemKey] || 0) > 0)
-          .map((item) => ({
-            id: item.itemKey,
-            cells: [
-              item.name,
-              String(this.player.cargoHold.items[item.itemKey] || 0),
-              String(item.sellPrice),
-              item.category,
-            ],
-            detail: item.description,
-          }));
+        return Object.entries(this.player.cargoHold.items)
+          .filter(([, amount]) => amount > 0)
+          .map(([itemKey, amount]) => {
+            const quote = this.starbaseCommerce.getTradeQuote(starbase.name, itemKey);
+            return {
+              id: itemKey,
+              cells: [
+                quote?.name ?? itemKey,
+                String(amount),
+                quote ? String(quote.sellPrice) : '--',
+                quote?.category ?? 'unassayed',
+              ],
+              detail: quote?.description ?? 'Station assay cannot identify or purchase this cargo.',
+              disabled: !quote,
+            };
+          });
       case 'services':
         return [
           {
@@ -7496,9 +7500,7 @@ export class Game {
     return cargoEntries.map(([itemKey, amount]) => {
       const info = this.getTradeItemInfo(itemKey);
       const marketItem = this.stateManager.currentStarbase
-        ? this.getTradeDepotManifest(this.stateManager.currentStarbase.name).find(
-            (item) => item.itemKey === itemKey
-          )
+        ? this.starbaseCommerce.getTradeQuote(this.stateManager.currentStarbase.name, itemKey)
         : null;
       const value = (marketItem?.sellPrice ?? info?.baseValue ?? 1) * amount;
       return {
@@ -7689,9 +7691,7 @@ export class Game {
 
   /** Opens sell quantity selector. */
   private openSellQuantitySelector(itemKey: string): void {
-    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find(
-      (candidate) => candidate.itemKey === itemKey
-    );
+    const item = this.starbaseCommerce.getTradeQuote(this.stateManager.currentStarbase?.name ?? '', itemKey);
     const held = this.player.cargoHold.items[itemKey] || 0;
     const name = item?.name ?? this.getTradeItemInfo(itemKey)?.name ?? itemKey;
     if (held <= 0) {
@@ -7699,11 +7699,16 @@ export class Game {
       this.statusMessage = this.starbaseMode.alert;
       return;
     }
+    if (!item) {
+      this.starbaseMode.alert = `Station assay cannot identify ${name}.`;
+      this.statusMessage = this.starbaseMode.alert;
+      return;
+    }
     this.openQuantitySelector(
       createQuantitySelector({
         title: 'Sell Cargo',
-        subject: `${name} | ${item?.sellPrice ?? 1} Cr/m^3`,
-        detail: `${held * (item?.sellPrice ?? 1)} Cr max return`,
+        subject: `${name} | ${item.sellPrice} Cr/m^3`,
+        detail: `${held * item.sellPrice} Cr max return; station resale ${item.buyPrice} Cr/m^3`,
         unitLabel: 'm^3',
         max: held,
         value: held,

@@ -106,6 +106,12 @@ Station markets are persistent state. Buying reduces local stock and selling
 returns stocked commodities to that station; this state must be included in
 saves rather than regenerated after every transaction.
 
+Every starbase accepts recognized mined elements and trade substances, even
+when they were not initially stocked. The station pays half its displayed
+resale price; sold material becomes persistent local stock and can subsequently
+be bought back. Unrecognized cargo must remain aboard rather than being silently
+discarded by bulk sale.
+
 Crew and equipment are operational systems rather than descriptive ratings:
 
 - astroscience and the fitted survey suite improve scan confidence;

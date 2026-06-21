@@ -422,6 +422,21 @@ describe('ship menu', () => {
     expect(game.player.cargoHold.items.FUSION_FUEL_MIX).toBeUndefined();
   });
 
+  it('lists mined elements for sale even when the station did not originally stock them', () => {
+    const game = createShipMenuHarness('starbase');
+    const starbase = { name: 'Fuel Dock' };
+    game.stateManager.currentStarbase = starbase;
+    game.cargoSystem.addItem(game.player.cargoHold, 'IRON', 3);
+
+    const rows = game.getStarbaseRows(starbase, 'sell');
+    const iron = rows.find((row: any) => row.id === 'IRON');
+
+    expect(iron).toBeDefined();
+    expect(iron.cells[0]).toBe('Iron');
+    expect(Number(iron.cells[2])).toBeGreaterThan(0);
+    expect(iron.disabled).not.toBe(true);
+  });
+
   it('loads carried helium-3 and deuterium into the reactor when refuelling', () => {
     const game = createShipMenuHarness('starbase');
     game.stateManager.currentStarbase = { name: 'Fuel Dock' };
