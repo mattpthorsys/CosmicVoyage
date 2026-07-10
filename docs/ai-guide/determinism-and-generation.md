@@ -45,10 +45,12 @@ Keep physical calculations deterministic and independent. Prefer passing
 explicit generated characteristics into entities instead of allowing
 constructors to consume shared random state unpredictably.
 
-Generation version 3 includes the version, world X/Y, and system slot in stable
-stellar seed labels. It uses one-light-year cells and the north-up Galactic
-coordinate transform. The Milky Way macro model and measured arm/bar parameters
-are fixed; the game seed controls fine structure and individual systems. Read
+Generation version 4 includes the version, world X/Y, and system slot in stable
+stellar seed labels. It uses one-light-year cells, the north-up Galactic
+coordinate transform, deterministic colony names, a reserved starting hub, and
+the denser core settlement model. The Milky Way macro model and measured
+arm/bar parameters are fixed; the game seed controls fine structure and
+individual systems. Read
 `galaxy-generation.md` before changing density, populations, settlements, or
 terraforming.
 

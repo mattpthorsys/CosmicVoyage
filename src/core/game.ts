@@ -3842,8 +3842,8 @@ export class Game {
     return {
       title: 'Navigation Targets',
       subtitle: system ? `${system.name} local target index` : 'Local target index',
-      columns: ['TYPE', 'NAME', 'RANGE', 'BRG'],
-      widths: [8, 24, 10, 5],
+      columns: ['TYPE', 'NAME', 'HAB', 'RANGE', 'BRG'],
+      widths: [8, 22, 7, 10, 5],
       rows: targets.map((target) => this.createTargetMenuRow(target, system)),
       selectedIndex: this.travelMode.targetMenuSelection,
       viewOffset: this.travelMode.targetMenuOffset,
@@ -3861,10 +3861,11 @@ export class Game {
       cells: [
         this.getTargetClassLabel(target),
         this.getTargetShortName(target, system),
+        this.getTargetHabitationLabel(target),
         formatDistanceAu(distance),
         this.formatBearing(coords.x - this.player.position.systemX, coords.y - this.player.position.systemY),
       ],
-      detail: `${this.getTargetName(target)} | ${this.getTargetClassLabel(target)} | one-way signal ${formatLightTimeFromMeters(distance)}`,
+      detail: `${this.getTargetName(target)} | ${this.getTargetClassLabel(target)} | ${this.getTargetHabitationDetail(target)} | one-way signal ${formatLightTimeFromMeters(distance)}`,
     };
   }
 
@@ -5871,7 +5872,21 @@ export class Game {
     const moonCount = target.moons?.length ?? 0;
     const moonLabel = moonCount === 1 ? '1 moon' : `${moonCount} moons`;
     const suffix = ` (${moonLabel})`;
-    return `${baseName.slice(0, Math.max(0, 24 - suffix.length))}${suffix}`;
+    return `${baseName.slice(0, Math.max(0, 22 - suffix.length))}${suffix}`;
+  }
+
+  /** Returns the compact habitation marker shown by local automatic navigation. */
+  private getTargetHabitationLabel(target: NavigationTarget): string {
+    if (!(target instanceof Planet) || !target.terraforming) return '-';
+    return target.terraforming.stage === 'complete' ? 'COLONY' : 'T-FORM';
+  }
+
+  /** Returns a readable habitation description for the selected navigation target. */
+  private getTargetHabitationDetail(target: NavigationTarget): string {
+    if (!(target instanceof Planet) || !target.terraforming) return 'no registered terraforming';
+    return target.terraforming.stage === 'complete'
+      ? 'complete terraformed colony'
+      : 'partial terraforming project';
   }
 
   /** Formats bearing. */

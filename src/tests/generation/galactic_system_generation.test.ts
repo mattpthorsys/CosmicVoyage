@@ -3,7 +3,70 @@ import { CONFIG } from '../../config';
 import { SystemDataGenerator } from '../../generation/system_data_generator';
 import { PRNG } from '../../utils/prng';
 
+/** Counts the inhabited-world rate among stellar contacts in one square region. */
+function measureSettlementRate(
+  generator: SystemDataGenerator,
+  centerX: number,
+  centerY: number,
+  radius: number
+): { stellarSystems: number; inhabitedSystems: number; rate: number } {
+  let stellarSystems = 0;
+  let inhabitedSystems = 0;
+  for (let y = centerY - radius; y <= centerY + radius; y++) {
+    for (let x = centerX - radius; x <= centerX + radius; x++) {
+      const properties = generator.getSystemMapProperties(x, y);
+      if (!properties.exists || properties.objectKind !== 'stellar') continue;
+      stellarSystems++;
+      if (properties.settlementStage !== 'none') inhabitedSystems++;
+    }
+  }
+  return {
+    stellarSystems,
+    inhabitedSystems,
+    rate: inhabitedSystems / Math.max(1, stellarSystems),
+  };
+}
+
 describe('Galactic stellar-system generation', () => {
+  it('reserves a unique nearest stellar contact as the inhabited starting hub', () => {
+    const generator = new SystemDataGenerator(new PRNG('starting-hub-nearest'));
+    const hubX = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X;
+    const hubY = CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y;
+    const hubDistance = Math.hypot(CONFIG.STARTING_HUB_OFFSET_X, CONFIG.STARTING_HUB_OFFSET_Y);
+
+    for (let y = CONFIG.PLAYER_START_Y - 1; y <= CONFIG.PLAYER_START_Y + 1; y++) {
+      for (let x = CONFIG.PLAYER_START_X - 1; x <= CONFIG.PLAYER_START_X + 1; x++) {
+        if (Math.hypot(x - CONFIG.PLAYER_START_X, y - CONFIG.PLAYER_START_Y) > hubDistance) continue;
+        const properties = generator.getSystemMapProperties(x, y);
+        if (x === hubX && y === hubY) {
+          expect(properties).toMatchObject({
+            exists: true,
+            objectKind: 'stellar',
+            starType: 'G2V',
+            settlementStage: 'complete',
+            stationKind: 'starbase',
+          });
+        } else {
+          expect(properties.exists).toBe(false);
+        }
+      }
+    }
+
+    expect(generator.getResolvedSystemMapProperties(hubX, hubY)).toHaveLength(1);
+  });
+
+  it('raises inhabited-world density approximately fivefold in the human core', () => {
+    const generator = new SystemDataGenerator(new PRNG('core-settlement-density'));
+    const core = measureSettlementRate(generator, 0, 0, 100);
+    const settled = measureSettlementRate(generator, 2500, 0, 100);
+
+    expect(CONFIG.CORE_SETTLEMENT_DENSITY_MULTIPLIER).toBe(5);
+    expect(core.stellarSystems).toBeGreaterThan(200);
+    expect(settled.stellarSystems).toBeGreaterThan(200);
+    expect(core.inhabitedSystems).toBeGreaterThan(20);
+    expect(core.rate).toBeGreaterThan(settled.rate * 3);
+  });
+
   it('makes cool dwarfs dominant and keeps massive stars genuinely rare near the Sun', () => {
     const generator = new SystemDataGenerator(new PRNG('present-day-mass-function'));
     const classes: Record<string, number> = {};

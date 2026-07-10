@@ -190,10 +190,16 @@ export class SystemDataGenerator {
     if (cached) return cached;
 
     const context = this.milkyWayModel.getCellContext(worldX, worldY);
+    const isStartingHubCell = this.isStartingHubCell(worldX, worldY);
+    const isInsideStartingClearance = this.isInsideStartingHubClearance(worldX, worldY);
     const countPRNG = this.gameSeedPRNG.seedNew(
       `mw${CONFIG.GALAXY_MODEL_VERSION}_system_count_${worldX},${worldY}`
     );
-    const physicalSystemCount = this.samplePoisson(context.expectedResolvedSystems, countPRNG);
+    const physicalSystemCount = isStartingHubCell
+      ? 1
+      : isInsideStartingClearance
+        ? 0
+        : this.samplePoisson(context.expectedResolvedSystems, countPRNG);
     const resolvedSystemCount = Math.min(CONFIG.GALACTIC_MAX_RESOLVED_SYSTEMS_PER_CELL, physicalSystemCount);
     const unresolvedSystemCount = Math.max(0, physicalSystemCount - resolvedSystemCount);
 
@@ -222,6 +228,7 @@ export class SystemDataGenerator {
     const brownDwarfHash = fastHash(worldX, worldY, this.gameSeedPRNG.seed + 32003);
     const hasBrownDwarf =
       systemSlot === 0 &&
+      !isInsideStartingClearance &&
       resolvedSystemCount === 0 &&
       brownDwarfHash % CONFIG.STAR_CHECK_HASH_SCALE < brownDwarfPresenceThreshold;
     result.exists = hasNormalStar || hasBrownDwarf;
@@ -239,21 +246,25 @@ export class SystemDataGenerator {
       `mw${CONFIG.GALAXY_MODEL_VERSION}_star_type_${worldX},${worldY},${systemSlot}`
     );
     result.objectKind = hasBrownDwarf ? 'brown-dwarf' : 'stellar';
-    result.starType = hasBrownDwarf
-      ? this.generateBrownDwarfType(typePRNG)
-      : this.generateStarType(typePRNG, population, context);
+    result.starType = isStartingHubCell
+      ? 'G2V'
+      : hasBrownDwarf
+        ? this.generateBrownDwarfType(typePRNG)
+        : this.generateStarType(typePRNG, population, context);
     const nameSeed = `mw${CONFIG.GALAXY_MODEL_VERSION}_star_name_${worldX},${worldY},${systemSlot}`;
     const namePRNG = this.gameSeedPRNG.seedNew(nameSeed);
     result.name = this.generateSystemNameInternal(namePRNG);
     if (result.objectKind === 'stellar' && result.starType && systemSlot === 0) {
-      const settlement = this.generateSettlementDisposition(
-        context,
-        result.starType,
-        population.ageGyr,
-        worldX,
-        worldY,
-        this.predictArchitectureKind(worldX, worldY, systemSlot, result.starType) === 'single'
-      );
+      const settlement = isStartingHubCell
+        ? { stationKind: 'starbase' as const, stage: 'complete' as const }
+        : this.generateSettlementDisposition(
+            context,
+            result.starType,
+            population.ageGyr,
+            worldX,
+            worldY,
+            this.predictArchitectureKind(worldX, worldY, systemSlot, result.starType) === 'single'
+          );
       result.stationKind = settlement.stationKind;
       result.settlementStage = settlement.stage;
       result.hasStarbase = settlement.stationKind !== null;
@@ -289,9 +300,10 @@ export class SystemDataGenerator {
       `mw${CONFIG.GALAXY_MODEL_VERSION}_population_${worldX},${worldY},${systemSlot}`
     );
     const population = this.milkyWayModel.sampleStellarPopulation(galacticContext, populationPRNG);
-    result.ageGyr = this.limitAgeToMainSequence(population.ageGyr, result.starType);
-    result.metallicityFeH = population.metallicityFeH;
-    result.galacticPopulation = population.population;
+    const isStartingHub = this.isStartingHubCell(worldX, worldY) && systemSlot === 0;
+    result.ageGyr = isStartingHub ? 4.6 : this.limitAgeToMainSequence(population.ageGyr, result.starType);
+    result.metallicityFeH = isStartingHub ? 0.04 : population.metallicityFeH;
+    result.galacticPopulation = isStartingHub ? 'thin-disk' : population.population;
     result.architecture = this.generateArchitecture(
       result.name,
       result.starType,
@@ -591,9 +603,14 @@ export class SystemDataGenerator {
     );
 
     if (human.settlementIntensity > 0 && hostSuitability > 0 && allowsTerraforming) {
-      const completeChance = human.settlementIntensity * hostSuitability * 0.13;
+      const densityMultiplier = human.region === 'core' ? CONFIG.CORE_SETTLEMENT_DENSITY_MULTIPLIER : 1;
+      const baseCompleteChance = human.settlementIntensity * hostSuitability * 0.13;
       const frontierBias = human.region === 'frontier' ? 1.8 : human.region === 'settled' ? 1.25 : 0.72;
-      const partialChance = human.settlementIntensity * hostSuitability * 0.12 * frontierBias;
+      const basePartialChance = human.settlementIntensity * hostSuitability * 0.12 * frontierBias;
+      const rawSettlementChance = (baseCompleteChance + basePartialChance) * densityMultiplier;
+      const probabilityScale = rawSettlementChance > 0.98 ? 0.98 / rawSettlementChance : 1;
+      const completeChance = baseCompleteChance * densityMultiplier * probabilityScale;
+      const partialChance = basePartialChance * densityMultiplier * probabilityScale;
       const roll = settlementPRNG.random();
       if (roll < completeChance) {
         // Only a subset of mature colonies are regional hubs; the rest remain inhabited worlds.
@@ -660,6 +677,7 @@ export class SystemDataGenerator {
     systemSlot: number,
     primaryStarType: string
   ): StellarSystemKind {
+    if (this.isStartingHubCell(worldX, worldY) && systemSlot === 0) return 'single';
     const prng = this.gameSeedPRNG.seedNew(
       `mw${CONFIG.GALAXY_MODEL_VERSION}_star_architecture_${worldX},${worldY},${systemSlot}`
     );
@@ -796,15 +814,18 @@ export class SystemDataGenerator {
     );
     const multiplicityRoll = architecturePRNG.random();
     const isBrownDwarf = /^[LTY]/.test(primaryStarType);
-    const kind: StellarSystemKind = isBrownDwarf
-      ? multiplicityRoll < 0.18
-        ? 'binary'
-        : 'single'
-      : multiplicityRoll < 0.14
-        ? 'triple'
-        : multiplicityRoll < 0.48
-          ? 'binary'
-          : 'single';
+    const kind: StellarSystemKind =
+      this.isStartingHubCell(worldX, worldY) && systemSlot === 0
+        ? 'single'
+        : isBrownDwarf
+          ? multiplicityRoll < 0.18
+            ? 'binary'
+            : 'single'
+          : multiplicityRoll < 0.14
+            ? 'triple'
+            : multiplicityRoll < 0.48
+              ? 'binary'
+              : 'single';
     const binarySeparation = architecturePRNG.random(0.08, 0.75) * 1.495978707e11;
     const outerSeparation = architecturePRNG.random(18, 70) * 1.495978707e11;
     const stars: StellarBody[] = [
@@ -897,5 +918,20 @@ export class SystemDataGenerator {
     const number = prng.randomInt(1, 999);
     const suffix = String.fromCharCode(65 + prng.randomInt(0, 25));
     return `${prng.choice(SYSTEM_NAME_PREFIXES)}-${number}${suffix}`;
+  }
+
+  /** Returns whether coordinates identify the guaranteed first inhabited stellar hub. */
+  private isStartingHubCell(worldX: number, worldY: number): boolean {
+    return (
+      worldX === CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X &&
+      worldY === CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y
+    );
+  }
+
+  /** Reserves the hub as the unique nearest stellar contact to the player's starting position. */
+  private isInsideStartingHubClearance(worldX: number, worldY: number): boolean {
+    const hubDistance = Math.hypot(CONFIG.STARTING_HUB_OFFSET_X, CONFIG.STARTING_HUB_OFFSET_Y);
+    const distanceFromStart = Math.hypot(worldX - CONFIG.PLAYER_START_X, worldY - CONFIG.PLAYER_START_Y);
+    return distanceFromStart <= hubDistance;
   }
 }

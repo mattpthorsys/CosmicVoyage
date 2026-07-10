@@ -30,6 +30,7 @@ import {
   selectTerraformingCandidate,
   TerraformingStage,
 } from './habitability';
+import { reserveColonyWorldName } from './colony_naming';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -54,6 +55,7 @@ export class SolarSystem {
   readonly colonyWorld: Planet | null;
   readonly edgeRadius: number; // System boundary radius in meters
   readonly isStarless: boolean;
+  private readonly colonyWorldNames = new Set<string>();
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
   /** Initializes SolarSystem. */
@@ -176,10 +178,17 @@ export class SolarSystem {
       return null;
     }
 
-    const profilePRNG = this.systemPRNG.seedNew(`terraforming_${stage}_${candidate.planet.name}`);
-    candidate.planet.applyTerraforming(createTerraformingProfile(stage, candidate.assessment, profilePRNG));
+    const originalName = candidate.planet.name;
+    const profilePRNG = this.systemPRNG.seedNew(`terraforming_${stage}_${originalName}`);
+    const planetIndex = Math.max(0, this.planets.indexOf(candidate.planet));
+    const namePRNG = this.systemPRNG.seedNew(`colony_name_${planetIndex}_${originalName}`);
+    const colonyName = reserveColonyWorldName(namePRNG, this.colonyWorldNames);
+    candidate.planet.applyTerraforming(
+      createTerraformingProfile(stage, candidate.assessment, profilePRNG),
+      colonyName
+    );
     logger.info(
-      `[System:${this.name}] ${candidate.planet.name} assigned ${stage} terraforming at suitability ${candidate.assessment.score}.`
+      `[System:${this.name}] ${originalName} designated ${colonyName} with ${stage} terraforming at suitability ${candidate.assessment.score}.`
     );
     return candidate.planet;
   }

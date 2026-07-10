@@ -4,6 +4,7 @@ import { CargoSystem } from '../../../systems/cargo_systems';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { PRNG } from '../../../utils/prng';
+import { Planet } from '../../../entities/planet';
 
 /** Creates ship menu harness. */
 function createShipMenuHarness(state: string = 'hyperspace'): any {
@@ -534,5 +535,33 @@ describe('ship menu', () => {
     const targets = game.getTargetMenuTargets();
 
     expect(targets.map((target: any) => target.name)).toEqual(['Aster Primary', 'Aster', 'Aster Relay']);
+  });
+
+  it('marks complete and partial terraformed worlds in automatic navigation rows', () => {
+    const game = createShipMenuHarness('system');
+    const colony = Object.create(Planet.prototype) as Planet;
+    Object.assign(colony, {
+      name: 'Arcadia',
+      systemX: 100,
+      systemY: 0,
+      moons: [],
+      terraforming: { stage: 'complete' },
+    });
+    const project = Object.create(Planet.prototype) as Planet;
+    Object.assign(project, {
+      name: 'Farpoint',
+      systemX: 200,
+      systemY: 0,
+      moons: [],
+      terraforming: { stage: 'partial' },
+    });
+
+    const colonyRow = game.createTargetMenuRow(colony, { name: 'Test' });
+    const projectRow = game.createTargetMenuRow(project, { name: 'Test' });
+
+    expect(colonyRow.cells[2]).toBe('COLONY');
+    expect(colonyRow.detail).toContain('complete terraformed colony');
+    expect(projectRow.cells[2]).toBe('T-FORM');
+    expect(projectRow.detail).toContain('partial terraforming project');
   });
 });

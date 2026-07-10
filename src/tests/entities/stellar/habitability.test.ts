@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../../../config';
+import { COLONY_WORLD_NAMES } from '../../../constants/colony_names';
 import { SPECTRAL_TYPES } from '../../../constants/stellar';
 import { AU_IN_METERS } from '../../../constants/physics';
 import {
@@ -64,6 +65,27 @@ function scaleReferenceCells(cells: number): number {
 }
 
 describe('habitability and human settlement', () => {
+  it('materializes the nearest starting hub with a named habitable colony and major starbase', () => {
+    const seed = new PRNG('starting-hub-invariant');
+    const generator = new SystemDataGenerator(seed);
+    const hubX = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X;
+    const hubY = CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y;
+    const properties = generator.getSystemProperties(hubX, hubY);
+    const system = new SolarSystem(properties, hubX, hubY, seed);
+    const zone = calculateHabitableZone(system.architecture)!;
+    const orbitAu = system.colonyWorld!.orbitDistance / AU_IN_METERS;
+
+    expect(system.starType).toBe('G2V');
+    expect(system.architecture.kind).toBe('single');
+    expect(system.colonyWorld?.terraforming?.stage).toBe('complete');
+    expect(COLONY_WORLD_NAMES).toContain(system.colonyWorld?.name);
+    expect(system.colonyWorld?.catalogueName).not.toBe(system.colonyWorld?.name);
+    expect(system.starbase?.kind).toBe('starbase');
+    expect(system.starbase?.colonyWorldName).toBe(system.colonyWorld?.name);
+    expect(orbitAu).toBeGreaterThanOrEqual(zone.innerAu);
+    expect(orbitAu).toBeLessThanOrEqual(zone.outerAu);
+  });
+
   it('places a Solar analogue conservative HZ near one AU', () => {
     const zone = calculateHabitableZone(createSingleStarArchitecture('G2V', 4.6));
 

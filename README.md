@@ -26,6 +26,7 @@ The simulation aims for plausible science rather than arcade space fantasy:
 - Stellar density, class, age, metallicity, gas, dust, clusters, and nebula likelihood respond to thin/thick disk, bar, halo, spiral-arm, and galactocentric position.
 - Human settlement is centred on the Solar neighbourhood, with complete and partial terraforming fading through a 4,500-light-year frontier and uncrewed logistics reaching 12,000 light-years.
 - Terraformed colonies are placed inside conservative stellar habitable zones, carry seas or substantial lakes, and show restrained managed vegetation around low coastal terrain.
+- The nearest star to a new voyage is a guaranteed G2V colony hub with a starbase; terraformed worlds receive human names and are marked in automatic navigation.
 - Planet frequencies, types, moon counts, orbital velocities, densities, gravities, temperatures, axial tilt, tidal locking, and tidal heating are modelled from simplified astrophysical rules.
 - Planet classes include rocky, molten, lunar, oceanic, frozen, gas giant, ice giant, Hycean, greenhouse, carbon-rich, chthonian, cryovolcanic, and dwarf ice worlds.
 - Atmosphere, hydrosphere, lithosphere, temperature range, greenhouse effect, albedo, core heat, tidal flexing, and age all feed into scan descriptions and surface generation.

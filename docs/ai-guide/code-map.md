@@ -70,6 +70,9 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/entities/stellar_environment.ts`: stellar age and metallicity.
 - `src/entities/habitability.ts`: host suitability, habitable zones, orbital
   stability, planetary assessment, and terraforming profiles.
+- `src/entities/colony_naming.ts` and `src/constants/colony_names.ts`:
+  deterministic per-star colony-name reservation and the human world-name
+  catalogue.
 - `src/entities/planet/`: physical, atmosphere, temperature, resources,
   descriptors, surfaces, liquid/coastal-vegetation overlays, and worker
   providers.

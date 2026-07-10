@@ -2,7 +2,7 @@
 
 ## Scope And Coordinate Model
 
-Generation version 3 treats the navigable map as a top-down projection of the
+Generation version 4 treats the navigable map as a top-down projection of the
 Milky Way. It is not a hidden three-dimensional simulation.
 
 - One world cell is one light-year.
@@ -60,7 +60,7 @@ gameplay code must not duplicate Galactic formulas.
 ## Macro Structure And Micro Detail
 
 The Milky Way's macro structure is fixed so every game remains recognizably the
-Milky Way. Generation version 3 uses the Reid et al. maser-fit kink radii,
+Milky Way. Generation version 4 retains the Reid et al. maser-fit kink radii,
 piecewise pitch angles, and widths for the Norma, Scutum-Centaurus,
 Sagittarius-Carina, Local, Perseus, and Outer structures. The central bar uses a
 30.5-degree viewing angle and five-kiloparsec half-length based on red-clump
@@ -160,6 +160,15 @@ level, and all globe, landing-map, and surface render paths consume that same
 coastal vegetation overlay. Keep it restrained and terrain-derived rather than
 painting whole continents bright green.
 
+Successful terraforming also replaces the procedural Roman-numeral display
+name with a deterministic human colony name from
+`src/constants/colony_names.ts`. `Planet.catalogueName` retains the original
+physical designation, and index-based body paths remain the persistent
+identity. `reserveColonyWorldName` selects without replacement inside one
+stellar system, so future multi-colony systems cannot reuse a world name around
+the same star. Names are assigned after physical generation and must never feed
+back into terrain, atmosphere, or orbital seeds.
+
 ## Human-Space Envelope
 
 The inhabited radii are three times the original design:
@@ -174,6 +183,18 @@ The inhabited radii are three times the original design:
 These values live in `CONFIG` and are hard cutoffs after smooth probability
 curves. Partial terraforming is proportionally more common toward the frontier.
 Natural Galactic generation is independent of human presence.
+
+Eligible systems in the human core apply
+`CORE_SETTLEMENT_DENSITY_MULTIPLIER`, currently `5`, to complete and partial
+settlement probabilities while preserving their relative mix. The final total
+is capped below certainty. Settled and frontier regions retain their original
+rates.
+
+The cell one step east of the configured player start is a generation
+invariant: a mature single G2V host, complete HZ colony, and major starbase.
+Other cells at the same or smaller distance are cleared of stellar and
+substellar contacts, making this the unique nearest star for every seed. Keep
+the offset in `CONFIG`; do not reproduce these coordinates elsewhere.
 
 ## Stations
 
@@ -213,10 +234,16 @@ an irregular disk edge, and a high-contrast crosshair. The player crosshair
 begins below the core and the north marker points upward/coreward. Do not reveal
 undiscovered station locations on the whole-Galaxy view.
 
+The local automatic-navigation target table includes a `HAB` field. `COLONY`
+means complete terraforming and `T-FORM` means an active partial project. Do not
+infer this from planet colour or name; read `Planet.terraforming.stage`.
+
 ## Persistence And Migration
 
-Save schema version 7 records generation version 3 coordinates and system
-slots. Version 6 and older saves rotate and rescale from the old
+Save schema version 8 records generation version 4 identities. Version 7
+generation-three saves retain their one-light-year coordinates but migrate
+because colony and settlement identities changed. Version 6 and older saves
+also rotate and rescale from the old
 coreward-X/rotation-Y parsec grid onto the east-X/coreward-negative-Y
 one-light-year grid. If a legacy save was inside any generated local location,
 restoration preserves player,
@@ -251,6 +278,10 @@ Changes to this domain should cover:
 - complete-starbase colony and breathable-atmosphere invariant;
 - complete and partial colony habitable-zone and surface-water invariants;
 - managed coastal vegetation overlays;
+- starting-hub uniqueness, stable host, colony, and starbase invariants;
+- colony-name catalogue uniqueness and per-star reservation;
+- core versus settled inhabited-world density;
+- automatic-navigation terraforming markers;
 - depot capability restrictions;
 - Galaxy map pan, zoom, and recenter controls;
 - performance paths that avoid planet terrain and Galaxy enumeration.

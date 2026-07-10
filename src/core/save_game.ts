@@ -15,9 +15,9 @@ import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './dis
 import type { EconomySnapshot } from './starbase_commerce';
 import { CONFIG } from '../config';
 
-export const SAVE_GAME_VERSION = 7;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v7';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v7';
+export const SAVE_GAME_VERSION = 8;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v8';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v8';
 const LEGACY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
 const LEGACY_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v1';
 const PREVIOUS_SESSION_SAVE_KEY = 'cosmic-voyage.session.v2';
@@ -30,6 +30,8 @@ const VERSION_FIVE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v5';
 const VERSION_FIVE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v5';
 const VERSION_SIX_SESSION_SAVE_KEY = 'cosmic-voyage.session.v6';
 const VERSION_SIX_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v6';
+const VERSION_SEVEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v7';
+const VERSION_SEVEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v7';
 
 type LegacyScanMissionObjective = Omit<ScanMissionObjective, 'id'>;
 type LegacyStarbaseMission = Omit<StarbaseMission, 'objectives'> & {
@@ -152,7 +154,11 @@ export interface GameSaveV7 extends Omit<GameSaveV6, 'version'> {
   version: 7;
 }
 
-export type GameSave = GameSaveV7;
+export interface GameSaveV8 extends Omit<GameSaveV7, 'version'> {
+  version: 8;
+}
+
+export type GameSave = GameSaveV8;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -184,7 +190,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   const candidate = typeof value === 'string' ? JSON.parse(value) : value;
   if (!isRecord(candidate)) throw new Error('Save data is not an object.');
   const record = candidate as Partial<
-    GameSaveV1 | GameSaveV2 | GameSaveV3 | GameSaveV4 | GameSaveV5 | GameSaveV6 | GameSaveV7
+    GameSaveV1 | GameSaveV2 | GameSaveV3 | GameSaveV4 | GameSaveV5 | GameSaveV6 | GameSaveV7 | GameSaveV8
   >;
   if (
     record.version !== 1 &&
@@ -193,6 +199,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 4 &&
     record.version !== 5 &&
     record.version !== 6 &&
+    record.version !== 7 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -244,8 +251,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 6:
       save = migrateV6Save(candidate as unknown as GameSaveV6);
       break;
+    case 7:
+      save = migrateV7Save(candidate as unknown as GameSaveV7);
+      break;
     default:
-      save = candidate as unknown as GameSaveV7;
+      save = candidate as unknown as GameSaveV8;
   }
   if (save.generationVersion !== CONFIG.GALAXY_MODEL_VERSION) {
     throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
@@ -406,10 +416,10 @@ function migrateV6Save(save: GameSaveV6): GameSave {
     save.player.position.worldX,
     save.player.position.worldY
   );
-  return {
+  return migrateV7Save({
     ...save,
-    version: SAVE_GAME_VERSION,
-    generationVersion: CONFIG.GALAXY_MODEL_VERSION,
+    version: 7,
+    generationVersion: 3,
     migratedFromGenerationVersion: save.migratedFromGenerationVersion ?? save.generationVersion,
     player: {
       ...save.player,
@@ -425,6 +435,19 @@ function migrateV6Save(save: GameSaveV6): GameSave {
       ...mutation,
       ...migrateGenerationTwoCoordinates(mutation.worldX, mutation.worldY),
     })),
+  });
+}
+
+/** Advances generation-three saves after deterministic settlement identities changed. */
+function migrateV7Save(save: GameSaveV7): GameSave {
+  if (save.generationVersion !== 3) {
+    throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
+  }
+  return {
+    ...save,
+    version: SAVE_GAME_VERSION,
+    generationVersion: CONFIG.GALAXY_MODEL_VERSION,
+    migratedFromGenerationVersion: save.migratedFromGenerationVersion ?? save.generationVersion,
   };
 }
 
@@ -699,6 +722,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_SEVEN_SESSION_SAVE_KEY,
       VERSION_SIX_SESSION_SAVE_KEY,
       VERSION_FIVE_SESSION_SAVE_KEY,
       VERSION_FOUR_SESSION_SAVE_KEY,
@@ -721,6 +745,7 @@ export class SaveGameStorage {
     this.sessionStore.removeItem(VERSION_FOUR_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FIVE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SIX_SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_SEVEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(LEGACY_SESSION_SAVE_KEY);
   }
 
@@ -729,6 +754,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_SEVEN_MANUAL_SAVE_KEY,
       VERSION_SIX_MANUAL_SAVE_KEY,
       VERSION_FIVE_MANUAL_SAVE_KEY,
       VERSION_FOUR_MANUAL_SAVE_KEY,
@@ -751,6 +777,7 @@ export class SaveGameStorage {
     this.persistentStore.removeItem(VERSION_FOUR_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FIVE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SIX_MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_SEVEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(LEGACY_MANUAL_SAVE_KEY);
   }
 

@@ -73,7 +73,8 @@ export function describePlanetType(type: string): string {
 export class Planet {
   //
   // Core Identification & Orbit
-  public readonly name: string;
+  public name: string;
+  public readonly catalogueName: string;
   public readonly type: string; //
   public readonly orbitDistance: number; //
   public orbitAngle: number; // Mutable
@@ -153,9 +154,10 @@ export class Planet {
       : this.hydrosphere;
   }
 
-  /** Applies a deterministic terraforming overlay without changing mass, orbit, gravity, or natural geology. */
-  applyTerraforming(profile: TerraformingProfile): void {
+  /** Applies an engineered environment and optional human name without changing physical identity. */
+  applyTerraforming(profile: TerraformingProfile, colonyName?: string): void {
     this.terraforming = profile;
+    if (colonyName) this.name = colonyName;
   }
 
   /** Restores legacy binary scan state while preserving the layered discovery model. */
@@ -186,6 +188,7 @@ export class Planet {
     generationOptions?: PlanetGenerationOptions
   ) {
     this.name = name; //
+    this.catalogueName = name;
     this.type = type; //
     this.orbitDistance = orbitDistance; //
     this.orbitAngle = angle; //

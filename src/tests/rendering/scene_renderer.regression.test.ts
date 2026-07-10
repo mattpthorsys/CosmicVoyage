@@ -634,23 +634,23 @@ describe('SceneRenderer visual regressions', () => {
     renderer.drawTextModalTable({
       title: 'Navigation Targets',
       subtitle: 'Regression local target index',
-      columns: ['TYPE', 'NAME', 'RANGE', 'BRG'],
-      widths: [8, 24, 10, 5],
+      columns: ['TYPE', 'NAME', 'HAB', 'RANGE', 'BRG'],
+      widths: [8, 22, 7, 10, 5],
       rows: [
         {
           id: 'star:A',
-          cells: ['Star A', 'Regression A', '0.00 AU', 'HERE'],
-          detail: 'Regression A | Star A | one-way signal 0.0 light-sec',
+          cells: ['Star A', 'Regression A', '-', '0.00 AU', 'HERE'],
+          detail: 'Regression A | Star A | no registered terraforming | one-way signal 0.0 light-sec',
         },
         {
-          id: 'planet:Regression I',
-          cells: ['Planet', 'I (2 moons)', '1.42 AU', 'NE'],
-          detail: 'Regression I | Planet | one-way signal 11.8 light-min',
+          id: 'planet:Arcadia',
+          cells: ['Planet', 'Arcadia (2 moons)', 'COLONY', '1.42 AU', 'NE'],
+          detail: 'Arcadia | Planet | complete terraformed colony | one-way signal 11.8 light-min',
         },
         {
-          id: 'planet:Regression II',
-          cells: ['Planet', 'II (0 moons)', '4.80 AU', 'SW'],
-          detail: 'Regression II | Planet | one-way signal 39.9 light-min',
+          id: 'planet:Farpoint',
+          cells: ['Planet', 'Farpoint (0 moons)', 'T-FORM', '4.80 AU', 'SW'],
+          detail: 'Farpoint | Planet | partial terraforming project | one-way signal 39.9 light-min',
         },
       ],
       selectedIndex: 1,
