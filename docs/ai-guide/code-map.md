@@ -71,11 +71,13 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/entities/habitability.ts`: host suitability, habitable zones, orbital
   stability, planetary assessment, and terraforming profiles.
 - `src/entities/planet/`: physical, atmosphere, temperature, resources,
-  descriptors, surfaces, liquid overlays, and worker providers.
+  descriptors, surfaces, liquid/coastal-vegetation overlays, and worker
+  providers.
 - `src/generation/system_data_generator.ts`: deterministic map-cell systems,
   phenomena, interstellar medium, and architecture.
-- `src/generation/milky_way_model.ts`: projected Galactic coordinates, disk,
-  bar, halo, spiral arms, clusters, gas/dust, metallicity, and human reach.
+- `src/generation/milky_way_model.ts`: north-up projected Galactic coordinates,
+  measured arm/bar structure, disk, halo, clusters, gas/dust, metallicity, and
+  human reach.
 - `src/generation/perlin.ts`, `src/generation/heightmap.ts`: noise primitives.
 
 ## Systems

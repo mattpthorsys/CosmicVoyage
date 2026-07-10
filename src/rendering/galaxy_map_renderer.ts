@@ -43,6 +43,7 @@ export class GalaxyMapRenderer {
     this.drawFrame(panelX, panelY, panelWidth, panelHeight);
     this.drawRaster(model, mapX, mapY, mapWidth, mapHeight);
     this.drawPlayerCrosshair(model, mapX, mapY, mapWidth, mapHeight);
+    this.drawGalacticNorthMarker(mapX, mapY);
 
     this.drawCentred('MILKY WAY // GALACTIC NAVIGATION', panelY + 1, TEXT_PALETTE.textBright);
     const radiusKpc = model.playerGalactocentricRadiusPc / 1000;
@@ -56,6 +57,11 @@ export class GalaxyMapRenderer {
       panelY + panelHeight - 1,
       TEXT_PALETTE.cyanSignal
     );
+  }
+
+  /** Labels screen-up as the coreward Galactic north used by interstellar movement. */
+  private drawGalacticNorthMarker(mapX: number, mapY: number): void {
+    this.screenBuffer.drawString('^ N // CORE', mapX + 1, mapY + 1, TEXT_PALETTE.amber, '#010202');
   }
 
   /** Fills the modal area so the underlying physical scene cannot bleed through. */
@@ -134,8 +140,10 @@ export class GalaxyMapRenderer {
     pixelHeight: number
   ): readonly (string | null)[] {
     const colours = new Array<string | null>(pixelWidth * pixelHeight).fill(null);
-    const horizontalSpanPc = model.spanPc;
-    const verticalSpanPc = model.spanPc * (pixelHeight / Math.max(1, pixelWidth));
+    // spanPc is the vertical scientific field. Expanding the horizontal field to match
+    // the viewport aspect keeps parsecs-per-pixel equal while fitting the full disk vertically.
+    const verticalSpanPc = model.spanPc;
+    const horizontalSpanPc = model.spanPc * (pixelWidth / Math.max(1, pixelHeight));
 
     for (let pixelY = 0; pixelY < pixelHeight; pixelY++) {
       const yFactor = (pixelY + 0.5) / pixelHeight - 0.5;
@@ -153,18 +161,27 @@ export class GalaxyMapRenderer {
 
   /** Converts enormous Galactic dynamic range into a restrained quantized amber-blue palette. */
   private getFieldColour(field: ReturnType<MilkyWayModel['sampleGalaxyField']>): string | null {
-    const logarithmicDensity = Math.log1p(field.density * 5) / Math.log1p(42 * 5);
-    const haloFloor = field.insideMainDisk ? 0 : logarithmicDensity * 0.24;
-    let brightness = Math.max(haloFloor, logarithmicDensity * 0.96);
-    brightness *= 1 - Math.min(0.72, field.dustDensity * 0.36);
-    if (brightness < 0.018) return null;
+    const oldLight = Math.log1p(field.oldStellarDensity * 3.2) / Math.log1p(42 * 3.2);
+    const coreLight = Math.min(1, Math.log1p((field.bulgeDensity + field.barDensity) * 2.4) / 3.2);
+    const youngLight = Math.min(1, field.youngStellarDensity * 0.9);
+    const haloFloor = field.insideMainDisk ? 0 : oldLight * 0.18;
+    let brightness = Math.max(haloFloor, oldLight * 0.72 + coreLight * 0.38 + youngLight * 0.42);
+    brightness *= 0.78 + field.texture * 0.3;
+    brightness *= 1 - Math.min(0.82, field.dustDensity * 0.2 + field.dustLaneDensity * 0.58);
+    if (brightness < 0.022) return null;
 
-    const armBlue = field.armInfluence * Math.min(1, field.gasDensity) * 0.34;
-    const coreWarmth = Math.min(1, logarithmicDensity * 1.8);
-    const quantized = Math.round(Math.min(1, brightness) * 15) / 15;
-    const red = 10 + quantized * (160 + coreWarmth * 58) - armBlue * 28;
-    const green = 9 + quantized * (112 + coreWarmth * 42) + armBlue * 28;
-    const blue = 8 + quantized * (58 + coreWarmth * 22) + armBlue * 82;
+    const quantized = Math.round(Math.min(1, brightness) * 23) / 23;
+    const youngMix = Math.min(0.52, youngLight * (0.3 + field.armInfluence * 0.32));
+    const warmRed = 12 + quantized * (174 + coreLight * 67);
+    const warmGreen = 10 + quantized * (126 + coreLight * 66);
+    const warmBlue = 8 + quantized * (74 + coreLight * 68);
+    const youngRed = 14 + quantized * 166;
+    const youngGreen = 16 + quantized * 190;
+    const youngBlue = 22 + quantized * 224;
+    const dustWarmth = Math.min(0.22, field.dustDensity * 0.12);
+    const red = warmRed + (youngRed - warmRed) * youngMix + dustWarmth * 34;
+    const green = warmGreen + (youngGreen - warmGreen) * youngMix - dustWarmth * 12;
+    const blue = warmBlue + (youngBlue - warmBlue) * youngMix - dustWarmth * 28;
     return rgbToHex(red, green, blue);
   }
 
@@ -178,8 +195,9 @@ export class GalaxyMapRenderer {
   ): void {
     const pixelWidth = mapWidth * 2;
     const pixelHeight = mapHeight * 2;
-    const verticalSpanPc = model.spanPc * (pixelHeight / Math.max(1, pixelWidth));
-    const pixelX = ((model.playerXpc - model.centerXpc) / model.spanPc + 0.5) * pixelWidth;
+    const verticalSpanPc = model.spanPc;
+    const horizontalSpanPc = model.spanPc * (pixelWidth / Math.max(1, pixelHeight));
+    const pixelX = ((model.playerXpc - model.centerXpc) / horizontalSpanPc + 0.5) * pixelWidth;
     const pixelY = (0.5 - (model.playerYpc - model.centerYpc) / verticalSpanPc) * pixelHeight;
     if (pixelX < 0 || pixelX >= pixelWidth || pixelY < 0 || pixelY >= pixelHeight) return;
 

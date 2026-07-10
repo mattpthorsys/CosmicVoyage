@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Planet } from '../../entities/planet';
 import { Player } from '../../core/player';
 import { AstrometricOverlay } from '../../rendering/astrometric_overlay';
+import { CONFIG } from '../../config';
 
 /** Creates planet. */
 function createPlanet(name: string, systemX: number, systemY: number): Planet {
@@ -51,8 +52,8 @@ describe('AstrometricOverlay starbase markers', () => {
   it('keeps nearby hyperspace starbase brackets brighter than distant ones', () => {
     const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
     (overlay as any).hyperspaceStarbaseMarkers = [
-      { x: 10, y: 10, distanceCells: 8 },
-      { x: 30, y: 10, distanceCells: 64 },
+      { x: 10, y: 10, distanceCells: CONFIG.STARBASE_MARKER_NEAR_RADIUS_CELLS - 1 },
+      { x: 30, y: 10, distanceCells: CONFIG.STARBASE_MARKER_FADE_RADIUS_CELLS + 1 },
     ];
 
     const alphas: number[] = [];
@@ -113,23 +114,25 @@ describe('AstrometricOverlay starbase markers', () => {
   });
 
   it('limits brown-dwarf overlay contacts to the short-range detection horizon', () => {
+    const nearRange = CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS - 1;
+    const farRange = CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS + 1;
     const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
     Object.defineProperties(overlay, {
       systemDataGenerator: {
         value: {
           getSystemProperties: (x: number, y: number) => {
-            if (y === 0 && x === 29)
+            if (y === 0 && x === nearRange)
               return {
                 exists: true,
-                name: 'Lurker-29',
+                name: 'Lurker-Near',
                 starType: 'T4',
                 objectKind: 'brown-dwarf',
                 hasStarbase: false,
               };
-            if (y === 0 && x === 31)
+            if (y === 0 && x === farRange)
               return {
                 exists: true,
-                name: 'Lurker-31',
+                name: 'Lurker-Far',
                 starType: 'T6',
                 objectKind: 'brown-dwarf',
                 hasStarbase: false,
@@ -141,30 +144,34 @@ describe('AstrometricOverlay starbase markers', () => {
       },
     });
 
-    const contacts = (overlay as any).findHyperspaceContacts(0, 0, 32);
+    const contacts = (overlay as any).findHyperspaceContacts(0, 0, farRange);
 
-    expect(contacts.map((contact: any) => contact.name)).toContain('Lurker-29');
-    expect(contacts.map((contact: any) => contact.name)).not.toContain('Lurker-31');
+    expect(contacts.map((contact: any) => contact.name)).toContain('Lurker-Near');
+    expect(contacts.map((contact: any) => contact.name)).not.toContain('Lurker-Far');
   });
 
   it('lets interstellar medium reduce hyperspace contact detection range', () => {
+    const sensorMultiplier = 0.62;
+    const reducedRange = CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS * sensorMultiplier;
+    const nearRange = Math.floor(reducedRange) - 1;
+    const farRange = Math.ceil(reducedRange) + 1;
     const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
     Object.defineProperties(overlay, {
       systemDataGenerator: {
         value: {
           getSystemProperties: (x: number, y: number) => {
-            if (y === 0 && x === 5)
+            if (y === 0 && x === nearRange)
               return {
                 exists: true,
-                name: 'Clear-5',
+                name: 'Clear-Near',
                 starType: 'K2V',
                 objectKind: 'stellar',
                 hasStarbase: false,
               };
-            if (y === 0 && x === 8)
+            if (y === 0 && x === farRange)
               return {
                 exists: true,
-                name: 'Lost-8',
+                name: 'Lost-Far',
                 starType: 'G1V',
                 objectKind: 'stellar',
                 hasStarbase: false,
@@ -176,11 +183,11 @@ describe('AstrometricOverlay starbase markers', () => {
       },
     });
 
-    const contacts = (overlay as any).findHyperspaceContacts(0, 0, 10, 0.62);
+    const contacts = (overlay as any).findHyperspaceContacts(0, 0, farRange, sensorMultiplier);
     const names = contacts.map((contact: any) => contact.name);
 
-    expect(names).toContain('Clear-5');
-    expect(names).not.toContain('Lost-8');
+    expect(names).toContain('Clear-Near');
+    expect(names).not.toContain('Lost-Far');
   });
 
   it('cycles system overlay body locks outward from a stationary ship', () => {

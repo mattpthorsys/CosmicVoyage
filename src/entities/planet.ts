@@ -386,6 +386,7 @@ export class Planet {
         metallicityFeH: this.stellarEnvironment.metallicityFeH,
         surfaceTemp: this.effectiveSurfaceTemp,
         hydrosphere: this.effectiveHydrosphere,
+        managedBiosphere: this.terraforming?.stage,
       },
     };
   }

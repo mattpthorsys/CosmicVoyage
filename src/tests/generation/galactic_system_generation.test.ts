@@ -19,18 +19,21 @@ describe('Galactic stellar-system generation', () => {
       }
     }
 
-    expect(total).toBeGreaterThan(2500);
+    expect(total).toBeGreaterThan(250);
     expect((classes.M ?? 0) / total).toBeGreaterThan(0.65);
     expect(((classes.O ?? 0) + (classes.B ?? 0)) / total).toBeLessThan(0.004);
-    expect((classes.K ?? 0) + (classes.G ?? 0)).toBeGreaterThan(300);
+    expect((classes.K ?? 0) + (classes.G ?? 0)).toBeGreaterThan(30);
   });
 
   it('exposes multiple stable system slots in dense projected Galactic-centre cells', () => {
     const generator = new SystemDataGenerator(new PRNG('dense-system-slots'));
     let resolved = [] as ReturnType<SystemDataGenerator['getResolvedSystemMapProperties']>;
+    const coreWorldY = -Math.round(
+      (CONFIG.GALACTIC_SOLAR_RADIUS_PC * 3.26156) / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS
+    );
 
-    for (let y = -20; y <= 20 && resolved.length < 2; y++) {
-      for (let x = 8160; x <= 8240 && resolved.length < 2; x++) {
+    for (let y = coreWorldY - 40; y <= coreWorldY + 40 && resolved.length < 2; y++) {
+      for (let x = -40; x <= 40 && resolved.length < 2; x++) {
         resolved = generator.getResolvedSystemMapProperties(x, y);
       }
     }

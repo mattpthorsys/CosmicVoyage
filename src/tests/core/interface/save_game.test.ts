@@ -9,6 +9,7 @@ import {
 } from '../../../core/save_game';
 import { MissionProgressService } from '../../../core/mission_progress';
 import { ScanService } from '../../../core/scan_service';
+import { createDiscoveryRecord } from '../../../core/discovery';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -47,8 +48,8 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 6,
-    generationVersion: 2,
+    version: 7,
+    generationVersion: 3,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -189,7 +190,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(6);
+    expect(migrated.version).toBe(7);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
   });
@@ -230,7 +231,7 @@ describe('save game persistence', () => {
       },
     });
 
-    expect(migrated.version).toBe(6);
+    expect(migrated.version).toBe(7);
     expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
     expect(migrated.readyMissionIds).toEqual([]);
     expect(migrated.missionObjectiveProgress).toEqual({});
@@ -247,7 +248,7 @@ describe('save game persistence', () => {
       player: { ...legacy.player, ship: legacyShip },
     });
 
-    expect(migrated.version).toBe(6);
+    expect(migrated.version).toBe(7);
     expect(migrated.player.ship.surveyEquipmentClass).toBe(1);
     expect(migrated.economy).toEqual({});
   });
@@ -269,15 +270,15 @@ describe('save game persistence', () => {
 
     expect(migrated.location).toEqual({
       kind: 'orbit',
-      worldX: 3,
-      worldY: -2,
+      worldX: -7,
+      worldY: -10,
       systemSlot: 0,
       bodyPath: 'planet:0/moon:1',
       orbitReferencePath: 'planet:0',
     });
   });
 
-  it('migrates version-five saves into Galaxy generation two with slot-zero identities', () => {
+  it('migrates version-five saves onto the one-light-year Galactic grid with slot-zero identities', () => {
     const current = createSave();
     const { generationVersion: _generationVersion, ...legacy } = current;
     const { systemSlot: _systemSlot, ...legacyLocation } = legacy.location;
@@ -287,10 +288,11 @@ describe('save game persistence', () => {
       location: legacyLocation,
     });
 
-    expect(migrated.version).toBe(6);
-    expect(migrated.generationVersion).toBe(2);
+    expect(migrated.version).toBe(7);
+    expect(migrated.generationVersion).toBe(3);
     expect(migrated.migratedFromGenerationVersion).toBe(1);
     expect(migrated.location.systemSlot).toBe(0);
+    expect(migrated.location).toMatchObject({ worldX: -7, worldY: -10 });
 
     const migratedStation = parseGameSave({
       ...legacy,
@@ -299,10 +301,61 @@ describe('save game persistence', () => {
     });
     expect(migratedStation.location).toMatchObject({
       kind: 'starbase',
+      worldX: -7,
+      worldY: -10,
       systemSlot: 0,
       stationId: 'legacy-current-starbase',
       starbaseName: 'Legacy Base',
     });
+  });
+
+  it('rotates and rescales generation-two saves while preserving physical position', () => {
+    const current = createSave();
+    const migrated = parseGameSave({
+      ...current,
+      version: 6,
+      generationVersion: 2,
+      location: { kind: 'system', worldX: 3, worldY: -2, systemSlot: 0 },
+      planetMutations: [
+        {
+          worldX: 3,
+          worldY: -2,
+          systemSlot: 0,
+          bodyPath: 'planet:0',
+          orbitAngle: 0,
+          systemX: 10,
+          systemY: 20,
+          discovery: createDiscoveryRecord('surveyed', 100, 1, 'orbital-survey'),
+          primaryResource: 'Iron',
+          minedLocations: [],
+          minedLocationAmounts: {},
+        },
+      ],
+    });
+
+    expect(migrated.version).toBe(7);
+    expect(migrated.generationVersion).toBe(3);
+    expect(migrated.migratedFromGenerationVersion).toBe(2);
+    expect(migrated.player.position).toMatchObject({
+      worldX: -7,
+      worldY: -10,
+      lastWorldMoveDx: 0,
+      lastWorldMoveDy: -1,
+    });
+    expect(migrated.location).toMatchObject({ worldX: -7, worldY: -10 });
+    expect(migrated.planetMutations[0]).toMatchObject({ worldX: -7, worldY: -10 });
+  });
+
+  it('rejects version-six saves that do not identify generation two', () => {
+    const current = createSave();
+
+    expect(() =>
+      parseGameSave({
+        ...current,
+        version: 6,
+        generationVersion: 1,
+      })
+    ).toThrow('Unsupported Galaxy generation version');
   });
 
   it('rejects impossible typed locations and malformed nested state', () => {

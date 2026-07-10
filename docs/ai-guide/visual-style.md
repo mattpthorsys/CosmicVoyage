@@ -123,6 +123,9 @@ new values.
   beside visibly pixelated planets.
 - Surface detail must not introduce latitude, longitude, or diagonal striping
   unless the physical body type justifies it.
+- Terraformed worlds should show dark seas or substantial lakes and muted green
+  lowlands near their shores. Vegetation is a restrained managed-biosphere
+  signal, not a bright green recolour of every dry continent.
 
 Actual displaced silhouettes are optional and should be used only when their
 benefit survives the scene's pixel scale. Bump or terrain-normal lighting is

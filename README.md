@@ -8,7 +8,7 @@ The project is under active development. Systems are playable, but mechanics, ba
 
 You command a small fusion-powered vessel through several scales of space:
 
-- Interstellar travel through a top-down deterministic Milky Way model with location-dependent stellar populations, spiral arms, clusters, nebulae, brown dwarfs, rare deep-space phenomena, free planetary-mass objects, and subtle overlay instrumentation.
+- Interstellar travel on a one-light-year grid through a top-down deterministic Milky Way model with measured spiral-arm geometry, location-dependent stellar populations, clusters, nebulae, brown dwarfs, rare deep-space phenomena, free planetary-mass objects, and subtle overlay instrumentation.
 - Planetary system travel with generated stars, binaries/trinaries, planets, moons, starbases, orbital paths, target selection, approach assist, zoom, and bottom command menus.
 - Orbital operations around planets, including a rotating ASCII globe, moon selection, scan summary, landing-map cursor, and coordinate-based landing.
 - Planet surface travel using a terrain vehicle with fuel, cargo, mining, surface scan cursor, map view, icon legend, crew status, and return-to-ship navigation.
@@ -25,6 +25,7 @@ The simulation aims for plausible science rather than arcade space fantasy:
 - Star generation includes main sequence stars, binary/trinary systems, brown dwarfs, rare neutron stars and black holes, and rare starless/local-frame objects.
 - Stellar density, class, age, metallicity, gas, dust, clusters, and nebula likelihood respond to thin/thick disk, bar, halo, spiral-arm, and galactocentric position.
 - Human settlement is centred on the Solar neighbourhood, with complete and partial terraforming fading through a 4,500-light-year frontier and uncrewed logistics reaching 12,000 light-years.
+- Terraformed colonies are placed inside conservative stellar habitable zones, carry seas or substantial lakes, and show restrained managed vegetation around low coastal terrain.
 - Planet frequencies, types, moon counts, orbital velocities, densities, gravities, temperatures, axial tilt, tidal locking, and tidal heating are modelled from simplified astrophysical rules.
 - Planet classes include rocky, molten, lunar, oceanic, frozen, gas giant, ice giant, Hycean, greenhouse, carbon-rich, chthonian, cryovolcanic, and dwarf ice worlds.
 - Atmosphere, hydrosphere, lithosphere, temperature range, greenhouse effect, albedo, core heat, tidal flexing, and age all feed into scan descriptions and surface generation.

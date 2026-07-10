@@ -46,7 +46,9 @@ export function createHyperspaceTile(
     return {
       bg,
       starChar: star.char,
-      starColor: isBrownDwarf ? dimHexColour(star.color, rangeCells <= 12 ? 0.75 : 0.42) : star.color,
+      starColor: isBrownDwarf
+        ? dimHexColour(star.color, rangeCells <= CONFIG.HYPERSPACE_NEAR_DETAIL_RADIUS_CELLS ? 0.75 : 0.42)
+        : star.color,
     };
   }
 

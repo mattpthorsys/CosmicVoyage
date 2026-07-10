@@ -3,6 +3,7 @@ import { eventManager, GameEvents } from '../../../core/event_manager';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { Planet } from '../../../entities/planet';
+import { CONFIG } from '../../../config';
 
 /** Creates travel harness. */
 function createTravelHarness(state: 'hyperspace' | 'system', pressed: string): any {
@@ -210,7 +211,11 @@ describe('travel command menu', () => {
       starType: 'T8V',
       objectKind: 'brown-dwarf',
     });
-    game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: 24, dy: 0 });
+    game.scanHyperspaceObserveCursor({
+      mode: 'hyperspace',
+      dx: Math.round(24 * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE),
+      dy: 0,
+    });
     const faintLines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
 
     expect(brightLines).toContain('Brightfall');

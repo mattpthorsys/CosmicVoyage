@@ -197,7 +197,12 @@ export function assessPlanetHabitability(
     escapeSuitable &&
     score >= 67;
   const viableForPartialTerraforming =
-    host.eligibleForPartialTerraforming && solid && stableOrbit && gravityPartial && score >= 46;
+    host.eligibleForPartialTerraforming &&
+    solid &&
+    stableOrbit &&
+    insideConservativeHabitableZone &&
+    gravityPartial &&
+    score >= 46;
 
   return {
     score,
@@ -279,7 +284,7 @@ export function createTerraformingProfile(
     meanTemperatureK: Math.round(prng.random(268, 301)),
     minTemperatureK: Math.round(prng.random(205, 245)),
     maxTemperatureK: Math.round(prng.random(310, 344)),
-    hydrosphereFraction: Number(prng.random(0.12, 0.52).toFixed(2)),
+    hydrosphereFraction: Number(prng.random(0.18, 0.52).toFixed(2)),
     biosphereStage: 'pioneer ecology in protected regions',
     engineeringSupport: ['atmospheric processors', 'sealed settlements', 'orbital climate mirrors'],
     habitabilityScore: Math.max(48, assessment.score),

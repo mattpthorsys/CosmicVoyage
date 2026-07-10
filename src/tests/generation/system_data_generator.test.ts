@@ -370,9 +370,9 @@ describe('SystemDataGenerator', () => {
       }
     }
 
-    expect(brownDwarfs).toBeGreaterThan(300);
-    expect(brownDwarfs).toBeLessThan(800);
-    expect(ordinaryStars).toBeGreaterThan(1000);
+    expect(brownDwarfs).toBeGreaterThan(25);
+    expect(brownDwarfs).toBeLessThan(90);
+    expect(ordinaryStars).toBeGreaterThan(80);
   });
 
   it('keeps deep-space phenomena rare and visit-order deterministic', () => {
@@ -392,8 +392,8 @@ describe('SystemDataGenerator', () => {
       }
     }
 
-    expect(total).toBeGreaterThan(10);
-    expect(total).toBeLessThan(45);
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeLessThan(14);
     expect(counts['ancient-signal'] ?? 0).toBeLessThanOrEqual(8);
     expect(counts['debris-field'] ?? 0).toBeLessThanOrEqual(3);
   });

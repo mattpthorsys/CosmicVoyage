@@ -13,8 +13,22 @@ describe('MilkyWayModel', () => {
     const rebuilt = model.getCellContext(240, -175);
 
     expect(origin.galactocentricRadiusPc).toBeCloseTo(CONFIG.GALACTIC_SOLAR_RADIUS_PC, 6);
-    expect(origin.armName).toBe('Local Spur');
+    expect(origin.armName).toBe('Local Arm');
     expect(rebuilt).toEqual(first);
+  });
+
+  it('places Sol below the core with decreasing world Y pointing to Galactic north', () => {
+    const model = new MilkyWayModel('galactic-orientation');
+    const sol = model.worldToGalactocentric(0, 0);
+    const north = model.worldToGalactocentric(0, -100);
+    const east = model.worldToGalactocentric(100, 0);
+
+    expect(sol).toEqual({ xPc: 0, yPc: -CONFIG.GALACTIC_SOLAR_RADIUS_PC });
+    expect(north.yPc).toBeGreaterThan(sol.yPc);
+    expect(east.xPc).toBeGreaterThan(sol.xPc);
+    const roundTrip = model.galactocentricToWorld(north.xPc, north.yPc);
+    expect(roundTrip.worldX).toBeCloseTo(0, 10);
+    expect(roundTrip.worldY).toBeCloseTo(-100, 10);
   });
 
   it('uses the tripled inhabited radius and keeps automated logistics beyond the frontier', () => {
@@ -36,9 +50,9 @@ describe('MilkyWayModel', () => {
 
   it('raises density and metallicity toward the inner Galaxy while preserving a sparse outer disk', () => {
     const model = new MilkyWayModel('galactic-gradient');
-    const inner = model.getCellContext(5500, 0);
+    const inner = model.getCellContext(0, -5500);
     const local = model.getCellContext(0, 0);
-    const outer = model.getCellContext(-5500, 0);
+    const outer = model.getCellContext(0, 5500);
 
     expect(inner.relativeStellarDensity).toBeGreaterThan(local.relativeStellarDensity);
     expect(local.relativeStellarDensity).toBeGreaterThan(outer.relativeStellarDensity);
@@ -63,9 +77,11 @@ describe('MilkyWayModel', () => {
     const model = new MilkyWayModel('cluster-population');
     const clustered = [];
     let sampled = 0;
+    const radiusCells = Math.round((1200 * 3.26156) / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS);
+    const stepCells = Math.max(1, Math.round((12 * 3.26156) / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS));
 
-    for (let y = -1200; y <= 1200; y += 12) {
-      for (let x = -1200; x <= 1200; x += 12) {
+    for (let y = -radiusCells; y <= radiusCells; y += stepCells) {
+      for (let x = -radiusCells; x <= radiusCells; x += stepCells) {
         sampled++;
         const context = model.getCellContext(x, y);
         if (context.cluster) clustered.push(context.cluster);
@@ -86,12 +102,23 @@ describe('MilkyWayModel', () => {
   it('provides a cheap analytical whole-Galaxy field without generating systems', () => {
     const model = new MilkyWayModel('galaxy-raster');
     const centre = model.sampleGalaxyField(0, 0);
-    const solar = model.sampleGalaxyField(CONFIG.GALACTIC_SOLAR_RADIUS_PC, 0);
-    const outside = model.sampleGalaxyField(CONFIG.GALACTIC_DISK_RADIUS_PC * 1.3, 0);
+    const solar = model.sampleGalaxyField(0, -CONFIG.GALACTIC_SOLAR_RADIUS_PC);
+    const outside = model.sampleGalaxyField(0, -CONFIG.GALACTIC_DISK_RADIUS_PC * 1.3);
 
     expect(centre.density).toBeGreaterThan(solar.density);
     expect(solar.insideMainDisk).toBe(true);
     expect(outside.insideMainDisk).toBe(false);
     expect(outside.density).toBeLessThan(solar.density);
+  });
+
+  it('reproduces the measured Local Arm ridge at its Reid et al. kink', () => {
+    const model = new MilkyWayModel('measured-arm-ridge');
+    const beta = (9 * Math.PI) / 180;
+    const radiusPc = 8260;
+    const field = model.sampleGalaxyField(Math.sin(beta) * radiusPc, -Math.cos(beta) * radiusPc);
+
+    expect(field.armInfluence).toBeGreaterThan(0.95);
+    expect(field.youngStellarDensity).toBeGreaterThan(0.25);
+    expect(field.dustLaneDensity).toBeGreaterThan(0);
   });
 });

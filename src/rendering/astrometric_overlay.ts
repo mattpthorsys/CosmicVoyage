@@ -265,9 +265,12 @@ export class AstrometricOverlay {
       const starInfo = SPECTRAL_TYPES[contact.starType] ?? SPECTRAL_TYPES.G;
       const range = Math.sqrt(contact.distSq);
       const isBrownDwarf = contact.objectKind === 'brown-dwarf';
-      const heading = isBrownDwarf || range > 9 ? 'PROBABLE MASS CONTACT' : 'HYPERSPATIAL CONTACT';
+      const heading =
+        isBrownDwarf || range > CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS
+          ? 'PROBABLE MASS CONTACT'
+          : 'HYPERSPATIAL CONTACT';
       const typeLabel =
-        isBrownDwarf && range > 12
+        isBrownDwarf && range > CONFIG.HYPERSPACE_NEAR_DETAIL_RADIUS_CELLS
           ? `LOW-LUMINOSITY SOURCE  ${this.getCertaintyLabel(range, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}`
           : `TYPE ${contact.starType}  ${starInfo.temp.toFixed(0)}K`;
       return {
@@ -448,8 +451,9 @@ export class AstrometricOverlay {
                 ? 'stellar'
                 : null;
           const detectRadius =
-            (objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
-            sensorRangeMultiplier;
+            (objectKind === 'brown-dwarf'
+              ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS
+              : CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS) * sensorRangeMultiplier;
           if (range <= detectRadius)
             contacts.push({
               kind: 'system',
@@ -613,7 +617,13 @@ export class AstrometricOverlay {
     ctx.shadowBlur = 0;
     ctx.fillStyle = TEXT_PALETTE.cyanBorder;
     for (const marker of this.hyperspaceStarbaseMarkers) {
-      const nearLift = 1 - this.smoothstep(20, 42, marker.distanceCells);
+      const nearLift =
+        1 -
+        this.smoothstep(
+          CONFIG.STARBASE_MARKER_NEAR_RADIUS_CELLS,
+          CONFIG.STARBASE_MARKER_FADE_RADIUS_CELLS,
+          marker.distanceCells
+        );
       ctx.globalAlpha = Math.min(0.42, baseAlpha + nearLift * 0.16);
       ctx.fillText('(', (marker.x - 1) * charWidth, marker.y * charHeight);
       ctx.fillText(')', (marker.x + 1) * charWidth, marker.y * charHeight);

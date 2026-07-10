@@ -1,4 +1,5 @@
 import type { Atmosphere } from '../planet';
+import { CONFIG } from '../../config';
 
 export interface SurfaceLiquidOverlay {
   kind: 'water' | 'brine' | 'hycean' | 'acid' | 'methane' | 'nitrogen' | 'ammonia';
@@ -7,6 +8,12 @@ export interface SurfaceLiquidOverlay {
   coverage: number;
   colour: string;
   reflectiveColour: string;
+  coastalVegetation: {
+    minHeight: number;
+    maxHeight: number;
+    shoreColour: string;
+    uplandColour: string;
+  } | null;
 }
 
 /** Creates surface liquid overlay. */
@@ -16,12 +23,15 @@ export function createSurfaceLiquidOverlay(args: {
   surfaceTemp: number;
   atmosphere: Atmosphere;
   heightmap: number[][];
+  managedBiosphere?: 'partial' | 'complete';
 }): SurfaceLiquidOverlay | null {
   const coverage = getLiquidCoverage(args.planetType, args.hydrosphere, args.surfaceTemp, args.atmosphere);
   if (coverage <= 0 || args.heightmap.length === 0) return null;
   const seaLevel = getSeaLevelForCoverage(args.heightmap, coverage);
   const kind = getLiquidKind(args.planetType, args.hydrosphere, args.surfaceTemp);
   const colours = getLiquidColours(kind);
+  const supportsCoastalVegetation = kind === 'water' && Boolean(args.managedBiosphere);
+  const vegetationBand = args.managedBiosphere === 'complete' ? 16 : 10;
   return {
     kind,
     label: getLiquidLabel(kind),
@@ -29,12 +39,31 @@ export function createSurfaceLiquidOverlay(args: {
     coverage,
     colour: colours.colour,
     reflectiveColour: colours.reflectiveColour,
+    coastalVegetation: supportsCoastalVegetation
+      ? {
+          minHeight: seaLevel + 1,
+          maxHeight: Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, seaLevel + vegetationBand),
+          shoreColour: args.managedBiosphere === 'complete' ? '#315A38' : '#46583B',
+          uplandColour: args.managedBiosphere === 'complete' ? '#567348' : '#667053',
+        }
+      : null,
   };
 }
 
 /** Returns whether liquid covered. */
 export function isLiquidCovered(height: number, overlay: SurfaceLiquidOverlay | null | undefined): boolean {
   return !!overlay && height <= overlay.seaLevel;
+}
+
+/** Returns a managed coastal vegetation colour for low land adjoining liquid water. */
+export function getCoastalVegetationColour(
+  height: number,
+  overlay: SurfaceLiquidOverlay | null | undefined
+): string | null {
+  const vegetation = overlay?.coastalVegetation;
+  if (!vegetation || height < vegetation.minHeight || height > vegetation.maxHeight) return null;
+  const midpoint = (vegetation.minHeight + vegetation.maxHeight) / 2;
+  return height <= midpoint ? vegetation.shoreColour : vegetation.uplandColour;
 }
 
 /** Returns liquid coverage. */

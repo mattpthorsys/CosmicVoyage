@@ -2,14 +2,18 @@
 
 ## Scope And Coordinate Model
 
-Generation version 2 treats the navigable map as a top-down projection of the
+Generation version 3 treats the navigable map as a top-down projection of the
 Milky Way. It is not a hidden three-dimensional simulation.
 
-- One world cell is 3.26 light-years, approximately one parsec.
+- One world cell is one light-year.
 - World `(0, 0)` is the Solar neighbourhood.
-- Positive world X points toward the Galactic centre.
-- Positive world Y follows the adopted direction of Galactic rotation.
-- The Solar galactocentric radius is 8.2 kpc.
+- Positive world X and screen-right follow the adopted direction of Galactic
+  rotation.
+- Decreasing world Y and screen-up point toward the Galactic centre. This is
+  the game's two-dimensional "Galactic north" convention; positive world Y is
+  outward from the centre.
+- On the whole-Galaxy instrument, Sol is below the core at a galactocentric
+  radius of 8.15 kpc.
 - The analytical main disk radius is 16 kpc.
 - Surface-density functions are vertically integrated because player travel is
   two-dimensional.
@@ -17,6 +21,16 @@ Milky Way. It is not a hidden three-dimensional simulation.
 Do not add a fake Z value to distance calculations. True three-dimensional
 navigation would require a deliberate location, movement, fuel, UI, worker,
 and save redesign.
+
+`HYPERSPACE_CELL_LIGHT_YEARS` at the top of `src/config.ts` is the one
+authoritative cell-distance setting. Density uses the derived cell-area ratio;
+movement fuel and repeat intervals use the inverse linear scale; sensor,
+overlay, and compact-object radii use the linear scale; nebula and
+interstellar-medium noise use its inverse.
+Physical human-space radii remain expressed directly in light-years. Change the
+cell-distance setting, not each derived value independently. A cell-scale change
+alters generated addresses and therefore also requires a Galaxy model/save
+migration.
 
 ## Generation Pipeline
 
@@ -34,7 +48,7 @@ world coordinate and system slot
 `src/generation/milky_way_model.ts` owns the large-scale model:
 
 - thin disk, thick disk, central bar/bulge, and stellar halo;
-- logarithmic major arms and the Local Spur;
+- parallax-fitted logarithmic arms, including the Local Arm;
 - radial density and metallicity gradients;
 - arm-correlated gas and dust;
 - deterministic open and globular cluster ownership sectors;
@@ -46,8 +60,13 @@ gameplay code must not duplicate Galactic formulas.
 ## Macro Structure And Micro Detail
 
 The Milky Way's macro structure is fixed so every game remains recognizably the
-Milky Way. The game seed controls fine structure, cluster ownership, individual
-systems, and noise. All seed labels include the generation version.
+Milky Way. Generation version 3 uses the Reid et al. maser-fit kink radii,
+piecewise pitch angles, and widths for the Norma, Scutum-Centaurus,
+Sagittarius-Carina, Local, Perseus, and Outer structures. The central bar uses a
+30.5-degree viewing angle and five-kiloparsec half-length based on red-clump
+mapping. The game seed controls fine structure, disk-edge irregularity, cluster
+ownership, individual systems, and gas/dust clumping. All seed labels include
+the generation version.
 
 Spiral arms strongly affect gas, dust, young massive stars, and open clusters.
 They only modestly increase total stellar density because old populations have
@@ -126,6 +145,21 @@ partial pressure, liquid water, a managed biosphere, and reasonable gravity.
 A partial profile remains dependent on atmospheric processors, sealed
 settlements, and climate engineering.
 
+Both complete and partial terraforming candidates must orbit inside the
+conservative habitable zone. Settlement generation first tests naturally
+generated terrestrial worlds. If none is viable, `SolarSystem` makes bounded,
+seeded candidate draws at the preferred habitable-zone distance; a complete
+colony has a final constrained-but-physical terrestrial fallback. Do not assign
+terraforming to an arbitrary existing planet merely because a station was
+rolled.
+
+Complete worlds carry 48-78 percent managed surface water. Partial projects
+carry 18-52 percent, ensuring at least large connected lakes. Surface liquid
+generation adds a muted green managed-biosphere band immediately above water
+level, and all globe, landing-map, and surface render paths consume that same
+coastal vegetation overlay. Keep it restrained and terrain-derived rather than
+painting whole continents bright green.
+
 ## Human-Space Envelope
 
 The inhabited radii are three times the original design:
@@ -169,22 +203,29 @@ The whole-Galaxy image samples `MilkyWayModel.sampleGalaxyField` directly. It
 must never enumerate generated systems. `GalaxyMapRenderer` caches the static
 colour raster by model version, viewport, zoom, and dimensions; the player
 crosshair is drawn separately. Pixels use the shared two-pixels-per-cell raster
-and nearest-neighbour scaling used by orbital planets.
+and nearest-neighbour scaling used by orbital planets. `spanPc` is the vertical
+scientific field; the renderer expands the horizontal span to the viewport
+aspect ratio so parsecs per pixel stay equal and the whole disk is not cropped.
 
 Keep the map restrained: logarithmic brightness, amber/white old stellar light,
-subtle cooler arm gas, dark dust, and a high-contrast crosshair. Do not reveal
+clumpy cool young-star structure, a warm barred core, offset dark dust lanes,
+an irregular disk edge, and a high-contrast crosshair. The player crosshair
+begins below the core and the north marker points upward/coreward. Do not reveal
 undiscovered station locations on the whole-Galaxy view.
 
 ## Persistence And Migration
 
-Save schema version 6 records `generationVersion` and system slots. Version 5
-and older saves migrate into generation version 2 with slot zero. If a legacy
-save was inside any generated local location, restoration preserves player,
+Save schema version 7 records generation version 3 coordinates and system
+slots. Version 6 and older saves rotate and rescale from the old
+coreward-X/rotation-Y parsec grid onto the east-X/coreward-negative-Y
+one-light-year grid. If a legacy save was inside any generated local location,
+restoration preserves player,
 ship, crew, cargo, credits, completed-contract history, and economic assets
-while relocating the vessel to hyperspace at the same world coordinate.
+while relocating the vessel to hyperspace at the same projected physical
+location.
 Generated-body mutations, local catalogue records, station-market state, and
 active contracts are retired because their old coordinate identities could
-silently alias unrelated generation-two systems. Generated identity is stable
+silently alias unrelated generation-three systems. Generated identity is stable
 only within a generation version; changing Galactic formulas or seed labels
 requires a deliberate model-version migration and deterministic fixture
 updates.
@@ -198,7 +239,9 @@ which may recur elsewhere in a Galaxy-sized world.
 Changes to this domain should cover:
 
 - coordinate transforms and Solar radius;
+- one-light-year scaling relationships for density, fuel, sensing, and noise;
 - inner/local/outer density and metallicity relationships;
+- measured spiral-arm ridge fixtures and north/core orientation;
 - class distributions and massive-star rarity;
 - order independence and cache rebuilding;
 - dense-cell slot identities;
@@ -206,6 +249,8 @@ Changes to this domain should cover:
 - Solar-analogue habitable-zone bounds;
 - host rejection and binary stability;
 - complete-starbase colony and breathable-atmosphere invariant;
+- complete and partial colony habitable-zone and surface-water invariants;
+- managed coastal vegetation overlays;
 - depot capability restrictions;
 - Galaxy map pan, zoom, and recenter controls;
 - performance paths that avoid planet terrain and Galaxy enumeration.
@@ -215,10 +260,10 @@ Changes to this domain should cover:
 The implementation is a game-scale approximation. Use these sources when
 retuning it rather than relying on visual intuition:
 
-- McMillan (2017), Milky Way mass model and Solar radius:
-  <https://arxiv.org/abs/1608.00971>
-- Reid et al. (2019), maser-based spiral structure:
-  <https://openaccess.inaf.it/entities/publication/534c53c1-19b2-482e-8792-544dea133d91>
+- Reid et al. (2019), maser-based spiral structure and Solar radius:
+  <https://arxiv.org/abs/1910.03357>
+- Wegg, Gerhard, and Portail (2015), long-bar angle and half-length:
+  <https://arxiv.org/abs/1504.01401>
 - Hayden et al. (2015), APOGEE disk metallicity structure:
   <https://arxiv.org/abs/1503.02110>
 - Kopparapu et al. (2013), temperature-dependent habitable zones:

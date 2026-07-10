@@ -4,6 +4,7 @@ import { NebulaRenderer } from './nebula_renderer';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
+import { getCoastalVegetationColour, SurfaceLiquidOverlay } from '../entities/planet/surface_liquid';
 import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
@@ -360,7 +361,7 @@ export class SceneRenderer {
 
   /** Returns hyperspace range band. */
   private getHyperspaceRangeBand(rangeCells: number): number {
-    if (rangeCells <= 12) return 0;
+    if (rangeCells <= CONFIG.HYPERSPACE_NEAR_DETAIL_RADIUS_CELLS) return 0;
     if (rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) return 1;
     if (rangeCells <= CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS) return 2;
     return 3;
@@ -956,7 +957,10 @@ export class SceneRenderer {
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
         const submerged = !!liquidOverlay && height <= liquidOverlay.seaLevel;
-        const terrainColor = submerged ? liquidOverlay.colour : heightColors[height] || '#FF00FF';
+        const vegetationColour = submerged ? null : getCoastalVegetationColour(height, liquidOverlay);
+        const terrainColor = submerged
+          ? liquidOverlay.colour
+          : vegetationColour || heightColors[height] || '#FF00FF';
         const screenX = viewport.x + x;
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
@@ -1710,7 +1714,7 @@ export class SceneRenderer {
     planet: Planet,
     solidMap: number[][] | null,
     solidColours: string[] | null,
-    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    liquidOverlay: SurfaceLiquidOverlay | null,
     texturePhase: number,
     globeTransform: OrbitGlobeTransform,
     dx: number,
@@ -2019,7 +2023,7 @@ export class SceneRenderer {
     planet: Planet,
     solidMap: number[][] | null,
     solidColours: string[] | null,
-    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    liquidOverlay: SurfaceLiquidOverlay | null,
     texturePhase: number,
     globeTransform: OrbitGlobeTransform,
     dx: number,
@@ -2203,7 +2207,7 @@ export class SceneRenderer {
   private sampleSolidPlanetTexture(
     heightmap: number[][] | null,
     heightColours: string[] | null,
-    liquid: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    liquid: SurfaceLiquidOverlay | null,
     u: number,
     v: number
   ): SolidTextureSample {
@@ -2219,14 +2223,18 @@ export class SceneRenderer {
         reflectiveColour: liquid.reflectiveColour,
       };
     }
-    return { colour: this.sampleHeightColour(heightColours, sample.height), liquid: false };
+    return {
+      colour:
+        getCoastalVegetationColour(height, liquid) ?? this.sampleHeightColour(heightColours, sample.height),
+      liquid: false,
+    };
   }
 
   /** Returns cached solid surface data. */
   private getCachedSolidSurfaceData(planet: Planet): {
     heightmap: number[][] | null;
     heightLevelColors: string[] | null;
-    liquidOverlay: { seaLevel: number; colour: string; reflectiveColour: string } | null;
+    liquidOverlay: SurfaceLiquidOverlay | null;
   } | null {
     return readReadySurfaceData(planet);
   }
@@ -2507,7 +2515,7 @@ export class SceneRenderer {
     planet: Planet,
     map: number[][] | null,
     colours: string[] | null,
-    liquid: { seaLevel: number; colour: string; reflectiveColour: string } | null,
+    liquid: SurfaceLiquidOverlay | null,
     palette: string[],
     width: number,
     height: number
@@ -2534,7 +2542,8 @@ export class SceneRenderer {
           colour =
             liquid && heightValue <= liquid.seaLevel
               ? liquid.colour
-              : this.sampleHeightColour(colours, sample.height);
+              : (getCoastalVegetationColour(heightValue, liquid) ??
+                this.sampleHeightColour(colours, sample.height));
         }
         raster[row * width + col] = colour;
       }

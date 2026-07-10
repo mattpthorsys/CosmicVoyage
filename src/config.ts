@@ -1,3 +1,10 @@
+// Change this one value to alter the physical size of the interstellar grid. Derived
+// ranges, noise scales, densities, and movement costs below preserve their light-year scale.
+const HYPERSPACE_CELL_LIGHT_YEARS = 1;
+const REFERENCE_HYPERSPACE_CELL_LIGHT_YEARS = 3.26;
+const HYPERSPACE_CELL_LINEAR_SCALE = REFERENCE_HYPERSPACE_CELL_LIGHT_YEARS / HYPERSPACE_CELL_LIGHT_YEARS;
+const HYPERSPACE_CELL_AREA_RATIO = 1 / HYPERSPACE_CELL_LINEAR_SCALE ** 2;
+
 // Basic types for configuration values - can be expanded later if needed
 // We are letting TypeScript infer most types here for simplicity during the initial port.
 export const CONFIG = {
@@ -25,9 +32,9 @@ export const CONFIG = {
   DEFAULT_VIEW_SCALE: 1.0,
 
   // --- Movement / Physics ---
-  HYPERSPACE_MOVE_INTERVAL_MS: 145,
-  HYPERSPACE_FINE_MOVE_INTERVAL_MS: 260,
-  HYPERSPACE_BOOST_MOVE_INTERVAL_MS: 70,
+  HYPERSPACE_MOVE_INTERVAL_MS: 145 / HYPERSPACE_CELL_LINEAR_SCALE,
+  HYPERSPACE_FINE_MOVE_INTERVAL_MS: 260 / HYPERSPACE_CELL_LINEAR_SCALE,
+  HYPERSPACE_BOOST_MOVE_INTERVAL_MS: 70 / HYPERSPACE_CELL_LINEAR_SCALE,
   SYSTEM_MOVE_INCREMENT: 3e10, // World units per input step in system view (adjust for speed)
   SYSTEM_ORBIT_SPEED_FACTOR: 0.01, // How fast planets orbit (higher is faster)
   LANDING_DISTANCE: 8.3e10, // Max distance from planet/starbase center to allow landing action prompt //
@@ -36,7 +43,7 @@ export const CONFIG = {
 
   // --- Fuel & Economy ---
   HYPERSPACE_FUEL_COST: 10, // Fuel cost to jump between systems (Currently applies on entry)
-  HYPERSPACE_MOVE_FUEL_COST: 0.35, // Reactor fuel consumed per interstellar cell moved before engine-class efficiency.
+  HYPERSPACE_MOVE_FUEL_COST: 0.35 / HYPERSPACE_CELL_LINEAR_SCALE,
   SYSTEM_MOVE_FUEL_COST: 0.0, // Fuel cost per move update within a system (Set > 0 to enable)
   FUEL_PER_CREDIT: 10, // Units of fuel bought per credit at starbase
   MINERAL_SELL_PRICE: 5, // Credits received per unit of mineral sold
@@ -103,15 +110,19 @@ export const CONFIG = {
   FOOT_TRAVEL_DAMAGE_CHANCE: 0.18,
 
   // --- Hyperspace Generation ---
-  STAR_DENSITY: 0.09, // Local one-parsec resolved-system expectation before Galactic modulation.
-  BROWN_DWARF_DENSITY: 0.035, // Local faint substellar-cell probability before Galactic modulation.
+  STAR_DENSITY: 0.09 * HYPERSPACE_CELL_AREA_RATIO,
+  BROWN_DWARF_DENSITY: 0.035 * HYPERSPACE_CELL_AREA_RATIO,
   STAR_CHECK_HASH_SCALE: 10000, // Divisor for hash check
   DEEP_SPACE_PHENOMENA_SCALE: 1000000,
-  HYPERSPACE_CELL_LIGHT_YEARS: 3.26,
-  GALAXY_MODEL_VERSION: 2,
-  GALACTIC_SOLAR_RADIUS_PC: 8200,
+  HYPERSPACE_CELL_LIGHT_YEARS,
+  REFERENCE_HYPERSPACE_CELL_LIGHT_YEARS,
+  HYPERSPACE_CELL_LINEAR_SCALE,
+  HYPERSPACE_CELL_AREA_RATIO,
+  GALAXY_MODEL_VERSION: 3,
+  GALACTIC_SOLAR_RADIUS_PC: 8150,
   GALACTIC_DISK_RADIUS_PC: 16000,
-  GALACTIC_BAR_ANGLE_DEG: 27,
+  GALACTIC_BAR_ANGLE_DEG: 30.5,
+  GALACTIC_BAR_HALF_LENGTH_PC: 5000,
   GALACTIC_MAX_RESOLVED_SYSTEMS_PER_CELL: 3,
   // Human space was deliberately expanded to three times the original design radius.
   HUMAN_CORE_RADIUS_LY: 1500,
@@ -119,10 +130,16 @@ export const CONFIG = {
   HUMAN_FRONTIER_RADIUS_LY: 4500,
   AUTOMATED_DEPOT_INNER_RADIUS_LY: 3300,
   AUTOMATED_DEPOT_OUTER_RADIUS_LY: 12000,
-  BROWN_DWARF_DETECTION_RADIUS_CELLS: 30,
-  DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS: 30,
-  INTERSTELLAR_MEDIUM_SCALE: 0.018,
-  NEBULA_SCALE: 0.05, // Perlin noise scale for nebulae
+  NORMAL_STAR_DETECTION_RADIUS_CELLS: Math.round(18 * HYPERSPACE_CELL_LINEAR_SCALE),
+  NORMAL_STAR_OVERLAY_RADIUS_CELLS: Math.round(9 * HYPERSPACE_CELL_LINEAR_SCALE),
+  BROWN_DWARF_DETECTION_RADIUS_CELLS: Math.round(30 * HYPERSPACE_CELL_LINEAR_SCALE),
+  DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS: Math.round(30 * HYPERSPACE_CELL_LINEAR_SCALE),
+  HYPERSPACE_NEAR_DETAIL_RADIUS_CELLS: Math.round(12 * HYPERSPACE_CELL_LINEAR_SCALE),
+  STARBASE_MARKER_NEAR_RADIUS_CELLS: Math.round(20 * HYPERSPACE_CELL_LINEAR_SCALE),
+  STARBASE_MARKER_FADE_RADIUS_CELLS: Math.round(42 * HYPERSPACE_CELL_LINEAR_SCALE),
+  COMPACT_REMNANT_INFLUENCE_RADIUS_CELLS: Math.round(8 * HYPERSPACE_CELL_LINEAR_SCALE),
+  INTERSTELLAR_MEDIUM_SCALE: 0.018 / HYPERSPACE_CELL_LINEAR_SCALE,
+  NEBULA_SCALE: 0.05 / HYPERSPACE_CELL_LINEAR_SCALE,
   NEBULA_INTENSITY: 1, // How much nebula colour affects background (0-1)
   NEBULA_SPARSITY: 0.52, // Higher values make nebulae rarer and more region-based.
   NEBULA_COLOURS: [

@@ -113,10 +113,12 @@ describe('NebulaRenderer', () => {
     const second = new NebulaRenderer();
     const samples: string[] = [];
 
-    for (let y = -80; y <= 80; y += 2) {
-      for (let x = -80; x <= 80; x += 2) {
-        const colour = first.getBackgroundColor(x, y);
-        expect(second.getBackgroundColor(x, y)).toBe(colour);
+    for (let y = -260; y <= 260; y += 4) {
+      for (let x = -260; x <= 260; x += 4) {
+        const worldX = x * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
+        const worldY = y * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
+        const colour = first.getBackgroundColor(worldX, worldY);
+        expect(second.getBackgroundColor(worldX, worldY)).toBe(colour);
         samples.push(colour);
       }
     }
@@ -136,7 +138,12 @@ describe('NebulaRenderer', () => {
 
     for (let y = -260; y <= 260; y += 4) {
       for (let x = -260; x <= 260; x += 4) {
-        const sampleLuminance = luminance(renderer.getBackgroundColor(x, y));
+        const sampleLuminance = luminance(
+          renderer.getBackgroundColor(
+            x * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE,
+            y * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE
+          )
+        );
         if (sampleLuminance > 1.5) perceptibleCount++;
         brightest = Math.max(brightest, sampleLuminance);
       }
@@ -153,9 +160,10 @@ describe('NebulaRenderer', () => {
 
     for (let y = -180; y <= 180; y += 3) {
       for (let x = -180; x <= 180; x += 3) {
-        const here = renderer.getBackgroundColor(x, y);
-        const right = renderer.getBackgroundColor(x + 3, y);
-        const down = renderer.getBackgroundColor(x, y + 3);
+        const scale = CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
+        const here = renderer.getBackgroundColor(x * scale, y * scale);
+        const right = renderer.getBackgroundColor((x + 3) * scale, y * scale);
+        const down = renderer.getBackgroundColor(x * scale, (y + 3) * scale);
 
         const localMaxLuminance = Math.max(luminance(here), luminance(right), luminance(down));
         if (localMaxLuminance <= 1.5) continue;
@@ -174,9 +182,12 @@ describe('NebulaRenderer', () => {
     const renderer = new NebulaRenderer();
     const visible: string[] = [];
 
-    for (let y = -120; y <= 120; y += 3) {
-      for (let x = -120; x <= 120; x += 3) {
-        const colour = renderer.getBackgroundColor(x, y);
+    for (let y = -260; y <= 260; y += 4) {
+      for (let x = -260; x <= 260; x += 4) {
+        const colour = renderer.getBackgroundColor(
+          x * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE,
+          y * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE
+        );
         if (colour !== CONFIG.DEFAULT_BG_COLOUR) visible.push(colour);
       }
     }

@@ -107,6 +107,7 @@ function generateSurfaceDataInternal(
         surfaceTemp: profile.surfaceTemp ?? 288,
         atmosphere,
         heightmap,
+        managedBiosphere: profile.managedBiosphere,
       });
 
       surfaceElementMap = generateSurfaceElementMap(

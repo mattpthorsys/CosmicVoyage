@@ -54,9 +54,15 @@ export interface StellarPopulationSample {
 
 export interface GalaxyFieldSample {
   readonly density: number;
+  readonly oldStellarDensity: number;
+  readonly youngStellarDensity: number;
+  readonly bulgeDensity: number;
+  readonly barDensity: number;
   readonly armInfluence: number;
   readonly gasDensity: number;
   readonly dustDensity: number;
+  readonly dustLaneDensity: number;
+  readonly texture: number;
   readonly insideMainDisk: boolean;
 }
 
@@ -69,6 +75,11 @@ interface MacroGalacticSample {
   armInfluence: number;
   gasDensity: number;
   dustDensity: number;
+  dustLaneDensity: number;
+  youngStellarDensity: number;
+  barDensity: number;
+  bulgeDensity: number;
+  texture: number;
   relativeStellarDensity: number;
   radiusPc: number;
   azimuthRad: number;
@@ -76,8 +87,15 @@ interface MacroGalacticSample {
 
 interface SpiralArmDefinition {
   name: string;
-  phaseRad: number;
-  widthPc: number;
+  betaKinkRad: number;
+  radiusKinkPc: number;
+  pitchBeforeRad: number;
+  pitchAfterRad: number;
+  widthAtKinkPc: number;
+  minRadiusPc: number;
+  maxRadiusPc: number;
+  betaMinRad?: number;
+  betaMaxRad?: number;
 }
 
 interface GalacticClusterDefinition {
@@ -90,13 +108,75 @@ interface GalacticClusterDefinition {
   readonly metallicityFeH: number;
 }
 
-const SPIRAL_PITCH_RAD = (12.8 * Math.PI) / 180;
-const SPIRAL_REFERENCE_RADIUS_PC = 5000;
+/** Converts published angular measurements to radians for model evaluation. */
+function degreesToRadians(degrees: number): number {
+  return (degrees * Math.PI) / 180;
+}
+
+// Reid et al. (2019), Table 2: parallax-fitted arm kink radii, pitch angles, and widths.
 const SPIRAL_ARMS: readonly SpiralArmDefinition[] = [
-  { name: 'Norma Arm', phaseRad: -0.18, widthPc: 330 },
-  { name: 'Scutum-Centaurus Arm', phaseRad: Math.PI / 2 - 0.18, widthPc: 390 },
-  { name: 'Sagittarius-Carina Arm', phaseRad: Math.PI - 0.18, widthPc: 360 },
-  { name: 'Perseus Arm', phaseRad: (Math.PI * 3) / 2 - 0.18, widthPc: 420 },
+  {
+    name: 'Norma Arm',
+    betaKinkRad: degreesToRadians(18),
+    radiusKinkPc: 4460,
+    pitchBeforeRad: degreesToRadians(-1),
+    pitchAfterRad: degreesToRadians(19.5),
+    widthAtKinkPc: 140,
+    minRadiusPc: 2600,
+    maxRadiusPc: 7600,
+  },
+  {
+    name: 'Scutum-Centaurus Arm',
+    betaKinkRad: degreesToRadians(23),
+    radiusKinkPc: 4910,
+    pitchBeforeRad: degreesToRadians(14.1),
+    pitchAfterRad: degreesToRadians(12.1),
+    widthAtKinkPc: 230,
+    minRadiusPc: 2800,
+    maxRadiusPc: 15500,
+  },
+  {
+    name: 'Sagittarius-Carina Arm',
+    betaKinkRad: degreesToRadians(24),
+    radiusKinkPc: 6040,
+    pitchBeforeRad: degreesToRadians(17.1),
+    pitchAfterRad: degreesToRadians(1),
+    widthAtKinkPc: 270,
+    minRadiusPc: 3200,
+    maxRadiusPc: 14500,
+  },
+  {
+    name: 'Local Arm',
+    betaKinkRad: degreesToRadians(9),
+    radiusKinkPc: 8260,
+    pitchBeforeRad: degreesToRadians(11.4),
+    pitchAfterRad: degreesToRadians(11.4),
+    widthAtKinkPc: 310,
+    minRadiusPc: 6900,
+    maxRadiusPc: 9700,
+    betaMinRad: degreesToRadians(-55),
+    betaMaxRad: degreesToRadians(65),
+  },
+  {
+    name: 'Perseus Arm',
+    betaKinkRad: degreesToRadians(40),
+    radiusKinkPc: 8870,
+    pitchBeforeRad: degreesToRadians(10.3),
+    pitchAfterRad: degreesToRadians(8.7),
+    widthAtKinkPc: 350,
+    minRadiusPc: 4200,
+    maxRadiusPc: 15200,
+  },
+  {
+    name: 'Outer Arm',
+    betaKinkRad: degreesToRadians(18),
+    radiusKinkPc: 12240,
+    pitchBeforeRad: degreesToRadians(3),
+    pitchAfterRad: degreesToRadians(9.4),
+    widthAtKinkPc: 650,
+    minRadiusPc: 9600,
+    maxRadiusPc: 16800,
+  },
 ] as const;
 
 const MILKY_WAY_AGE_GYR = 13.2;
@@ -112,16 +192,14 @@ export class MilkyWayModel {
     this.seed = String(seed);
   }
 
-  /** Converts a navigable one-parsec world cell into projected galactocentric coordinates. */
+  /** Converts a configurable navigable world cell into display-oriented galactocentric coordinates. */
   worldToGalactocentric(worldX: number, worldY: number): { xPc: number; yPc: number } {
     const cellPc = CONFIG.HYPERSPACE_CELL_LIGHT_YEARS / 3.26156;
-    const localXpc = worldX * cellPc;
-    const localYpc = worldY * cellPc;
-
-    // Positive local X points toward the Galactic centre; positive Y follows rotation.
+    // The Sun is drawn below the core. Screen-right follows Galactic rotation and screen-up
+    // (decreasing world Y) points toward the Galactic centre.
     return {
-      xPc: CONFIG.GALACTIC_SOLAR_RADIUS_PC - localXpc,
-      yPc: localYpc,
+      xPc: worldX * cellPc,
+      yPc: -CONFIG.GALACTIC_SOLAR_RADIUS_PC - worldY * cellPc,
     };
   }
 
@@ -129,30 +207,29 @@ export class MilkyWayModel {
   galactocentricToWorld(xPc: number, yPc: number): { worldX: number; worldY: number } {
     const cellPc = CONFIG.HYPERSPACE_CELL_LIGHT_YEARS / 3.26156;
     return {
-      worldX: (CONFIG.GALACTIC_SOLAR_RADIUS_PC - xPc) / cellPc,
-      worldY: yPc / cellPc,
+      worldX: xPc / cellPc,
+      worldY: -(yPc + CONFIG.GALACTIC_SOLAR_RADIUS_PC) / cellPc,
     };
   }
 
   /** Returns all Galactic inputs needed to generate one hyperspace cell. */
   getCellContext(worldX: number, worldY: number): GalacticCellContext {
+    const cellPc = CONFIG.HYPERSPACE_CELL_LIGHT_YEARS / 3.26156;
     const coordinates = this.worldToGalactocentric(worldX, worldY);
     const macro = this.sampleMacro(coordinates.xPc, coordinates.yPc);
-    const cluster = this.findCluster(worldX, worldY);
+    const cluster = this.findCluster(worldX * cellPc, -worldY * cellPc);
     const clusterDensityBoost = cluster ? 1 + cluster.influence * (cluster.kind === 'open' ? 2.2 : 3.5) : 1;
     const expectedResolvedSystems = this.clamp(
       CONFIG.STAR_DENSITY * macro.relativeStellarDensity * clusterDensityBoost,
-      0.0004,
+      CONFIG.STAR_DENSITY * 0.004,
       3.2
     );
     const totalPopulation = Math.max(1e-8, macro.thinDisk + macro.thickDisk + macro.bulge + macro.halo);
-    const cellPc = CONFIG.HYPERSPACE_CELL_LIGHT_YEARS / 3.26156;
-
     return {
       worldX,
       worldY,
       localXpc: worldX * cellPc,
-      localYpc: worldY * cellPc,
+      localYpc: -worldY * cellPc,
       galactocentricXpc: coordinates.xPc,
       galactocentricYpc: coordinates.yPc,
       galactocentricRadiusPc: macro.radiusPc,
@@ -260,9 +337,15 @@ export class MilkyWayModel {
     const macro = this.sampleMacro(galactocentricXpc, galactocentricYpc);
     return {
       density: macro.relativeStellarDensity,
+      oldStellarDensity: macro.thinDisk + macro.thickDisk + macro.bulge + macro.halo,
+      youngStellarDensity: macro.youngStellarDensity,
+      bulgeDensity: macro.bulgeDensity,
+      barDensity: macro.barDensity,
       armInfluence: macro.armInfluence,
       gasDensity: macro.gasDensity,
       dustDensity: macro.dustDensity,
+      dustLaneDensity: macro.dustLaneDensity,
+      texture: macro.texture,
       insideMainDisk: macro.radiusPc <= CONFIG.GALACTIC_DISK_RADIUS_PC,
     };
   }
@@ -270,8 +353,11 @@ export class MilkyWayModel {
   /** Evaluates smooth disk, bar, halo, arm, gas, and dust fields without cell-level allocations. */
   private sampleMacro(galactocentricXpc: number, galactocentricYpc: number): MacroGalacticSample {
     const radiusPc = Math.hypot(galactocentricXpc, galactocentricYpc);
-    const azimuthRad = Math.atan2(galactocentricYpc, galactocentricXpc);
-    const diskEdge = 1 - this.smoothstep(14500, CONFIG.GALACTIC_DISK_RADIUS_PC, radiusPc);
+    // Reid et al. define beta=0 from the core toward the Sun and increase it with rotation.
+    const azimuthRad = Math.atan2(galactocentricXpc, -galactocentricYpc);
+    const edgeNoise = this.coordinateNoise(galactocentricXpc / 1100, galactocentricYpc / 1100, 'disk-edge');
+    const localDiskEdgePc = CONFIG.GALACTIC_DISK_RADIUS_PC + (edgeNoise - 0.5) * 900;
+    const diskEdge = 1 - this.smoothstep(localDiskEdgePc - 1500, localDiskEdgePc, radiusPc);
     const innerHole = this.smoothstep(650, 2600, radiusPc);
     const thinDisk = Math.exp((CONFIG.GALACTIC_SOLAR_RADIUS_PC - radiusPc) / 2700) * diskEdge * innerHole;
     const thickDisk =
@@ -280,27 +366,45 @@ export class MilkyWayModel {
       (1 - this.smoothstep(15000, 18500, radiusPc));
 
     const barAngle = (CONFIG.GALACTIC_BAR_ANGLE_DEG * Math.PI) / 180;
-    const cosBar = Math.cos(barAngle);
-    const sinBar = Math.sin(barAngle);
-    const barX = galactocentricXpc * cosBar + galactocentricYpc * sinBar;
-    const barY = -galactocentricXpc * sinBar + galactocentricYpc * cosBar;
-    const barRadius = Math.sqrt((barX / 1.9) ** 2 + (barY / 0.72) ** 2);
-    const bulge = 7.4 * Math.exp(-barRadius / 900) * (1 - this.smoothstep(4200, 5600, Math.abs(barX)));
+    const canonicalX = galactocentricXpc;
+    const canonicalY = -galactocentricYpc;
+    const barAlong = canonicalX * Math.sin(barAngle) + canonicalY * Math.cos(barAngle);
+    const barAcross = canonicalX * Math.cos(barAngle) - canonicalY * Math.sin(barAngle);
+    const barHalfLengthPc = CONFIG.GALACTIC_BAR_HALF_LENGTH_PC;
+    const barEllipticalRadius = Math.sqrt((barAlong / barHalfLengthPc) ** 2 + (barAcross / 1150) ** 2);
+    const barEnd = 1 - this.smoothstep(0.82, 1.08, Math.abs(barAlong) / barHalfLengthPc);
+    const barDensity = 5.2 * Math.exp(-barEllipticalRadius * 2.15) * barEnd;
+    const bulgeDensity = 8.6 * Math.exp(-radiusPc / 760);
+    const bulge = bulgeDensity + barDensity * 0.72;
     const halo = 0.0015 * Math.pow(CONFIG.GALACTIC_SOLAR_RADIUS_PC / Math.max(650, radiusPc), 2.65);
-    const arm = this.getSpiralArmSample(radiusPc, azimuthRad, galactocentricXpc, galactocentricYpc);
+    const arm = this.getSpiralArmSample(radiusPc, azimuthRad);
     const fineNoise = this.coordinateNoise(galactocentricXpc / 180, galactocentricYpc / 180, 'macro');
+    const clumpNoise = this.coordinateNoise(galactocentricXpc / 75, galactocentricYpc / 75, 'arms');
+    const molecularRing = Math.exp(-0.5 * ((radiusPc - 4500) / 1350) ** 2);
     const gasRadial = Math.exp(-Math.abs(radiusPc - 6200) / 5800) * diskEdge;
     const gasDensity = this.clamp(
-      gasRadial * (0.18 + arm.influence * 0.82) * (0.78 + fineNoise * 0.44),
+      gasRadial *
+        (0.1 + molecularRing * 0.2 + arm.influence * 0.88) *
+        (0.68 + fineNoise * 0.34 + clumpNoise * 0.28),
       0,
       1.4
     );
     const dustNoise = this.coordinateNoise(galactocentricXpc / 95, galactocentricYpc / 95, 'dust');
-    const dustDensity = this.clamp(gasDensity * (0.48 + dustNoise * 0.62), 0, 1.35);
+    const dustLaneDensity =
+      arm.widthPc > 0
+        ? arm.influence *
+          Math.exp(-0.5 * ((arm.signedDistancePc + arm.widthPc * 0.42) / (arm.widthPc * 0.52)) ** 2)
+        : 0;
+    const dustDensity = this.clamp(gasDensity * (0.34 + dustNoise * 0.48) + dustLaneDensity * 0.58, 0, 1.5);
+    const youngStellarDensity = this.clamp(
+      arm.influence * gasRadial * (0.35 + clumpNoise * 0.95) + molecularRing * 0.08,
+      0,
+      1.6
+    );
     const localNormalization = 1.112;
     const relativeStellarDensity = this.clamp(
       ((thinDisk + thickDisk + bulge + halo) / localNormalization) *
-        (1 + arm.influence * 0.22) *
+        (1 + arm.influence * 0.16) *
         (0.94 + fineNoise * 0.12),
       0.0001,
       42
@@ -315,73 +419,80 @@ export class MilkyWayModel {
       armInfluence: arm.influence,
       gasDensity,
       dustDensity,
+      dustLaneDensity,
+      youngStellarDensity,
+      barDensity,
+      bulgeDensity,
+      texture: clumpNoise,
       relativeStellarDensity,
       radiusPc,
       azimuthRad,
     };
   }
 
-  /** Returns the nearest logarithmic arm, including the shorter Local Spur near Sol. */
+  /** Returns the nearest Reid-parameterized logarithmic arm at one Galactic radius and beta. */
   private getSpiralArmSample(
     radiusPc: number,
-    azimuthRad: number,
-    galactocentricXpc: number,
-    galactocentricYpc: number
-  ): { name: string | null; influence: number } {
+    azimuthRad: number
+  ): { name: string | null; influence: number; signedDistancePc: number; widthPc: number } {
     if (radiusPc < 2200 || radiusPc > CONFIG.GALACTIC_DISK_RADIUS_PC) {
-      return { name: null, influence: 0 };
+      return { name: null, influence: 0, signedDistancePc: 0, widthPc: 0 };
     }
 
     let nearestName: string | null = null;
     let strongestInfluence = 0;
-    const winding = Math.log(radiusPc / SPIRAL_REFERENCE_RADIUS_PC) / Math.tan(SPIRAL_PITCH_RAD);
+    let strongestSignedDistancePc = 0;
+    let strongestWidthPc = 0;
     for (const arm of SPIRAL_ARMS) {
-      const armAzimuth = arm.phaseRad + winding;
-      const angularDistance = Math.abs(this.wrapAngle(azimuthRad - armAzimuth));
-      const physicalDistancePc = angularDistance * radiusPc;
-      const influence = Math.exp(-0.5 * (physicalDistancePc / arm.widthPc) ** 2);
-      if (influence > strongestInfluence) {
-        strongestInfluence = influence;
-        nearestName = arm.name;
+      for (let turn = -2; turn <= 2; turn++) {
+        const beta = azimuthRad + turn * Math.PI * 2;
+        if (arm.betaMinRad !== undefined && beta < arm.betaMinRad) continue;
+        if (arm.betaMaxRad !== undefined && beta > arm.betaMaxRad) continue;
+        const pitch = beta <= arm.betaKinkRad ? arm.pitchBeforeRad : arm.pitchAfterRad;
+        const armRadiusPc = arm.radiusKinkPc * Math.exp(-(beta - arm.betaKinkRad) * Math.tan(pitch));
+        if (armRadiusPc < arm.minRadiusPc || armRadiusPc > arm.maxRadiusPc) continue;
+        const widthPc = this.clamp(
+          arm.widthAtKinkPc + 36 * (armRadiusPc / 1000 - arm.radiusKinkPc / 1000),
+          120,
+          850
+        );
+        const signedDistancePc = radiusPc - armRadiusPc;
+        const influence = Math.exp(-0.5 * (signedDistancePc / widthPc) ** 2);
+        if (influence > strongestInfluence) {
+          strongestInfluence = influence;
+          strongestSignedDistancePc = signedDistancePc;
+          strongestWidthPc = widthPc;
+          nearestName = arm.name;
+        }
       }
-    }
-
-    // The Local Spur is represented as a short, broad structure around the Solar neighbourhood.
-    const localDx = galactocentricXpc - CONFIG.GALACTIC_SOLAR_RADIUS_PC;
-    const localDy = galactocentricYpc;
-    const alongSpur = localDx * 0.91 + localDy * 0.41;
-    const acrossSpur = -localDx * 0.41 + localDy * 0.91;
-    const spurLength = 1 - this.smoothstep(1700, 2600, Math.abs(alongSpur));
-    const spurInfluence = Math.exp(-0.5 * (acrossSpur / 310) ** 2) * spurLength * 0.94;
-    if (spurInfluence > strongestInfluence) {
-      strongestInfluence = spurInfluence;
-      nearestName = 'Local Spur';
     }
 
     return {
       name: strongestInfluence >= 0.08 ? nearestName : null,
       influence: this.clamp(strongestInfluence, 0, 1),
+      signedDistancePc: strongestSignedDistancePc,
+      widthPc: strongestWidthPc,
     };
   }
 
-  /** Finds a deterministic open or globular cluster whose tidal extent covers the cell. */
-  private findCluster(worldX: number, worldY: number): GalacticClusterContext | null {
-    const openCluster = this.findSectorCluster(worldX, worldY, 96, 'open');
+  /** Finds a deterministic open or globular cluster covering one Solar-relative parsec position. */
+  private findCluster(localXpc: number, localYpc: number): GalacticClusterContext | null {
+    const openCluster = this.findSectorCluster(localXpc, localYpc, 96, 'open');
     if (openCluster) return openCluster;
 
     // Globulars are far rarer and use larger ownership sectors to remain order-independent.
-    return this.findSectorCluster(worldX, worldY, 720, 'globular');
+    return this.findSectorCluster(localXpc, localYpc, 720, 'globular');
   }
 
   /** Searches neighbouring ownership sectors for one deterministic cluster influence. */
   private findSectorCluster(
-    worldX: number,
-    worldY: number,
+    localXpc: number,
+    localYpc: number,
     sectorSize: number,
     kind: GalacticClusterKind
   ): GalacticClusterContext | null {
-    const sectorX = Math.floor(worldX / sectorSize);
-    const sectorY = Math.floor(worldY / sectorSize);
+    const sectorX = Math.floor(localXpc / sectorSize);
+    const sectorY = Math.floor(localYpc / sectorSize);
     let strongest: GalacticClusterContext | null = null;
 
     for (let offsetY = -1; offsetY <= 1; offsetY++) {
@@ -395,7 +506,7 @@ export class MilkyWayModel {
           kind
         );
         if (!definition) continue;
-        const distance = Math.hypot(worldX - definition.centerX, worldY - definition.centerY);
+        const distance = Math.hypot(localXpc - definition.centerX, localYpc - definition.centerY);
         if (distance > definition.radius) continue;
 
         const influence = this.smoothstep(definition.radius, 0, distance);
@@ -427,7 +538,10 @@ export class MilkyWayModel {
 
     const centerX = (sectorX + 0.1 + this.hashUnit(`${kind}:x:${sectorX},${sectorY}`) * 0.8) * sectorSize;
     const centerY = (sectorY + 0.1 + this.hashUnit(`${kind}:y:${sectorX},${sectorY}`) * 0.8) * sectorSize;
-    const galactocentric = this.worldToGalactocentric(centerX, centerY);
+    const galactocentric = {
+      xPc: centerX,
+      yPc: -CONFIG.GALACTIC_SOLAR_RADIUS_PC + centerY,
+    };
     const environment = this.sampleMacro(galactocentric.xPc, galactocentric.yPc);
     const spawnChance =
       kind === 'open'
@@ -521,11 +635,6 @@ export class MilkyWayModel {
       hash = Math.imul(hash, 16777619);
     }
     return (hash >>> 0) / 0xffffffff;
-  }
-
-  /** Wraps an angle onto the minus-pi to pi interval. */
-  private wrapAngle(angle: number): number {
-    return Math.atan2(Math.sin(angle), Math.cos(angle));
   }
 
   /** Returns smooth Hermite interpolation between two scalar edges, including reversed edges. */

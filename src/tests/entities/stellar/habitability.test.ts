@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { CONFIG } from '../../../config';
 import { SPECTRAL_TYPES } from '../../../constants/stellar';
+import { AU_IN_METERS } from '../../../constants/physics';
 import {
   calculateStellarLuminosityW,
   StellarArchitecture,
@@ -56,6 +58,11 @@ function findStation(
   throw new Error('No deterministic station candidate found inside the bounded test region.');
 }
 
+/** Converts a generation-two cell range into current scale-preserving map cells. */
+function scaleReferenceCells(cells: number): number {
+  return Math.round(cells * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE);
+}
+
 describe('habitability and human settlement', () => {
   it('places a Solar analogue conservative HZ near one AU', () => {
     const zone = calculateHabitableZone(createSingleStarArchitecture('G2V', 4.6));
@@ -83,9 +90,9 @@ describe('habitability and human settlement', () => {
     const generator = new SystemDataGenerator(seed);
     const located = findStation(
       generator,
-      -90,
-      90,
-      90,
+      scaleReferenceCells(-90),
+      scaleReferenceCells(90),
+      scaleReferenceCells(90),
       (properties) => properties.stationKind === 'starbase'
     );
     const systemProperties = generator.getSystemProperties(located.x, located.y);
@@ -97,6 +104,11 @@ describe('habitability and human settlement', () => {
     expect(isBreathableTerraformingProfile(system.colonyWorld!.terraforming!)).toBe(true);
     expect(system.colonyWorld?.effectiveAtmosphere.density).toBe('Earth-like');
     expect(system.colonyWorld?.effectiveHydrosphere).toContain('managed surface water');
+    const zone = calculateHabitableZone(system.architecture)!;
+    const orbitAu = system.colonyWorld!.orbitDistance / AU_IN_METERS;
+    expect(orbitAu).toBeGreaterThanOrEqual(zone.innerAu);
+    expect(orbitAu).toBeLessThanOrEqual(zone.outerAu);
+    expect(system.colonyWorld!.terraforming!.hydrosphereFraction).toBeGreaterThanOrEqual(0.48);
   });
 
   it('materializes frontier partial-terraforming projects without inventing a major starbase', () => {
@@ -104,9 +116,9 @@ describe('habitability and human settlement', () => {
     const generator = new SystemDataGenerator(seed);
     const located = findStation(
       generator,
-      980,
-      1320,
-      80,
+      scaleReferenceCells(980),
+      scaleReferenceCells(1320),
+      scaleReferenceCells(80),
       (properties) => properties.settlementStage === 'partial'
     );
     const systemProperties = generator.getSystemProperties(located.x, located.y);
@@ -116,6 +128,11 @@ describe('habitability and human settlement', () => {
     expect(system.colonyWorld?.terraforming?.stage).toBe('partial');
     expect(system.starbase).toBeNull();
     expect(system.colonyWorld?.terraforming?.engineeringSupport).toContain('sealed settlements');
+    const zone = calculateHabitableZone(system.architecture)!;
+    const orbitAu = system.colonyWorld!.orbitDistance / AU_IN_METERS;
+    expect(orbitAu).toBeGreaterThanOrEqual(zone.innerAu);
+    expect(orbitAu).toBeLessThanOrEqual(zone.outerAu);
+    expect(system.colonyWorld!.terraforming!.hydrosphereFraction).toBeGreaterThanOrEqual(0.18);
   });
 
   it('creates sparse remote automated depots with deliberately limited services', () => {
@@ -123,9 +140,9 @@ describe('habitability and human settlement', () => {
     const generator = new SystemDataGenerator(seed);
     const located = findStation(
       generator,
-      1850,
-      2050,
-      90,
+      scaleReferenceCells(1850),
+      scaleReferenceCells(2050),
+      scaleReferenceCells(90),
       (properties) => properties.stationKind === 'automated-depot'
     );
     const systemProperties = generator.getSystemProperties(located.x, located.y);

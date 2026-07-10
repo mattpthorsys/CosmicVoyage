@@ -66,6 +66,7 @@ import {
   getShipDamageSummary,
   getShipCargoCapacity,
   getShipDerivedStats,
+  getEngineFuelUseMultiplier,
   getShipRepairCost,
   getStarbaseShipyardProfile,
   installShipyardUpgrade,
@@ -762,7 +763,9 @@ export class Game {
       throw new Error('Save seed does not match the constructed game universe.');
     }
 
-    const isLegacyGalaxyMigration = save.migratedFromGenerationVersion === 1;
+    const isLegacyGalaxyMigration =
+      save.migratedFromGenerationVersion !== undefined &&
+      save.migratedFromGenerationVersion < CONFIG.GALAXY_MODEL_VERSION;
     this.planetMutationRegistry = isLegacyGalaxyMigration
       ? new Map()
       : new Map(
@@ -786,7 +789,9 @@ export class Game {
       }
     } catch (error) {
       if (!isLegacyGalaxyMigration) throw error;
-      logger.warn(`[Game] Legacy local location could not be mapped into Galaxy v2: ${error}`);
+      logger.warn(
+        `[Game] Legacy local location could not be mapped into Galaxy v${CONFIG.GALAXY_MODEL_VERSION}: ${error}`
+      );
       // Version-one coordinates may no longer contain the same system. Preserve portable vessel
       // progress and place it safely in hyperspace rather than rejecting the save outright.
       system = this.stateManager.restoreLocation({
@@ -3064,9 +3069,10 @@ export class Game {
       this.player.crew,
       this.player.ship
     ).scanConfidenceBonus;
+    const referenceRangeCells = rangeCells / CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
     const confidence = Math.max(
       8,
-      Math.min(98, Math.round((104 - rangeCells * 2.55) * sourceStrength + capabilityBonus))
+      Math.min(98, Math.round((104 - referenceRangeCells * 2.55) * sourceStrength + capabilityBonus))
     );
     const label =
       confidence >= 72
@@ -3209,7 +3215,8 @@ export class Game {
     }
 
     const range = Math.max(0, contact.rangeCells);
-    const confidence = Math.max(12, Math.min(98, Math.round(96 - range * 2.3)));
+    const referenceRangeCells = range / CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
+    const confidence = Math.max(12, Math.min(98, Math.round(96 - referenceRangeCells * 2.3)));
     const rangeLabel =
       confidence > 65
         ? `${range.toFixed(1)} cells / ${formatHyperspaceSpan(range)}`
@@ -3226,7 +3233,7 @@ export class Game {
       `CONTACT: <hl>${classification}</hl>`,
       `BEARING: <hl>${bearing}</hl>  RANGE: <hl>${rangeLabel}</hl>`,
       `CONFIDENCE: <hl>${confidence}%</hl>  FACILITY TRACE: <hl>${contact.hasStarbase && confidence > 45 ? 'possible' : 'none'}</hl>`,
-      range > 18
+      range > CONFIG.NORMAL_STAR_DETECTION_RADIUS_CELLS
         ? 'Reading is smeared by distance and medium scattering.'
         : 'Reading is stable enough for approach decisions.',
     ]);
@@ -3578,7 +3585,11 @@ export class Game {
     const isNearRoguePlanet = currentPhenomenon?.exists && currentPhenomenon.type === 'rogue-planet';
     const medium = survey.medium;
     const contact = this.toNavigationContact(survey.nearestSystemContact);
-    const fuelReach = Math.floor(this.player.resources.fuel / Math.max(1, CONFIG.HYPERSPACE_FUEL_COST));
+    const movementFuelCost =
+      CONFIG.HYPERSPACE_MOVE_FUEL_COST *
+      getEngineFuelUseMultiplier(this.player.ship.engineClass) *
+      getOperationalCapabilities(this.player.crew, this.player.ship).hyperspaceFuelMultiplier;
+    const fuelReach = Math.floor(this.player.resources.fuel / Math.max(0.001, movementFuelCost));
 
     let baseStatus = `Hyperspace | Loc: ${this.player.position.worldX},${this.player.position.worldY} | ISM: ${medium.label} sensors ${(medium.sensorRangeMultiplier * 100).toFixed(0)}%`;
     if (contact) {
@@ -3588,7 +3599,7 @@ export class Game {
     } else {
       baseStatus += ` | Contact: none within ${formatHyperspaceSpan(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}`;
     }
-    baseStatus += ` | Fuel reach: ${fuelReach} jump${fuelReach === 1 ? '' : 's'} / ${formatHyperspaceSpan(fuelReach)}`;
+    baseStatus += ` | Fuel reach: ${fuelReach} cell${fuelReach === 1 ? '' : 's'} / ${formatHyperspaceSpan(fuelReach)}`;
 
     if (isNearStar || isNearRoguePlanet) {
       // Only peek if necessary for status display

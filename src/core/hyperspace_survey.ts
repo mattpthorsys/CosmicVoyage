@@ -235,11 +235,13 @@ export class HyperspaceSurveyService {
   private getContactRadii(system: SystemMapProperties, sensorRangeMultiplier: number): ContactRadii {
     return {
       statusRadius:
-        (system.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 18) *
-        sensorRangeMultiplier,
+        (system.objectKind === 'brown-dwarf'
+          ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS
+          : CONFIG.NORMAL_STAR_DETECTION_RADIUS_CELLS) * sensorRangeMultiplier,
       overlayRadius:
-        (system.objectKind === 'brown-dwarf' ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS : 9) *
-        sensorRangeMultiplier,
+        (system.objectKind === 'brown-dwarf'
+          ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS
+          : CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS) * sensorRangeMultiplier,
     };
   }
 

@@ -13,6 +13,7 @@ export interface SurfaceElementGenerationProfile {
   metallicityFeH?: number;
   surfaceTemp?: number;
   hydrosphere?: string;
+  managedBiosphere?: 'partial' | 'complete';
 }
 
 const VOLATILE_KEYS = new Set(['DEUTERIUM', 'WATER_ICE', 'AMMONIA_ICE', 'METHANE_ICE', 'HYDROGEN', 'HELIUM']);

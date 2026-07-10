@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { generateSurfaceDataFromRequest, SurfaceGenerator } from '../../../entities/planet/surface_generator';
-import { createSurfaceLiquidOverlay, isLiquidCovered } from '../../../entities/planet/surface_liquid';
+import {
+  createSurfaceLiquidOverlay,
+  getCoastalVegetationColour,
+  isLiquidCovered,
+} from '../../../entities/planet/surface_liquid';
 import { MineralRichness } from '../../../constants';
 import { PRNG } from '../../../utils/prng';
 
@@ -30,10 +34,15 @@ describe('surface liquid overlays', () => {
       surfaceTemp: 288,
       atmosphere: { density: 'Earth-like', pressure: 1, composition: { Nitrogen: 78, Oxygen: 21 } },
       heightmap,
+      managedBiosphere: 'complete',
     });
 
     expect(overlay?.kind).toBe('water');
     expect(overlay?.coverage).toBe(0.63);
+    expect(overlay?.coastalVegetation).not.toBeNull();
+    expect(getCoastalVegetationColour(overlay!.seaLevel + 1, overlay)).toBe('#315A38');
+    expect(getCoastalVegetationColour(overlay!.seaLevel, overlay)).toBeNull();
+    expect(getCoastalVegetationColour(overlay!.seaLevel + 17, overlay)).toBeNull();
   });
 
   it('masks mineral deposits below visible liquid surfaces', () => {

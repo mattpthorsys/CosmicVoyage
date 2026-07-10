@@ -352,14 +352,15 @@ export class SystemDataGenerator {
       rarity: null,
     };
 
-    if (this.getSystemMapProperties(worldX, worldY).exists) {
+    const roll = fastHash(worldX, worldY, this.gameSeedPRNG.seed + 99173) % CONFIG.DEEP_SPACE_PHENOMENA_SCALE;
+    const type = this.getPhenomenonTypeFromRoll(roll);
+    if (!type) {
+      // Reject the overwhelming majority of cells before paying for Galactic context or star generation.
       this.cachePhenomenonProperties(cacheKey, empty);
       return empty;
     }
 
-    const roll = fastHash(worldX, worldY, this.gameSeedPRNG.seed + 99173) % CONFIG.DEEP_SPACE_PHENOMENA_SCALE;
-    const type = this.getPhenomenonTypeFromRoll(roll);
-    if (!type) {
+    if (this.getSystemMapProperties(worldX, worldY).exists) {
       this.cachePhenomenonProperties(cacheKey, empty);
       return empty;
     }
@@ -511,13 +512,14 @@ export class SystemDataGenerator {
   private getCompactRemnantInfluence(worldX: number, worldY: number): { neutron: number; blackHole: number } {
     let neutron = 0;
     let blackHole = 0;
-    for (let dy = -8; dy <= 8; dy++) {
-      for (let dx = -8; dx <= 8; dx++) {
+    const influenceRadius = CONFIG.COMPACT_REMNANT_INFLUENCE_RADIUS_CELLS;
+    for (let dy = -influenceRadius; dy <= influenceRadius; dy++) {
+      for (let dx = -influenceRadius; dx <= influenceRadius; dx++) {
         const distance = Math.hypot(dx, dy);
-        if (distance > 8) continue;
+        if (distance > influenceRadius) continue;
         const phenomenon = this.getDeepSpacePhenomenonProperties(worldX + dx, worldY + dy);
         if (!phenomenon.exists) continue;
-        const influence = Math.max(0, 1 - distance / 8);
+        const influence = Math.max(0, 1 - distance / influenceRadius);
         if (phenomenon.type === 'neutron-star') neutron = Math.max(neutron, influence);
         if (phenomenon.type === 'black-hole') blackHole = Math.max(blackHole, influence);
       }
@@ -683,13 +685,14 @@ export class SystemDataGenerator {
 
   /** Returns phenomenon type from roll. */
   private getPhenomenonTypeFromRoll(roll: number): DeepSpacePhenomenonType | null {
-    // About 4.6 per 10,000 empty cells. Artificial and extinct-civilisation traces stay rare.
-    if (roll < 180) return 'rogue-planet';
-    if (roll < 330) return 'dark-nebula';
-    if (roll < 385) return 'ancient-signal';
-    if (roll < 420) return 'neutron-star';
-    if (roll < 438) return 'black-hole';
-    if (roll < 448) return 'debris-field';
+    // Normalize to the reference tile area so changing light-years per cell preserves rarity.
+    const referenceAreaRoll = roll / CONFIG.HYPERSPACE_CELL_AREA_RATIO;
+    if (referenceAreaRoll < 180) return 'rogue-planet';
+    if (referenceAreaRoll < 330) return 'dark-nebula';
+    if (referenceAreaRoll < 385) return 'ancient-signal';
+    if (referenceAreaRoll < 420) return 'neutron-star';
+    if (referenceAreaRoll < 438) return 'black-hole';
+    if (referenceAreaRoll < 448) return 'debris-field';
     return null;
   }
 
