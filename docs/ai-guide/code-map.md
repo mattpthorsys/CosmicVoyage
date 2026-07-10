@@ -58,6 +58,8 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/core/ship_place.ts`: ship compartments and stations.
 - `src/core/ship_status_dashboard.ts`: ship instrumentation model.
 - `src/core/help_reference.ts`: help content.
+- `src/core/galaxy_map.ts`: Galaxy-map pan, zoom, recenter state, and immutable
+  frame model.
 
 ## Entities And Generation
 
@@ -66,10 +68,14 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/entities/starbase.ts`: starbase entity and placeholder interior surface.
 - `src/entities/stellar_body.ts`: star and orbit-host data.
 - `src/entities/stellar_environment.ts`: stellar age and metallicity.
+- `src/entities/habitability.ts`: host suitability, habitable zones, orbital
+  stability, planetary assessment, and terraforming profiles.
 - `src/entities/planet/`: physical, atmosphere, temperature, resources,
   descriptors, surfaces, liquid overlays, and worker providers.
 - `src/generation/system_data_generator.ts`: deterministic map-cell systems,
   phenomena, interstellar medium, and architecture.
+- `src/generation/milky_way_model.ts`: projected Galactic coordinates, disk,
+  bar, halo, spiral arms, clusters, gas/dust, metallicity, and human reach.
 - `src/generation/perlin.ts`, `src/generation/heightmap.ts`: noise primitives.
 
 ## Systems
@@ -89,6 +95,8 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/rendering/astrometric_overlay.ts`: direct-canvas scan instrumentation.
 - `src/rendering/terminal_overlay.ts`: typed/fading terminal messages.
 - `src/rendering/nebula_renderer.ts`: sparse nebula field.
+- `src/rendering/galaxy_map_renderer.ts`: cached analytical half-cell Milky Way
+  map and player crosshair.
 - `src/rendering/scenes/giant_atmosphere_renderer.ts`: giant-world bands,
   storms, and cached body-fixed cloud textures.
 - `src/rendering/text_palette.ts`: semantic UI colours.

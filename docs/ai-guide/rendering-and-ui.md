@@ -53,6 +53,11 @@ Half-cell blocks are pooled, written into a reusable two-pixels-per-cell
 batching path for dense planetary graphics; do not replace it with per-pixel
 `fillRect` calls.
 
+The Galaxy instrument reuses this same half-cell raster. Its analytical colour
+field is cached by generation version, viewport, zoom, and dimensions. Do not
+enumerate star systems or regenerate planet data to draw it; only the player
+crosshair and labels are dynamic.
+
 ## Orbital Planet Rendering
 
 Gas- and ice-giant weather is deterministic, body-fixed source data. Bake the

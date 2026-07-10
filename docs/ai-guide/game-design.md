@@ -104,6 +104,24 @@ Each spatial scale should feel distinct:
 - surface: local terrain, fuel, cargo, and extraction;
 - starbase: logistics and longer-term preparation.
 
+The top-down Galaxy map sits above these scales as a navigation instrument. It
+shows structure and the player's place in it without becoming another physical
+travel mode or revealing undiscovered facilities.
+
+### A Galaxy that is not player-centred
+
+The natural universe follows Milky Way structure: disk populations, spiral-arm
+gas and young stars, metallicity gradients, sparse clusters, and a distant
+central bar. Human space is a later overlay centred on Sol. Its developed core,
+fading frontier, and remote automated depots should feel tiny against the full
+Galaxy.
+
+Terraforming reflects selection and engineering rather than convenient random
+Earth clones. Complete worlds require stable hosts, defensible orbits,
+reasonable gravity, breathable pressure and oxygen partial pressure, and a
+managed biosphere. Frontier worlds should more often remain visibly dependent
+on active machinery.
+
 ## Adding Features
 
 New features should answer:

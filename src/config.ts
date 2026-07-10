@@ -66,6 +66,8 @@ export const CONFIG = {
     HELP: '?',
     TOGGLE_PROFILER: 'F3',
     GAME_MENU: 'F10',
+    GALAXY_MAP: 'g',
+    GALAXY_RECENTER: 'Home',
     APPROACH_TARGET: 'a',
     LEAVE_SYSTEM: 'Backspace',
     // Assign 'l' to a single, representative action name
@@ -101,11 +103,22 @@ export const CONFIG = {
   FOOT_TRAVEL_DAMAGE_CHANCE: 0.18,
 
   // --- Hyperspace Generation ---
-  STAR_DENSITY: 0.008, // Approximate fraction of cells containing a star check
-  BROWN_DWARF_DENSITY: 0.006, // Cool substellar systems: common enough, but faint and short-ranged.
+  STAR_DENSITY: 0.09, // Local one-parsec resolved-system expectation before Galactic modulation.
+  BROWN_DWARF_DENSITY: 0.035, // Local faint substellar-cell probability before Galactic modulation.
   STAR_CHECK_HASH_SCALE: 10000, // Divisor for hash check
   DEEP_SPACE_PHENOMENA_SCALE: 1000000,
   HYPERSPACE_CELL_LIGHT_YEARS: 3.26,
+  GALAXY_MODEL_VERSION: 2,
+  GALACTIC_SOLAR_RADIUS_PC: 8200,
+  GALACTIC_DISK_RADIUS_PC: 16000,
+  GALACTIC_BAR_ANGLE_DEG: 27,
+  GALACTIC_MAX_RESOLVED_SYSTEMS_PER_CELL: 3,
+  // Human space was deliberately expanded to three times the original design radius.
+  HUMAN_CORE_RADIUS_LY: 1500,
+  HUMAN_SETTLED_RADIUS_LY: 3000,
+  HUMAN_FRONTIER_RADIUS_LY: 4500,
+  AUTOMATED_DEPOT_INNER_RADIUS_LY: 3300,
+  AUTOMATED_DEPOT_OUTER_RADIUS_LY: 12000,
   BROWN_DWARF_DETECTION_RADIUS_CELLS: 30,
   DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS: 30,
   INTERSTELLAR_MEDIUM_SCALE: 0.018,
@@ -126,7 +139,6 @@ export const CONFIG = {
   MAX_PLANETS_PER_SYSTEM: 9,
   PLANET_MAIN_VIEW_RADIUS: 3,
   MINIMAP_SIZE_FACTOR: 0.15,
-  STARBASE_PROBABILITY: 0.03,
   STARBASE_ORBIT_DISTANCE: 1.496e11,
 
   // --- System View Star Background ---

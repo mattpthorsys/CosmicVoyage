@@ -103,7 +103,18 @@ export class StarbaseCommerceService {
   private getOrCreateStation(starbaseName: string): StationEconomyState {
     const existing = this.stations.get(starbaseName);
     if (existing) return existing;
-    const depotKeys = DEPOT_KEYS.filter((key) => TRADE_COMMODITIES[key]);
+    const isAutomatedDepot =
+      starbaseName.includes(':automated-depot:') || starbaseName.endsWith('Automated Depot');
+    const automatedStock = new Set([
+      'WATER_ICE',
+      'HELIUM_3',
+      'DEUTERIUM_PELLETS',
+      'FUSION_FUEL_MIX',
+      'NAV_BEACONS',
+    ]);
+    const depotKeys = DEPOT_KEYS.filter(
+      (key) => TRADE_COMMODITIES[key] && (!isAutomatedDepot || automatedStock.has(key))
+    );
     const hashOffset = Math.abs(
       fastHash(starbaseName.length, starbaseName.charCodeAt(0) || 0, this.worldSeed)
     );
@@ -116,7 +127,11 @@ export class StarbaseCommerceService {
         const localVariance = 0.9 + ((hashOffset + index * 17) % 34) / 100;
         const units = Math.max(
           1,
-          Math.floor((CONFIG.TRADE_DEPOT_STOCK_UNITS + ((hashOffset + index * 7) % 9)) * commodity.rarity)
+          Math.floor(
+            (CONFIG.TRADE_DEPOT_STOCK_UNITS + ((hashOffset + index * 7) % 9)) *
+              commodity.rarity *
+              (isAutomatedDepot ? 0.42 : 1)
+          )
         );
         return {
           itemKey,

@@ -19,14 +19,24 @@ import {
 } from '../entities/planet/planet_characteristics_generator';
 import { createTemperatureProfileFromAverage } from '../entities/planet/temperature_calculator';
 import { SystemBasicProperties } from '@/generation/system_data_generator';
+import type { GalacticCellContext, GalacticPopulation } from '../generation/milky_way_model';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import { getHostLabel, getPrimaryStar, OrbitHost, StellarArchitecture, StellarBody } from './stellar_body';
+import {
+  assessPlanetHabitability,
+  calculateHabitableZone,
+  createTerraformingProfile,
+  HabitableZone,
+  selectTerraformingCandidate,
+  TerraformingStage,
+} from './habitability';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
 
   readonly starX: number; // World coordinate X
   readonly starY: number; // World coordinate Y
+  readonly systemSlot: number;
   readonly systemPRNG: PRNG; // PRNG seeded specifically for this system
   readonly starType: string; // e.g., 'G', 'M', 'A'
   readonly architecture: StellarArchitecture;
@@ -34,9 +44,14 @@ export class SolarSystem {
   readonly name: string; // Procedurally generated name
   readonly ageGyr: number;
   readonly metallicityFeH: number;
+  readonly galacticContext: GalacticCellContext | null;
+  readonly galacticPopulation: GalacticPopulation | null;
+  readonly settlementStage: 'none' | 'partial' | 'complete';
   readonly stellarEnvironment: StellarEnvironment;
   readonly planets: (Planet | null)[]; // Array for planets (includes moons nested)
   readonly starbase: Starbase | null; // Optional starbase
+  readonly stations: readonly Starbase[];
+  readonly colonyWorld: Planet | null;
   readonly edgeRadius: number; // System boundary radius in meters
   readonly isStarless: boolean;
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
@@ -45,7 +60,8 @@ export class SolarSystem {
   constructor(basicProps: SystemBasicProperties, starX: number, starY: number, gameSeedPRNG: PRNG) {
     this.starX = starX;
     this.starY = starY;
-    const starSeed = `star_${starX},${starY}`;
+    this.systemSlot = basicProps.systemSlot ?? 0;
+    const starSeed = `mw${CONFIG.GALAXY_MODEL_VERSION}_star_${starX},${starY},${this.systemSlot}`;
     this.systemPRNG = gameSeedPRNG.seedNew(starSeed);
     logger.debug(
       `[System:${starX},${starY}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`
@@ -68,6 +84,9 @@ export class SolarSystem {
     };
     this.ageGyr = basicProps.ageGyr ?? fallbackEnvironment.ageGyr;
     this.metallicityFeH = basicProps.metallicityFeH ?? fallbackEnvironment.metallicityFeH;
+    this.galacticContext = basicProps.galacticContext ?? null;
+    this.galacticPopulation = basicProps.galacticPopulation ?? null;
+    this.settlementStage = basicProps.settlementStage ?? (basicProps.hasStarbase ? 'complete' : 'none');
     this.stellarEnvironment = fallbackEnvironment;
 
     logger.info(
@@ -76,25 +95,38 @@ export class SolarSystem {
 
     this.planets = new Array(CONFIG.MAX_PLANETS_PER_SYSTEM).fill(null);
 
-    // Generate starbase first (its orbit distance is fixed in config)
-    this.starbase =
-      basicProps.hasStarbase && !this.isStarless
-        ? // Pass systemPRNG to Starbase constructor
-          new Starbase(this.name, this.systemPRNG, this.name)
-        : null;
-
-    if (this.starbase) {
-      // Ensure starbase orbitDistance is treated as meters
-      logger.info(
-        `[System:${this.name}] Starbase generated at orbit distance ${this.starbase.orbitDistance.toExponential(2)}m.`
-      );
-    }
-
     // Generate planets and their moons
     if (this.isStarless) {
       this.generateRoguePlanetaryMassObject();
     } else {
       this.generatePlanets(); // Uses meter-based distances now
+    }
+
+    const settlementStage = this.settlementStage;
+    this.colonyWorld =
+      !this.isStarless && settlementStage !== 'none' ? this.ensureTerraformingWorld(settlementStage) : null;
+    const stationKind = basicProps.stationKind ?? (basicProps.hasStarbase ? 'starbase' : null);
+    const canCreateMajorStarbase =
+      stationKind !== 'starbase' || this.colonyWorld?.terraforming?.stage === 'complete';
+    this.starbase =
+      stationKind && !this.isStarless && canCreateMajorStarbase
+        ? new Starbase(
+            `x${encodeAddressNumber(this.starX)}:y${encodeAddressNumber(this.starY)}:s${this.systemSlot}`,
+            this.systemPRNG,
+            this.name,
+            stationKind,
+            stationKind === 'starbase' ? (this.colonyWorld?.name ?? null) : null,
+            stationKind === 'starbase' && this.colonyWorld
+              ? this.colonyWorld.orbitDistance * 1.035
+              : undefined
+          )
+        : null;
+    this.stations = this.starbase ? Object.freeze([this.starbase]) : Object.freeze([]);
+
+    if (this.starbase) {
+      logger.info(
+        `[System:${this.name}] ${this.starbase.kind} generated at orbit distance ${this.starbase.orbitDistance.toExponential(2)}m.`
+      );
     }
 
     // Calculate edge radius based on furthest object (planet or starbase)
@@ -131,6 +163,173 @@ export class SolarSystem {
         CONFIG.SYSTEM_EDGE_RADIUS_FACTOR
       })`
     );
+  }
+
+  /** Selects or creates a physically suitable world and applies the requested terraforming overlay. */
+  private ensureTerraformingWorld(stage: TerraformingStage): Planet | null {
+    let candidate = selectTerraformingCandidate(this.planets, this.architecture, stage);
+    if (!candidate) {
+      candidate = this.generateTerraformingCandidate(stage);
+    }
+    if (!candidate) {
+      logger.warn(`[System:${this.name}] Could not resolve a viable ${stage} terraforming candidate.`);
+      return null;
+    }
+
+    const profilePRNG = this.systemPRNG.seedNew(`terraforming_${stage}_${candidate.planet.name}`);
+    candidate.planet.applyTerraforming(createTerraformingProfile(stage, candidate.assessment, profilePRNG));
+    logger.info(
+      `[System:${this.name}] ${candidate.planet.name} assigned ${stage} terraforming at suitability ${candidate.assessment.score}.`
+    );
+    return candidate.planet;
+  }
+
+  /** Generates bounded terrestrial candidates in the conservative HZ when natural architecture lacks one. */
+  private generateTerraformingCandidate(
+    stage: TerraformingStage
+  ): { planet: Planet; assessment: ReturnType<typeof assessPlanetHabitability> } | null {
+    const habitableZone = calculateHabitableZone(this.architecture);
+    if (!habitableZone || this.architecture.kind !== 'single') return null;
+
+    const slot = this.planets.findIndex((planet) => planet === null);
+    const targetSlot = slot >= 0 ? slot : Math.max(0, this.planets.length - 1);
+    const orbitHost: OrbitHost = { kind: 'circumstellar', starId: 'A' };
+    const orbitCenter = this.getOrbitCenter(orbitHost);
+    const parentStar = this.getPlanetEnvironmentStar(orbitHost);
+    let best: { planet: Planet; assessment: ReturnType<typeof assessPlanetHabitability> } | null = null;
+
+    // Settlement systems are rare, so bounded retries are preferable to storing hand-authored fake physics.
+    for (let attempt = 0; attempt < 28; attempt++) {
+      const candidatePRNG = this.systemPRNG.seedNew(`terraforming_candidate_${targetSlot}_${attempt}`);
+      const orbitAu = this.clamp(
+        habitableZone.preferredAu * candidatePRNG.random(0.9, 1.1),
+        habitableZone.innerAu * 1.02,
+        habitableZone.outerAu * 0.98
+      );
+      const orbitDistance = orbitAu * AU_IN_METERS;
+      const angle = candidatePRNG.random(0, Math.PI * 2);
+      const totalFlux = this.calculateFluxAt(
+        orbitCenter.x + Math.cos(angle) * orbitDistance,
+        orbitCenter.y + Math.sin(angle) * orbitDistance
+      );
+      const type = attempt % 3 === 0 ? 'Oceanic' : 'Rock';
+      const planetName = `${this.name} ${this.getRomanNumeral(targetSlot + 1)}`;
+      const tidalRotation = this.calculatePlanetTidalRotation(
+        type,
+        orbitDistance,
+        parentStar.massKg,
+        parentStar.environment.ageGyr,
+        candidatePRNG.seedNew('tidal_lock')
+      );
+      const planet = new Planet(
+        planetName,
+        type,
+        orbitDistance,
+        angle,
+        candidatePRNG,
+        parentStar.starType,
+        undefined,
+        parentStar.environment,
+        orbitHost,
+        orbitCenter.x,
+        orbitCenter.y,
+        totalFlux,
+        tidalRotation
+      );
+      const assessment = assessPlanetHabitability(planet, this.architecture);
+      if (!best || assessment.score > best.assessment.score) best = { planet, assessment };
+      const viable =
+        stage === 'complete'
+          ? assessment.viableForCompleteTerraforming
+          : assessment.viableForPartialTerraforming;
+      if (viable) {
+        this.planets[targetSlot] = planet;
+        return { planet, assessment };
+      }
+    }
+
+    // A partial project can proceed on the best marginal candidate; a major colony may not.
+    if (stage === 'partial' && best && best.assessment.score >= 40) {
+      this.planets[targetSlot] = best.planet;
+      return best;
+    }
+    if (stage === 'complete') {
+      const constrained = this.createConstrainedSettlementPlanet(
+        targetSlot,
+        habitableZone,
+        orbitHost,
+        orbitCenter,
+        parentStar
+      );
+      this.planets[targetSlot] = constrained.planet;
+      return constrained;
+    }
+    return null;
+  }
+
+  /** Creates a constrained but internally consistent terrestrial draw when rejection sampling misses. */
+  private createConstrainedSettlementPlanet(
+    targetSlot: number,
+    habitableZone: HabitableZone,
+    orbitHost: OrbitHost,
+    orbitCenter: { x: number; y: number },
+    parentStar: StellarBody
+  ): { planet: Planet; assessment: ReturnType<typeof assessPlanetHabitability> } {
+    const prng = this.systemPRNG.seedNew(`constrained_settlement_${targetSlot}`);
+    const orbitDistance = habitableZone.preferredAu * AU_IN_METERS;
+    const angle = prng.random(0, Math.PI * 2);
+    const totalFlux = this.calculateFluxAt(
+      orbitCenter.x + Math.cos(angle) * orbitDistance,
+      orbitCenter.y + Math.sin(angle) * orbitDistance
+    );
+    const tidalRotation = this.calculatePlanetTidalRotation(
+      'Rock',
+      orbitDistance,
+      parentStar.massKg,
+      parentStar.environment.ageGyr,
+      prng.seedNew('tidal_lock')
+    );
+    const generated = generatePlanetCharacteristics(
+      'Rock',
+      orbitDistance,
+      prng.seedNew('natural_characteristics'),
+      parentStar.starType,
+      parentStar.environment,
+      totalFlux,
+      tidalRotation
+    );
+    const diameter = prng.randomInt(10800, 14500);
+    const density = prng.random(4.75, 5.85);
+    const radiusM = (diameter * 1000) / 2;
+    const mass = (4 / 3) * Math.PI * radiusM ** 3 * density * 1000;
+    const characteristics: PlanetCharacteristics = {
+      ...generated,
+      diameter,
+      density,
+      gravity: calculateGravity(diameter, density),
+      mass,
+      escapeVelocity: Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radiusM),
+    };
+    const planet = new Planet(
+      `${this.name} ${this.getRomanNumeral(targetSlot + 1)}`,
+      'Rock',
+      orbitDistance,
+      angle,
+      prng,
+      parentStar.starType,
+      characteristics,
+      parentStar.environment,
+      orbitHost,
+      orbitCenter.x,
+      orbitCenter.y,
+      totalFlux,
+      tidalRotation
+    );
+    const assessment = assessPlanetHabitability(planet, this.architecture);
+    if (!assessment.viableForCompleteTerraforming) {
+      throw new Error(`Constrained colony world failed habitability invariant in ${this.name}.`);
+    }
+    return { planet, assessment };
   }
 
   /** Generates a procedural name for the system. */
@@ -1721,3 +1920,8 @@ export class SolarSystem {
     }
   } // End updateOrbits method
 } // End SolarSystem class
+
+/** Encodes coordinate sign explicitly so downstream slugging cannot alias mirrored locations. */
+function encodeAddressNumber(value: number): string {
+  return `${value < 0 ? 'n' : 'p'}${Math.abs(value)}`;
+}

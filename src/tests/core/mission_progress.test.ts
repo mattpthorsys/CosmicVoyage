@@ -34,6 +34,7 @@ describe('mission progression service', () => {
       detail: 'Test',
       rewardCredits: 100,
       risk: 'Low',
+      originStarbaseId: 'station:test-base',
       originStarbaseName: 'Test Base',
       systemName: 'Test System',
       objectives: [
@@ -63,7 +64,8 @@ describe('mission progression service', () => {
     expect(progress.recordDiscovery(planet, 'Test System', 'surveyed')[0].readyForReturn).toBe(true);
     expect(progress.getStatus(mission)).toBe('READY');
     expect(progress.handIn(mission.id, 'Wrong Base')).toBeNull();
-    expect(progress.handIn(mission.id, 'Test Base')).toEqual(mission);
+    expect(progress.handIn(mission.id, 'Test Base', 'station:wrong-base')).toBeNull();
+    expect(progress.handIn(mission.id, 'Test Base', 'station:test-base')).toEqual(mission);
     expect(progress.getStatus(mission)).toBe('COMPLETE');
   });
 });

@@ -25,6 +25,8 @@ import { HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TextModalTableModel } from '../core/text_ui';
 import { TEXT_PALETTE } from './text_palette';
 import { createPlayerViewSnapshot, SceneViewModel } from './scene_view_model';
+import { GalaxyMapRenderer } from './galaxy_map_renderer';
+import type { GalaxyMapModel } from '../core/galaxy_map';
 
 /**
  * Facade class for the rendering system.
@@ -42,6 +44,7 @@ export class RendererFacade {
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private sceneRenderer: SceneRenderer;
+  private galaxyMapRenderer: GalaxyMapRenderer;
   private statusBarUpdater: ImportedStatusBarUpdater; // Use imported alias
   private commandStripUpdater: CommandStripUpdater | null = null;
   private readonly eventUnsubscribers: Unsubscribe[];
@@ -122,6 +125,7 @@ export class RendererFacade {
       systemDataGenerator,
       hyperspaceSurveyService
     );
+    this.galaxyMapRenderer = new GalaxyMapRenderer(this.screenBuffer, systemDataGenerator.getGalaxyModel());
 
     this.eventUnsubscribers = [
       eventManager.subscribe(GameEvents.STATUS_UPDATE_NEEDED, (data) => {
@@ -261,6 +265,7 @@ export class RendererFacade {
 
     this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
     this.sceneRenderer.clearCaches();
+    this.galaxyMapRenderer.clearCache();
     this.screenBuffer.clear(false);
 
     logger.info(
@@ -404,6 +409,11 @@ export class RendererFacade {
   /** Draws text modal table. */
   drawTextModalTable(model: TextModalTableModel): void {
     this.sceneRenderer.drawTextModalTable(model);
+  }
+
+  /** Draws the modal top-down Milky Way instrument through the shared detailed raster layer. */
+  drawGalaxyMap(model: GalaxyMapModel): void {
+    this.galaxyMapRenderer.draw(model);
   }
   // --- Popup Drawing Method ---
   /** Draws a popup window with animations and typing text effect. */

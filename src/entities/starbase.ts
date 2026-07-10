@@ -3,9 +3,45 @@ import { MineralRichness } from '../constants/planetary';
 import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger'; // Import the logger
 
+export type StationKind = 'starbase' | 'automated-depot';
+
+export interface StationCapabilities {
+  readonly trade: boolean;
+  readonly fuel: boolean;
+  readonly repairs: 'basic' | 'full';
+  readonly missions: boolean;
+  readonly crew: boolean;
+  readonly equipment: 'minimal' | 'full';
+  readonly shipyard: boolean;
+}
+
+const STARBASE_CAPABILITIES: StationCapabilities = Object.freeze({
+  trade: true,
+  fuel: true,
+  repairs: 'full',
+  missions: true,
+  crew: true,
+  equipment: 'full',
+  shipyard: true,
+});
+
+const DEPOT_CAPABILITIES: StationCapabilities = Object.freeze({
+  trade: true,
+  fuel: true,
+  repairs: 'basic',
+  missions: false,
+  crew: false,
+  equipment: 'minimal',
+  shipyard: false,
+});
+
 export class Starbase {
+  readonly id: string;
   readonly name: string;
   readonly type: string = 'Starbase'; // Type identifier for game logic
+  readonly kind: StationKind;
+  readonly capabilities: StationCapabilities;
+  readonly colonyWorldName: string | null;
 
   // Orbital Properties - Made MUTABLE to allow SolarSystem to update them
   orbitDistance: number; // Made mutable (removed readonly)
@@ -24,13 +60,26 @@ export class Starbase {
   selectedTradeIndex: number = 0;
 
   /** Initializes Starbase. */
-  constructor(baseNameSeed: string, systemPRNG: PRNG, systemName: string) {
+  constructor(
+    baseNameSeed: string,
+    systemPRNG: PRNG,
+    systemName: string,
+    kind: StationKind = 'starbase',
+    colonyWorldName: string | null = null,
+    preferredOrbitDistance?: number
+  ) {
+    // The address-derived identifier remains unique even when two stations receive the same display name.
+    this.id = `station:${CONFIG.GALAXY_MODEL_VERSION}:${kind}:${baseNameSeed}`;
     // Seed a PRNG specifically for this starbase
     this.systemPRNG = systemPRNG.seedNew('starbase_' + baseNameSeed); //
-    this.name = `${systemName} Starbase Delta`; // Example naming convention
+    this.kind = kind;
+    this.capabilities = kind === 'automated-depot' ? DEPOT_CAPABILITIES : STARBASE_CAPABILITIES;
+    this.colonyWorldName = colonyWorldName;
+    this.name = kind === 'automated-depot' ? `${systemName} Automated Depot` : `${systemName} Starbase Delta`;
 
     // Calculate orbital parameters using the starbase's PRNG
-    this.orbitDistance = CONFIG.STARBASE_ORBIT_DISTANCE * this.systemPRNG.random(0.9, 1.1); //
+    this.orbitDistance =
+      (preferredOrbitDistance ?? CONFIG.STARBASE_ORBIT_DISTANCE) * this.systemPRNG.random(0.97, 1.03); //
     this.orbitAngle = this.systemPRNG.random(0, Math.PI * 2); //
     // Calculate initial position
     this.systemX = Math.cos(this.orbitAngle) * this.orbitDistance; //
@@ -47,10 +96,18 @@ export class Starbase {
   /** Returns scan information for the starbase. */
   getScanInfo(): string[] {
     logger.debug(`[Starbase:${this.name}] getScanInfo called.`); // Add basic log
+    const services = [
+      this.capabilities.trade ? 'Trade' : null,
+      this.capabilities.fuel ? 'Fuel' : null,
+      `${this.capabilities.repairs === 'full' ? 'Full' : 'Basic'} Repair`,
+      this.capabilities.missions ? 'Mission Office' : null,
+      this.capabilities.shipyard ? 'Shipyard' : null,
+    ].filter((service): service is string => Boolean(service));
     return [
       `<h>--- SCAN REPORT: ${this.name} ---</h>`, //
-      `Type: <hl>Orbital Starbase</hl>`,
-      `Services: <hl>Trading Post, Refueling Depot</hl>`,
+      `Type: <hl>${this.kind === 'automated-depot' ? 'Uncrewed Automated Depot' : 'Orbital Starbase'}</hl>`,
+      `Services: <hl>${services.join(', ')}</hl>`,
+      ...(this.colonyWorldName ? [`Colony World: <hl>${this.colonyWorldName}</hl>`] : []),
       `Status: <hl>Operational</hl>`,
       `Mineral Scan: <hl>N/A</hl>`, // Starbases don't have minerals
       '<h>--- SCAN COMPLETE ---</h>',

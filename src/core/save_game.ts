@@ -13,10 +13,11 @@ import { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './discovery';
 import type { EconomySnapshot } from './starbase_commerce';
+import { CONFIG } from '../config';
 
-export const SAVE_GAME_VERSION = 5;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v5';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v5';
+export const SAVE_GAME_VERSION = 6;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v6';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v6';
 const LEGACY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
 const LEGACY_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v1';
 const PREVIOUS_SESSION_SAVE_KEY = 'cosmic-voyage.session.v2';
@@ -25,6 +26,8 @@ const VERSION_THREE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v3';
 const VERSION_THREE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v3';
 const VERSION_FOUR_SESSION_SAVE_KEY = 'cosmic-voyage.session.v4';
 const VERSION_FOUR_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v4';
+const VERSION_FIVE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v5';
+const VERSION_FIVE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v5';
 
 type LegacyScanMissionObjective = Omit<ScanMissionObjective, 'id'>;
 type LegacyStarbaseMission = Omit<StarbaseMission, 'objectives'> & {
@@ -45,6 +48,7 @@ export interface PlayerSaveData {
 export interface PlanetMutationSaveData {
   worldX: number;
   worldY: number;
+  systemSlot: number;
   bodyPath: string;
   orbitAngle: number;
   systemX: number;
@@ -76,6 +80,7 @@ export interface LegacyLocationSaveData {
 interface BaseLocationSaveData {
   worldX: number;
   worldY: number;
+  systemSlot: number;
 }
 
 export type LocationSaveData =
@@ -93,6 +98,7 @@ export type LocationSaveData =
     })
   | (BaseLocationSaveData & {
       kind: 'starbase';
+      stationId: string;
       starbaseName: string;
     });
 
@@ -134,7 +140,13 @@ export interface GameSaveV5 extends Omit<GameSaveV4, 'version' | 'location'> {
   location: LocationSaveData;
 }
 
-export type GameSave = GameSaveV5;
+export interface GameSaveV6 extends Omit<GameSaveV5, 'version'> {
+  version: 6;
+  generationVersion: number;
+  migratedFromGenerationVersion?: number;
+}
+
+export type GameSave = GameSaveV6;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -165,12 +177,15 @@ export function findSystemPlanetPath(system: SolarSystem, target: Planet | null)
 export function parseGameSave(value: string | unknown): GameSave {
   const candidate = typeof value === 'string' ? JSON.parse(value) : value;
   if (!isRecord(candidate)) throw new Error('Save data is not an object.');
-  const record = candidate as Partial<GameSaveV1 | GameSaveV2 | GameSaveV3 | GameSaveV4 | GameSaveV5>;
+  const record = candidate as Partial<
+    GameSaveV1 | GameSaveV2 | GameSaveV3 | GameSaveV4 | GameSaveV5 | GameSaveV6
+  >;
   if (
     record.version !== 1 &&
     record.version !== 2 &&
     record.version !== 3 &&
     record.version !== 4 &&
+    record.version !== 5 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -202,13 +217,32 @@ export function parseGameSave(value: string | unknown): GameSave {
   ) {
     throw new Error('Save player components are invalid.');
   }
-  if (record.version === 1) return migrateV1Save(candidate as unknown as GameSaveV1);
-  if (record.version === 2) return migrateV2Save(candidate as unknown as GameSaveV2);
-  if (record.version === 3) return migrateV3Save(candidate as unknown as GameSaveV3);
-  if (record.version === 4) return migrateV4Save(candidate as unknown as GameSaveV4);
-  const save = candidate as unknown as GameSaveV5;
+  let save: GameSave;
+  switch (record.version) {
+    case 1:
+      save = migrateV1Save(candidate as unknown as GameSaveV1);
+      break;
+    case 2:
+      save = migrateV2Save(candidate as unknown as GameSaveV2);
+      break;
+    case 3:
+      save = migrateV3Save(candidate as unknown as GameSaveV3);
+      break;
+    case 4:
+      save = migrateV4Save(candidate as unknown as GameSaveV4);
+      break;
+    case 5:
+      save = migrateV5Save(candidate as unknown as GameSaveV5);
+      break;
+    default:
+      save = candidate as unknown as GameSaveV6;
+  }
+  if (save.generationVersion !== CONFIG.GALAXY_MODEL_VERSION) {
+    throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
+  }
   validateLocation(save.location);
   validatePlayer(save.player);
+  validateSystemOrbit(save.systemOrbit);
   if (!isRecord(save.catalogueDiscoveries)) {
     throw new Error('Save discovery catalogue is invalid.');
   }
@@ -232,6 +266,26 @@ export function parseGameSave(value: string | unknown): GameSave {
   validatePlanetMutations(save.planetMutations);
   validateEconomy(save.economy);
   return save;
+}
+
+/** Validates mutable stellar and station orbit snapshots before restoration. */
+function validateSystemOrbit(systemOrbit: unknown): asserts systemOrbit is SystemOrbitSaveData | null {
+  if (systemOrbit === null) return;
+  if (!isRecord(systemOrbit) || !Array.isArray(systemOrbit.stars)) {
+    throw new Error('Save system orbit state is invalid.');
+  }
+  for (const star of systemOrbit.stars) {
+    if (!isRecord(star)) throw new Error('Save stellar orbit state is invalid.');
+    assertNonEmptyString(star.id, 'stellar orbit id');
+    if (star.orbitAngle !== null) assertFiniteNumber(star.orbitAngle, 'stellar orbit angle');
+    assertFiniteNumber(star.systemX, 'stellar orbit systemX');
+    assertFiniteNumber(star.systemY, 'stellar orbit systemY');
+  }
+  if (systemOrbit.starbase === null) return;
+  if (!isRecord(systemOrbit.starbase)) throw new Error('Save station orbit state is invalid.');
+  assertFiniteNumber(systemOrbit.starbase.orbitAngle, 'station orbit angle');
+  assertFiniteNumber(systemOrbit.starbase.systemX, 'station orbit systemX');
+  assertFiniteNumber(systemOrbit.starbase.systemY, 'station orbit systemY');
 }
 
 /** Migrates binary scan progress from a version-one save into layered discovery state. */
@@ -303,21 +357,49 @@ function migrateV3Save(save: GameSaveV3): GameSave {
 
 /** Converts independent legacy location fields into a mode-specific location record. */
 function migrateV4Save(save: GameSaveV4): GameSave {
+  return migrateV5Save({
+    ...save,
+    version: 5,
+    location: migrateLegacyLocation(save.location),
+  });
+}
+
+/** Adds explicit Galaxy generation and system-slot identity to version-five saves. */
+function migrateV5Save(save: GameSaveV5): GameSave {
+  const location: LocationSaveData =
+    save.location.kind === 'starbase'
+      ? {
+          ...save.location,
+          systemSlot: save.location.systemSlot ?? 0,
+          stationId: 'legacy-current-starbase',
+        }
+      : { ...save.location, systemSlot: save.location.systemSlot ?? 0 };
   return {
     ...save,
     version: SAVE_GAME_VERSION,
-    location: migrateLegacyLocation(save.location),
+    generationVersion: CONFIG.GALAXY_MODEL_VERSION,
+    migratedFromGenerationVersion: 1,
+    location,
+    planetMutations: save.planetMutations.map((mutation) => ({
+      ...mutation,
+      systemSlot: mutation.systemSlot ?? 0,
+    })),
   };
 }
 
 /** Converts a legacy location record while rejecting contradictory required fields. */
 function migrateLegacyLocation(location: LegacyLocationSaveData): LocationSaveData {
-  const base = { worldX: location.worldX, worldY: location.worldY };
+  const base = { worldX: location.worldX, worldY: location.worldY, systemSlot: 0 };
   if (location.state === 'hyperspace' || location.state === 'system') {
     return { ...base, kind: location.state };
   }
   if (location.state === 'starbase') {
-    return { ...base, kind: 'starbase', starbaseName: 'legacy-current-starbase' };
+    return {
+      ...base,
+      kind: 'starbase',
+      stationId: 'legacy-current-starbase',
+      starbaseName: 'legacy-current-starbase',
+    };
   }
   if (!location.bodyPath) {
     throw new Error(`Legacy ${location.state} save is missing its planetary body path.`);
@@ -335,6 +417,7 @@ function validateLocation(location: unknown): asserts location is LocationSaveDa
   if (!isRecord(location)) throw new Error('Save location data is invalid.');
   assertFiniteNumber(location.worldX, 'location worldX');
   assertFiniteNumber(location.worldY, 'location worldY');
+  assertSystemSlot(location.systemSlot, 'location system slot');
   if (
     location.kind !== 'hyperspace' &&
     location.kind !== 'system' &&
@@ -347,11 +430,12 @@ function validateLocation(location: unknown): asserts location is LocationSaveDa
   if (location.kind === 'orbit' || location.kind === 'planet') {
     assertBodyPath(location.bodyPath, 'location body path');
     assertBodyPath(location.orbitReferencePath, 'orbit reference path');
-    if ('starbaseName' in location) {
+    if ('stationId' in location || 'starbaseName' in location) {
       throw new Error('Save planetary location contains incompatible starbase data.');
     }
   }
   if (location.kind === 'starbase') {
+    assertNonEmptyString(location.stationId, 'station id');
     assertNonEmptyString(location.starbaseName, 'starbase name');
     if ('bodyPath' in location || 'orbitReferencePath' in location) {
       throw new Error('Save starbase location contains incompatible planetary data.');
@@ -359,7 +443,10 @@ function validateLocation(location: unknown): asserts location is LocationSaveDa
   }
   if (
     (location.kind === 'hyperspace' || location.kind === 'system') &&
-    ('bodyPath' in location || 'orbitReferencePath' in location || 'starbaseName' in location)
+    ('bodyPath' in location ||
+      'orbitReferencePath' in location ||
+      'stationId' in location ||
+      'starbaseName' in location)
   ) {
     throw new Error(`Save ${location.kind} location contains incompatible local-object data.`);
   }
@@ -419,6 +506,9 @@ function validateCargo(cargo: CargoComponent, label: string): void {
 function validateMissionProgress(save: GameSave): void {
   for (const mission of Object.values(save.activeMissions)) {
     assertNonEmptyString(mission.id, 'mission id');
+    if (mission.originStarbaseId !== undefined) {
+      assertNonEmptyString(mission.originStarbaseId, 'mission origin station id');
+    }
     assertNonEmptyString(mission.originStarbaseName, 'mission origin starbase');
     if (!Array.isArray(mission.objectives) || mission.objectives.length === 0) {
       throw new Error('Save mission objectives are invalid.');
@@ -450,6 +540,7 @@ function validatePlanetMutations(mutations: PlanetMutationSaveData[]): void {
   for (const mutation of mutations) {
     assertFiniteNumber(mutation.worldX, 'planet mutation worldX');
     assertFiniteNumber(mutation.worldY, 'planet mutation worldY');
+    assertSystemSlot(mutation.systemSlot, 'planet mutation system slot');
     assertBodyPath(mutation.bodyPath, 'planet mutation body path');
     assertFiniteNumber(mutation.orbitAngle, 'planet mutation orbit angle');
     assertFiniteNumber(mutation.systemX, 'planet mutation systemX');
@@ -503,6 +594,18 @@ function assertFiniteNumber(value: unknown, label: string): asserts value is num
   }
 }
 
+/** Validates one non-negative resolved-system slot against the generation model limit. */
+function assertSystemSlot(value: unknown, label: string): asserts value is number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value >= CONFIG.GALACTIC_MAX_RESOLVED_SYSTEMS_PER_CELL
+  ) {
+    throw new Error(`Save ${label} is invalid.`);
+  }
+}
+
 /** Validates a non-empty string field. */
 function assertNonEmptyString(value: unknown, label: string): asserts value is string {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -535,6 +638,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_FIVE_SESSION_SAVE_KEY,
       VERSION_FOUR_SESSION_SAVE_KEY,
       VERSION_THREE_SESSION_SAVE_KEY,
       PREVIOUS_SESSION_SAVE_KEY,
@@ -553,6 +657,7 @@ export class SaveGameStorage {
     this.sessionStore.removeItem(PREVIOUS_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_THREE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FOUR_SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_FIVE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(LEGACY_SESSION_SAVE_KEY);
   }
 
@@ -561,6 +666,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_FIVE_MANUAL_SAVE_KEY,
       VERSION_FOUR_MANUAL_SAVE_KEY,
       VERSION_THREE_MANUAL_SAVE_KEY,
       PREVIOUS_MANUAL_SAVE_KEY,
@@ -579,6 +685,7 @@ export class SaveGameStorage {
     this.persistentStore.removeItem(PREVIOUS_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_THREE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FOUR_MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_FIVE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(LEGACY_MANUAL_SAVE_KEY);
   }
 

@@ -132,13 +132,7 @@ describe('SystemDataGenerator', () => {
     const emptyMap = generator.getSystemMapProperties(x + 1000, y - 1000);
     const emptyFull = generator.getSystemProperties(x + 1000, y - 1000);
 
-    expect(mapProps).toEqual({
-      exists: fullProps.exists,
-      starType: fullProps.starType,
-      name: fullProps.name,
-      hasStarbase: fullProps.hasStarbase,
-      objectKind: fullProps.objectKind,
-    });
+    expect(fullProps).toMatchObject(mapProps);
     expect(emptyMap.exists).toBe(emptyFull.exists);
     expect(emptyMap.starType).toBe(emptyFull.starType);
     expect(emptyMap.objectKind).toBe(emptyFull.objectKind);
@@ -376,9 +370,9 @@ describe('SystemDataGenerator', () => {
       }
     }
 
-    expect(brownDwarfs).toBeGreaterThan(30);
-    expect(brownDwarfs).toBeLessThan(120);
-    expect(ordinaryStars).toBeGreaterThan(60);
+    expect(brownDwarfs).toBeGreaterThan(300);
+    expect(brownDwarfs).toBeLessThan(800);
+    expect(ordinaryStars).toBeGreaterThan(1000);
   });
 
   it('keeps deep-space phenomena rare and visit-order deterministic', () => {

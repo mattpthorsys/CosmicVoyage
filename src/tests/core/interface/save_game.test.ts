@@ -47,7 +47,8 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 5,
+    version: 6,
+    generationVersion: 2,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -106,6 +107,7 @@ function createSave(): GameSave {
       kind: 'hyperspace',
       worldX: 3,
       worldY: -2,
+      systemSlot: 0,
     },
     systemOrbit: null,
     planetMutations: [],
@@ -187,7 +189,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(5);
+    expect(migrated.version).toBe(6);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
   });
@@ -228,7 +230,7 @@ describe('save game persistence', () => {
       },
     });
 
-    expect(migrated.version).toBe(5);
+    expect(migrated.version).toBe(6);
     expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
     expect(migrated.readyMissionIds).toEqual([]);
     expect(migrated.missionObjectiveProgress).toEqual({});
@@ -245,7 +247,7 @@ describe('save game persistence', () => {
       player: { ...legacy.player, ship: legacyShip },
     });
 
-    expect(migrated.version).toBe(5);
+    expect(migrated.version).toBe(6);
     expect(migrated.player.ship.surveyEquipmentClass).toBe(1);
     expect(migrated.economy).toEqual({});
   });
@@ -269,8 +271,37 @@ describe('save game persistence', () => {
       kind: 'orbit',
       worldX: 3,
       worldY: -2,
+      systemSlot: 0,
       bodyPath: 'planet:0/moon:1',
       orbitReferencePath: 'planet:0',
+    });
+  });
+
+  it('migrates version-five saves into Galaxy generation two with slot-zero identities', () => {
+    const current = createSave();
+    const { generationVersion: _generationVersion, ...legacy } = current;
+    const { systemSlot: _systemSlot, ...legacyLocation } = legacy.location;
+    const migrated = parseGameSave({
+      ...legacy,
+      version: 5,
+      location: legacyLocation,
+    });
+
+    expect(migrated.version).toBe(6);
+    expect(migrated.generationVersion).toBe(2);
+    expect(migrated.migratedFromGenerationVersion).toBe(1);
+    expect(migrated.location.systemSlot).toBe(0);
+
+    const migratedStation = parseGameSave({
+      ...legacy,
+      version: 5,
+      location: { kind: 'starbase', worldX: 3, worldY: -2, starbaseName: 'Legacy Base' },
+    });
+    expect(migratedStation.location).toMatchObject({
+      kind: 'starbase',
+      systemSlot: 0,
+      stationId: 'legacy-current-starbase',
+      starbaseName: 'Legacy Base',
     });
   });
 
@@ -280,7 +311,7 @@ describe('save game persistence', () => {
     expect(() =>
       parseGameSave({
         ...save,
-        location: { kind: 'orbit', worldX: 3, worldY: -2 },
+        location: { kind: 'orbit', worldX: 3, worldY: -2, systemSlot: 0 },
       })
     ).toThrow('body path');
     expect(() =>
@@ -290,6 +321,7 @@ describe('save game persistence', () => {
           kind: 'hyperspace',
           worldX: 3,
           worldY: -2,
+          systemSlot: 0,
           bodyPath: 'planet:0',
         },
       })
@@ -309,6 +341,33 @@ describe('save game persistence', () => {
         missionObjectiveProgress: { missing: ['objective'] },
       })
     ).toThrow('inconsistent');
+    expect(() =>
+      parseGameSave({
+        ...save,
+        systemOrbit: {
+          stars: [{ id: 'A', orbitAngle: null, systemX: Number.POSITIVE_INFINITY, systemY: 0 }],
+          starbase: null,
+        },
+      })
+    ).toThrow('stellar orbit systemX');
+    expect(() =>
+      parseGameSave({
+        ...save,
+        location: { kind: 'hyperspace', worldX: 3, worldY: -2 },
+      })
+    ).toThrow('system slot');
+    expect(() =>
+      parseGameSave({
+        ...save,
+        location: {
+          kind: 'starbase',
+          worldX: 3,
+          worldY: -2,
+          systemSlot: 0,
+          starbaseName: 'Repeated Name',
+        },
+      })
+    ).toThrow('station id');
   });
 
   it('restores player and mission data through explicit Game APIs', () => {
@@ -344,5 +403,18 @@ describe('save game persistence', () => {
     expect(game.gameClockElapsedSeconds).toBe(42);
     expect(game.tutorialHintsShown).toEqual(new Set(['hyperspace']));
     expect(game.forceFullRender).toBe(true);
+
+    game.restoreSaveGame({
+      ...save,
+      migratedFromGenerationVersion: 1,
+      location: { kind: 'system', worldX: 3, worldY: -2, systemSlot: 0 },
+    });
+    expect(game.stateManager.restoreLocation).toHaveBeenLastCalledWith({
+      kind: 'hyperspace',
+      worldX: 3,
+      worldY: -2,
+      systemSlot: 0,
+    });
+    expect(game.statusMessage).toContain('placed the vessel safely in hyperspace');
   });
 });

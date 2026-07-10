@@ -101,6 +101,7 @@ export class ShipOperationsController {
 export type ActiveInterface<Quantity, Extraction, Confirmation> =
   | { readonly kind: 'none' }
   | { readonly kind: 'popup' }
+  | { readonly kind: 'galaxy-map' }
   | { readonly kind: 'target-menu' }
   | { readonly kind: 'ship-menu' }
   | { readonly kind: 'rover-cargo' }

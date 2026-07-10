@@ -1907,7 +1907,7 @@ export class SceneRenderer {
 
   /** Draws orbit atmospheric horizon. */
   private drawOrbitAtmosphericHorizon(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
-    const atmosphere = model.selectedBody.atmosphere;
+    const atmosphere = model.selectedBody.effectiveAtmosphere;
     if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return;
 
     const sun = this.getGlobeSunVector(model.illuminationPhase * Math.PI * 2);
@@ -2069,12 +2069,10 @@ export class SceneRenderer {
     starColour: string | undefined,
     strength: number
   ): string {
-    const composition = planet.atmosphere?.composition ?? {};
+    const atmosphere = planet.effectiveAtmosphere;
+    const composition = atmosphere.composition;
     const dominantGas = Object.entries(composition).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '';
-    const scatteringHex = this.getAtmosphericScatteringBaseColour(
-      dominantGas,
-      planet.atmosphere?.density ?? ''
-    );
+    const scatteringHex = this.getAtmosphericScatteringBaseColour(dominantGas, atmosphere.density);
     const scattering = this.hexToRgbFallback(scatteringHex);
     const star = this.hexToRgbFallback(starColour ?? '#FFFACD');
     const starMix = Math.max(0.22, Math.min(0.48, 0.28 + strength * 0.16));
@@ -2102,13 +2100,14 @@ export class SceneRenderer {
     if (cached) return cached;
     let dominantGas = '';
     let dominantAbundance = Number.NEGATIVE_INFINITY;
-    for (const [gas, abundance] of Object.entries(planet.atmosphere?.composition ?? {})) {
+    const atmosphere = planet.effectiveAtmosphere;
+    for (const [gas, abundance] of Object.entries(atmosphere.composition)) {
       if (abundance <= dominantAbundance) continue;
       dominantGas = gas;
       dominantAbundance = abundance;
     }
     const colour = this.hexToRgbFallback(
-      this.getAtmosphericScatteringBaseColour(dominantGas, planet.atmosphere?.density ?? '')
+      this.getAtmosphericScatteringBaseColour(dominantGas, atmosphere.density)
     );
     this.atmosphericScatteringCache.set(planet, colour);
     return colour;
@@ -2132,7 +2131,7 @@ export class SceneRenderer {
     const nightMask = 1 - dayMask;
     const mu = Math.max(0.03, viewNormalZ);
     const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
-    const atmosphere = planet.atmosphere;
+    const atmosphere = planet.effectiveAtmosphere;
     const pressure = atmosphere?.pressure ?? 0;
     const density = atmosphere?.density ?? 'None';
     const hasDenseAir =
@@ -2169,7 +2168,7 @@ export class SceneRenderer {
 
   /** Limits atmospheric highlights so text-mode colours retain contrast. */
   private capAtmosphericGlobeHighlight(planet: Planet, colour: RgbColour, lightGlyph: number): RgbColour {
-    const atmosphere = planet.atmosphere;
+    const atmosphere = planet.effectiveAtmosphere;
     if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return colour;
     const pressure = Math.max(0, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
     const highlight = this.smoothstep(0.72, 1, lightGlyph);
@@ -2186,7 +2185,7 @@ export class SceneRenderer {
 
   /** Calculates atmospheric globe twilight. */
   private calculateAtmosphericGlobeTwilight(planet: Planet, lightGlyph: number): number {
-    const atmosphere = planet.atmosphere;
+    const atmosphere = planet.effectiveAtmosphere;
     if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return 0;
     const pressure = Math.max(0, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
     const enteringDay = this.smoothstep(0.08, 0.42, lightGlyph);

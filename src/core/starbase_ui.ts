@@ -38,6 +38,18 @@ export const STARBASE_SECTIONS: StarbaseSection[] = [
   { id: 'crew', label: 'Crew' },
 ];
 
+/** Returns only the panels supported by a station's declared mechanical capabilities. */
+export function getStationSections(starbase: Starbase): StarbaseSection[] {
+  return STARBASE_SECTIONS.filter((section) => {
+    // Prototype-based tests and imported legacy saves may briefly expose a pre-capability station.
+    if (!starbase.capabilities) return true;
+    if (section.id === 'missions') return starbase.capabilities.missions;
+    if (section.id === 'shipyard') return starbase.capabilities.shipyard;
+    if (section.id === 'crew') return starbase.capabilities.crew;
+    return true;
+  });
+}
+
 /** Creates starbase screen model. */
 export function createStarbaseScreenModel(args: {
   starbase: Starbase;
@@ -64,7 +76,7 @@ export function createStarbaseScreenModel(args: {
   return {
     stationName: args.starbase.name,
     sectionId: args.sectionId,
-    sections: STARBASE_SECTIONS,
+    sections: getStationSections(args.starbase),
     title: args.title,
     subtitle: args.subtitle,
     columns: args.columns,

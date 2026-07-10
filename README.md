@@ -8,11 +8,12 @@ The project is under active development. Systems are playable, but mechanics, ba
 
 You command a small fusion-powered vessel through several scales of space:
 
-- Interstellar travel through a deterministic starfield with nebulae, brown dwarfs, rare deep-space phenomena, free planetary-mass objects, and subtle overlay instrumentation.
+- Interstellar travel through a top-down deterministic Milky Way model with location-dependent stellar populations, spiral arms, clusters, nebulae, brown dwarfs, rare deep-space phenomena, free planetary-mass objects, and subtle overlay instrumentation.
 - Planetary system travel with generated stars, binaries/trinaries, planets, moons, starbases, orbital paths, target selection, approach assist, zoom, and bottom command menus.
 - Orbital operations around planets, including a rotating ASCII globe, moon selection, scan summary, landing-map cursor, and coordinate-based landing.
 - Planet surface travel using a terrain vehicle with fuel, cargo, mining, surface scan cursor, map view, icon legend, crew status, and return-to-ship navigation.
 - Starbase operations with section menus, scrollable tables, cargo review, buy/sell/refuel services, notices, missions, shipyard, crew hiring, and training.
+- Remote automated depots with minimal stock, fuel, basic repair, and deliberately limited services beyond inhabited space.
 - Ship operations outside starbase/orbit, including cargo, crew, ship status, jettison prompts, and the ship-as-place compartment view.
 
 The game favours deterministic procedural generation. Given the same seed and coordinates, stars, systems, planet properties, surfaces, resources, starbases, and mission boards should remain stable rather than changing with scan or travel order.
@@ -22,6 +23,8 @@ The game favours deterministic procedural generation. Given the same seed and co
 The simulation aims for plausible science rather than arcade space fantasy:
 
 - Star generation includes main sequence stars, binary/trinary systems, brown dwarfs, rare neutron stars and black holes, and rare starless/local-frame objects.
+- Stellar density, class, age, metallicity, gas, dust, clusters, and nebula likelihood respond to thin/thick disk, bar, halo, spiral-arm, and galactocentric position.
+- Human settlement is centred on the Solar neighbourhood, with complete and partial terraforming fading through a 4,500-light-year frontier and uncrewed logistics reaching 12,000 light-years.
 - Planet frequencies, types, moon counts, orbital velocities, densities, gravities, temperatures, axial tilt, tidal locking, and tidal heating are modelled from simplified astrophysical rules.
 - Planet classes include rocky, molten, lunar, oceanic, frozen, gas giant, ice giant, Hycean, greenhouse, carbon-rich, chthonian, cryovolcanic, and dwarf ice worlds.
 - Atmosphere, hydrosphere, lithosphere, temperature range, greenhouse effect, albedo, core heat, tidal flexing, and age all feed into scan descriptions and surface generation.
@@ -49,6 +52,7 @@ Common controls:
 - `l`: orbit, dock, launch, or depart where context allows.
 - `a`: approach selected target automatically.
 - `=` / `-`: zoom system view.
+- `g`: open the top-down Galaxy map; arrows pan, `+/-` zoom, and `Home` recentres.
 - `F3`: performance profiler.
 - `F10`: pause and open the save/game menu.
 
@@ -92,7 +96,7 @@ Key folders:
 
 - `src/core`: game loop, state transitions, input handling, command menus, ship/crew/orbit/starbase UI models, missions, and high-level gameplay orchestration.
 - `src/entities`: generated stars, planets, systems, starbases, planetary physics, atmosphere, temperature, resources, and surface generation.
-- `src/generation`: deterministic PRNG/noise and system data generation.
+- `src/generation`: deterministic PRNG/noise, Milky Way structure, stellar populations, and system data generation.
 - `src/rendering`: canvas grid renderer, scene renderer, overlays, nebulae, starfields, status bars, and command strip rendering.
 - `src/systems`: cargo, mining, and movement logic.
 - `src/tests`: Vitest suites grouped by gameplay domain.

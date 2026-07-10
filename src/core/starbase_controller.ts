@@ -5,6 +5,7 @@ import {
   StarbaseSectionId,
   StarbaseTableRow,
   STARBASE_SECTIONS,
+  getStationSections,
 } from './starbase_ui';
 import { moveSelection } from './text_ui';
 import { Starbase } from '../entities/starbase';
@@ -57,10 +58,14 @@ export class StarbaseController {
   }
 
   /** Switches section. */
-  switchSection(delta: number): void {
-    const currentIndex = STARBASE_SECTIONS.findIndex((section) => section.id === this.sectionId);
-    const nextIndex = (currentIndex + delta + STARBASE_SECTIONS.length) % STARBASE_SECTIONS.length;
-    this.sectionId = STARBASE_SECTIONS[nextIndex].id;
+  switchSection(delta: number, starbase?: Starbase): void {
+    const sections = starbase ? getStationSections(starbase) : STARBASE_SECTIONS;
+    const currentIndex = Math.max(
+      0,
+      sections.findIndex((section) => section.id === this.sectionId)
+    );
+    const nextIndex = (currentIndex + delta + sections.length) % sections.length;
+    this.sectionId = sections[nextIndex].id;
     this.alert = '';
   }
 
@@ -110,11 +115,13 @@ export class StarbaseController {
 
   /** Returns section meta. */
   getSectionMeta(starbase: Starbase): StarbaseSectionMeta {
-    const baseSubtitle = `${starbase.name} | ${new Date(0).toISOString().slice(11, 16)} station time`;
+    const stationClass =
+      starbase.kind === 'automated-depot' ? 'UNCREWED LOGISTICS NODE' : 'INHABITED ORBITAL PORT';
+    const baseSubtitle = `${starbase.name} | ${stationClass}`;
     switch (this.sectionId) {
       case 'overview':
         return {
-          title: 'Starbase Operations',
+          title: starbase.kind === 'automated-depot' ? 'Automated Depot' : 'Starbase Operations',
           subtitle: baseSubtitle,
           columns: ['PORT SECTION', 'STATUS'],
           widths: [24, 18],

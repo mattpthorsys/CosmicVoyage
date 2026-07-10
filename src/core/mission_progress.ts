@@ -84,10 +84,14 @@ export class MissionProgressService {
   }
 
   /** Hands in one ready mission at its issuing starbase. */
-  handIn(missionId: string, starbaseName: string): StarbaseMission | null {
+  handIn(missionId: string, starbaseName: string, starbaseId?: string): StarbaseMission | null {
     const mission = this.activeMissions[missionId];
     if (!mission || !this.readyMissionIds.has(missionId)) return null;
-    if (mission.originStarbaseName !== starbaseName) return null;
+    if (mission.originStarbaseId) {
+      if (mission.originStarbaseId !== starbaseId) return null;
+    } else if (mission.originStarbaseName !== starbaseName) {
+      return null;
+    }
     this.readyMissionIds.delete(missionId);
     this.completedMissionIds.add(missionId);
     delete this.activeMissions[missionId];

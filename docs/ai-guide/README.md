@@ -10,7 +10,8 @@ documents relevant to the task.
 | --- | --- |
 | Any code change | [project-overview.md](project-overview.md), [code-style.md](code-style.md), [change-workflow.md](change-workflow.md) |
 | Core gameplay or state | [architecture.md](architecture.md), [gameplay-and-state.md](gameplay-and-state.md) |
-| Procedural generation | [determinism-and-generation.md](determinism-and-generation.md), [testing.md](testing.md) |
+| Procedural generation | [determinism-and-generation.md](determinism-and-generation.md), [galaxy-generation.md](galaxy-generation.md), [testing.md](testing.md) |
+| Galaxy, stars, settlements, or terraforming | [galaxy-generation.md](galaxy-generation.md), [game-design.md](game-design.md) |
 | Rendering or UI | [rendering-and-ui.md](rendering-and-ui.md), [visual-style.md](visual-style.md) |
 | Game design or content | [game-design.md](game-design.md), [visual-style.md](visual-style.md) |
 | Tests or regression fixes | [testing.md](testing.md), [change-workflow.md](change-workflow.md) |
@@ -40,6 +41,9 @@ documents relevant to the task.
     deliberate parts of the game's mood rather than gaps to fill.
 12. Astronomical credibility is part of the visual style. Calculate projection,
     phases, lighting, occultation, and motion instead of arranging them by eye.
+13. Galactic location is a first-order generation input. Do not replace the
+    Milky Way model with uniform density, independent star types, or age-only
+    metallicity.
 
 ## Source Of Truth
 

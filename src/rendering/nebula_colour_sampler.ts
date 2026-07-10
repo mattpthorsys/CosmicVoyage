@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import { PerlinNoise } from '../generation/perlin';
+import { MilkyWayModel } from '../generation/milky_way_model';
 import { RgbColour, hexToRgb, interpolateColour, rgbToHex } from './colour';
 
 type NebulaKind = 'emission' | 'reflection' | 'dark' | 'planetary' | 'remnant';
@@ -38,11 +39,13 @@ export class NebulaColourSampler {
   private readonly nebulaNoiseGenerator: PerlinNoise;
   private readonly defaultBgColor = CONFIG.DEFAULT_BG_COLOUR;
   private readonly palettesRgb: Record<NebulaKind, RgbColour[]>;
+  private readonly milkyWayModel: MilkyWayModel;
 
   /** Initializes NebulaColourSampler. */
   constructor(seed = CONFIG.SEED + '_nebula') {
     // Nebula gradients are coordinate-derived so resize and worker request order cannot change space.
     this.nebulaNoiseGenerator = new PerlinNoise(seed, { coordinateHashedGradients: true });
+    this.milkyWayModel = new MilkyWayModel(seed.replace(/_nebula$/, ''));
     this.palettesRgb = {
       emission: NEBULA_PALETTES.emission.map(hexToRgb),
       reflection: NEBULA_PALETTES.reflection.map(hexToRgb),
@@ -105,8 +108,11 @@ export class NebulaColourSampler {
     const regionY = worldY * regionScale;
     const broadCloud = this.fbm(regionX, regionY, 4, 0.58, 1.85);
     const finePresence = this.normalizedNoise(regionX * 2.7 + 45.2, regionY * 2.7 - 9.6);
-    const presence = broadCloud * 0.86 + finePresence * 0.14;
-    const threshold = 0.47 + CONFIG.NEBULA_SPARSITY * 0.045;
+    const galactocentric = this.milkyWayModel.worldToGalactocentric(worldX, worldY);
+    const galactic = this.milkyWayModel.sampleGalaxyField(galactocentric.xPc, galactocentric.yPc);
+    // Spiral-arm gas supplies the broad probability; coordinate noise only shapes each cloud locally.
+    const presence = broadCloud * 0.65 + finePresence * 0.12 + Math.min(1, galactic.gasDensity) * 0.23;
+    const threshold = 0.525 + CONFIG.NEBULA_SPARSITY * 0.05 - galactic.armInfluence * 0.035;
     const density = this.smoothstep(threshold, 0.96, presence);
     if (density < 0.004) return null;
 

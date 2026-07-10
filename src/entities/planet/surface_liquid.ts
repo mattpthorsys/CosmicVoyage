@@ -45,6 +45,8 @@ function getLiquidCoverage(
   atmosphere: Atmosphere
 ): number {
   const hydro = hydrosphere.toLowerCase();
+  const managedWater = hydro.match(/([0-9]+(?:\.[0-9]+)?)% managed surface water/);
+  if (managedWater) return Math.max(0, Math.min(0.96, Number(managedWater[1]) / 100));
   if (hydro.includes('desiccated') || hydro.includes('dry') || hydro.includes('no stable surface ocean'))
     return 0;
   if (hydro.includes('global ice shell') || hydro.includes('global ice sheet')) return 0;

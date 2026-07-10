@@ -56,6 +56,11 @@ For rendering, test:
 - clipping and dimensions;
 - colour/glyph distribution where exact snapshots are too brittle.
 
+For Galactic generation, use aggregate tests with scientifically meaningful
+tolerances. Cover radial relationships, class frequencies, slot identity,
+settlement/depot hard cutoffs, and order independence. Never make a statistical
+test depend on exploration order or a mutable shared PRNG.
+
 ## Commands
 
 ```bash

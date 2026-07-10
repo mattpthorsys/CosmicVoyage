@@ -34,6 +34,7 @@ export interface StarbaseMission {
   detail: string;
   rewardCredits: number;
   risk: MissionRisk;
+  originStarbaseId?: string;
   originStarbaseName: string;
   systemName: string;
   objectives: ScanMissionObjective[];
@@ -93,7 +94,7 @@ export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem)
 
   notices.push({
     id: `${missionPrefix}:notice:traffic`,
-    date: formatStationDate(starbase.name, 1),
+    date: formatStationDate(starbase.id, 1),
     priority: system.architecture.kind === 'single' ? 'PORT' : 'SAFETY',
     text:
       system.architecture.kind === 'single'
@@ -107,7 +108,7 @@ export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem)
 
   notices.push({
     id: `${missionPrefix}:notice:trade`,
-    date: formatStationDate(starbase.name, 2),
+    date: formatStationDate(starbase.id, 2),
     priority: 'TRADE',
     text:
       giants.length > 0
@@ -121,7 +122,7 @@ export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem)
 
   notices.push({
     id: `${missionPrefix}:notice:survey`,
-    date: formatStationDate(starbase.name, 3),
+    date: formatStationDate(starbase.id, 3),
     priority: 'SURVEY',
     text: solid
       ? `${solid.name} remains short of current surface telemetry.`
@@ -135,7 +136,7 @@ export function generateStarbaseNotices(starbase: Starbase, system: SolarSystem)
   if (system.stars.length > 1) {
     notices.push({
       id: `${missionPrefix}:notice:relay`,
-      date: formatStationDate(starbase.name, 4),
+      date: formatStationDate(starbase.id, 4),
       priority: 'SIGNAL',
       text: 'Relay timings drift during companion-star interference windows.',
       detail: 'A charting contract is open for pilots willing to verify the primary-star scan record.',
@@ -167,6 +168,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
         'Complete an orbital survey, map one surface site, then return the telemetry to the issuing station.',
       rewardCredits: 760 + target.moons.length * 85,
       risk: target.surfaceTemp > 650 || target.gravity > 1.6 ? 'Med' : 'Low',
+      originStarbaseId: starbase.id,
       originStarbaseName: starbase.name,
       systemName: system.name,
       objectives: [
@@ -202,6 +204,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
         'Record the giant atmosphere and any listed navigation reference, then return the package to the station.',
       rewardCredits: 980 + Math.min(12, target.moons.length) * 45,
       risk: target.surfaceTemp > 420 ? 'Med' : 'Low',
+      originStarbaseId: starbase.id,
       originStarbaseName: starbase.name,
       systemName: system.name,
       objectives: [
@@ -239,6 +242,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
       'Acquire a clean stellar observation and return it to the registry desk for validation and payment.',
     rewardCredits: system.architecture.kind === 'single' ? 640 : 1120,
     risk: system.architecture.kind === 'single' ? 'Low' : 'Med',
+    originStarbaseId: starbase.id,
     originStarbaseName: starbase.name,
     systemName: system.name,
     objectives: [
@@ -266,6 +270,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
           'Localise the return, complete any listed surface confirmation, and deliver the record to station communications.',
         rewardCredits: 1680,
         risk: system.architecture.kind === 'triple' ? 'High' : 'Med',
+        originStarbaseId: starbase.id,
         originStarbaseName: starbase.name,
         systemName: system.name,
         objectives: [
@@ -304,7 +309,7 @@ function getPlanets(system: SolarSystem): Planet[] {
 
 /** Returns board id prefix. */
 function getBoardIdPrefix(starbase: Starbase): string {
-  return starbase.name
+  return starbase.id
     .replace(/[^A-Za-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .toLowerCase();

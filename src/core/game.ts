@@ -25,7 +25,7 @@ import { DeepSpacePhenomenonProperties, SystemDataGenerator } from '../generatio
 import { StellarBody } from '../entities/stellar_body';
 import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
 import { commandButton, CommandBarButton, CommandBarModel } from './command_bar';
-import { StarbaseScreenModel, StarbaseSectionId, StarbaseTableRow, STARBASE_SECTIONS } from './starbase_ui';
+import { getStationSections, StarbaseScreenModel, StarbaseSectionId, StarbaseTableRow } from './starbase_ui';
 import {
   clampIndex,
   moveSelection,
@@ -110,6 +110,7 @@ import {
 import { StarbaseController } from './starbase_controller';
 import { getOperationalCapabilities } from './operational_capabilities';
 import { SurfacePrefetchService } from './surface_prefetch';
+import { GalaxyMapController } from './galaxy_map';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -182,9 +183,9 @@ function cloneSaveValue<T>(value: T): T {
 
 /** Returns the registry key for one persistent generated-body mutation record. */
 function getPlanetMutationKey(
-  mutation: Pick<PlanetMutationSaveData, 'worldX' | 'worldY' | 'bodyPath'>
+  mutation: Pick<PlanetMutationSaveData, 'worldX' | 'worldY' | 'systemSlot' | 'bodyPath'>
 ): string {
-  return `${mutation.worldX},${mutation.worldY}/${mutation.bodyPath}`;
+  return `${mutation.worldX},${mutation.worldY},${mutation.systemSlot ?? 0}/${mutation.bodyPath}`;
 }
 
 /** Main game class - Coordinates components and manages the loop. */
@@ -219,6 +220,7 @@ export class Game {
     SurfaceExtractionSelectorState,
     JettisonConfirmationState
   >;
+  private _galaxyMap?: GalaxyMapController;
   private planetMutationRegistry = new Map<string, PlanetMutationSaveData>();
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
@@ -328,6 +330,16 @@ export class Game {
     JettisonConfirmationState
   > {
     return (this._interfaceMode ??= new InterfaceModeController());
+  }
+
+  /** Returns the persistent pan and zoom state for the modal Galaxy instrument. */
+  private get galaxyMap(): GalaxyMapController {
+    return (this._galaxyMap ??= new GalaxyMapController());
+  }
+
+  /** Returns whether the top-down Galaxy instrument currently owns keyboard input. */
+  private get galaxyMapOpen(): boolean {
+    return this.interfaceMode.is('galaxy-map');
   }
 
   /** Returns starbase commerce. */
@@ -705,6 +717,7 @@ export class Game {
 
     return {
       version: SAVE_GAME_VERSION,
+      generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       savedAt: new Date().toISOString(),
       seed: this.gameSeedPRNG.getInitialSeed(),
       gameClockElapsedSeconds: this.gameClockElapsedSeconds,
@@ -749,13 +762,44 @@ export class Game {
       throw new Error('Save seed does not match the constructed game universe.');
     }
 
-    this.planetMutationRegistry = new Map(
-      save.planetMutations.map((mutation) => [getPlanetMutationKey(mutation), cloneSaveValue(mutation)])
-    );
-    const system = this.stateManager.restoreLocation(save.location);
+    const isLegacyGalaxyMigration = save.migratedFromGenerationVersion === 1;
+    this.planetMutationRegistry = isLegacyGalaxyMigration
+      ? new Map()
+      : new Map(
+          save.planetMutations.map((mutation) => [getPlanetMutationKey(mutation), cloneSaveValue(mutation)])
+        );
+    let wasRelocatedFromLegacySystem = false;
+    let system: SolarSystem | null;
+    try {
+      if (isLegacyGalaxyMigration && save.location.kind !== 'hyperspace') {
+        // Generated local identities are not comparable across Galaxy model versions, even when
+        // the new model happens to place another object at the same coordinate and body path.
+        system = this.stateManager.restoreLocation({
+          kind: 'hyperspace',
+          worldX: save.location.worldX,
+          worldY: save.location.worldY,
+          systemSlot: 0,
+        });
+        wasRelocatedFromLegacySystem = true;
+      } else {
+        system = this.stateManager.restoreLocation(save.location);
+      }
+    } catch (error) {
+      if (!isLegacyGalaxyMigration) throw error;
+      logger.warn(`[Game] Legacy local location could not be mapped into Galaxy v2: ${error}`);
+      // Version-one coordinates may no longer contain the same system. Preserve portable vessel
+      // progress and place it safely in hyperspace rather than rejecting the save outright.
+      system = this.stateManager.restoreLocation({
+        kind: 'hyperspace',
+        worldX: save.location.worldX,
+        worldY: save.location.worldY,
+        systemSlot: 0,
+      });
+      wasRelocatedFromLegacySystem = true;
+    }
     if (system) {
       this.applyPlanetMutations(system, true);
-      if (save.systemOrbit) {
+      if (save.systemOrbit && !isLegacyGalaxyMigration) {
         for (const starState of save.systemOrbit.stars) {
           const star = system.stars.find((candidate) => candidate.id === starState.id);
           if (!star) continue;
@@ -780,16 +824,20 @@ export class Game {
     this.player.ship = cloneSaveValue(save.player.ship);
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
     this.missionProgress.restoreSnapshot({
-      acceptedMissionIds: save.acceptedMissionIds,
-      readyMissionIds: save.readyMissionIds,
+      acceptedMissionIds: isLegacyGalaxyMigration ? [] : save.acceptedMissionIds,
+      readyMissionIds: isLegacyGalaxyMigration ? [] : save.readyMissionIds,
       completedMissionIds: save.completedMissionIds,
-      activeMissions: save.activeMissions,
-      missionObjectiveProgress: save.missionObjectiveProgress,
+      activeMissions: isLegacyGalaxyMigration ? {} : save.activeMissions,
+      missionObjectiveProgress: isLegacyGalaxyMigration ? {} : save.missionObjectiveProgress,
     });
-    this.scanService.restoreSnapshot(save.catalogueDiscoveries);
-    this.starbaseCommerce.restoreSnapshot(save.economy);
+    this.scanService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.catalogueDiscoveries);
+    this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
-    this.statusMessage = `Loaded save from ${new Date(save.savedAt).toLocaleString()}.`;
+    this.statusMessage = wasRelocatedFromLegacySystem
+      ? 'Legacy voyage loaded. Galactic remapping placed the vessel safely in hyperspace and retired incompatible local records.'
+      : isLegacyGalaxyMigration
+        ? 'Legacy voyage loaded. Incompatible local surveys, markets, and active contracts were retired.'
+        : `Loaded save from ${new Date(save.savedAt).toLocaleString()}.`;
     this.forceFullRender = true;
     this.lastMainRenderSignature = '';
     this._publishStatusUpdate();
@@ -800,13 +848,19 @@ export class Game {
     const base = {
       worldX: this.player.position.worldX,
       worldY: this.player.position.worldY,
+      systemSlot: this.stateManager.currentSystem?.systemSlot ?? 0,
     };
     const location = this.stateManager.location;
     if (location.kind === 'hyperspace' || location.kind === 'system') {
       return { ...base, kind: location.kind };
     }
     if (location.kind === 'starbase') {
-      return { ...base, kind: 'starbase', starbaseName: location.starbase.name };
+      return {
+        ...base,
+        kind: 'starbase',
+        stationId: location.starbase.id,
+        starbaseName: location.starbase.name,
+      };
     }
     const bodyPath = findSystemPlanetPath(location.system, location.planet);
     const orbitReferencePath = findSystemPlanetPath(location.system, location.orbitReference);
@@ -824,6 +878,7 @@ export class Game {
       const mutation: PlanetMutationSaveData = {
         worldX: system.starX,
         worldY: system.starY,
+        systemSlot: system.systemSlot,
         bodyPath: path,
         orbitAngle: planet.orbitAngle,
         systemX: planet.systemX,
@@ -841,7 +896,12 @@ export class Game {
   private applyPlanetMutations(system: SolarSystem, restoreOrbit: boolean = false): void {
     for (const { path, planet } of getSystemPlanetPaths(system)) {
       const mutation = this.planetMutationRegistry.get(
-        getPlanetMutationKey({ worldX: system.starX, worldY: system.starY, bodyPath: path })
+        getPlanetMutationKey({
+          worldX: system.starX,
+          worldY: system.starY,
+          systemSlot: system.systemSlot,
+          bodyPath: path,
+        })
       );
       if (!mutation) continue;
       if (restoreOrbit) {
@@ -1254,13 +1314,13 @@ export class Game {
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-      this.starbaseMode.switchSection(-1);
+      this.starbaseMode.switchSection(-1, starbase);
       this.forceFullRender = true;
       return true;
     }
 
     if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
-      this.starbaseMode.switchSection(1);
+      this.starbaseMode.switchSection(1, starbase);
       this.forceFullRender = true;
       return true;
     }
@@ -2251,6 +2311,10 @@ export class Game {
 
   /** Resolves and executes a gameplay action by its registered name. */
   private _executeActionByName(actionName: string): void {
+    if (actionName === 'GALAXY_MAP') {
+      this.openGalaxyMap();
+      return;
+    }
     if (actionName === 'ACTIVATE_LAND_LIFTOFF' && this.stateManager.state === 'planet') {
       this.launchFromParkedShip();
       return;
@@ -2532,6 +2596,93 @@ export class Game {
     }
   }
 
+  /** Opens and operates the keyboard-first top-down Galaxy instrument. */
+  private _handleGalaxyMapInput(): boolean {
+    if (!this.galaxyMapOpen) {
+      if (
+        !this.inputManager.wasActionJustPressed('GALAXY_MAP') ||
+        this.interfaceMode.kind !== 'none' ||
+        this.popupState !== 'inactive'
+      ) {
+        return false;
+      }
+      this.openGalaxyMap();
+      return true;
+    }
+
+    if (
+      this.inputManager.wasActionJustPressed('GALAXY_MAP') ||
+      this.inputManager.wasActionJustPressed('QUIT')
+    ) {
+      this.interfaceMode.close('galaxy-map');
+      this.statusMessage = 'Galactic navigation instrument closed.';
+      this.forceFullRender = true;
+      return true;
+    }
+
+    let changed = false;
+    if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
+      this.galaxyMap.pan(-1, 0);
+      changed = true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_RIGHT')) {
+      this.galaxyMap.pan(1, 0);
+      changed = true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
+      this.galaxyMap.pan(0, 1);
+      changed = true;
+    }
+    if (this.inputManager.wasActionJustPressed('MOVE_DOWN')) {
+      this.galaxyMap.pan(0, -1);
+      changed = true;
+    }
+    if (
+      this.inputManager.wasActionJustPressed('ZOOM_IN') ||
+      this.inputManager.wasActionJustPressed('ZOOM_IN_NUMPAD')
+    ) {
+      this.galaxyMap.zoom(
+        1,
+        this.systemDataGenerator.getGalaxyModel(),
+        this.player.position.worldX,
+        this.player.position.worldY
+      );
+      changed = true;
+    }
+    if (
+      this.inputManager.wasActionJustPressed('ZOOM_OUT') ||
+      this.inputManager.wasActionJustPressed('ZOOM_OUT_NUMPAD')
+    ) {
+      this.galaxyMap.zoom(
+        -1,
+        this.systemDataGenerator.getGalaxyModel(),
+        this.player.position.worldX,
+        this.player.position.worldY
+      );
+      changed = true;
+    }
+    if (this.inputManager.wasActionJustPressed('GALAXY_RECENTER')) {
+      this.galaxyMap.recenterOnPlayer(
+        this.systemDataGenerator.getGalaxyModel(),
+        this.player.position.worldX,
+        this.player.position.worldY
+      );
+      changed = true;
+    }
+    if (changed) this.forceFullRender = true;
+    return true;
+  }
+
+  /** Opens the Galaxy instrument from keyboard or command actions without changing physical location. */
+  private openGalaxyMap(): void {
+    if (this.interfaceMode.kind !== 'none' || this.popupState !== 'inactive') return;
+    this.galaxyMap.reset();
+    this.interfaceMode.open('galaxy-map');
+    this.travelMode.commandMoving = false;
+    this.statusMessage = 'Galactic navigation instrument open.';
+    this.forceFullRender = true;
+  }
+
   /** Processes all input for the current frame by calling helper methods. */
   private _processInput(): void {
     if (this._handleJettisonConfirmationInput()) {
@@ -2549,6 +2700,10 @@ export class Game {
     // 1. Check Popups (blocks other input if active or animating)
     if (this._handlePopupInput()) {
       return; // Input consumed by popup
+    }
+    if (this._handleGalaxyMapInput()) {
+      this._publishStatusUpdate();
+      return;
     }
     if (this._handleShipMenuInput()) {
       this._publishStatusUpdate();
@@ -3219,12 +3374,29 @@ export class Game {
       lines.push(`Radius: [-W-]Unknown</w>`);
     }
     if (system) {
+      if (system.galacticContext) {
+        lines.push(
+          `Galactic Region: <hl>${system.galacticContext.armName ?? 'inter-arm space'}</hl> | Population: <hl>${system.galacticPopulation ?? 'unclassified'}</hl>`
+        );
+        if (system.galacticContext.cluster) {
+          lines.push(
+            `Cluster: <hl>${system.galacticContext.cluster.name}</hl> (${system.galacticContext.cluster.kind})`
+          );
+        }
+      }
       lines.push(`System Radius: <hl>${formatDistanceAu(system.edgeRadius)}</hl>`);
       lines.push(
         `One-way Light Time: <hl>${formatLightTimeFromMeters(system.edgeRadius)}</hl> to chart edge`
       );
       lines.push(`Planetary Bodies: <hl>${system.planets.filter((p) => p !== null).length}</hl>`);
-      lines.push(`Facilities: <hl>${system.starbase ? 'Starbase Detected' : 'None Detected'}</hl>`);
+      if (system.colonyWorld) {
+        lines.push(
+          `Human Presence: <hl>${system.settlementStage} terraforming on ${system.colonyWorld.name}</hl>`
+        );
+      }
+      lines.push(
+        `Facilities: <hl>${system.starbase ? (system.starbase.kind === 'automated-depot' ? 'Automated Depot Detected' : 'Starbase Detected') : 'None Detected'}</hl>`
+      );
     }
     lines.push('<h>--- SCAN COMPLETE---</h>');
     lines.push(``);
@@ -5904,7 +6076,7 @@ export class Game {
 
     let status = `Landed: ${planet.name} (${planet.type}) | Surface: ${this.player.position.surfaceX},${
       this.player.position.surfaceY
-    } | Grav: ${planet.gravity.toFixed(2)}g | Rot: ${planet.getRotationPeriodLabel()} | Temp: ${currentTemp}K avg ${planet.surfaceTemp}K ${planet.surfaceTempMin}-${planet.surfaceTempMax}K`; // Show current temp
+    } | Grav: ${planet.gravity.toFixed(2)}g | Rot: ${planet.getRotationPeriodLabel()} | Temp: ${currentTemp}K avg ${planet.effectiveSurfaceTemp}K ${planet.effectiveSurfaceTempMin}-${planet.effectiveSurfaceTempMax}K`; // Show current temp
     if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') {
       if (planet.scanned) {
         status += ` | Scan: ${planet.primaryResource || 'N/A'} (${planet.mineralRichness})`;
@@ -6096,6 +6268,16 @@ export class Game {
           this.renderer.drawTextModalTable(this.createJettisonConfirmationModel());
         }
 
+        if (this.galaxyMapOpen) {
+          this.renderer.drawGalaxyMap(
+            this.galaxyMap.createModel(
+              this.systemDataGenerator.getGalaxyModel(),
+              this.player.position.worldX,
+              this.player.position.worldY
+            )
+          );
+        }
+
         if (fullCanvasRepaint) {
           this.renderer.renderBufferFull();
         } else {
@@ -6146,7 +6328,7 @@ export class Game {
 
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
-    return this.shipMenuOpen || this.targetMenuOpen;
+    return this.shipMenuOpen || this.targetMenuOpen || this.galaxyMapOpen;
   }
 
   /** Returns whether travel date time hud visible. */
@@ -6190,6 +6372,7 @@ export class Game {
       this.stateManager.state === 'starbase' ||
       this.popupState !== 'inactive' ||
       this.targetMenuOpen ||
+      this.galaxyMapOpen ||
       this.shipMenuOpen ||
       this.roverCargoOpen ||
       this.surfaceLegendOpen ||
@@ -6222,6 +6405,21 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.galaxyMapOpen) {
+      const model = this.galaxyMap.createModel(
+        this.systemDataGenerator.getGalaxyModel(),
+        this.player.position.worldX,
+        this.player.position.worldY
+      );
+      return [
+        'galaxy-map',
+        model.centerXpc.toFixed(1),
+        model.centerYpc.toFixed(1),
+        model.spanPc,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
+    }
     const state = this.stateManager.state;
     switch (state) {
       case 'hyperspace':
@@ -6777,7 +6975,7 @@ export class Game {
     }
 
     const market = this.stateManager.currentStarbase
-      ? this.getTradeDepotManifest(this.stateManager.currentStarbase.name)
+      ? this.getTradeDepotManifest(this.stateManager.currentStarbase)
       : [];
     return createAvailableActions({
       state,
@@ -7030,7 +7228,7 @@ export class Game {
       this.starbaseMode.alert = 'No item selected.';
       return;
     }
-    const market = this.getTradeDepotManifest(starbase.name);
+    const market = this.getTradeDepotManifest(starbase);
     if (this.starbaseMode.sectionId === 'overview') {
       this.starbaseMode.sectionId = (row.id as StarbaseSectionId) || 'buy';
       return;
@@ -7077,8 +7275,8 @@ export class Game {
 
   /** Purchases and installs the selected shipyard upgrade when affordable. */
   private purchaseShipyardUpgrade(optionId: string): void {
-    const starbaseName = this.stateManager.currentStarbase?.name ?? 'default shipyard';
-    const profile = getStarbaseShipyardProfile(starbaseName);
+    const stationKey = this.getStationPersistenceKey(this.stateManager.currentStarbase);
+    const profile = getStarbaseShipyardProfile(stationKey);
     const option = createShipyardUpgradeOptions(this.player.ship, profile).find(
       (candidate) => candidate.id === optionId
     );
@@ -7200,7 +7398,7 @@ export class Game {
       return;
     }
     if (status === 'READY') {
-      const handedIn = this.missionProgress.handIn(mission.id, starbase.name);
+      const handedIn = this.missionProgress.handIn(mission.id, starbase.name, starbase.id);
       if (!handedIn) {
         this.starbaseMode.alert = `Telemetry is complete. Return to ${mission.originStarbaseName} for settlement.`;
         return;
@@ -7228,14 +7426,17 @@ export class Game {
 
   /** Returns starbase rows. */
   private getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): StarbaseTableRow[] {
-    const market = this.getTradeDepotManifest(starbase.name);
+    const stationKey = this.getStationPersistenceKey(starbase);
+    const market = this.getTradeDepotManifest(starbase);
     switch (sectionId) {
       case 'overview':
-        return STARBASE_SECTIONS.filter((section) => section.id !== 'overview').map((section) => ({
-          id: section.id,
-          cells: [section.label, this.getSectionStatus(section.id)],
-          detail: `${this.getSectionSummary(section.id)} Enter opens ${section.label}.`,
-        }));
+        return getStationSections(starbase)
+          .filter((section) => section.id !== 'overview')
+          .map((section) => ({
+            id: section.id,
+            cells: [section.label, this.getSectionStatus(section.id)],
+            detail: `${this.getSectionSummary(section.id)} Enter opens ${section.label}.`,
+          }));
       case 'cargo':
         return this.getCargoRows();
       case 'buy':
@@ -7248,7 +7449,7 @@ export class Game {
         return Object.entries(this.player.cargoHold.items)
           .filter(([, amount]) => amount > 0)
           .map(([itemKey, amount]) => {
-            const quote = this.starbaseCommerce.getTradeQuote(starbase.name, itemKey);
+            const quote = this.starbaseCommerce.getTradeQuote(stationKey, itemKey);
             return {
               id: itemKey,
               cells: [
@@ -7274,7 +7475,14 @@ export class Game {
           },
           {
             id: 'repair',
-            cells: ['Hull inspection', 'TBD', 'Standby', 'Stub: repair and damage systems are not online.'],
+            cells: [
+              `${starbase.capabilities.repairs === 'full' ? 'Full' : 'Basic'} hull inspection`,
+              'TBD',
+              'Standby',
+              starbase.capabilities.repairs === 'full'
+                ? 'Crewed yard can support structural work.'
+                : 'Automated drones support emergency patching only.',
+            ],
           },
           {
             id: 'storage',
@@ -7326,7 +7534,7 @@ export class Game {
           };
         });
       case 'shipyard':
-        const profile = getStarbaseShipyardProfile(starbase.name);
+        const profile = getStarbaseShipyardProfile(stationKey);
         return [
           ...this.getShipyardRefitRows(starbase),
           {
@@ -7375,7 +7583,7 @@ export class Game {
   private getShipyardRefitRows(starbase: Starbase): StarbaseTableRow[] {
     const ship = this.player.ship;
     const stats = getShipDerivedStats(ship);
-    const profile = getStarbaseShipyardProfile(starbase.name);
+    const profile = getStarbaseShipyardProfile(this.getStationPersistenceKey(starbase));
     const repairCost = getShipRepairCost(ship);
     const shieldState =
       ship.shieldClass > 0
@@ -7538,7 +7746,10 @@ export class Game {
     return cargoEntries.map(([itemKey, amount]) => {
       const info = this.getTradeItemInfo(itemKey);
       const marketItem = this.stateManager.currentStarbase
-        ? this.starbaseCommerce.getTradeQuote(this.stateManager.currentStarbase.name, itemKey)
+        ? this.starbaseCommerce.getTradeQuote(
+            this.getStationPersistenceKey(this.stateManager.currentStarbase),
+            itemKey
+          )
         : null;
       const value = (marketItem?.sellPrice ?? info?.baseValue ?? 1) * amount;
       return {
@@ -7655,7 +7866,10 @@ export class Game {
 
   /** Returns recruit candidates. */
   private getRecruitCandidates(starbase: Starbase): CrewMember[] {
-    return generateRecruitCandidates(starbase.name, this.gameSeedPRNG.getInitialSeed());
+    return generateRecruitCandidates(
+      this.getStationPersistenceKey(starbase),
+      this.gameSeedPRNG.getInitialSeed()
+    );
   }
 
   // --- Starbase Action Handlers ---
@@ -7670,15 +7884,13 @@ export class Game {
     }
 
     const totalUnitsSold = this.cargoSystem.getTotalUnits(this.player.cargoHold);
+    const stationKey = this.getStationPersistenceKey(this.stateManager.currentStarbase);
     let result;
     if (totalUnitsSold <= 0) {
-      result = this.starbaseCommerce.buyNext(
-        this.stateManager.currentStarbase.name,
-        this.starbaseMode.tradeSelectionIndex
-      );
+      result = this.starbaseCommerce.buyNext(stationKey, this.starbaseMode.tradeSelectionIndex);
       this.starbaseMode.tradeSelectionIndex = result.nextSelectionIndex;
     } else {
-      result = this.starbaseCommerce.sellAll(this.stateManager.currentStarbase.name);
+      result = this.starbaseCommerce.sellAll(stationKey);
     }
     this.statusMessage = result.message;
     this.publishCommerceEffects(result.effects);
@@ -7686,8 +7898,14 @@ export class Game {
   }
 
   /** Returns trade depot manifest. */
-  private getTradeDepotManifest(starbaseName: string): TradeDepotItem[] {
-    return this.starbaseCommerce.getManifest(starbaseName);
+  private getTradeDepotManifest(starbase: Starbase): TradeDepotItem[] {
+    return this.starbaseCommerce.getManifest(this.getStationPersistenceKey(starbase));
+  }
+
+  /** Returns the stable station key used by local services and persistent economy state. */
+  private getStationPersistenceKey(starbase: Starbase | null): string {
+    if (!starbase) return 'default-station';
+    return starbase.id || starbase.name;
   }
 
   /** Returns depot purchase limit. */
@@ -7697,9 +7915,10 @@ export class Game {
 
   /** Opens buy quantity selector. */
   private openBuyQuantitySelector(itemKey: string): void {
-    const item = this.getTradeDepotManifest(this.stateManager.currentStarbase?.name ?? '').find(
-      (candidate) => candidate.itemKey === itemKey
-    );
+    const starbase = this.stateManager.currentStarbase;
+    const item = starbase
+      ? this.getTradeDepotManifest(starbase).find((candidate) => candidate.itemKey === itemKey)
+      : null;
     if (!item) {
       this.starbaseMode.alert = 'Depot item unavailable.';
       return;
@@ -7734,7 +7953,10 @@ export class Game {
 
   /** Opens sell quantity selector. */
   private openSellQuantitySelector(itemKey: string): void {
-    const item = this.starbaseCommerce.getTradeQuote(this.stateManager.currentStarbase?.name ?? '', itemKey);
+    const item = this.starbaseCommerce.getTradeQuote(
+      this.getStationPersistenceKey(this.stateManager.currentStarbase),
+      itemKey
+    );
     const held = this.player.cargoHold.items[itemKey] || 0;
     const name = item?.name ?? this.getTradeItemInfo(itemKey)?.name ?? itemKey;
     if (held <= 0) {
@@ -7763,7 +7985,7 @@ export class Game {
   /** Buys depot item. */
   private buyDepotItem(itemKey: string, amount: number): string {
     const result = this.starbaseCommerce.buyItem(
-      this.stateManager.currentStarbase?.name ?? '',
+      this.getStationPersistenceKey(this.stateManager.currentStarbase),
       itemKey,
       amount
     );
@@ -7774,7 +7996,7 @@ export class Game {
   /** Sells depot item. */
   private sellDepotItem(itemKey: string, amount: number): string {
     const result = this.starbaseCommerce.sellItem(
-      this.stateManager.currentStarbase?.name ?? '',
+      this.getStationPersistenceKey(this.stateManager.currentStarbase),
       itemKey,
       amount
     );

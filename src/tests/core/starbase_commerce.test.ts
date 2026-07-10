@@ -22,6 +22,21 @@ describe('StarbaseCommerceService', () => {
     expect(otherStation).not.toEqual(first);
   });
 
+  it('recognizes coordinate-based automated-depot identities without depending on display names', () => {
+    const market = createCommerce().commerce.getManifest('station:2:automated-depot:1200:-50:0');
+
+    expect(market.map((item) => item.itemKey)).toEqual(
+      expect.arrayContaining(['WATER_ICE', 'FUSION_FUEL_MIX'])
+    );
+    expect(
+      market.every((item) =>
+        ['WATER_ICE', 'HELIUM_3', 'DEUTERIUM_PELLETS', 'FUSION_FUEL_MIX', 'NAV_BEACONS'].includes(
+          item.itemKey
+        )
+      )
+    ).toBe(true);
+  });
+
   it('buys fusion mix as equal helium-3 and deuterium cargo', () => {
     const { player, commerce } = createCommerce();
     player.resources.credits = 10_000;

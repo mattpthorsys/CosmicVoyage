@@ -11,6 +11,7 @@ import {
 } from './planet/planet_characteristics_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import { OrbitHost } from './stellar_body';
+import type { TerraformingProfile } from './habitability';
 // Import the generator and data interface
 import { SurfaceData, SurfaceGenerationRequest } from './planet/surface_generator';
 import { getSurfaceGenerationProvider } from './planet/surface_generation_provider';
@@ -97,6 +98,7 @@ export class Planet {
   public readonly tidallyLocked: boolean;
   public readonly rotationPeriodHours: number;
   public readonly orbitalInclination: number; // in radians
+  public terraforming: TerraformingProfile | null = null;
 
   // Resources & Gameplay (Generated + State)
   public readonly mineralRichness: MineralRichness; // Kept for summary/potential use
@@ -122,6 +124,38 @@ export class Planet {
   /** Returns legacy binary scan state for code that only needs survey availability. */
   get scanned(): boolean {
     return hasDiscoveryLevel(this.discovery.level, 'surveyed');
+  }
+
+  /** Returns the engineered atmosphere when terraforming overrides the natural environment. */
+  get effectiveAtmosphere(): Atmosphere {
+    return this.terraforming?.atmosphere ?? this.atmosphere;
+  }
+
+  /** Returns the inhabited mean temperature or the untouched natural mean. */
+  get effectiveSurfaceTemp(): number {
+    return this.terraforming?.meanTemperatureK ?? this.surfaceTemp;
+  }
+
+  /** Returns the inhabited minimum temperature or the untouched natural minimum. */
+  get effectiveSurfaceTempMin(): number {
+    return this.terraforming?.minTemperatureK ?? this.surfaceTempMin;
+  }
+
+  /** Returns the inhabited maximum temperature or the untouched natural maximum. */
+  get effectiveSurfaceTempMax(): number {
+    return this.terraforming?.maxTemperatureK ?? this.surfaceTempMax;
+  }
+
+  /** Returns the engineered surface-water coverage or the natural hydrosphere description. */
+  get effectiveHydrosphere(): string {
+    return this.terraforming
+      ? `${Math.round(this.terraforming.hydrosphereFraction * 100)}% managed surface water`
+      : this.hydrosphere;
+  }
+
+  /** Applies a deterministic terraforming overlay without changing mass, orbit, gravity, or natural geology. */
+  applyTerraforming(profile: TerraformingProfile): void {
+    this.terraforming = profile;
   }
 
   /** Restores legacy binary scan state while preserving the layered discovery model. */
@@ -344,14 +378,14 @@ export class Planet {
       planetType: this.type,
       mapSeed: this.mapSeed,
       prngSeed: this.systemPRNG.getInitialSeed(),
-      atmosphere: this.atmosphere,
+      atmosphere: this.effectiveAtmosphere,
       planetAbundance: this.elementAbundance,
       profile: {
         mineralRichness: this.mineralRichness,
         baseMinerals: this.baseMinerals,
         metallicityFeH: this.stellarEnvironment.metallicityFeH,
-        surfaceTemp: this.surfaceTemp,
-        hydrosphere: this.hydrosphere,
+        surfaceTemp: this.effectiveSurfaceTemp,
+        hydrosphere: this.effectiveHydrosphere,
       },
     };
   }
@@ -515,7 +549,7 @@ export class Planet {
     // Add Mass and Escape Velocity if desired
     // infoLines.push(`Mass: <hl>${this.mass.toExponential(2)} kg</hl> | Escape Vel: <hl>${this.escapeVelocity.toFixed(0)} m/s</hl>`);
     infoLines.push(
-      `Surface Temp: <hl>avg ${this.surfaceTemp} K</hl> | <hl>min ${this.surfaceTempMin} K</hl> | <hl>max ${this.surfaceTempMax} K</hl>`
+      `Surface Temp: <hl>avg ${this.effectiveSurfaceTemp} K</hl> | <hl>min ${this.effectiveSurfaceTempMin} K</hl> | <hl>max ${this.effectiveSurfaceTempMax} K</hl>`
     );
     infoLines.push(
       `Rotation: <hl>${this.tidallyLocked ? 'Tidally locked' : 'Free'}</hl> | Axial Tilt: <hl>${(
@@ -533,10 +567,12 @@ export class Planet {
     }
 
     // --- Atmosphere Details ---
-    const pressureText = this.atmosphere.pressure < 0.001 ? '~0' : this.atmosphere.pressure.toFixed(3);
-    infoLines.push(`Atmosphere: <hl>${this.atmosphere.density} (${pressureText} bar</hl>)`);
+    const effectiveAtmosphere = this.effectiveAtmosphere;
+    const pressureText =
+      effectiveAtmosphere.pressure < 0.001 ? '~0' : effectiveAtmosphere.pressure.toFixed(3);
+    infoLines.push(`Atmosphere: <hl>${effectiveAtmosphere.density} (${pressureText} bar</hl>)`);
     let compStr = '<hl>None</hl>';
-    const comp = this.atmosphere.composition;
+    const comp = effectiveAtmosphere.composition;
     if (comp && Object.keys(comp).length > 0 && comp['None'] !== 100) {
       const sortedComp = Object.entries(comp)
         .filter(([, percent]) => percent > 0.1) // Show components > 0.1%
@@ -546,8 +582,15 @@ export class Planet {
     }
     infoLines.push(`Composition: ${compStr}`);
 
+    if (this.terraforming) {
+      infoLines.push(
+        `Terraforming: <hl>${this.terraforming.stage}</hl> | Biosphere: <hl>${this.terraforming.biosphereStage}</hl>`
+      );
+      infoLines.push(`Support: <hl>${this.terraforming.engineeringSupport.join(', ')}</hl>`);
+    }
+
     // --- Surface Descriptors ---
-    infoLines.push(`Hydrosphere: <hl>${this.hydrosphere}</hl>`);
+    infoLines.push(`Hydrosphere: <hl>${this.effectiveHydrosphere}</hl>`);
     infoLines.push(`Lithosphere: <hl>${this.lithosphere}</hl>`);
 
     // Summarize moon counts by generated planet class.
@@ -645,15 +688,23 @@ export class Planet {
    * @returns The estimated current temperature in Kelvin.
    */
   public getCurrentTemperature(latitude: number = 0): number {
-    const min = Math.min(this.surfaceTempMin, this.surfaceTempMax, this.surfaceTemp);
-    const max = Math.max(this.surfaceTempMin, this.surfaceTempMax, this.surfaceTemp);
-    if (max <= min) return Math.max(2, Math.round(this.surfaceTemp));
+    const min = Math.min(
+      this.effectiveSurfaceTempMin,
+      this.effectiveSurfaceTempMax,
+      this.effectiveSurfaceTemp
+    );
+    const max = Math.max(
+      this.effectiveSurfaceTempMin,
+      this.effectiveSurfaceTempMax,
+      this.effectiveSurfaceTemp
+    );
+    if (max <= min) return Math.max(2, Math.round(this.effectiveSurfaceTemp));
 
     const seasonalSine = Math.sin(this.orbitAngle) * Math.sin(this.axialTilt);
     const seasonalOffset = seasonalSine * (max - min) * 0.35;
     const latitudeFactor = Math.max(0, Math.min(1, Math.cos(latitude)));
     const latitudeBias = 0.72 + latitudeFactor * 0.28;
-    const adjusted = min + (this.surfaceTemp + seasonalOffset - min) * latitudeBias;
+    const adjusted = min + (this.effectiveSurfaceTemp + seasonalOffset - min) * latitudeBias;
 
     return Math.max(2, Math.round(Math.max(min, Math.min(max, adjusted))));
   }

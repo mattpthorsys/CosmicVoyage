@@ -31,7 +31,8 @@ change the universe and requires deliberate regression updates.
 
 ```text
 seed + world coordinates
-  -> SystemDataGenerator map properties
+  -> MilkyWayModel GalacticCellContext
+  -> SystemDataGenerator map properties and system slot
   -> stellar architecture and environment
   -> SolarSystem body generation
   -> Planet characteristics
@@ -43,6 +44,12 @@ seed + world coordinates
 Keep physical calculations deterministic and independent. Prefer passing
 explicit generated characteristics into entities instead of allowing
 constructors to consume shared random state unpredictably.
+
+Generation version 2 includes the version, world X/Y, and system slot in stable
+stellar seed labels. The Milky Way macro model is fixed; the game seed controls
+fine structure and individual systems. Read
+`galaxy-generation.md` before changing density, populations, settlements, or
+terraforming.
 
 ## Workers
 

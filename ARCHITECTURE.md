@@ -39,6 +39,7 @@ Game
   |                                      |
   +-- SystemDataGenerator                |
   |     deterministic star/system data   |
+  |     from MilkyWayModel context        |
   |                                      |
   +-- SolarSystem / Planet / Starbase    |
   |     generated world model            |
@@ -121,14 +122,19 @@ Important state owners:
 ## Generation Pipeline
 
 ```text
-World coordinates + seed
+World coordinates + system slot + seed
+  |
+  v
+MilkyWayModel
+  disk, bar, halo, arms, clusters,
+  gas/dust, metallicity, human reach
   |
   v
 SystemDataGenerator
   |
-  +-- fast hash / PRNG checks
-  |     star, brown dwarf, planemo,
-  |     rare phenomena, starbase markers
+  +-- Poisson / population sampling
+  |     stars, brown dwarfs, planemos,
+  |     rare phenomena, settlement summary
   |
   +-- SolarSystem
         |
@@ -157,6 +163,11 @@ SystemDataGenerator
               heightmap, colour map,
               deposits, craters, bands,
               volatile/metallicity bias
+        |
+        +-- Habitability / settlement
+              stable host and HZ checks,
+              terraforming overlay,
+              starbase or automated depot
 ```
 
 Determinism rule:

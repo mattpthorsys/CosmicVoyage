@@ -7,6 +7,10 @@ a sparse CGA terminal. It combines deterministic procedural astronomy,
 scientifically motivated generation, keyboard-first interaction, and
 instrument-like text interfaces.
 
+The interstellar grid is a one-parsec top-down projection of a procedural Milky
+Way. Galactic radius, arms, disk population, metallicity, clusters, gas, dust,
+and distance from Sol influence generated systems and human settlement.
+
 The player moves through five principal locations:
 
 1. `hyperspace`: interstellar grid travel and long-range survey.

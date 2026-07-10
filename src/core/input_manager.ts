@@ -171,6 +171,11 @@ export class InputManager {
     if (!action) {
       action = this.keyToActionMap.get(lowerCode);
     }
+    const physicalCodeAction = this.keyToActionMap.get(lowerCode);
+    if (physicalCodeAction?.startsWith('MOVE_') && lowerCode.startsWith('numpad')) {
+      // NumLock-off diagonal keys report Home/End/Page keys; physical numpad intent wins.
+      action = physicalCodeAction;
+    }
 
     // If an action is found and it's not just a modifier key itself being pressed
     if (action && key !== 'Shift' && key !== 'Control') {
@@ -227,6 +232,10 @@ export class InputManager {
     }
     if (!action) {
       action = this.keyToActionMap.get(lowerCode);
+    }
+    const physicalCodeAction = this.keyToActionMap.get(lowerCode);
+    if (physicalCodeAction?.startsWith('MOVE_') && lowerCode.startsWith('numpad')) {
+      action = physicalCodeAction;
     }
 
     // If an action is found and it's not a modifier action itself

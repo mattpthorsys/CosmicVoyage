@@ -357,6 +357,9 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       );
       break;
   }
+  actions.push(
+    action('galaxy-map', 'Galaxy Map', CONFIG.KEY_BINDINGS.GALAXY_MAP, 'GALAXY_MAP', 'utility', 94, true)
+  );
   actions.push(action('help', 'Help', CONFIG.KEY_BINDINGS.HELP, 'HELP', 'utility', 95, true));
   actions.push(
     action(

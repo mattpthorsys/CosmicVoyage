@@ -3,14 +3,13 @@
 import { PRNG } from '../utils/prng';
 import { fastHash } from '../utils/hash';
 import { CONFIG } from '../config';
-import { SPECTRAL_DISTRIBUTION, SPECTRAL_TYPES } from '../constants/stellar';
+import { SPECTRAL_TYPES } from '../constants/stellar';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { PerlinNoise } from './perlin';
 import {
   estimateEvolutionaryLuminosityFactor,
-  generateMilkyWayMetallicityFeH,
-  generateStellarAgeGyr,
+  estimateMainSequenceLifetimeGyr,
 } from '../entities/stellar_environment';
 import {
   calculateStellarLuminosityW,
@@ -18,6 +17,15 @@ import {
   StellarBody,
   StellarSystemKind,
 } from '../entities/stellar_body';
+import {
+  GalacticCellContext,
+  GalacticPopulation,
+  MilkyWayModel,
+  StellarPopulationSample,
+} from './milky_way_model';
+import type { StationKind } from '../entities/starbase';
+
+export type SettlementStage = 'none' | 'partial' | 'complete';
 
 export interface SystemBasicProperties {
   exists: boolean;
@@ -28,6 +36,11 @@ export interface SystemBasicProperties {
   metallicityFeH: number | null;
   architecture: StellarArchitecture | null;
   objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null;
+  systemSlot?: number;
+  stationKind?: StationKind | null;
+  settlementStage?: SettlementStage;
+  galacticContext?: GalacticCellContext | null;
+  galacticPopulation?: GalacticPopulation | null;
 }
 
 export interface SystemMapProperties {
@@ -36,6 +49,13 @@ export interface SystemMapProperties {
   name: string | null;
   hasStarbase: boolean;
   objectKind: 'stellar' | 'brown-dwarf' | null;
+  systemSlot?: number;
+  resolvedSystemCount?: number;
+  unresolvedSystemCount?: number;
+  stationKind?: StationKind | null;
+  settlementStage?: SettlementStage;
+  armName?: string | null;
+  clusterName?: string | null;
 }
 
 export type DeepSpacePhenomenonType =
@@ -127,23 +147,55 @@ export class SystemDataGenerator {
   private phenomenonPropertiesCache: Map<string, DeepSpacePhenomenonProperties> = new Map();
   private interstellarMediumCache: Map<string, InterstellarMediumProperties> = new Map();
   private interstellarMediumNoise: PerlinNoise;
+  private readonly milkyWayModel: MilkyWayModel;
   private readonly maxSystemPropertiesCacheSize = 50000;
 
   /** Initializes SystemDataGenerator. */
   constructor(gameSeedPRNG: PRNG) {
     this.gameSeedPRNG = gameSeedPRNG;
+    this.milkyWayModel = new MilkyWayModel(gameSeedPRNG.getInitialSeed());
     this.interstellarMediumNoise = new PerlinNoise(`${gameSeedPRNG.getInitialSeed()}_interstellar_medium`);
     logger.debug('[SystemDataGenerator] Initialized.');
+  }
+
+  /** Returns the immutable analytical Galaxy model shared by generation and map rendering. */
+  getGalaxyModel(): MilkyWayModel {
+    return this.milkyWayModel;
+  }
+
+  /** Returns the Galactic environment at one navigable world coordinate. */
+  getGalacticContext(worldX: number, worldY: number): GalacticCellContext {
+    return this.milkyWayModel.getCellContext(worldX, worldY);
+  }
+
+  /** Returns every individually navigable stellar slot represented by one projected map cell. */
+  getResolvedSystemMapProperties(worldX: number, worldY: number): SystemMapProperties[] {
+    const primary = this.getSystemMapProperties(worldX, worldY, 0);
+    const count = primary.objectKind === 'brown-dwarf' ? 1 : (primary.resolvedSystemCount ?? 0);
+    if (count === 0) return [];
+    const systems: SystemMapProperties[] = [primary];
+    for (let slot = 1; slot < count; slot++) {
+      systems.push(this.getSystemMapProperties(worldX, worldY, slot));
+    }
+    return systems;
   }
 
   /**
    * Gets the basic, deterministic properties of a potential system at world coordinates.
    * This method performs minimal generation needed for quick checks (like hyperspace view).
    */
-  getSystemMapProperties(worldX: number, worldY: number): SystemMapProperties {
-    const cacheKey = `${worldX},${worldY}`;
+  getSystemMapProperties(worldX: number, worldY: number, systemSlot = 0): SystemMapProperties {
+    const cacheKey = `${worldX},${worldY},${systemSlot}`;
     const cached = this.systemMapPropertiesCache.get(cacheKey);
     if (cached) return cached;
+
+    const context = this.milkyWayModel.getCellContext(worldX, worldY);
+    const countPRNG = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_system_count_${worldX},${worldY}`
+    );
+    const physicalSystemCount = this.samplePoisson(context.expectedResolvedSystems, countPRNG);
+    const resolvedSystemCount = Math.min(CONFIG.GALACTIC_MAX_RESOLVED_SYSTEMS_PER_CELL, physicalSystemCount);
+    const unresolvedSystemCount = Math.max(0, physicalSystemCount - resolvedSystemCount);
 
     const result: SystemMapProperties = {
       exists: false,
@@ -151,16 +203,27 @@ export class SystemDataGenerator {
       name: null,
       hasStarbase: false,
       objectKind: null,
+      systemSlot,
+      resolvedSystemCount,
+      unresolvedSystemCount,
+      stationKind: null,
+      settlementStage: 'none',
+      armName: context.armName,
+      clusterName: context.cluster?.name ?? null,
     };
 
-    const existenceSeedInt = this.gameSeedPRNG.seed;
-    const starPresenceThreshold = Math.floor(CONFIG.STAR_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-    const hash = fastHash(worldX, worldY, existenceSeedInt);
-    const hasNormalStar = hash % CONFIG.STAR_CHECK_HASH_SCALE < starPresenceThreshold;
-    const brownDwarfPresenceThreshold = Math.floor(CONFIG.BROWN_DWARF_DENSITY * CONFIG.STAR_CHECK_HASH_SCALE);
-    const brownDwarfHash = fastHash(worldX, worldY, existenceSeedInt + 32003);
+    const hasNormalStar = systemSlot >= 0 && systemSlot < resolvedSystemCount;
+    const brownDwarfDensity = this.clamp(
+      CONFIG.BROWN_DWARF_DENSITY * Math.sqrt(context.relativeStellarDensity),
+      0.002,
+      0.16
+    );
+    const brownDwarfPresenceThreshold = Math.floor(brownDwarfDensity * CONFIG.STAR_CHECK_HASH_SCALE);
+    const brownDwarfHash = fastHash(worldX, worldY, this.gameSeedPRNG.seed + 32003);
     const hasBrownDwarf =
-      !hasNormalStar && brownDwarfHash % CONFIG.STAR_CHECK_HASH_SCALE < brownDwarfPresenceThreshold;
+      systemSlot === 0 &&
+      resolvedSystemCount === 0 &&
+      brownDwarfHash % CONFIG.STAR_CHECK_HASH_SCALE < brownDwarfPresenceThreshold;
     result.exists = hasNormalStar || hasBrownDwarf;
 
     if (!result.exists) {
@@ -168,33 +231,53 @@ export class SystemDataGenerator {
       return result;
     }
 
-    const typePRNG = this.gameSeedPRNG.seedNew(`star_type_${worldX},${worldY}`);
+    const populationPRNG = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_population_${worldX},${worldY},${systemSlot}`
+    );
+    const population = this.milkyWayModel.sampleStellarPopulation(context, populationPRNG);
+    const typePRNG = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_star_type_${worldX},${worldY},${systemSlot}`
+    );
     result.objectKind = hasBrownDwarf ? 'brown-dwarf' : 'stellar';
-    result.starType = hasBrownDwarf ? this.generateBrownDwarfType(typePRNG) : this.generateStarType(typePRNG);
-    const nameSeed = `star_name_${worldX},${worldY}`;
+    result.starType = hasBrownDwarf
+      ? this.generateBrownDwarfType(typePRNG)
+      : this.generateStarType(typePRNG, population, context);
+    const nameSeed = `mw${CONFIG.GALAXY_MODEL_VERSION}_star_name_${worldX},${worldY},${systemSlot}`;
     const namePRNG = this.gameSeedPRNG.seedNew(nameSeed);
     result.name = this.generateSystemNameInternal(namePRNG);
-    const starbaseSeed = `star_starbase_${worldX},${worldY}`;
-    const starbasePRNG = this.gameSeedPRNG.seedNew(starbaseSeed);
-    result.hasStarbase =
-      result.objectKind === 'stellar' && starbasePRNG.random() < CONFIG.STARBASE_PROBABILITY;
+    if (result.objectKind === 'stellar' && result.starType && systemSlot === 0) {
+      const settlement = this.generateSettlementDisposition(
+        context,
+        result.starType,
+        population.ageGyr,
+        worldX,
+        worldY,
+        this.predictArchitectureKind(worldX, worldY, systemSlot, result.starType) === 'single'
+      );
+      result.stationKind = settlement.stationKind;
+      result.settlementStage = settlement.stage;
+      result.hasStarbase = settlement.stationKind !== null;
+    }
 
     this.cacheSystemMapProperties(cacheKey, result);
     return result;
   }
 
   /** Returns system properties. */
-  getSystemProperties(worldX: number, worldY: number): SystemBasicProperties {
-    const cacheKey = `${worldX},${worldY}`;
+  getSystemProperties(worldX: number, worldY: number, systemSlot = 0): SystemBasicProperties {
+    const cacheKey = `${worldX},${worldY},${systemSlot}`;
     const cached = this.systemPropertiesCache.get(cacheKey);
     if (cached) return cached;
 
-    const mapProps = this.getSystemMapProperties(worldX, worldY);
+    const mapProps = this.getSystemMapProperties(worldX, worldY, systemSlot);
+    const galacticContext = this.milkyWayModel.getCellContext(worldX, worldY);
     const result: SystemBasicProperties = {
       ...mapProps,
       ageGyr: null,
       metallicityFeH: null,
       architecture: null,
+      galacticContext,
+      galacticPopulation: null,
     };
 
     if (!result.exists || !result.starType || !result.name) {
@@ -202,17 +285,21 @@ export class SystemDataGenerator {
       return result;
     }
 
-    const agePRNG = this.gameSeedPRNG.seedNew(`star_age_${worldX},${worldY}`);
-    result.ageGyr = generateStellarAgeGyr(result.starType, agePRNG);
-    const metallicityPRNG = this.gameSeedPRNG.seedNew(`star_metallicity_${worldX},${worldY}`);
-    result.metallicityFeH = generateMilkyWayMetallicityFeH(result.ageGyr, result.starType, metallicityPRNG);
+    const populationPRNG = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_population_${worldX},${worldY},${systemSlot}`
+    );
+    const population = this.milkyWayModel.sampleStellarPopulation(galacticContext, populationPRNG);
+    result.ageGyr = this.limitAgeToMainSequence(population.ageGyr, result.starType);
+    result.metallicityFeH = population.metallicityFeH;
+    result.galacticPopulation = population.population;
     result.architecture = this.generateArchitecture(
       result.name,
       result.starType,
       result.ageGyr,
       result.metallicityFeH,
       worldX,
-      worldY
+      worldY,
+      systemSlot
     );
 
     this.cacheSystemProperties(cacheKey, result);
@@ -295,15 +382,18 @@ export class SystemDataGenerator {
     const ionField = this.normalizedNoise(worldX * scale * 1.55 - 41.2, worldY * scale * 1.55 + 66.4);
     const shearField = this.normalizedNoise(worldX * scale * 0.85 + 13.9, worldY * scale * 0.85 + 102.1);
     const remnantInfluence = this.getCompactRemnantInfluence(worldX, worldY);
+    const galactic = this.milkyWayModel.getCellContext(worldX, worldY);
 
     const density = this.clamp(
-      0.02 + densityField * 1.8 + Math.max(0, filamentField - 0.68) * 3.2,
+      0.02 + densityField * 1.15 + galactic.gasDensity * 0.92 + Math.max(0, filamentField - 0.68) * 2.4,
       0.01,
       4.5
     );
     const electronDensity = this.clamp(0.005 + ionField * 0.18 + remnantInfluence.neutron * 0.12, 0.001, 0.7);
     const dustExtinction = this.clamp(
-      Math.max(0, densityField - 0.55) * 1.6 + Math.max(0, filamentField - 0.62) * 2.1,
+      Math.max(0, densityField - 0.55) * 1.1 +
+        galactic.dustDensity * 0.82 +
+        Math.max(0, filamentField - 0.62) * 1.45,
       0,
       1.8
     );
@@ -461,13 +551,121 @@ export class SystemDataGenerator {
     return summaries[kind];
   }
 
-  /** Generates star type. */
-  private generateStarType(prng: PRNG): string {
-    const broadStarType = prng.choice(SPECTRAL_DISTRIBUTION)!;
+  /** Generates a present-day spectral class conditioned on age and Galactic environment. */
+  private generateStarType(
+    prng: PRNG,
+    population: StellarPopulationSample,
+    context: GalacticCellContext
+  ): string {
+    const youngArmBoost = population.ageGyr < 0.12 ? 1 + context.armInfluence * 7 : 1;
+    const broadStarType = this.weightedChoice(prng, [
+      { item: 'M', weight: 74 },
+      { item: 'K', weight: 12.2 },
+      { item: 'G', weight: 7.4 },
+      { item: 'F', weight: population.ageGyr < 5.5 ? 3.0 : 0.25 },
+      { item: 'A', weight: population.ageGyr < 1.4 ? 0.62 * youngArmBoost : 0 },
+      { item: 'B', weight: population.ageGyr < 0.09 ? 0.075 * youngArmBoost : 0 },
+      { item: 'O', weight: population.ageGyr < 0.007 ? 0.003 * youngArmBoost : 0 },
+    ]);
     const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
       (key) => key.startsWith(broadStarType) && key.endsWith('V')
     );
     return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : broadStarType;
+  }
+
+  /** Generates settlement and station state after applying host and distance eligibility. */
+  private generateSettlementDisposition(
+    context: GalacticCellContext,
+    starType: string,
+    ageGyr: number,
+    worldX: number,
+    worldY: number,
+    allowsTerraforming: boolean
+  ): { stage: SettlementStage; stationKind: StationKind | null } {
+    const hostSuitability = this.getHostSettlementSuitability(starType, ageGyr);
+    const human = context.human;
+    const settlementPRNG = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_settlement_${worldX},${worldY}`
+    );
+
+    if (human.settlementIntensity > 0 && hostSuitability > 0 && allowsTerraforming) {
+      const completeChance = human.settlementIntensity * hostSuitability * 0.13;
+      const frontierBias = human.region === 'frontier' ? 1.8 : human.region === 'settled' ? 1.25 : 0.72;
+      const partialChance = human.settlementIntensity * hostSuitability * 0.12 * frontierBias;
+      const roll = settlementPRNG.random();
+      if (roll < completeChance) {
+        // Only a subset of mature colonies are regional hubs; the rest remain inhabited worlds.
+        const stationKind = settlementPRNG.random() < 0.62 ? 'starbase' : null;
+        return { stage: 'complete', stationKind };
+      }
+      if (roll < completeChance + partialChance) {
+        return { stage: 'partial', stationKind: null };
+      }
+    }
+
+    const isRemoteEnough = human.distanceFromSolLy >= CONFIG.AUTOMATED_DEPOT_INNER_RADIUS_LY * 0.72;
+    const depotChance = human.depotIntensity * 0.0045;
+    if (isRemoteEnough && settlementPRNG.random() < depotChance) {
+      return { stage: 'none', stationKind: 'automated-depot' };
+    }
+    return { stage: 'none', stationKind: null };
+  }
+
+  /** Scores ordinary stable main-sequence hosts for human settlement placement. */
+  private getHostSettlementSuitability(starType: string, ageGyr: number): number {
+    const spectralClass = starType.charAt(0);
+    const subtype = Number(starType.match(/^[OBAFGKM](\d)/)?.[1] ?? 5);
+    if (ageGyr < 1.2) return 0;
+    if (estimateMainSequenceLifetimeGyr(starType) - ageGyr < 2.5) return 0;
+    if (spectralClass === 'K') return subtype <= 5 ? 1 : 0.9;
+    if (spectralClass === 'G') return subtype >= 6 ? 1 : 0.88;
+    if (spectralClass === 'F') return subtype >= 5 && ageGyr < 4.8 ? 0.42 : 0;
+    if (spectralClass === 'M') return subtype <= 3 && ageGyr >= 3.5 ? 0.34 : 0;
+    return 0;
+  }
+
+  /** Draws a bounded Poisson count without relying on exploration or cache order. */
+  private samplePoisson(lambda: number, prng: PRNG): number {
+    const safeLambda = this.clamp(lambda, 0, 12);
+    if (safeLambda <= 0) return 0;
+    if (safeLambda > 6) {
+      // A normal approximation avoids a long loop in the dense Galactic centre.
+      const u1 = Math.max(1e-9, prng.random());
+      const u2 = prng.random();
+      const gaussian = Math.sqrt(-2 * Math.log(u1)) * Math.cos(Math.PI * 2 * u2);
+      return Math.max(0, Math.round(safeLambda + Math.sqrt(safeLambda) * gaussian));
+    }
+    const limit = Math.exp(-safeLambda);
+    let product = 1;
+    let count = 0;
+    do {
+      count++;
+      product *= prng.random();
+    } while (product > limit && count < 24);
+    return count - 1;
+  }
+
+  /** Keeps a sampled population age below the generated star's main-sequence lifetime. */
+  private limitAgeToMainSequence(ageGyr: number, starType: string): number {
+    const maximumAge = Math.max(0.001, estimateMainSequenceLifetimeGyr(starType) * 0.92);
+    return Number(Math.min(ageGyr, maximumAge).toFixed(maximumAge < 0.1 ? 3 : 2));
+  }
+
+  /** Predicts multiplicity from the same stable first roll used by full architecture generation. */
+  private predictArchitectureKind(
+    worldX: number,
+    worldY: number,
+    systemSlot: number,
+    primaryStarType: string
+  ): StellarSystemKind {
+    const prng = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_star_architecture_${worldX},${worldY},${systemSlot}`
+    );
+    const roll = prng.random();
+    if (/^[LTY]/.test(primaryStarType)) return roll < 0.18 ? 'binary' : 'single';
+    if (roll < 0.14) return 'triple';
+    if (roll < 0.48) return 'binary';
+    return 'single';
   }
 
   /** Generates brown dwarf type. */
@@ -587,9 +785,12 @@ export class SystemDataGenerator {
     ageGyr: number,
     metallicityFeH: number,
     worldX: number,
-    worldY: number
+    worldY: number,
+    systemSlot: number
   ): StellarArchitecture {
-    const architecturePRNG = this.gameSeedPRNG.seedNew(`star_architecture_${worldX},${worldY}`);
+    const architecturePRNG = this.gameSeedPRNG.seedNew(
+      `mw${CONFIG.GALAXY_MODEL_VERSION}_star_architecture_${worldX},${worldY},${systemSlot}`
+    );
     const multiplicityRoll = architecturePRNG.random();
     const isBrownDwarf = /^[LTY]/.test(primaryStarType);
     const kind: StellarSystemKind = isBrownDwarf

@@ -22,6 +22,20 @@ describe('surface liquid overlays', () => {
     expect(isLiquidCovered(overlay!.seaLevel + 40, overlay)).toBe(false);
   });
 
+  it('uses the explicit managed-water fraction on terraformed worlds', () => {
+    const heightmap = Array.from({ length: 10 }, (_, y) => Array.from({ length: 10 }, (_, x) => x + y * 10));
+    const overlay = createSurfaceLiquidOverlay({
+      planetType: 'Rock',
+      hydrosphere: '63% managed surface water',
+      surfaceTemp: 288,
+      atmosphere: { density: 'Earth-like', pressure: 1, composition: { Nitrogen: 78, Oxygen: 21 } },
+      heightmap,
+    });
+
+    expect(overlay?.kind).toBe('water');
+    expect(overlay?.coverage).toBe(0.63);
+  });
+
   it('masks mineral deposits below visible liquid surfaces', () => {
     const generator = new SurfaceGenerator('Oceanic', 'liquid-mask-test', new PRNG('liquid-mask-test'), {
       density: 'Standard',

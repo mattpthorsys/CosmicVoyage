@@ -65,7 +65,8 @@ export function createOrbitScreenModel(args: {
         : ELEMENTS[key]?.name || key
     );
 
-  const pressure = selected.atmosphere.pressure < 0.001 ? '~0' : selected.atmosphere.pressure.toFixed(3);
+  const atmosphere = selected.effectiveAtmosphere;
+  const pressure = atmosphere.pressure < 0.001 ? '~0' : atmosphere.pressure.toFixed(3);
   const parentSeparation =
     selected === args.parentPlanet
       ? selected.orbitDistance
@@ -73,13 +74,13 @@ export function createOrbitScreenModel(args: {
   const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(parentSeparation);
   const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(parentSeparation);
   const classText = describePlanetType(selected.type);
-  const temperatureRange = `${selected.surfaceTempMin}-${selected.surfaceTempMax}K`;
+  const temperatureRange = `${selected.effectiveSurfaceTempMin}-${selected.effectiveSurfaceTempMax}K`;
   const description = [
-    `Profile: ${selected.name} is a ${classText}. Gravity ${selected.gravity.toFixed(2)}g. Temperature ${selected.surfaceTemp}K average, range ${temperatureRange}.`,
+    `Profile: ${selected.name} is a ${classText}. Gravity ${selected.gravity.toFixed(2)}g. Temperature ${selected.effectiveSurfaceTemp}K average, range ${temperatureRange}.`,
     selected.orbitDistance <= 0
       ? 'Orbit: none. Free planetary-mass object in interstellar space.'
       : `Orbit: ${orbitText} from the system primary. One-way signal delay ${signalText}.`,
-    `Atmosphere: ${selected.atmosphere.density.toLowerCase()}, ${pressure} bar. Hydrosphere: ${selected.hydrosphere.toLowerCase()}. Lithosphere: ${selected.lithosphere.toLowerCase()}.`,
+    `Atmosphere: ${atmosphere.density.toLowerCase()}, ${pressure} bar. Hydrosphere: ${selected.effectiveHydrosphere.toLowerCase()}. Lithosphere: ${selected.lithosphere.toLowerCase()}.`,
     selected.type === 'GasGiant' || selected.type === 'IceGiant'
       ? `Resources: atmospheric signatures ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
       : selected.scanned

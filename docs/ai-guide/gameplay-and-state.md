@@ -34,7 +34,8 @@ must use that payload rather than inspecting already-mutated state.
 
 Save locations use a separate discriminated union:
 
-- hyperspace and system records contain only world coordinates;
+- hyperspace and system records contain world coordinates and the projected
+  system slot;
 - orbit and planet records require stable body and orbit-reference paths;
 - starbase records require the station identity.
 
@@ -42,6 +43,9 @@ Do not reintroduce independent flags such as `atStarbase` or nullable body paths
 shared by every state. Save parsing validates nested player, mission, discovery,
 planet mutation, and economy state before restoration. Schema changes require a
 new save version and an explicit migration from the previous version.
+
+Save version 6 also records the Galaxy generation version. Planet mutation keys
+include the slot so dense projected cells cannot alias one another.
 
 ## Input
 
@@ -68,6 +72,7 @@ discriminated union covering:
 - quantity selector;
 - extraction selector;
 - jettison confirmation.
+- Galaxy map.
 
 Opening a modal replaces the previous one. New modal types must be added to the
 union and integrated into input, rendering, pause behavior, and tests.
@@ -122,6 +127,17 @@ Crew and equipment are operational systems rather than descriptive ratings:
   continue to alter their corresponding ship capabilities.
 
 Keep these effects bounded and visible in the relevant instrument or menu.
+
+Major starbases and automated depots share the landable station entity but not
+their capabilities. A major starbase always references a completed terraformed
+world. Automated depots are uncrewed, stock fewer goods, provide only basic
+repair, and expose no missions, crew, or shipyard panels.
+
+## Galaxy Map
+
+The Galaxy map is a modal instrument, not a sixth physical location. `G` opens
+it, arrows pan, `+/-` zoom, `Home` recentres, and `G` or `Esc` closes it. It
+pauses simulation without changing the active `GameState` or saved location.
 
 ## Surface
 

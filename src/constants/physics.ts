@@ -4,4 +4,5 @@ export const AU_IN_METERS = 1.495978707e11;
 export const LIGHT_SPEED_M_PER_S = 299792458;
 export const EARTH_RADIUS_KM = 6371;
 export const SOLAR_RADIUS_M = 6.957e8;
+export const SOLAR_LUMINOSITY_W = 3.828e26;
 export const BOLTZMANN_CONSTANT_K = 1.380649e-23;

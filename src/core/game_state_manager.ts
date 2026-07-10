@@ -133,7 +133,11 @@ export class GameStateManager {
 
     const basicProps =
       this.systemDataGenerator.getRoguePlanetSystemProperties(location.worldX, location.worldY) ??
-      this.systemDataGenerator.getSystemProperties(location.worldX, location.worldY);
+      this.systemDataGenerator.getSystemProperties(
+        location.worldX,
+        location.worldY,
+        location.systemSlot ?? 0
+      );
     if (!basicProps.exists) {
       throw new Error(`Saved system no longer exists at ${location.worldX},${location.worldY}.`);
     }
@@ -157,10 +161,10 @@ export class GameStateManager {
     }
     if (
       location.kind === 'starbase' &&
-      location.starbaseName !== 'legacy-current-starbase' &&
-      starbase?.name !== location.starbaseName
+      location.stationId !== 'legacy-current-starbase' &&
+      starbase?.id !== location.stationId
     ) {
-      throw new Error(`Saved starbase "${location.starbaseName}" no longer matches this location.`);
+      throw new Error(`Saved station "${location.starbaseName}" no longer matches this location.`);
     }
 
     this._currentOrbitReferencePlanet = orbitReference ?? planet;

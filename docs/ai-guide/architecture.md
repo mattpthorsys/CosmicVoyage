@@ -18,12 +18,14 @@ Game
   +-- MovementSystem / MiningSystem / CargoSystem
   +-- focused feature controllers and services
   +-- SystemDataGenerator / HyperspaceSurveyService
+  +-- MilkyWayModel / GalaxyMapController
   +-- RendererFacade
         |
         +-- SceneRenderer
         +-- ScreenBuffer / DrawingContext
         +-- NebulaRenderer
         +-- status and command-strip DOM updaters
+        +-- cached GalaxyMapRenderer
 ```
 
 `main.ts` installs worker providers before constructing `Game`. Tests may use
@@ -45,6 +47,12 @@ generated universe and its physical properties.
 Domain code should not depend on browser DOM elements, canvas contexts, command
 bars, or terminal overlays. A small amount of rendering colour data is still
 shared with planet surfaces; avoid adding further reverse dependencies.
+
+Galactic generation follows one direction: `MilkyWayModel` creates a pure
+coordinate context, `SystemDataGenerator` samples stellar populations and
+system summaries, `SolarSystem` materializes planets, and habitability and
+settlement rules add deterministic overlays. Station eligibility must not be
+decided independently before planets exist.
 
 ### Application and gameplay
 
@@ -75,6 +83,8 @@ generate mission outcomes, or mutate player progression.
   state.
 - `ShipOperationsController` owns ship-menu state.
 - `InterfaceModeController` guarantees that only one modal interface is active.
+- `GalaxyMapController` owns map pan and zoom while `galaxy-map` is the active
+  modal; it is not a physical location state.
 - `Player` owns resources, position, ship, cargo, rover, and crew.
 
 Do not duplicate state in two owners. Transitional aliases in `Game` exist for

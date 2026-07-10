@@ -25,4 +25,18 @@ describe('InputManager', () => {
 
     expect(input.isActionActive('MOVE_UP_LEFT')).toBe(false);
   });
+
+  it('maps the Galaxy instrument and dedicated Home recenter controls', () => {
+    const input = new InputManager() as any;
+    input.isListening = true;
+
+    input._handleKeyDown(keyEvent('g', 'KeyG'));
+    expect(input.wasActionJustPressed('GALAXY_MAP')).toBe(true);
+    input._handleKeyUp(keyEvent('g', 'KeyG'));
+
+    input.update();
+    input._handleKeyDown(keyEvent('Home', 'Home'));
+    expect(input.wasActionJustPressed('GALAXY_RECENTER')).toBe(true);
+    expect(input.isActionActive('MOVE_UP_LEFT')).toBe(false);
+  });
 });

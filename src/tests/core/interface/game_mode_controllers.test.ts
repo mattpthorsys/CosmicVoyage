@@ -47,6 +47,8 @@ describe('game mode controllers', () => {
     const interfaces = new InterfaceModeController<number, string, boolean>();
     interfaces.open('ship-menu');
     expect(interfaces.kind).toBe('ship-menu');
+    interfaces.open('galaxy-map');
+    expect(interfaces.kind).toBe('galaxy-map');
     interfaces.openQuantity(4);
     expect(interfaces.quantity).toBe(4);
     expect(interfaces.is('ship-menu')).toBe(false);
