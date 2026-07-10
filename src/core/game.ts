@@ -154,6 +154,11 @@ interface FrameProfile {
   fps: number;
 }
 
+interface OrbitScreenCache {
+  signature: string;
+  model: OrbitScreenModel;
+}
+
 interface HyperspaceNavigationContact {
   dx: number;
   dy: number;
@@ -259,6 +264,8 @@ export class Game {
   private lastPublishedCommandSignature: string = '';
   private lastHyperspaceUpdateSignature: string = '';
   private lastHyperspaceUpdateStatus: string = '';
+  private currentVisualDeltaSeconds = 0;
+  private orbitScreenCache: OrbitScreenCache | null = null;
   private preparingSurfacePlanet: Planet | null = null;
   private profilerVisible: boolean = false;
   private lastFrameProfile: FrameProfile = {
@@ -875,6 +882,7 @@ export class Game {
   /** Handles game state change. */
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
     this.forceFullRender = true; // Always force redraw on state change
+    this.orbitScreenCache = null;
     this.lastHyperspaceUpdateSignature = '';
     this.lastHyperspaceUpdateStatus = '';
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
@@ -1088,7 +1096,11 @@ export class Game {
     let renderMs = 0;
 
     // Calculate deltaTime, capping it to prevent large jumps if paused/tabbed out
-    const deltaTime = Math.min(0.1, (currentTime - this.lastUpdateTime) / 1000.0);
+    const rawDeltaTime = Math.max(0, (currentTime - this.lastUpdateTime) / 1000.0);
+    const deltaTime = Math.min(0.1, rawDeltaTime);
+    // Simulation remains capped after a pause, while visual rotation uses real
+    // monotonic elapsed time so a slow machine cannot make planets rotate slowly.
+    this.currentVisualDeltaSeconds = rawDeltaTime;
     this.lastUpdateTime = currentTime;
 
     try {
@@ -5856,7 +5868,7 @@ export class Game {
   private _updateOrbit(deltaTime: number): string {
     const planet = this.stateManager.currentPlanet;
     if (!planet) return 'Orbit Error: Planet data missing.';
-    this.orbitModeState.elapsedSeconds += deltaTime;
+    this.orbitModeState.elapsedSeconds += this.currentVisualDeltaSeconds || deltaTime;
     const selectedBody = this.getSelectedOrbitBody();
     const mapSize = getPlanetMapSize(selectedBody);
     this.orbitModeState.landingX = ((Math.floor(this.orbitModeState.landingX) % mapSize) + mapSize) % mapSize;
@@ -6311,6 +6323,7 @@ export class Game {
       `INPUT ${this.lastFrameProfile.inputMs.toFixed(1)}  UPDATE ${this.lastFrameProfile.updateMs.toFixed(1)}  RENDER ${this.lastFrameProfile.renderMs.toFixed(1)}ms`,
       `PREP ${this.lastFrameProfile.renderPrepMs.toFixed(1)}  OVERLAY ${this.lastFrameProfile.overlayMs.toFixed(1)}  CANVAS ${stats.durationMs.toFixed(1)}ms`,
       `${stats.mode.toUpperCase()} CELLS ${stats.cellsDrawn}  BG ${stats.backgroundsDrawn}  GLYPHS ${stats.glyphsDrawn}`,
+      `ORBIT RASTER ${stats.scaledDurationMs.toFixed(1)}ms  PIXELS ${stats.scaledPixels}  ITEMS ${stats.scaledGlyphs}`,
     ];
     if (this.stateManager.state === 'hyperspace') {
       const hyper = this.renderer.getLastHyperspaceRenderStats();
@@ -6347,7 +6360,7 @@ export class Game {
     this.lastRenderStatsLogAt = now;
     const stats = this.renderer.getLastRenderStats();
     logger.debug(
-      `[Game:_render] ${stats.mode} render: ${stats.cellsDrawn} changed cells, ${stats.backgroundsDrawn} bg cells, ${stats.glyphsDrawn} glyphs in ${stats.durationMs.toFixed(2)}ms`
+      `[Game:_render] ${stats.mode} render: ${stats.cellsDrawn} changed cells, ${stats.backgroundsDrawn} bg cells, ${stats.glyphsDrawn} glyphs, ${stats.scaledPixels} raster pixels in ${stats.durationMs.toFixed(2)}ms`
     );
   }
 
@@ -6842,7 +6855,9 @@ export class Game {
   /** Queues unique planetary rendering data and redraws orbit as bodies become ready. */
   private enqueueSurfacePrefetch(planets: Planet[]): void {
     const unique = [...new Set(planets)];
+    this.renderer.prepareOrbitAssets(unique.filter((planet) => planet.isSurfaceReady()));
     this.surfacePrefetch.enqueue(unique, (planet) => {
+      this.renderer.prepareOrbitAssets([planet]);
       if (this.stateManager.state === 'orbit' && this.getOrbitBodies().includes(planet)) {
         this.forceFullRender = true;
       }
@@ -6853,18 +6868,41 @@ export class Game {
   private createCurrentOrbitScreen(): OrbitScreenModel {
     const parentPlanet = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
     const selectedBody = this.getSelectedOrbitBody();
-    return createOrbitScreenModel({
-      parentPlanet,
-      selectedBody,
-      selectedIndex: this.orbitModeState.selectedBodyIndex,
-      mode: this.orbitModeState.mode,
-      landingCursorX: this.orbitModeState.landingX,
-      landingCursorY: this.orbitModeState.landingY,
+    const alert = this.orbitModeState.alert || this.statusMessage;
+    const cacheSignature = [
+      parentPlanet.name,
+      selectedBody.name,
+      this.orbitModeState.selectedBodyIndex,
+      this.orbitModeState.mode,
+      this.orbitModeState.landingX,
+      this.orbitModeState.landingY,
+      selectedBody.discovery.level,
+      selectedBody.scanned ? 'scanned' : 'pending',
+      selectedBody.isSurfaceReady() ? 'surface-ready' : 'surface-pending',
+      alert,
+    ].join('|');
+    if (!this.orbitScreenCache || this.orbitScreenCache.signature !== cacheSignature) {
+      this.orbitScreenCache = {
+        signature: cacheSignature,
+        model: createOrbitScreenModel({
+          parentPlanet,
+          selectedBody,
+          selectedIndex: this.orbitModeState.selectedBodyIndex,
+          mode: this.orbitModeState.mode,
+          landingCursorX: this.orbitModeState.landingX,
+          landingCursorY: this.orbitModeState.landingY,
+          rotationPhase: 0,
+          illuminationPhase: 0,
+          stellarSources: this.getOrbitStellarSources(selectedBody),
+          alert,
+        }),
+      };
+    }
+    return {
+      ...this.orbitScreenCache.model,
       rotationPhase: this.getOrbitGlobeRotationPhase(selectedBody),
       illuminationPhase: this.getOrbitGlobeIlluminationPhase(),
-      stellarSources: this.getOrbitStellarSources(selectedBody),
-      alert: this.orbitModeState.alert || this.statusMessage,
-    });
+    };
   }
 
   /** Starts worker-backed surface preparation and redraws when the current planet becomes ready. */

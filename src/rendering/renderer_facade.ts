@@ -36,6 +36,8 @@ export class RendererFacade {
   private ctx: CanvasRenderingContext2D;
   private overlayCanvas: HTMLCanvasElement;
   private overlayCtx: CanvasRenderingContext2D;
+  private orbitCanvas: HTMLCanvasElement;
+  private orbitCtx: CanvasRenderingContext2D;
   private screenBuffer: ScreenBuffer; // Main buffer
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
@@ -43,6 +45,8 @@ export class RendererFacade {
   private statusBarUpdater: ImportedStatusBarUpdater; // Use imported alias
   private commandStripUpdater: CommandStripUpdater | null = null;
   private readonly eventUnsubscribers: Unsubscribe[];
+  private readonly orbitAssetQueue = new Set<Planet>();
+  private isOrbitAssetPreparationScheduled = false;
 
   /** Initializes RendererFacade. */
   constructor(
@@ -53,6 +57,7 @@ export class RendererFacade {
   ) {
     logger.info('[RendererFacade] Constructing instance...');
     const canvas = document.getElementById(canvasId) as HTMLCanvasElement | null;
+    const orbitCanvas = document.getElementById(`${canvasId}Orbit`) as HTMLCanvasElement | null;
     const overlayCanvas = document.getElementById(`${canvasId}Overlay`) as HTMLCanvasElement | null;
     const statusBarElement = document.getElementById(statusBarId) as HTMLElement | null;
     const commandStripElement = document.getElementById('commandStrip') as HTMLElement | null;
@@ -68,12 +73,18 @@ export class RendererFacade {
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
+    if (!orbitCanvas || typeof orbitCanvas.getContext !== 'function') {
+      const msg = `Orbit canvas element "#${canvasId}Orbit" not found or not supported.`;
+      logger.error(`[RendererFacade] ${msg}`);
+      throw new Error(msg);
+    }
     if (!statusBarElement) {
       const msg = `Status bar element "#${statusBarId}" not found.`;
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
     const ctx = canvas.getContext('2d', { alpha: true }); // Ensure alpha for transparency between layers
+    const orbitCtx = orbitCanvas.getContext('2d', { alpha: true });
     const overlayCtx = overlayCanvas.getContext('2d', { alpha: true });
     if (!ctx) {
       const msg = 'Failed to get 2D rendering context from canvas.';
@@ -85,14 +96,21 @@ export class RendererFacade {
       logger.error(`[RendererFacade] ${msg}`);
       throw new Error(msg);
     }
+    if (!orbitCtx) {
+      const msg = 'Failed to get the orbital raster context.';
+      logger.error(`[RendererFacade] ${msg}`);
+      throw new Error(msg);
+    }
 
     this.canvas = canvas;
     this.ctx = ctx;
+    this.orbitCanvas = orbitCanvas;
+    this.orbitCtx = orbitCtx;
     this.overlayCanvas = overlayCanvas;
     this.overlayCtx = overlayCtx;
 
     // Initialize components (same as before)
-    this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false);
+    this.screenBuffer = new ScreenBuffer(this.canvas, this.ctx, false, this.orbitCanvas, this.orbitCtx);
     this.drawingContext = new DrawingContext(this.screenBuffer);
     this.nebulaRenderer = new NebulaRenderer(getNebulaColourProvider());
     this.statusBarUpdater = new ImportedStatusBarUpdater(statusBarElement); // Use alias
@@ -204,6 +222,8 @@ export class RendererFacade {
     // Set canvas physical pixel dimensions
     this.canvas.width = cols * charWidthPx;
     this.canvas.height = rows * charHeightPx;
+    this.orbitCanvas.width = this.canvas.width;
+    this.orbitCanvas.height = this.canvas.height;
     this.overlayCanvas.width = this.canvas.width;
     this.overlayCanvas.height = this.canvas.height;
 
@@ -229,6 +249,10 @@ export class RendererFacade {
     );
     this.canvas.style.marginLeft = `${canvasMarginLeft}px`;
     this.canvas.style.marginTop = `${canvasMarginTop}px`;
+    this.orbitCanvas.style.left = `${canvasMarginLeft}px`;
+    this.orbitCanvas.style.top = `${canvasMarginTop}px`;
+    this.orbitCanvas.style.width = `${this.canvas.width}px`;
+    this.orbitCanvas.style.height = `${this.canvas.height}px`;
     this.overlayCanvas.style.left = `${canvasMarginLeft}px`;
     this.overlayCanvas.style.top = `${canvasMarginTop}px`;
     this.overlayCanvas.style.width = `${this.canvas.width}px`;
@@ -267,6 +291,33 @@ export class RendererFacade {
   /** Returns last hyperspace render stats. */
   getLastHyperspaceRenderStats(): HyperspaceRenderStats {
     return this.sceneRenderer.getLastHyperspaceRenderStats();
+  }
+
+  /** Schedules body-fixed orbital textures during browser idle time. */
+  prepareOrbitAssets(planets: readonly Planet[]): void {
+    for (const planet of planets) this.orbitAssetQueue.add(planet);
+    this.scheduleOrbitAssetPreparation();
+  }
+
+  /** Processes one queued orbital texture per idle callback to avoid a visible frame spike. */
+  private scheduleOrbitAssetPreparation(): void {
+    if (this.isOrbitAssetPreparationScheduled || this.orbitAssetQueue.size === 0) return;
+    this.isOrbitAssetPreparationScheduled = true;
+    /** Prepares one body and yields before processing another. */
+    const prepareNext = (): void => {
+      this.isOrbitAssetPreparationScheduled = false;
+      const planet = this.orbitAssetQueue.values().next().value as Planet | undefined;
+      if (!planet) return;
+      this.orbitAssetQueue.delete(planet);
+      this.sceneRenderer.prepareOrbitAssets([planet]);
+      this.scheduleOrbitAssetPreparation();
+    };
+    const requestIdle = window.requestIdleCallback;
+    if (typeof requestIdle === 'function') {
+      requestIdle(prepareNext, { timeout: 750 });
+    } else {
+      globalThis.setTimeout(prepareNext, 0);
+    }
   }
 
   /** Updates the text content of the status bar element. (This method is now primarily called internally via event) */

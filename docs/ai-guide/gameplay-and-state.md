@@ -133,7 +133,10 @@ differently.
 Surface generation uses a single worker with a bounded queue. Predictive work
 must go through `SurfacePrefetchService`, which serializes requests so newer
 moon previews do not supersede older queued work. System approach warms the
-target planet and first two moons; orbital selection warms nearby bodies.
+target planet and first two moons; orbital selection warms nearby bodies. Once
+surface preparation completes, the renderer schedules any giant-world orbital
+texture during browser idle time rather than generating weather in the frame
+loop.
 
 Mining yield is derived from stable planet and coordinate seeds. Extraction
 order must not alter deposits elsewhere.

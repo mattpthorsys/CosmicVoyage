@@ -16,6 +16,9 @@ export interface RenderStats {
   backgroundsDrawn: number;
   glyphsDrawn: number;
   durationMs: number;
+  scaledGlyphs: number;
+  scaledPixels: number;
+  scaledDurationMs: number;
 }
 
 interface ScaledGlyphState {
@@ -32,6 +35,11 @@ interface ScaledGlyphState {
 export class ScreenBuffer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
+  private readonly scaledCanvas: HTMLCanvasElement | null;
+  private readonly scaledCtx: CanvasRenderingContext2D | null;
+  private scaledRasterCanvas: HTMLCanvasElement | null = null;
+  private scaledRasterCtx: CanvasRenderingContext2D | null = null;
+  private scaledRasterImage: ImageData | null = null;
 
   // Character grid dimensions
   private charWidthPx: number = 0;
@@ -43,6 +51,7 @@ export class ScreenBuffer {
   private screenBuffer: CellState[] = []; // Represents what's currently drawn on the canvas
   private newBuffer: CellState[] = []; // Represents the desired state for the next frame
   private scaledGlyphs: ScaledGlyphState[] = [];
+  private readonly scaledGlyphPool: ScaledGlyphState[] = [];
   private hadScaledGlyphsLastFrame = false;
   private readonly cellStateCache = new Map<string, Readonly<CellState>>();
 
@@ -55,14 +64,28 @@ export class ScreenBuffer {
     backgroundsDrawn: 0,
     glyphsDrawn: 0,
     durationMs: 0,
+    scaledGlyphs: 0,
+    scaledPixels: 0,
+    scaledDurationMs: 0,
   };
+  private lastScaledPixels = 0;
+  private lastScaledGlyphs = 0;
+  private lastScaledDurationMs = 0;
 
   private isTransparent: boolean = false; // Flag for the buffer itself
 
   /** Initializes ScreenBuffer. */
-  constructor(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, isTransparent: boolean = false) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    context: CanvasRenderingContext2D,
+    isTransparent: boolean = false,
+    scaledCanvas: HTMLCanvasElement | null = null,
+    scaledContext: CanvasRenderingContext2D | null = null
+  ) {
     this.canvas = canvas;
     this.ctx = context;
+    this.scaledCanvas = scaledCanvas;
+    this.scaledCtx = scaledContext;
     this.isTransparent = isTransparent; // Store if this buffer expects transparency
 
     this.defaultCellState = Object.freeze({
@@ -184,7 +207,7 @@ export class ScreenBuffer {
       this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.hadScaledGlyphsLastFrame = false;
     }
-    this.scaledGlyphs = [];
+    this.scaledGlyphs.length = 0;
 
     // Reset the staging buffer every frame. Only reset the rendered-state buffer
     // when the physical canvas is also cleared, otherwise diff rendering loses its baseline.
@@ -278,15 +301,25 @@ export class ScreenBuffer {
     if (x < -1 || x >= this.cols || y < -1 || y >= this.rows) return;
     if (!Number.isFinite(x) || !Number.isFinite(y) || scaleX <= 0 || scaleY <= 0) return;
 
-    this.scaledGlyphs.push({
-      char: char || ' ',
-      x,
-      y,
-      fg: fgColor || this.defaultFgColor,
-      bg: bgColor,
-      scaleX,
-      scaleY,
-    });
+    const poolIndex = this.scaledGlyphs.length;
+    const glyph = this.scaledGlyphPool[poolIndex] ?? {
+      char: ' ',
+      x: 0,
+      y: 0,
+      fg: this.defaultFgColor,
+      bg: null,
+      scaleX: 0.5,
+      scaleY: 0.5,
+    };
+    glyph.char = char || ' ';
+    glyph.x = x;
+    glyph.y = y;
+    glyph.fg = fgColor || this.defaultFgColor;
+    glyph.bg = bgColor;
+    glyph.scaleX = scaleX;
+    glyph.scaleY = scaleY;
+    if (!this.scaledGlyphPool[poolIndex]) this.scaledGlyphPool.push(glyph);
+    this.scaledGlyphs.push(glyph);
   }
 
   /** Replaces the staged drawing buffer with a complete precomputed frame. */
@@ -373,6 +406,9 @@ export class ScreenBuffer {
       backgroundsDrawn,
       glyphsDrawn,
       durationMs: endTime - startTime,
+      scaledGlyphs: this.lastScaledGlyphs,
+      scaledPixels: this.lastScaledPixels,
+      scaledDurationMs: this.lastScaledDurationMs,
     };
     // Reduce logging frequency if needed
     // if (cellsDrawn > 0) {
@@ -394,7 +430,7 @@ export class ScreenBuffer {
       return;
     }
 
-    if (this.scaledGlyphs.length > 0 || this.hadScaledGlyphsLastFrame) {
+    if (!this.scaledCtx && (this.scaledGlyphs.length > 0 || this.hadScaledGlyphsLastFrame)) {
       this.renderFull();
       return;
     }
@@ -440,6 +476,7 @@ export class ScreenBuffer {
     const backgroundsDrawn = this.drawBackgroundRunsForIndices(dirtyIndices, this.screenBuffer);
     this.clearTransparentRunsForIndices(dirtyIndices, this.screenBuffer);
     const glyphsDrawn = this.drawGlyphRunsForIndices(dirtyIndices, this.screenBuffer);
+    this.renderScaledGlyphs();
 
     const endTime = performance.now();
     this.lastRenderStats = {
@@ -448,6 +485,9 @@ export class ScreenBuffer {
       backgroundsDrawn,
       glyphsDrawn,
       durationMs: endTime - startTime,
+      scaledGlyphs: this.lastScaledGlyphs,
+      scaledPixels: this.lastScaledPixels,
+      scaledDurationMs: this.lastScaledDurationMs,
     };
     if (cellsDrawn > 0) {
       // logger.debug( // Can be noisy
@@ -646,9 +686,21 @@ export class ScreenBuffer {
 
   /** Renders scaled glyphs. */
   private renderScaledGlyphs(): void {
+    const startedAt = performance.now();
     const glyphs = this.scaledGlyphs;
+    this.lastScaledGlyphs = glyphs.length;
+    this.lastScaledPixels = 0;
     this.hadScaledGlyphsLastFrame = glyphs.length > 0;
-    if (glyphs.length === 0) return;
+    if (this.scaledCtx && this.scaledCanvas) {
+      this.renderScaledGlyphsToDedicatedLayer(glyphs);
+      this.scaledGlyphs.length = 0;
+      this.lastScaledDurationMs = performance.now() - startedAt;
+      return;
+    }
+    if (glyphs.length === 0) {
+      this.lastScaledDurationMs = performance.now() - startedAt;
+      return;
+    }
 
     this.ctx.save();
     this.ctx.textBaseline = 'top';
@@ -695,6 +747,114 @@ export class ScreenBuffer {
     }
     this.ctx.font = `${this.charHeightPx}px ${CONFIG.FONT_FAMILY}`;
     this.ctx.restore();
-    this.scaledGlyphs = [];
+    this.scaledGlyphs.length = 0;
+    this.lastScaledDurationMs = performance.now() - startedAt;
+  }
+
+  /** Rasterizes half-cell blocks into one bitmap and draws remaining scaled glyphs above it. */
+  private renderScaledGlyphsToDedicatedLayer(glyphs: readonly ScaledGlyphState[]): void {
+    const targetCanvas = this.scaledCanvas!;
+    const target = this.scaledCtx!;
+    target.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+    if (glyphs.length === 0) return;
+
+    const raster = this.ensureScaledRaster();
+    const image = this.scaledRasterImage!;
+    image.data.fill(0);
+    const textGlyphs: ScaledGlyphState[] = [];
+
+    for (const glyph of glyphs) {
+      const rasterX = Math.round(glyph.x * 2);
+      const rasterY = Math.round(glyph.y * 2);
+      const rasterWidth = Math.max(1, Math.round(glyph.scaleX * 2));
+      const rasterHeight = Math.max(1, Math.round(glyph.scaleY * 2));
+      const isAlignedBlock =
+        glyph.char === GLYPHS.BLOCK &&
+        Math.abs(glyph.x * 2 - rasterX) < 0.001 &&
+        Math.abs(glyph.y * 2 - rasterY) < 0.001;
+      if (!isAlignedBlock) {
+        textGlyphs.push(glyph);
+        continue;
+      }
+
+      const colour = this.parsePackedColour(glyph.fg || this.defaultFgColor);
+      for (let offsetY = 0; offsetY < rasterHeight; offsetY++) {
+        const py = rasterY + offsetY;
+        if (py < 0 || py >= raster.height) continue;
+        for (let offsetX = 0; offsetX < rasterWidth; offsetX++) {
+          const px = rasterX + offsetX;
+          if (px < 0 || px >= raster.width) continue;
+          const index = (py * raster.width + px) * 4;
+          image.data[index] = (colour >> 16) & 0xff;
+          image.data[index + 1] = (colour >> 8) & 0xff;
+          image.data[index + 2] = colour & 0xff;
+          image.data[index + 3] = 255;
+          this.lastScaledPixels++;
+        }
+      }
+    }
+
+    this.scaledRasterCtx!.putImageData(image, 0, 0);
+    target.save();
+    target.imageSmoothingEnabled = false;
+    target.drawImage(raster, 0, 0, targetCanvas.width, targetCanvas.height);
+    target.textBaseline = 'top';
+    for (const glyph of textGlyphs) {
+      this.drawScaledTextGlyph(target, glyph);
+    }
+    target.restore();
+  }
+
+  /** Returns a reusable two-pixels-per-cell raster matching the current terminal grid. */
+  private ensureScaledRaster(): HTMLCanvasElement {
+    const width = this.cols * 2;
+    const height = this.rows * 2;
+    if (!this.scaledRasterCanvas) {
+      this.scaledRasterCanvas = this.canvas.ownerDocument.createElement('canvas');
+      this.scaledRasterCtx = this.scaledRasterCanvas.getContext('2d', { alpha: true });
+      if (!this.scaledRasterCtx) throw new Error('Unable to create the scaled-glyph raster context.');
+    }
+    if (
+      this.scaledRasterCanvas.width !== width ||
+      this.scaledRasterCanvas.height !== height ||
+      !this.scaledRasterImage
+    ) {
+      this.scaledRasterCanvas.width = width;
+      this.scaledRasterCanvas.height = height;
+      this.scaledRasterImage = this.scaledRasterCtx!.createImageData(width, height);
+    }
+    return this.scaledRasterCanvas;
+  }
+
+  /** Draws a non-block scaled glyph onto the dedicated transparent layer. */
+  private drawScaledTextGlyph(ctx: CanvasRenderingContext2D, glyph: ScaledGlyphState): void {
+    const charToDraw = glyph.char || ' ';
+    const width = this.charWidthPx * glyph.scaleX;
+    const height = this.charHeightPx * glyph.scaleY;
+    const px = glyph.x * this.charWidthPx;
+    const py = glyph.y * this.charHeightPx;
+    if (charToDraw === GLYPHS.BLOCK) {
+      ctx.fillStyle = glyph.fg || this.defaultFgColor;
+      ctx.fillRect(px, py, width, height);
+      return;
+    }
+    if (glyph.bg !== null && glyph.bg !== CONFIG.TRANSPARENT_COLOUR) {
+      ctx.fillStyle = glyph.bg || this.defaultBgColor;
+      ctx.fillRect(px, py, width, height);
+    }
+    if (charToDraw === ' ') return;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.font = `${this.charHeightPx * glyph.scaleY}px ${CONFIG.FONT_FAMILY}`;
+    ctx.scale(glyph.scaleX / glyph.scaleY, 1);
+    ctx.fillStyle = glyph.fg || this.defaultFgColor;
+    ctx.fillText(charToDraw, 0, 0);
+    ctx.restore();
+  }
+
+  /** Parses a six-digit hexadecimal colour into packed RGB channels without allocations. */
+  private parsePackedColour(colour: string): number {
+    const parsed = Number.parseInt(colour.startsWith('#') ? colour.slice(1, 7) : colour.slice(0, 6), 16);
+    return Number.isNaN(parsed) ? 0x808080 : parsed;
   }
 }

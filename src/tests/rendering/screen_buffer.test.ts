@@ -142,6 +142,83 @@ describe('ScreenBuffer rendering', () => {
     expect(scaledBlockCalls).toHaveLength(1);
   });
 
+  it('rasterizes scaled blocks on a dedicated layer without forcing a full main repaint', () => {
+    const main = {
+      font: '',
+      textBaseline: '',
+      fillStyle: '',
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      scale: vi.fn(),
+    };
+    const raster = {
+      createImageData: vi.fn((width: number, height: number) => ({
+        width,
+        height,
+        data: new Uint8ClampedArray(width * height * 4),
+      })),
+      putImageData: vi.fn(),
+    };
+    const rasterCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => raster),
+    };
+    const canvas = {
+      width: 16,
+      height: 8,
+      ownerDocument: { createElement: vi.fn(() => rasterCanvas) },
+    };
+    const layer = {
+      font: '',
+      textBaseline: '',
+      fillStyle: '',
+      imageSmoothingEnabled: true,
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      drawImage: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      scale: vi.fn(),
+    };
+    const layerCanvas = { width: 16, height: 8 };
+    const buffer = new ScreenBuffer(
+      canvas as unknown as HTMLCanvasElement,
+      main as unknown as CanvasRenderingContext2D,
+      false,
+      layerCanvas as HTMLCanvasElement,
+      layer as unknown as CanvasRenderingContext2D
+    );
+    buffer.updateDimensions(2, 1, 8, 8);
+    buffer.drawChar('@', 1, 0, '#00FFFF', '#000000');
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0, 0, '#204060', '#204060', 0.5, 0.5);
+    buffer.renderFull();
+
+    main.fillRect.mockClear();
+    main.fillText.mockClear();
+    raster.putImageData.mockClear();
+    layer.drawImage.mockClear();
+    buffer.clear(false);
+    buffer.drawChar('@', 1, 0, '#00FFFF', '#000000');
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0.5, 0, '#406080', '#406080', 0.5, 0.5);
+    buffer.renderDiff();
+
+    expect(buffer.getLastRenderStats().mode).toBe('diff');
+    expect(buffer.getLastRenderStats().cellsDrawn).toBe(0);
+    expect(buffer.getLastRenderStats().scaledPixels).toBe(1);
+    expect(main.fillRect).not.toHaveBeenCalled();
+    expect(main.fillText).not.toHaveBeenCalled();
+    expect(raster.putImageData).toHaveBeenCalledOnce();
+    expect(layer.drawImage).toHaveBeenCalledOnce();
+    expect(layer.imageSmoothingEnabled).toBe(false);
+  });
+
   it('clears transparent cells when a previous glyph is removed', () => {
     const ctx = {
       font: '',

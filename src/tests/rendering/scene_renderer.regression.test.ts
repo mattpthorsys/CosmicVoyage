@@ -446,6 +446,24 @@ describe('SceneRenderer visual regressions', () => {
     );
   });
 
+  it('reuses a deterministic body-fixed giant texture while longitude advances smoothly', () => {
+    const renderer = new GiantAtmosphereRenderer();
+    const giant = createGasGiantPlanet();
+    const palette = giant.rgbPaletteCache ?? [];
+    const profile = renderer.getProfile(giant, palette);
+
+    renderer.prepareTexture(giant, palette);
+    const first = renderer.sampleBodyFixed(giant, palette, 0.243, 0.47);
+    const repeated = renderer.sampleBodyFixed(giant, palette, 0.243, 0.47);
+    const nearby = renderer.sampleBodyFixed(giant, palette, 0.245, 0.47);
+    const rotated = renderer.sample(giant, palette, 0.243, 0.47, 0.2);
+
+    expect(renderer.getProfile(giant, palette)).toBe(profile);
+    expect(repeated).toEqual(first);
+    expect(nearby.colour).not.toBe(first.colour);
+    expect(rotated.colour).not.toBe(first.colour);
+  });
+
   it('adds sparse narrow cloud ribbons whose visibility responds to giant-planet weather energy', () => {
     const renderer = new GiantAtmosphereRenderer();
     const cold = createIceGiantPlanet('Cold Ribbon Giant', 68);

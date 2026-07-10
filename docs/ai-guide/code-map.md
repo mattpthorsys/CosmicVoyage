@@ -83,13 +83,14 @@ Use this file to find the likely owner of a change before searching globally.
 - `src/rendering/renderer_facade.ts`: canvas/DOM setup and renderer coordination.
 - `src/rendering/scene_view_model.ts`: immutable scene union and player snapshot.
 - `src/rendering/scene_renderer.ts`: major scene and table drawing.
-- `src/rendering/screen_buffer.ts`: staged cells and full/diff canvas rendering.
+- `src/rendering/screen_buffer.ts`: staged cells, full/diff canvas rendering,
+  and pooled bitmap batching for half-cell orbital pixels.
 - `src/rendering/drawing_context.ts`: boxes, lines, arcs, and drawing helpers.
 - `src/rendering/astrometric_overlay.ts`: direct-canvas scan instrumentation.
 - `src/rendering/terminal_overlay.ts`: typed/fading terminal messages.
 - `src/rendering/nebula_renderer.ts`: sparse nebula field.
 - `src/rendering/scenes/giant_atmosphere_renderer.ts`: giant-world bands,
-  storms, and cloud texture.
+  storms, and cached body-fixed cloud textures.
 - `src/rendering/text_palette.ts`: semantic UI colours.
 
 ## Tests

@@ -34,9 +34,164 @@ export interface GiantVisualProfile {
   haze: number;
 }
 
+interface GiantAtmosphereTexture {
+  width: number;
+  height: number;
+  colours: Uint8ClampedArray;
+  brightness: Float32Array;
+  storms: Float32Array;
+  texture: Float32Array;
+  edges: Float32Array;
+}
+
+// This comfortably exceeds the largest 64x40 orbital map while keeping idle
+// preparation inexpensive on integrated and older CPUs.
+const GIANT_TEXTURE_WIDTH = 128;
+const GIANT_TEXTURE_HEIGHT = 64;
+
+const GIANT_PALETTES: Record<GiantVisualFamily, string[]> = {
+  jovian: ['#5B3A28', '#A36B3A', '#E0B067', '#F1DCA8', '#B37C48', '#6C4633'],
+  saturnian: ['#796442', '#BCA66C', '#E2D098', '#EFE2B8', '#C9AA67', '#8B754E'],
+  uranian: ['#7ABEC2', '#9FD9D5', '#C3ECE7', '#8BD0CF', '#63AEB9'],
+  neptunian: ['#1A3D78', '#245CAA', '#2E7AC8', '#75B8E0', '#1E4B95'],
+  hot: ['#4A3A35', '#7C5744', '#B47A4E', '#C89C70', '#8C6A5C', '#3D3A3D'],
+  cold: ['#4F5F70', '#7C8790', '#A99F88', '#D0C29D', '#8D7D64'],
+};
+
 export class GiantAtmosphereRenderer {
-  /** Samples giant-atmosphere colour and texture for one projected cell. */
+  private readonly profileCache = new WeakMap<Planet, GiantVisualProfile>();
+  private readonly turbulenceCache = new WeakMap<Planet, number>();
+  private readonly textureCache = new WeakMap<Planet, GiantAtmosphereTexture>();
+  private readonly hashCache = new Map<string, number>();
+  private readonly paletteCache = new Map<GiantVisualFamily, RgbColour[]>();
+
+  /** Prepares a body-fixed atmosphere texture before a giant is shown in orbit. */
+  prepareTexture(planet: Planet, palette: RgbColour[]): void {
+    this.getOrCreateTexture(planet, palette);
+  }
+
+  /** Samples a baked body-fixed atmosphere with bilinear filtering for smooth rotation. */
   sample(
+    planet: Planet,
+    palette: RgbColour[],
+    longitude01: number,
+    latitude01: number,
+    phase01: number
+  ): GiantAtmosphereSample {
+    return this.sampleBodyFixed(planet, palette, longitude01 + phase01, latitude01);
+  }
+
+  /** Samples a baked atmosphere at coordinates already transformed into the body's frame. */
+  sampleBodyFixed(
+    planet: Planet,
+    palette: RgbColour[],
+    longitude01: number,
+    latitude01: number
+  ): GiantAtmosphereSample {
+    const baked = this.getOrCreateTexture(planet, palette);
+    const wrappedX = this.wrapUnit(longitude01) * baked.width;
+    const clampedY = Math.max(0, Math.min(1, latitude01)) * (baked.height - 1);
+    const x0 = Math.floor(wrappedX) % baked.width;
+    const x1 = (x0 + 1) % baked.width;
+    const y0 = Math.floor(clampedY);
+    const y1 = Math.min(baked.height - 1, y0 + 1);
+    const tx = wrappedX - Math.floor(wrappedX);
+    const ty = clampedY - y0;
+    const index00 = y0 * baked.width + x0;
+    const index10 = y0 * baked.width + x1;
+    const index01 = y1 * baked.width + x0;
+    const index11 = y1 * baked.width + x1;
+    const red = this.sampleBilinearChannel(
+      baked.colours,
+      index00 * 3,
+      index10 * 3,
+      index01 * 3,
+      index11 * 3,
+      tx,
+      ty
+    );
+    const green = this.sampleBilinearChannel(
+      baked.colours,
+      index00 * 3 + 1,
+      index10 * 3 + 1,
+      index01 * 3 + 1,
+      index11 * 3 + 1,
+      tx,
+      ty
+    );
+    const blue = this.sampleBilinearChannel(
+      baked.colours,
+      index00 * 3 + 2,
+      index10 * 3 + 2,
+      index01 * 3 + 2,
+      index11 * 3 + 2,
+      tx,
+      ty
+    );
+
+    return {
+      colour: rgbToHex(red, green, blue),
+      brightness: this.sampleBilinearChannel(baked.brightness, index00, index10, index01, index11, tx, ty),
+      storm: this.sampleBilinearChannel(baked.storms, index00, index10, index01, index11, tx, ty),
+      texture: this.sampleBilinearChannel(baked.texture, index00, index10, index01, index11, tx, ty),
+      edge: this.sampleBilinearChannel(baked.edges, index00, index10, index01, index11, tx, ty),
+    };
+  }
+
+  /** Bilinearly samples four indexed values without allocating per-pixel closures or arrays. */
+  private sampleBilinearChannel(
+    values: ArrayLike<number>,
+    index00: number,
+    index10: number,
+    index01: number,
+    index11: number,
+    tx: number,
+    ty: number
+  ): number {
+    const top = values[index00] * (1 - tx) + values[index10] * tx;
+    const bottom = values[index01] * (1 - tx) + values[index11] * tx;
+    return top * (1 - ty) + bottom * ty;
+  }
+
+  /** Builds and caches deterministic weather once instead of regenerating it every frame. */
+  private getOrCreateTexture(planet: Planet, palette: RgbColour[]): GiantAtmosphereTexture {
+    const cached = this.textureCache.get(planet);
+    if (cached) return cached;
+
+    const cellCount = GIANT_TEXTURE_WIDTH * GIANT_TEXTURE_HEIGHT;
+    const texture: GiantAtmosphereTexture = {
+      width: GIANT_TEXTURE_WIDTH,
+      height: GIANT_TEXTURE_HEIGHT,
+      colours: new Uint8ClampedArray(cellCount * 3),
+      brightness: new Float32Array(cellCount),
+      storms: new Float32Array(cellCount),
+      texture: new Float32Array(cellCount),
+      edges: new Float32Array(cellCount),
+    };
+
+    for (let y = 0; y < texture.height; y++) {
+      const latitude01 = y / Math.max(1, texture.height - 1);
+      for (let x = 0; x < texture.width; x++) {
+        const longitude01 = x / texture.width;
+        const sample = this.sampleProcedural(planet, palette, longitude01, latitude01, 0);
+        const rgb = this.hexToRgb(sample.colour);
+        const index = y * texture.width + x;
+        texture.colours[index * 3] = rgb.r;
+        texture.colours[index * 3 + 1] = rgb.g;
+        texture.colours[index * 3 + 2] = rgb.b;
+        texture.brightness[index] = sample.brightness;
+        texture.storms[index] = sample.storm;
+        texture.texture[index] = sample.texture;
+        texture.edges[index] = sample.edge;
+      }
+    }
+
+    this.textureCache.set(planet, texture);
+    return texture;
+  }
+
+  /** Generates one deterministic atmosphere texel during the one-time texture bake. */
+  private sampleProcedural(
     planet: Planet,
     palette: RgbColour[],
     longitude01: number,
@@ -132,25 +287,34 @@ export class GiantAtmosphereRenderer {
 
   /** Returns turbulence factor. */
   getTurbulenceFactor(planet: Planet): number {
+    const cached = this.turbulenceCache.get(planet);
+    if (cached !== undefined) return cached;
+
     const tempStress = Math.max(0, Math.min(1, (planet.surfaceTemp - 120) / 520));
     const proximityStress = Math.max(0, Math.min(1, (1.6e11 - planet.orbitDistance) / 1.3e11));
     const massStress = Math.max(0, Math.min(1, (planet.gravity - 1.2) / 2.8));
     const typeFactor = planet.type === 'GasGiant' ? 0.22 : 0.11;
     const heatResponse = planet.type === 'GasGiant' ? 0.34 : 0.24;
-    return Math.max(
+    const turbulence = Math.max(
       0.05,
       Math.min(0.9, typeFactor + tempStress * heatResponse + proximityStress * 0.3 + massStress * 0.2)
     );
+    this.turbulenceCache.set(planet, turbulence);
+    return turbulence;
   }
 
   /** Returns profile. */
   getProfile(planet: Planet, fallbackPalette: RgbColour[]): GiantVisualProfile {
+    const cached = this.profileCache.get(planet);
+    if (cached) return cached;
+
     const family = this.getFamily(planet);
     const palette = this.getPalette(family, fallbackPalette);
     const hotBias = this.getHeatBias(planet);
+    let profile: GiantVisualProfile;
     switch (family) {
       case 'hot':
-        return {
+        profile = {
           family,
           palette,
           bandCount: 11,
@@ -164,8 +328,9 @@ export class GiantAtmosphereRenderer {
           contrast: 0.08,
           haze: 0.38,
         };
+        break;
       case 'saturnian':
-        return {
+        profile = {
           family,
           palette,
           bandCount: 22,
@@ -179,8 +344,9 @@ export class GiantAtmosphereRenderer {
           contrast: 0.055,
           haze: 0.32,
         };
+        break;
       case 'uranian':
-        return {
+        profile = {
           family,
           palette,
           bandCount: 7,
@@ -194,8 +360,9 @@ export class GiantAtmosphereRenderer {
           contrast: 0.025,
           haze: 0.62,
         };
+        break;
       case 'neptunian':
-        return {
+        profile = {
           family,
           palette,
           bandCount: 10,
@@ -209,8 +376,9 @@ export class GiantAtmosphereRenderer {
           contrast: 0.055,
           haze: 0.32,
         };
+        break;
       case 'cold':
-        return {
+        profile = {
           family,
           palette,
           bandCount: planet.type === 'IceGiant' ? 8 : 13,
@@ -224,8 +392,9 @@ export class GiantAtmosphereRenderer {
           contrast: 0.045,
           haze: 0.45,
         };
+        break;
       default:
-        return {
+        profile = {
           family,
           palette,
           bandCount: 15 + Math.round(hotBias * 3),
@@ -239,7 +408,10 @@ export class GiantAtmosphereRenderer {
           contrast: 0.105,
           haze: 0.18,
         };
+        break;
     }
+    this.profileCache.set(planet, profile);
+    return profile;
   }
 
   /** Samples layered cloud ribbons in a giant planet atmosphere. */
@@ -407,15 +579,11 @@ export class GiantAtmosphereRenderer {
 
   /** Returns palette. */
   private getPalette(family: GiantVisualFamily, fallbackPalette: RgbColour[]): RgbColour[] {
-    const palettes: Record<GiantVisualFamily, string[]> = {
-      jovian: ['#5B3A28', '#A36B3A', '#E0B067', '#F1DCA8', '#B37C48', '#6C4633'],
-      saturnian: ['#796442', '#BCA66C', '#E2D098', '#EFE2B8', '#C9AA67', '#8B754E'],
-      uranian: ['#7ABEC2', '#9FD9D5', '#C3ECE7', '#8BD0CF', '#63AEB9'],
-      neptunian: ['#1A3D78', '#245CAA', '#2E7AC8', '#75B8E0', '#1E4B95'],
-      hot: ['#4A3A35', '#7C5744', '#B47A4E', '#C89C70', '#8C6A5C', '#3D3A3D'],
-      cold: ['#4F5F70', '#7C8790', '#A99F88', '#D0C29D', '#8D7D64'],
-    };
-    const selected = palettes[family].map((colour) => this.hexToRgb(colour));
+    const cached = this.paletteCache.get(family);
+    if (cached) return cached;
+
+    const selected = GIANT_PALETTES[family].map((colour) => this.hexToRgb(colour));
+    if (selected.length > 0) this.paletteCache.set(family, selected);
     return selected.length > 0
       ? selected
       : fallbackPalette.length > 0
@@ -451,11 +619,16 @@ export class GiantAtmosphereRenderer {
 
   /** Returns whether h unit is present. */
   private hashUnit(seed: string): number {
+    const cached = this.hashCache.get(seed);
+    if (cached !== undefined) return cached;
+
     let hash = 2166136261;
     for (let index = 0; index < seed.length; index++) {
       hash ^= seed.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    return (hash >>> 0) / 0xffffffff;
+    const value = (hash >>> 0) / 0xffffffff;
+    this.hashCache.set(seed, value);
+    return value;
   }
 }
