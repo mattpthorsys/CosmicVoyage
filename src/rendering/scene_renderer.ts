@@ -30,6 +30,10 @@ import { TEXT_PALETTE } from './text_palette';
 import { HyperspaceTileProvider } from './hyperspace_tile_provider';
 import { PlayerViewSnapshot } from './scene_view_model';
 import { GiantAtmosphereRenderer, GiantAtmosphereSample } from './scenes/giant_atmosphere_renderer';
+import {
+  SolidOrbitTextureSample,
+  SolidPlanetOrbitTextureRenderer,
+} from './scenes/solid_planet_orbit_texture';
 
 interface VisiblePlanetMarker {
   planet: Planet;
@@ -59,12 +63,6 @@ export interface HyperspaceRenderStats {
 interface TextTableLayout {
   model: TextTableModel;
   tableWidth: number;
-}
-
-interface SolidTextureSample {
-  colour: string;
-  liquid: boolean;
-  reflectiveColour?: string;
 }
 
 interface OrbitProjectionCell {
@@ -117,6 +115,7 @@ export interface SurfaceVehicleOverlayModel {
 export class SceneRenderer {
   private screenBuffer: ScreenBuffer; // Main buffer for primary content
   private readonly giantAtmosphereRenderer = new GiantAtmosphereRenderer();
+  private readonly solidPlanetOrbitTextureRenderer = new SolidPlanetOrbitTextureRenderer();
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private systemDataGenerator: SystemDataGenerator;
@@ -164,9 +163,20 @@ export class SceneRenderer {
   /** Prepares expensive body-fixed textures before a planet is selected in orbit. */
   prepareOrbitAssets(planets: readonly Planet[]): void {
     for (const planet of planets) {
-      if (planet.type !== 'GasGiant' && planet.type !== 'IceGiant') continue;
-      const palette = this.getGiantPalette(planet);
-      this.giantAtmosphereRenderer.prepareTexture(planet, palette);
+      if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
+        const palette = this.getGiantPalette(planet);
+        this.giantAtmosphereRenderer.prepareTexture(planet, palette);
+        continue;
+      }
+
+      const surface = readReadySurfaceData(planet);
+      if (!surface?.heightmap || !surface.heightLevelColors) continue;
+      this.solidPlanetOrbitTextureRenderer.prepareTexture(
+        planet,
+        surface.heightmap,
+        surface.heightLevelColors,
+        surface.liquidOverlay
+      );
     }
   }
 
@@ -1736,11 +1746,20 @@ export class SceneRenderer {
     const textureY = this.mercatorTextureY(bodyLatitude);
     const solidSample =
       solidMap && solidColours
-        ? this.sampleSolidPlanetTexture(solidMap, solidColours, liquidOverlay, textureX, textureY)
+        ? this.sampleSolidPlanetTexture(
+            planet,
+            solidMap,
+            solidColours,
+            liquidOverlay,
+            textureX,
+            textureY,
+            detailRadius * 2,
+            z
+          )
         : null;
-    const colour =
-      solidSample?.colour ??
-      (planet.type === 'GasGiant' || planet.type === 'IceGiant'
+    const fallbackColour = solidSample
+      ? null
+      : planet.type === 'GasGiant' || planet.type === 'IceGiant'
         ? this.sampleGiantPlanetTexture(
             planet,
             textureX,
@@ -1749,18 +1768,27 @@ export class SceneRenderer {
             bodyLatitude,
             texturePhase
           )
-        : this.samplePendingSolidPlanetTexture(planet, textureX, textureY));
+        : this.samplePendingSolidPlanetTexture(planet, textureX, textureY);
     const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z);
-    const brightness = solidSample?.liquid
-      ? this.calculateLiquidGlobeBrightness(light.brightness, illuminationLongitude, viewLatitude, z)
-      : light.brightness;
-    const baseColour = adjustBrightness(this.hexToRgbFallback(colour), brightness);
+    const liquidCoverage = solidSample?.liquidCoverage ?? 0;
+    let brightness = light.brightness;
+    if (liquidCoverage > 0) {
+      const liquidBrightness = this.calculateLiquidGlobeBrightness(
+        light.brightness,
+        illuminationLongitude,
+        viewLatitude,
+        z
+      );
+      brightness += (liquidBrightness - light.brightness) * liquidCoverage;
+    }
+    const albedo = solidSample?.colour ?? this.hexToRgbFallback(fallbackColour ?? '#88BBBB');
+    const baseColour = adjustBrightness(albedo, brightness);
     let finalColour =
-      solidSample?.liquid && solidSample.reflectiveColour
+      liquidCoverage > 0 && solidSample?.reflectiveColour
         ? interpolateColour(
             baseColour,
-            this.hexToRgbFallback(solidSample.reflectiveColour),
-            this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph
+            solidSample.reflectiveColour,
+            this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph * liquidCoverage
           )
         : baseColour;
     finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
@@ -2205,29 +2233,32 @@ export class SceneRenderer {
 
   /** Samples generated terrain for one visible solid-planet cell. */
   private sampleSolidPlanetTexture(
+    planet: Planet,
     heightmap: number[][] | null,
     heightColours: string[] | null,
     liquid: SurfaceLiquidOverlay | null,
     u: number,
-    v: number
-  ): SolidTextureSample {
-    if (!heightmap || !heightColours) return { colour: '#88BBBB', liquid: false };
-    const mapSize = heightmap.length;
-    if (mapSize <= 0) return { colour: '#88BBBB', liquid: false };
-    const sample = this.sampleWrappedHeight(heightmap, u, v);
-    const height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height)));
-    if (liquid && height <= liquid.seaLevel) {
+    v: number,
+    projectedDiameter: number,
+    viewNormalZ: number
+  ): SolidOrbitTextureSample {
+    if (!heightmap || !heightColours || heightmap.length === 0) {
       return {
-        colour: liquid.colour,
-        liquid: true,
-        reflectiveColour: liquid.reflectiveColour,
+        colour: { r: 136, g: 187, b: 187 },
+        liquidCoverage: 0,
+        reflectiveColour: null,
       };
     }
-    return {
-      colour:
-        getCoastalVegetationColour(height, liquid) ?? this.sampleHeightColour(heightColours, sample.height),
-      liquid: false,
-    };
+    return this.solidPlanetOrbitTextureRenderer.sample(
+      planet,
+      heightmap,
+      heightColours,
+      liquid,
+      u,
+      v,
+      projectedDiameter,
+      viewNormalZ
+    );
   }
 
   /** Returns cached solid surface data. */

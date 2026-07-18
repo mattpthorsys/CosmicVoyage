@@ -53,6 +53,12 @@ Half-cell blocks are pooled, written into a reusable two-pixels-per-cell
 batching path for dense planetary graphics; do not replace it with per-pixel
 `fillRect` calls.
 
+The visible half-cell pixel size of orbital bodies is intentional. Keep the
+nearest-neighbour compositor and do not enable canvas image smoothing to hide
+surface aliasing. Planet rendering should have crisp, stable display pixels:
+solve shimmer by prefiltering body-fixed source textures before projection, not
+by shrinking or blurring the final pixels.
+
 The Galaxy instrument reuses this same half-cell raster. Its analytical colour
 field is cached by generation version, viewport, zoom, and dimensions. Do not
 enumerate star systems or regenerate planet data to draw it; only the player
@@ -63,8 +69,16 @@ crosshair and labels are dynamic.
 Gas- and ice-giant weather is deterministic, body-fixed source data. Bake the
 procedural bands, storms, and ribbons once through `GiantAtmosphereRenderer`,
 then rotate by changing texture longitude and apply view lighting separately.
+Solid worlds similarly use `SolidPlanetOrbitTextureRenderer` to area-filter the
+prepared heightmap, liquid, and vegetation colours into a small body-fixed mip
+chain. The globe samples that chain according to its projected footprint and
+limb compression. This prevents fine terrain and hard biome thresholds from
+shimmering as longitude changes while preserving the fixed half-cell display
+grid. Fractional liquid coverage should scale coastal lighting and reflection;
+do not turn it back into a per-pixel binary threshold.
+
 Nearby orbital bodies are prepared during the existing predictive surface
-prefetch window and one giant texture is built per browser idle callback.
+prefetch window and one body texture is built per browser idle callback.
 
 The globe projection cache contains screen-space samples and antialiased limb
 coverage for each supported radius. The landing-map raster is also cached per
@@ -75,6 +89,7 @@ Do not perform any of the following inside a per-frame planet-pixel loop:
 
 - procedural weather generation or deterministic string hashing;
 - palette parsing;
+- unfiltered sampling of a full-resolution solid heightmap;
 - atmosphere-composition sorting;
 - sixteen complete texture samples for edge antialiasing;
 - allocation of temporary coordinate arrays or interpolation closures.

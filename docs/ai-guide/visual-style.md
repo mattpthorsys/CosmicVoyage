@@ -119,8 +119,13 @@ new values.
   composition-appropriate colours.
 - Nearby astronomical bodies in the same scene should use a coherent pixel
   scale and smoothing policy.
-- Pixelation should look intentional and stable. Avoid sharp vector-like moons
-  beside visibly pixelated planets.
+- Orbital bodies intentionally use a fixed half-cell pixel grid enlarged with
+  nearest-neighbour rendering. That visible pixel size is part of the game's
+  identity: do not reduce it or soften it with canvas interpolation.
+- Pixelation should look intentional and temporally stable. Prefilter
+  body-fixed surface textures so rotation does not make terrain, coastlines, or
+  vegetation shimmer between crisp display pixels. Avoid sharp vector-like
+  moons beside visibly pixelated planets.
 - Surface detail must not introduce latitude, longitude, or diagonal striping
   unless the physical body type justifies it.
 - Terraformed worlds should show dark seas or substantial lakes and muted green
