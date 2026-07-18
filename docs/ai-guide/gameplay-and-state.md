@@ -44,12 +44,12 @@ shared by every state. Save parsing validates nested player, mission, discovery,
 planet mutation, and economy state before restoration. Schema changes require a
 new save version and an explicit migration from the previous version.
 
-Save version 8 records Galaxy generation version 4. Version-seven coordinates
-remain unchanged during migration; version-six saves are rotated and rescaled
-onto the one-light-year, north-up coordinate system. Planet mutation keys
-include the slot so dense projected cells cannot alias one another;
-incompatible generated local records are deliberately retired during a
-Galaxy-model migration.
+Save version 9 records Galaxy generation version 5. Version-eight and
+version-seven coordinates remain unchanged during migration; version-six saves
+are rotated and rescaled onto the one-light-year, north-up coordinate system.
+Planet mutation keys include the slot so dense projected cells cannot alias one
+another; incompatible generated local records are deliberately retired during
+a Galaxy-model migration.
 
 ## Input
 

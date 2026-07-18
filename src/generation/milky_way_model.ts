@@ -58,6 +58,7 @@ export interface GalaxyFieldSample {
   readonly youngStellarDensity: number;
   readonly bulgeDensity: number;
   readonly barDensity: number;
+  readonly stellarArmInfluence: number;
   readonly armInfluence: number;
   readonly gasDensity: number;
   readonly dustDensity: number;
@@ -79,6 +80,7 @@ interface MacroGalacticSample {
   youngStellarDensity: number;
   barDensity: number;
   bulgeDensity: number;
+  stellarArmInfluence: number;
   texture: number;
   relativeStellarDensity: number;
   radiusPc: number;
@@ -92,10 +94,16 @@ interface SpiralArmDefinition {
   pitchBeforeRad: number;
   pitchAfterRad: number;
   widthAtKinkPc: number;
+  widthGrowthPerKpc: number;
   minRadiusPc: number;
   maxRadiusPc: number;
-  betaMinRad?: number;
-  betaMaxRad?: number;
+  observedBetaMinRad: number;
+  observedBetaMaxRad: number;
+  trackBetaMinRad: number;
+  trackBetaMaxRad: number;
+  outerExtrapolationPitchRad: number;
+  innerExtrapolationPitchRad: number;
+  endpointTaperRad: number;
 }
 
 interface GalacticClusterDefinition {
@@ -113,17 +121,30 @@ function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }
 
-// Reid et al. (2019), Table 2: parallax-fitted arm kink radii, pitch angles, and widths.
+// Reid et al. (2019), Table 2: parallax-fitted arm ranges, kink radii, pitches, and widths.
+// Major-arm extrapolations are deliberately bounded to one physical track. Treating every
+// 2π-equivalent beta as another valid fit repeats low-pitch segments into concentric rings.
 const SPIRAL_ARMS: readonly SpiralArmDefinition[] = [
   {
-    name: 'Norma Arm',
+    name: 'Norma-Outer Arm',
     betaKinkRad: degreesToRadians(18),
     radiusKinkPc: 4460,
     pitchBeforeRad: degreesToRadians(-1),
     pitchAfterRad: degreesToRadians(19.5),
     widthAtKinkPc: 140,
+    // The steeper growth joins the measured 0.65 kpc Outer-arm width one winding out.
+    widthGrowthPerKpc: 66,
     minRadiusPc: 2600,
-    maxRadiusPc: 7600,
+    maxRadiusPc: 16000,
+    observedBetaMinRad: degreesToRadians(5),
+    observedBetaMaxRad: degreesToRadians(54),
+    trackBetaMinRad: degreesToRadians(-390),
+    trackBetaMaxRad: degreesToRadians(90),
+    // A 9.5-degree outer continuation passes through the measured Outer-arm kink at
+    // beta=18 degrees on the preceding winding, connecting the two observed segments.
+    outerExtrapolationPitchRad: degreesToRadians(9.5),
+    innerExtrapolationPitchRad: degreesToRadians(19.5),
+    endpointTaperRad: degreesToRadians(18),
   },
   {
     name: 'Scutum-Centaurus Arm',
@@ -132,8 +153,16 @@ const SPIRAL_ARMS: readonly SpiralArmDefinition[] = [
     pitchBeforeRad: degreesToRadians(14.1),
     pitchAfterRad: degreesToRadians(12.1),
     widthAtKinkPc: 230,
+    widthGrowthPerKpc: 36,
     minRadiusPc: 2800,
     maxRadiusPc: 15500,
+    observedBetaMinRad: degreesToRadians(0),
+    observedBetaMaxRad: degreesToRadians(104),
+    trackBetaMinRad: degreesToRadians(-205),
+    trackBetaMaxRad: degreesToRadians(155),
+    outerExtrapolationPitchRad: degreesToRadians(12.5),
+    innerExtrapolationPitchRad: degreesToRadians(12.1),
+    endpointTaperRad: degreesToRadians(18),
   },
   {
     name: 'Sagittarius-Carina Arm',
@@ -142,8 +171,18 @@ const SPIRAL_ARMS: readonly SpiralArmDefinition[] = [
     pitchBeforeRad: degreesToRadians(17.1),
     pitchAfterRad: degreesToRadians(1),
     widthAtKinkPc: 270,
+    widthGrowthPerKpc: 36,
     minRadiusPc: 3200,
     maxRadiusPc: 14500,
+    observedBetaMinRad: degreesToRadians(2),
+    observedBetaMaxRad: degreesToRadians(97),
+    trackBetaMinRad: degreesToRadians(-170),
+    trackBetaMaxRad: degreesToRadians(190),
+    // Reid et al. use roughly ten degrees to continue the Carina side beyond the fitted
+    // near-circular segment; carrying the one-degree local pitch around the Galaxy is invalid.
+    outerExtrapolationPitchRad: degreesToRadians(10),
+    innerExtrapolationPitchRad: degreesToRadians(10),
+    endpointTaperRad: degreesToRadians(18),
   },
   {
     name: 'Local Arm',
@@ -152,10 +191,16 @@ const SPIRAL_ARMS: readonly SpiralArmDefinition[] = [
     pitchBeforeRad: degreesToRadians(11.4),
     pitchAfterRad: degreesToRadians(11.4),
     widthAtKinkPc: 310,
+    widthGrowthPerKpc: 36,
     minRadiusPc: 6900,
     maxRadiusPc: 9700,
-    betaMinRad: degreesToRadians(-55),
-    betaMaxRad: degreesToRadians(65),
+    observedBetaMinRad: degreesToRadians(-8),
+    observedBetaMaxRad: degreesToRadians(34),
+    trackBetaMinRad: degreesToRadians(-35),
+    trackBetaMaxRad: degreesToRadians(55),
+    outerExtrapolationPitchRad: degreesToRadians(11.4),
+    innerExtrapolationPitchRad: degreesToRadians(11.4),
+    endpointTaperRad: degreesToRadians(10),
   },
   {
     name: 'Perseus Arm',
@@ -164,18 +209,16 @@ const SPIRAL_ARMS: readonly SpiralArmDefinition[] = [
     pitchBeforeRad: degreesToRadians(10.3),
     pitchAfterRad: degreesToRadians(8.7),
     widthAtKinkPc: 350,
+    widthGrowthPerKpc: 36,
     minRadiusPc: 4200,
     maxRadiusPc: 15200,
-  },
-  {
-    name: 'Outer Arm',
-    betaKinkRad: degreesToRadians(18),
-    radiusKinkPc: 12240,
-    pitchBeforeRad: degreesToRadians(3),
-    pitchAfterRad: degreesToRadians(9.4),
-    widthAtKinkPc: 650,
-    minRadiusPc: 9600,
-    maxRadiusPc: 16800,
+    observedBetaMinRad: degreesToRadians(-23),
+    observedBetaMaxRad: degreesToRadians(115),
+    trackBetaMinRad: degreesToRadians(-95),
+    trackBetaMaxRad: degreesToRadians(265),
+    outerExtrapolationPitchRad: degreesToRadians(10.3),
+    innerExtrapolationPitchRad: degreesToRadians(8.7),
+    endpointTaperRad: degreesToRadians(18),
   },
 ] as const;
 
@@ -341,6 +384,7 @@ export class MilkyWayModel {
       youngStellarDensity: macro.youngStellarDensity,
       bulgeDensity: macro.bulgeDensity,
       barDensity: macro.barDensity,
+      stellarArmInfluence: macro.stellarArmInfluence,
       armInfluence: macro.armInfluence,
       gasDensity: macro.gasDensity,
       dustDensity: macro.dustDensity,
@@ -377,34 +421,39 @@ export class MilkyWayModel {
     const bulgeDensity = 8.6 * Math.exp(-radiusPc / 760);
     const bulge = bulgeDensity + barDensity * 0.72;
     const halo = 0.0015 * Math.pow(CONFIG.GALACTIC_SOLAR_RADIUS_PC / Math.max(650, radiusPc), 2.65);
+    const stellarArmInfluence = this.getStellarArmInfluence(radiusPc, azimuthRad);
     const arm = this.getSpiralArmSample(radiusPc, azimuthRad);
-    const fineNoise = this.coordinateNoise(galactocentricXpc / 180, galactocentricYpc / 180, 'macro');
-    const clumpNoise = this.coordinateNoise(galactocentricXpc / 75, galactocentricYpc / 75, 'arms');
+    const fineNoise = this.coordinateNoise(galactocentricXpc / 260, galactocentricYpc / 260, 'macro');
+    // Arm tracers occur in large star-forming complexes with genuine gaps, not continuous tubes.
+    // A broader second field keeps those complexes visible in the whole-Galaxy pixel raster.
+    const clumpNoise = this.coordinateNoise(galactocentricXpc / 620, galactocentricYpc / 620, 'arms');
     const molecularRing = Math.exp(-0.5 * ((radiusPc - 4500) / 1350) ** 2);
     const gasRadial = Math.exp(-Math.abs(radiusPc - 6200) / 5800) * diskEdge;
     const gasDensity = this.clamp(
       gasRadial *
-        (0.1 + molecularRing * 0.2 + arm.influence * 0.88) *
-        (0.68 + fineNoise * 0.34 + clumpNoise * 0.28),
+        (0.08 + molecularRing * 0.14 + arm.influence * 0.94) *
+        (0.76 + fineNoise * 0.22 + clumpNoise * 0.38),
       0,
       1.4
     );
-    const dustNoise = this.coordinateNoise(galactocentricXpc / 95, galactocentricYpc / 95, 'dust');
+    const dustNoise = this.coordinateNoise(galactocentricXpc / 310, galactocentricYpc / 310, 'dust');
     const dustLaneDensity =
       arm.widthPc > 0
         ? arm.influence *
-          Math.exp(-0.5 * ((arm.signedDistancePc + arm.widthPc * 0.42) / (arm.widthPc * 0.52)) ** 2)
+          Math.exp(-0.5 * ((arm.signedDistancePc + arm.widthPc * 0.42) / (arm.widthPc * 0.52)) ** 2) *
+          (0.16 + clumpNoise * 0.84)
         : 0;
-    const dustDensity = this.clamp(gasDensity * (0.34 + dustNoise * 0.48) + dustLaneDensity * 0.58, 0, 1.5);
+    const dustDensity = this.clamp(gasDensity * (0.24 + dustNoise * 0.36) + dustLaneDensity * 0.42, 0, 1.5);
     const youngStellarDensity = this.clamp(
-      arm.influence * gasRadial * (0.35 + clumpNoise * 0.95) + molecularRing * 0.08,
+      arm.influence * gasRadial * (0.08 + fineNoise * 0.2 + Math.pow(clumpNoise, 1.65) * 1.42) +
+        molecularRing * 0.025,
       0,
       1.6
     );
     const localNormalization = 1.112;
     const relativeStellarDensity = this.clamp(
       ((thinDisk + thickDisk + bulge + halo) / localNormalization) *
-        (1 + arm.influence * 0.16) *
+        (1 + arm.influence * 0.12 + stellarArmInfluence * 0.08) *
         (0.94 + fineNoise * 0.12),
       0.0001,
       42
@@ -423,14 +472,15 @@ export class MilkyWayModel {
       youngStellarDensity,
       barDensity,
       bulgeDensity,
-      texture: clumpNoise,
+      stellarArmInfluence,
+      texture: fineNoise * 0.42 + clumpNoise * 0.58,
       relativeStellarDensity,
       radiusPc,
       azimuthRad,
     };
   }
 
-  /** Returns the nearest Reid-parameterized logarithmic arm at one Galactic radius and beta. */
+  /** Returns the nearest bounded Reid-anchored logarithmic arm at one Galactic radius and beta. */
   private getSpiralArmSample(
     radiusPc: number,
     azimuthRad: number
@@ -446,18 +496,19 @@ export class MilkyWayModel {
     for (const arm of SPIRAL_ARMS) {
       for (let turn = -2; turn <= 2; turn++) {
         const beta = azimuthRad + turn * Math.PI * 2;
-        if (arm.betaMinRad !== undefined && beta < arm.betaMinRad) continue;
-        if (arm.betaMaxRad !== undefined && beta > arm.betaMaxRad) continue;
-        const pitch = beta <= arm.betaKinkRad ? arm.pitchBeforeRad : arm.pitchAfterRad;
-        const armRadiusPc = arm.radiusKinkPc * Math.exp(-(beta - arm.betaKinkRad) * Math.tan(pitch));
+        if (beta < arm.trackBetaMinRad || beta > arm.trackBetaMaxRad) continue;
+        const armRadiusPc = this.getArmRadiusAtBeta(arm, beta);
         if (armRadiusPc < arm.minRadiusPc || armRadiusPc > arm.maxRadiusPc) continue;
         const widthPc = this.clamp(
-          arm.widthAtKinkPc + 36 * (armRadiusPc / 1000 - arm.radiusKinkPc / 1000),
+          arm.widthAtKinkPc + arm.widthGrowthPerKpc * (armRadiusPc / 1000 - arm.radiusKinkPc / 1000),
           120,
           850
         );
         const signedDistancePc = radiusPc - armRadiusPc;
-        const influence = Math.exp(-0.5 * (signedDistancePc / widthPc) ** 2);
+        const endpointWeight =
+          this.smoothstep(arm.trackBetaMinRad, arm.trackBetaMinRad + arm.endpointTaperRad, beta) *
+          (1 - this.smoothstep(arm.trackBetaMaxRad - arm.endpointTaperRad, arm.trackBetaMaxRad, beta));
+        const influence = Math.exp(-0.5 * (signedDistancePc / widthPc) ** 2) * endpointWeight;
         if (influence > strongestInfluence) {
           strongestInfluence = influence;
           strongestSignedDistancePc = signedDistancePc;
@@ -473,6 +524,53 @@ export class MilkyWayModel {
       signedDistancePc: strongestSignedDistancePc,
       widthPc: strongestWidthPc,
     };
+  }
+
+  /** Evaluates one arm continuously across its measured segment and bounded extrapolations. */
+  private getArmRadiusAtBeta(arm: SpiralArmDefinition, beta: number): number {
+    if (beta < arm.observedBetaMinRad) {
+      const boundaryRadiusPc = this.getMeasuredArmRadiusAtBeta(arm, arm.observedBetaMinRad);
+      return (
+        boundaryRadiusPc *
+        Math.exp(-(beta - arm.observedBetaMinRad) * Math.tan(arm.outerExtrapolationPitchRad))
+      );
+    }
+    if (beta > arm.observedBetaMaxRad) {
+      const boundaryRadiusPc = this.getMeasuredArmRadiusAtBeta(arm, arm.observedBetaMaxRad);
+      return (
+        boundaryRadiusPc *
+        Math.exp(-(beta - arm.observedBetaMaxRad) * Math.tan(arm.innerExtrapolationPitchRad))
+      );
+    }
+    return this.getMeasuredArmRadiusAtBeta(arm, beta);
+  }
+
+  /** Applies the published piecewise logarithmic fit inside one arm's observed beta range. */
+  private getMeasuredArmRadiusAtBeta(arm: SpiralArmDefinition, beta: number): number {
+    const pitch = beta <= arm.betaKinkRad ? arm.pitchBeforeRad : arm.pitchAfterRad;
+    return arm.radiusKinkPc * Math.exp(-(beta - arm.betaKinkRad) * Math.tan(pitch));
+  }
+
+  /** Returns the broad two-armed old-stellar response that grows from the central bar. */
+  private getStellarArmInfluence(radiusPc: number, azimuthRad: number): number {
+    if (radiusPc < 3200 || radiusPc > CONFIG.GALACTIC_DISK_RADIUS_PC) return 0;
+
+    // Infrared light traces two dominant old-stellar arms even though gas and young stars
+    // delineate four arms. Their broad response begins at opposite ends of the long bar.
+    const barAngleRad = degreesToRadians(CONFIG.GALACTIC_BAR_ANGLE_DEG);
+    const pitchRad = degreesToRadians(12.5);
+    const referenceRadiusPc = CONFIG.GALACTIC_BAR_HALF_LENGTH_PC * 0.92;
+    const ridgeBeta = barAngleRad - Math.log(radiusPc / referenceRadiusPc) / Math.tan(pitchRad);
+    const wrappedSeparation = Math.abs(
+      Math.atan2(Math.sin(azimuthRad - ridgeBeta), Math.cos(azimuthRad - ridgeBeta))
+    );
+    const nearestArmSeparation = Math.min(wrappedSeparation, Math.PI - wrappedSeparation);
+    const widthPc = this.lerp(820, 1450, this.clamp((radiusPc - 3500) / 10500, 0, 1));
+    const transverseInfluence = Math.exp(-0.5 * ((radiusPc * nearestArmSeparation) / widthPc) ** 2);
+    const radialTaper =
+      this.smoothstep(3200, 4700, radiusPc) *
+      (1 - this.smoothstep(13200, CONFIG.GALACTIC_DISK_RADIUS_PC, radiusPc));
+    return transverseInfluence * radialTaper;
   }
 
   /** Finds a deterministic open or globular cluster covering one Solar-relative parsec position. */

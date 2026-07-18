@@ -1,6 +1,6 @@
 import { CONFIG } from '../config';
 import type { GalaxyMapModel } from '../core/galaxy_map';
-import { MilkyWayModel } from '../generation/milky_way_model';
+import { MilkyWayModel, type GalaxyFieldSample } from '../generation/milky_way_model';
 import { GLYPHS } from '../constants/visual';
 import { ScreenBuffer } from './screen_buffer';
 import { TEXT_PALETTE } from './text_palette';
@@ -152,37 +152,11 @@ export class GalaxyMapRenderer {
         const xFactor = (pixelX + 0.5) / pixelWidth - 0.5;
         const galacticXpc = model.centerXpc + xFactor * horizontalSpanPc;
         const field = this.milkyWayModel.sampleGalaxyField(galacticXpc, galacticYpc);
-        const colour = this.getFieldColour(field);
+        const colour = getGalaxyFieldColour(field);
         colours[pixelY * pixelWidth + pixelX] = colour;
       }
     }
     return Object.freeze(colours);
-  }
-
-  /** Converts enormous Galactic dynamic range into a restrained quantized amber-blue palette. */
-  private getFieldColour(field: ReturnType<MilkyWayModel['sampleGalaxyField']>): string | null {
-    const oldLight = Math.log1p(field.oldStellarDensity * 3.2) / Math.log1p(42 * 3.2);
-    const coreLight = Math.min(1, Math.log1p((field.bulgeDensity + field.barDensity) * 2.4) / 3.2);
-    const youngLight = Math.min(1, field.youngStellarDensity * 0.9);
-    const haloFloor = field.insideMainDisk ? 0 : oldLight * 0.18;
-    let brightness = Math.max(haloFloor, oldLight * 0.72 + coreLight * 0.38 + youngLight * 0.42);
-    brightness *= 0.78 + field.texture * 0.3;
-    brightness *= 1 - Math.min(0.82, field.dustDensity * 0.2 + field.dustLaneDensity * 0.58);
-    if (brightness < 0.022) return null;
-
-    const quantized = Math.round(Math.min(1, brightness) * 23) / 23;
-    const youngMix = Math.min(0.52, youngLight * (0.3 + field.armInfluence * 0.32));
-    const warmRed = 12 + quantized * (174 + coreLight * 67);
-    const warmGreen = 10 + quantized * (126 + coreLight * 66);
-    const warmBlue = 8 + quantized * (74 + coreLight * 68);
-    const youngRed = 14 + quantized * 166;
-    const youngGreen = 16 + quantized * 190;
-    const youngBlue = 22 + quantized * 224;
-    const dustWarmth = Math.min(0.22, field.dustDensity * 0.12);
-    const red = warmRed + (youngRed - warmRed) * youngMix + dustWarmth * 34;
-    const green = warmGreen + (youngGreen - warmGreen) * youngMix - dustWarmth * 12;
-    const blue = warmBlue + (youngBlue - warmBlue) * youngMix - dustWarmth * 28;
-    return rgbToHex(red, green, blue);
   }
 
   /** Draws a high-contrast crosshair at the player's projected position when it is in view. */
@@ -227,6 +201,38 @@ export class GalaxyMapRenderer {
     const x = Math.max(2, Math.floor((cols - clipped.length) / 2));
     this.screenBuffer.drawString(clipped, x, y, colour, '#010202');
   }
+}
+
+/** Converts enormous Galactic dynamic range into a restrained quantized amber-blue palette. */
+export function getGalaxyFieldColour(field: GalaxyFieldSample): string | null {
+  const oldLight = Math.log1p(field.oldStellarDensity * 3.2) / Math.log1p(42 * 3.2);
+  const bulgeLight = Math.min(1, Math.log1p(field.bulgeDensity * 2.6) / 3.15);
+  const barLight = Math.min(1, Math.log1p(field.barDensity * 2.2) / 2.52);
+  const coreLight = Math.max(bulgeLight, barLight * 0.82);
+  const stellarArmLight = Math.min(1, field.stellarArmInfluence);
+  const youngLight = Math.min(1, field.youngStellarDensity * 1.08);
+  const haloFloor = field.insideMainDisk ? 0 : oldLight * 0.18;
+  let brightness = Math.max(
+    haloFloor,
+    oldLight * 0.58 + bulgeLight * 0.3 + barLight * 0.52 + stellarArmLight * 0.16 + youngLight * 0.3
+  );
+  brightness *= 0.82 + field.texture * 0.26;
+  brightness *= 1 - Math.min(0.44, field.dustDensity * 0.09 + field.dustLaneDensity * 0.18);
+  if (brightness < 0.018) return null;
+
+  const quantized = Math.round(Math.min(1, brightness) * 31) / 31;
+  const youngMix = Math.min(0.44, youngLight * (0.3 + field.armInfluence * 0.26));
+  const warmRed = 11 + quantized * (181 + coreLight * 56);
+  const warmGreen = 9 + quantized * (132 + coreLight * 64);
+  const warmBlue = 8 + quantized * (78 + coreLight * 55);
+  const youngRed = 14 + quantized * 178;
+  const youngGreen = 18 + quantized * 211;
+  const youngBlue = 28 + quantized * 227;
+  const dustWarmth = Math.min(0.16, field.dustDensity * 0.1);
+  const red = warmRed + (youngRed - warmRed) * youngMix + dustWarmth * 25;
+  const green = warmGreen + (youngGreen - warmGreen) * youngMix - dustWarmth * 8;
+  const blue = warmBlue + (youngBlue - warmBlue) * youngMix - dustWarmth * 18;
+  return rgbToHex(red, green, blue);
 }
 
 /** Packs bounded RGB values into a CSS hexadecimal colour. */

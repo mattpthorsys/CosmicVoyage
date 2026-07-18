@@ -2,7 +2,7 @@
 
 ## Scope And Coordinate Model
 
-Generation version 4 treats the navigable map as a top-down projection of the
+Generation version 5 treats the navigable map as a top-down projection of the
 Milky Way. It is not a hidden three-dimensional simulation.
 
 - One world cell is one light-year.
@@ -60,18 +60,28 @@ gameplay code must not duplicate Galactic formulas.
 ## Macro Structure And Micro Detail
 
 The Milky Way's macro structure is fixed so every game remains recognizably the
-Milky Way. Generation version 4 retains the Reid et al. maser-fit kink radii,
-piecewise pitch angles, and widths for the Norma, Scutum-Centaurus,
-Sagittarius-Carina, Local, Perseus, and Outer structures. The central bar uses a
+Milky Way. Generation version 5 retains the Reid et al. maser-fit observed beta
+ranges, kink radii, piecewise pitch angles, and widths for the major structures.
+Norma is joined to the measured Outer structure on the preceding winding;
+Scutum-Centaurus, Sagittarius-Carina, and Perseus receive bounded continuations;
+and the Local Arm remains an isolated segment. Uncertain continuations taper at
+declared endpoints. Never treat every angle differing by `2π` as another valid
+copy of an observed fit: low local pitch angles then become false concentric
+rings.
+
+The four-arm field describes gas and young stars. A separate broad two-armed
+old-stellar response leaves opposite ends of the central bar, reflecting the
+weaker two-arm structure traced in infrared light. The central bar uses a
 30.5-degree viewing angle and five-kiloparsec half-length based on red-clump
 mapping. The game seed controls fine structure, disk-edge irregularity, cluster
 ownership, individual systems, and gas/dust clumping. All seed labels include
 the generation version.
 
 Spiral arms strongly affect gas, dust, young massive stars, and open clusters.
-They only modestly increase total stellar density because old populations have
-orbited and mixed through the disk. Do not turn arms into solid stripes of all
-star types.
+Arm tracers are modulated into large complexes and gaps; they are not continuous
+luminous or dark tubes. Arms only modestly increase total stellar density
+because old populations have orbited and mixed through the disk. Do not turn
+arms into solid stripes of all star types.
 
 Metallicity depends on galactocentric radius, Galactic population, age, and
 scatter. Do not restore the old age-only metallicity model.
@@ -229,8 +239,10 @@ scientific field; the renderer expands the horizontal span to the viewport
 aspect ratio so parsecs per pixel stay equal and the whole disk is not cropped.
 
 Keep the map restrained: logarithmic brightness, amber/white old stellar light,
-clumpy cool young-star structure, a warm barred core, offset dark dust lanes,
-an irregular disk edge, and a high-contrast crosshair. The player crosshair
+clumpy cool young-star structure, a warm barred core, interrupted offset dust
+lanes, an irregular disk edge, and a high-contrast crosshair. Spiral structure
+must read as bounded tracks and complexes rather than contour lines or a
+photographic pinwheel invented from visual intuition. The player crosshair
 begins below the core and the north marker points upward/coreward. Do not reveal
 undiscovered station locations on the whole-Galaxy view.
 
@@ -240,10 +252,12 @@ infer this from planet colour or name; read `Planet.terraforming.stage`.
 
 ## Persistence And Migration
 
-Save schema version 8 records generation version 4 identities. Version 7
-generation-three saves retain their one-light-year coordinates but migrate
-because colony and settlement identities changed. Version 6 and older saves
-also rotate and rescale from the old
+Save schema version 9 records generation version 5 identities. Version 8
+generation-four saves retain their one-light-year coordinates but migrate
+because the arm environment and generation seeds changed. Version 7
+generation-three saves also retain their coordinates while migrating colony,
+settlement, and Galactic identities. Version 6 and older saves rotate and
+rescale from the old
 coreward-X/rotation-Y parsec grid onto the east-X/coreward-negative-Y
 one-light-year grid. If a legacy save was inside any generated local location,
 restoration preserves player,
@@ -268,7 +282,8 @@ Changes to this domain should cover:
 - coordinate transforms and Solar radius;
 - one-light-year scaling relationships for density, fuel, sensing, and noise;
 - inner/local/outer density and metallicity relationships;
-- measured spiral-arm ridge fixtures and north/core orientation;
+- measured spiral-arm ridge fixtures, bounded radial crossing counts, and
+  north/core orientation;
 - class distributions and massive-star rarity;
 - order independence and cache rebuilding;
 - dense-cell slot identities;

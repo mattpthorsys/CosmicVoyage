@@ -121,4 +121,50 @@ describe('MilkyWayModel', () => {
     expect(field.youngStellarDensity).toBeGreaterThan(0.25);
     expect(field.dustLaneDensity).toBeGreaterThan(0);
   });
+
+  it('connects the measured Norma and Outer structures without repeating circular fits', () => {
+    const model = new MilkyWayModel('bounded-arm-tracks');
+    const beta = (18 * Math.PI) / 180;
+    const norma = model.sampleGalaxyField(Math.sin(beta) * 4460, -Math.cos(beta) * 4460);
+    const outer = model.sampleGalaxyField(Math.sin(beta) * 12240, -Math.cos(beta) * 12240);
+
+    expect(norma.armInfluence).toBeGreaterThan(0.95);
+    expect(outer.armInfluence).toBeGreaterThan(0.95);
+
+    const crossingCounts = Array.from({ length: 12 }, (_, index) => {
+      const sampleBeta = ((index * 30 - 180) * Math.PI) / 180;
+      let count = 0;
+      let insideArm = false;
+      for (let radiusPc = 2200; radiusPc <= 16000; radiusPc += 40) {
+        const field = model.sampleGalaxyField(
+          Math.sin(sampleBeta) * radiusPc,
+          -Math.cos(sampleBeta) * radiusPc
+        );
+        const isStrongArm = field.armInfluence >= 0.55;
+        if (isStrongArm && !insideArm) count++;
+        insideArm = isStrongArm;
+      }
+      return count;
+    });
+
+    expect(Math.max(...crossingCounts)).toBeLessThanOrEqual(6);
+    expect(crossingCounts.reduce((sum, count) => sum + count, 0) / crossingCounts.length).toBeLessThan(4.8);
+  });
+
+  it('adds a broad two-armed old-stellar response from the ends of the bar', () => {
+    const model = new MilkyWayModel('stellar-arm-response');
+    const radiusPc = 8000;
+    const barAngle = (CONFIG.GALACTIC_BAR_ANGLE_DEG * Math.PI) / 180;
+    const pitch = (12.5 * Math.PI) / 180;
+    const referenceRadiusPc = CONFIG.GALACTIC_BAR_HALF_LENGTH_PC * 0.92;
+    const ridgeBeta = barAngle - Math.log(radiusPc / referenceRadiusPc) / Math.tan(pitch);
+    const ridge = model.sampleGalaxyField(Math.sin(ridgeBeta) * radiusPc, -Math.cos(ridgeBeta) * radiusPc);
+    const interarm = model.sampleGalaxyField(
+      Math.sin(ridgeBeta + Math.PI / 2) * radiusPc,
+      -Math.cos(ridgeBeta + Math.PI / 2) * radiusPc
+    );
+
+    expect(ridge.stellarArmInfluence).toBeGreaterThan(0.9);
+    expect(interarm.stellarArmInfluence).toBeLessThan(0.1);
+  });
 });
