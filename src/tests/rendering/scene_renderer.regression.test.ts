@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { SceneRenderer } from '../../rendering/scene_renderer';
 import { DrawingContext } from '../../rendering/drawing_context';
 import { ScreenBuffer } from '../../rendering/screen_buffer';
@@ -12,6 +13,12 @@ import { PRNG } from '../../utils/prng';
 import { CONFIG } from '../../config';
 import { AU_IN_METERS, GLYPHS } from '../../constants';
 import { TEXT_PALETTE } from '../../rendering/text_palette';
+import { hexToRgb } from '../../rendering/colour';
+import {
+  ORBIT_CAMERA_DISTANCE,
+  orbitSunDirection,
+  projectOrbitSource,
+} from '../../rendering/scenes/orbit_lighting';
 import {
   GiantAtmosphereRenderer,
   GiantVisualProfile,
@@ -831,10 +838,10 @@ describe('SceneRenderer visual regressions', () => {
       mode: 'overview',
       stellarSources: [
         { id: 'A', primary: true, brightness: 1, colour: '#FFFACD' },
-        { id: 'B', primary: false, brightness: 0.4, colour: '#FFC864' },
+        { id: 'B', primary: false, brightness: 0.4, colour: '#FFC864', longitudeOffset: -0.015 },
       ],
       rotationPhase: 0.35,
-      illuminationPhase: 0.555,
+      illuminationPhase: 0.475,
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
@@ -879,8 +886,8 @@ describe('SceneRenderer visual regressions', () => {
       return drawCalls;
     };
 
-    const leftMarker = renderAtPhase(0.27).find((call) => call.char === GLYPHS.STELLAR_SOURCE);
-    const rightMarker = renderAtPhase(0.555).find((call) => call.char === GLYPHS.STELLAR_SOURCE);
+    const leftMarker = renderAtPhase(0.35).find((call) => call.char === GLYPHS.STELLAR_SOURCE);
+    const rightMarker = renderAtPhase(0.475).find((call) => call.char === GLYPHS.STELLAR_SOURCE);
 
     expect(leftMarker).toBeDefined();
     expect(rightMarker).toBeDefined();
@@ -938,7 +945,47 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawAtPhase(0.4).some((call) => call.char === GLYPHS.STELLAR_SOURCE)).toBe(false);
   });
 
-  it('adds a fading atmospheric horizon glow near orbital sunrise and sunset', () => {
+  it("allows an unocculted companion to illuminate the primary star's night hemisphere", () => {
+    /** Samples the central surface pixel with or without a second light source. */
+    const centreLuma = (relativeFlux: number): number => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const planet = createFeaturelessOrbitPlanet();
+      createSceneRenderer(buffer).drawOrbitInterface({
+        title: 'Orbital Operations',
+        subtitle: '',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [],
+        mode: 'overview',
+        rotationPhase: 0,
+        illuminationPhase: 0.4125,
+        stellarSources: [
+          { id: 'A', primary: true, relativeFlux: 1, brightness: 1, colour: '#FFFFFF' },
+          {
+            id: 'B',
+            primary: false,
+            relativeFlux,
+            brightness: 1,
+            colour: '#FFFFFF',
+            longitudeOffset: Math.PI,
+          },
+        ],
+        landingCursorX: 0,
+        landingCursorY: 0,
+        mapSize: 32,
+        description: [],
+        telemetry: [],
+        footer: [],
+      });
+      return hexLuma(
+        drawCalls.find((call) => call.char === GLYPHS.BLOCK && call.x === 24 && call.y === 27)!.fg
+      );
+    };
+    expect(centreLuma(1)).toBeGreaterThan(centreLuma(0) * 3);
+    expect(centreLuma(0.01)).toBeLessThan(centreLuma(1));
+  });
+
+  it('keeps atmospheric twilight on the globe raster through dawn, eclipse, and dusk', () => {
     /** Renders at phase. */
     const renderAtPhase = (illuminationPhase: number, atmospheric = true): DrawCall[] => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
@@ -964,34 +1011,50 @@ describe('SceneRenderer visual regressions', () => {
       return drawCalls;
     };
 
-    /** Counts rendered cells in the left atmospheric horizon band. */
-    const countLeftHorizonBand = (calls: DrawCall[]): number =>
-      calls.filter(
-        (call) =>
-          call.char === GLYPHS.BLOCK &&
-          call.scaleX === 0.5 &&
-          call.scaleY === 0.5 &&
-          call.y >= 15 &&
-          call.y <= 39 &&
-          call.x >= 11 &&
-          call.x <= 13.5
-      ).length;
-    /** Counts atmosphere cells extending beyond the solid globe. */
-    const countAtmosphericExtra = (illuminationPhase: number): number =>
-      countLeftHorizonBand(renderAtPhase(illuminationPhase)) -
-      countLeftHorizonBand(renderAtPhase(illuminationPhase, false));
-    const horizonExtra = countAtmosphericExtra(0.278);
-    const oldShadeGlyphs = renderAtPhase(0.278).filter(
-      (call) =>
-        (call.char === GLYPHS.SHADE_LIGHT || call.char === GLYPHS.SHADE_MEDIUM) &&
-        call.scaleX === 0.5 &&
-        call.scaleY === 0.5
+    /** Selects only globe pixels, excluding the landing map and stellar text glyphs. */
+    const globePixels = (phase: number, atmospheric = true): DrawCall[] =>
+      renderAtPhase(phase, atmospheric).filter(
+        (call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.x < 40
+      );
+    const signatures: Record<string, string> = {};
+    const initialSun = orbitSunDirection(0);
+    const midOccultation = 0.5 + Math.atan2(initialSun.x, initialSun.z) / (2 * Math.PI);
+    const contactOffset =
+      Math.acos(Math.sqrt(1 - 1 / ORBIT_CAMERA_DISTANCE ** 2) / Math.sqrt(1 - initialSun.y ** 2)) /
+      (2 * Math.PI);
+    const ingress = midOccultation - contactOffset;
+    const egress = midOccultation + contactOffset;
+    for (const phase of [0, 0.2, 0.35, 0.36, ingress, 0.4125, egress, 0.465, 0.475, 0.65]) {
+      const atmospheric = globePixels(phase);
+      const airless = globePixels(phase, false);
+      expect(atmospheric.length).toBeGreaterThan(200);
+      const positions = new Set(atmospheric.map((call) => `${call.x},${call.y}`));
+      expect(airless.every((call) => positions.has(`${call.x},${call.y}`))).toBe(true);
+      // A physical atmosphere may extend beyond solid terrain, but not detach from it.
+      expect(atmospheric.every((call) => Math.hypot(call.x - 24, call.y - 27) <= 12.5)).toBe(true);
+      expect(atmospheric.every((call) => Number.isInteger(call.x * 2) && Number.isInteger(call.y * 2))).toBe(
+        true
+      );
+      // Include colour and position, unlike character-count signatures that miss misplaced glow.
+      signatures[phase] = createHash('sha256').update(JSON.stringify(atmospheric)).digest('hex');
+      if (phase === ingress || phase === egress) {
+        /** Measures visible warm radiance without promoting nearly-black colour ratios. */
+        const warmth = (call: DrawCall): number => {
+          const rgb = hexToRgb(call.fg);
+          return (rgb.r / 255) ** 2.2 - (rgb.b / 255) ** 2.2;
+        };
+        const peak = atmospheric.reduce((best, call) => (warmth(call) > warmth(best) ? call : best));
+        const sun = projectOrbitSource(orbitSunDirection(phase * Math.PI * 2))!;
+        expect(warmth(peak)).toBeGreaterThan(0);
+        expect(Math.hypot((peak.x - 24) / 12 - sun.x, (peak.y - 27) / 12 + sun.y)).toBeLessThan(0.2);
+      }
+    }
+    const night = globePixels(0.4125);
+    const day = globePixels(0);
+    expect(Math.max(...night.map((call) => hexLuma(call.fg)))).toBeLessThan(
+      Math.max(...day.map((call) => hexLuma(call.fg))) * 0.3
     );
-
-    expect(horizonExtra).toBeGreaterThan(2);
-    expect(oldShadeGlyphs).toHaveLength(0);
-    expect(countAtmosphericExtra(0.31)).toBeLessThan(horizonExtra);
-    expect(countAtmosphericExtra(0.4)).toBeLessThan(2);
+    expect(signatures).toMatchSnapshot();
   });
 
   it('renders orbital globe samples as solid colour mini-cells instead of shade glyph bands', () => {
@@ -1130,7 +1193,7 @@ describe('SceneRenderer visual regressions', () => {
         selectedBody: planet,
         bodies: [{ label: 'Primary', planet, selected: true }],
         mode: 'overview',
-        stellarSources: [],
+        stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
         rotationPhase: 0,
         illuminationPhase,
         landingCursorX: 12,

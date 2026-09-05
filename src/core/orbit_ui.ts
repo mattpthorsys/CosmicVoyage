@@ -19,6 +19,10 @@ export interface OrbitStellarSource {
   primary: boolean;
   brightness: number;
   colour: string;
+  /** Bearing relative to the primary light, in the system orbital plane (radians). */
+  longitudeOffset?: number;
+  /** Irradiance relative to the dominant source, including inverse-square distance. */
+  relativeFlux?: number;
 }
 
 export interface OrbitScreenModel {

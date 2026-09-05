@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbital lighting regression preview</title>
+    <style>
+      body {
+        margin: 16px;
+        background: #080808;
+        color: #b9ddd6;
+        font: 14px monospace;
+      }
+      main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, 296px);
+        gap: 12px;
+      }
+      figure {
+        margin: 0;
+      }
+      canvas {
+        width: 296px;
+        height: 264px;
+        image-rendering: pixelated;
+      }
+      figcaption {
+        padding: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Orbital lighting: fixed terrain; atmospheric and airless phase sweeps</p>
+    <main></main>
+    <script type="module">
+      import '../src/assets/fonts/fonts.css';
+      import { ScreenBuffer } from '../src/rendering/screen_buffer.ts';
+      import { SceneRenderer } from '../src/rendering/scene_renderer.ts';
+      import { DrawingContext } from '../src/rendering/drawing_context.ts';
+      import { NebulaRenderer } from '../src/rendering/nebula_renderer.ts';
+      import { SystemDataGenerator } from '../src/generation/system_data_generator.ts';
+      import { PRNG } from '../src/utils/prng.ts';
+      import { Planet } from '../src/entities/planet.ts';
+      await document.fonts.ready;
+      for (const atmospheric of [true, false]) {
+        for (const phase of [0.2, 0.35, 0.3617394005527416, 0.4125, 0.4631901620461734, 0.475]) {
+          const planet = Object.create(Planet.prototype);
+          Object.defineProperties(planet, {
+            name: { value: 'Lighting fixture' },
+            type: { value: 'Rock' },
+            heightmap: {
+              value: Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => (x + y) % 8)),
+            },
+            heightLevelColors: {
+              value: Array.from({ length: 256 }, (_, i) => '#' + i.toString(16).padStart(2, '0') + '7050'),
+            },
+            diameter: { value: 11000 },
+            density: { value: 5.1 },
+            gravity: { value: 0.95 },
+            surfaceTemp: { value: 288 },
+            axialTilt: { value: 0.23 },
+            orbitalInclination: { value: 0.03 },
+            moons: { value: [] },
+            atmosphere: {
+              value: atmospheric
+                ? { density: 'Dense', pressure: 1.1, composition: { Nitrogen: 78, Oxygen: 21, Argon: 1 } }
+                : { density: 'None', pressure: 0, composition: {} },
+            },
+            getCurrentTemperature: { value: () => 288 },
+          });
+          const mainCanvas = document.createElement('canvas');
+          const raster = document.createElement('canvas');
+          for (const canvas of [mainCanvas, raster]) {
+            canvas.width = 132 * 8;
+            canvas.height = 58 * 8;
+          }
+          const buffer = new ScreenBuffer(
+            mainCanvas,
+            mainCanvas.getContext('2d'),
+            false,
+            raster,
+            raster.getContext('2d')
+          );
+          buffer.updateDimensions(132, 58, 8, 8);
+          const renderer = new SceneRenderer(
+            buffer,
+            new DrawingContext(buffer),
+            new NebulaRenderer(),
+            new SystemDataGenerator(new PRNG('preview'))
+          );
+          const model = {
+            title: 'Orbital Operations',
+            subtitle: '',
+            parentPlanet: planet,
+            selectedBody: planet,
+            bodies: [],
+            mode: 'overview',
+            stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
+            rotationPhase: 0.35,
+            illuminationPhase: phase,
+            landingCursorX: 12,
+            landingCursorY: 18,
+            mapSize: 32,
+            description: [],
+            telemetry: [],
+            footer: [],
+          };
+          renderer.drawOrbitInterface(model);
+          buffer.renderFull();
+          const start = performance.now();
+          for (let frame = 0; frame < 10; frame++) {
+            buffer.clear(false);
+            renderer.drawOrbitInterface({ ...model, illuminationPhase: phase + frame * 0.00001 });
+            buffer.renderDiff();
+          }
+          const frameMs = (performance.now() - start) / 10;
+          buffer.clear(true);
+          renderer.drawOrbitInterface(model);
+          buffer.renderFull();
+          const figure = document.createElement('figure');
+          const result = document.createElement('canvas');
+          result.width = 296;
+          result.height = 264;
+          const ctx = result.getContext('2d');
+          ctx.drawImage(mainCanvas, 6 * 8, 12 * 8, 296, 264, 0, 0, 296, 264);
+          ctx.drawImage(raster, 6 * 8, 12 * 8, 296, 264, 0, 0, 296, 264);
+          const pixels = ctx.getImageData(0, 0, 296, 264).data;
+          result.dataset.litPixels = Array.from(pixels).filter((v, i) => i % 4 !== 3 && v > 30).length;
+          const label = document.createElement('figcaption');
+          label.textContent =
+            (atmospheric ? 'Atmosphere' : 'Airless') +
+            ' / phase ' +
+            phase.toFixed(4) +
+            ' / ' +
+            frameMs.toFixed(1) +
+            'ms/frame';
+          figure.append(result, label);
+          document.querySelector('main').append(figure);
+        }
+      }
+      document.body.dataset.ready = 'true';
+    </script>
+  </body>
+</html>

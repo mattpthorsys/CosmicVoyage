@@ -66,6 +66,38 @@ crosshair and labels are dynamic.
 
 ## Orbital Planet Rendering
 
+`scenes/orbit_lighting.ts` owns the shared perspective camera: both surface
+normals and distant stellar positions use a camera three body radii from the
+centre. Do not mix orthographic terrain lighting with perspective star markers.
+At a star's apparent limb contact, the corresponding surface normal must have
+zero solar incidence. Companion bearings come from system coordinates; their
+lighting weights use luminosity divided by distance squared, not marker brightness.
+
+`scenes/orbit_atmosphere.ts` integrates single molecular scattering in a thin,
+isothermal hydrostatic shell, with solid-body shadowing and Beer-Lambert
+extinction on both light and viewing paths. The warm contact colour emerges from
+optical path length, not an orange overlay on every surface terminator. Clear
+daylight can still produce a blue limb; not all atmospheric light is sunset light.
+Point-like stellar markers also dim and redden through grazing atmospheric paths.
+The shell is area-sampled onto the same half-cell raster, including its subpixel
+extent outside the solid limb. Preserve that alignment and test airless bodies.
+
+This is a bounded visual approximation, not a spectral radiative-transfer solver:
+common gases use molecular masses and approximate cross sections scaled by
+[NIST polarizabilities](https://cccbdb.nist.gov/pollistx.asp); unsupported species
+use air-equivalent optical properties. It omits absorption bands, dust, clouds,
+multiple scattering, refraction, finite stellar discs and mutual-body eclipses.
+Do not infer orange CO2 sunsets or strongly forward-peaked scattering from
+molecules alone. See [NASA's planetary sunset comparison](https://www.nasa.gov/solar-system/nasa-scientist-simulates-sunsets-on-other-worlds/)
+and the [single-scattering formulation](https://ebruneton.github.io/precomputed_atmospheric_scattering/atmosphere/functions.glsl.html).
+Display exposure is artistic; atmospheric scale height and occultation geometry
+are not enlarged to manufacture a glow. Very extended envelopes (H/R > 0.02)
+are outside this thin-shell model. Terrain shading remains a low-cost visual model.
+
+With Vite running, `tools/orbit-lighting-preview.html` provides an actual-canvas
+phase comparison for atmospheric and airless bodies. Colour-and-position regression
+signatures accompany analytic contact, transmission and planetary-shadow tests.
+
 Gas- and ice-giant weather is deterministic, body-fixed source data. Bake the
 procedural bands, storms, and ribbons once through `GiantAtmosphereRenderer`,
 then rotate by changing texture longitude and apply view lighting separately.

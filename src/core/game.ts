@@ -7182,29 +7182,43 @@ export class Game {
       });
   }
 
-  /** Returns orbit stellar sources. */
-  private getOrbitStellarSources(
-    selectedBody: Planet
-  ): Array<{ id: string; primary: boolean; brightness: number; colour: string }> {
+  /** Uses the strongest local irradiance as the camera's reference light, not the nearest star. */
+  private getOrbitStellarSources(selectedBody: Planet): Array<{
+    id: string;
+    primary: boolean;
+    brightness: number;
+    colour: string;
+    longitudeOffset: number;
+    relativeFlux: number;
+  }> {
     const system = this.stateManager.currentSystem;
     if (!system || system.stars.length === 0) return [];
-    const starsByDistance = system.stars
+    const starsByFlux = system.stars
       .map((star) => ({
         star,
         distanceSq:
           Math.pow((star.systemX ?? 0) - (selectedBody.systemX ?? 0), 2) +
           Math.pow((star.systemY ?? 0) - (selectedBody.systemY ?? 0), 2),
       }))
-      .sort((a, b) => a.distanceSq - b.distanceSq);
-    const nearestId = starsByDistance[0]?.star.id;
-    const baselineLuminosity = Math.max(1, starsByDistance[0]?.star.luminosityW ?? 1);
-    return starsByDistance.slice(0, 3).map(({ star }) => ({
+      .map((entry) => ({
+        ...entry,
+        flux: Math.max(0, entry.star.luminosityW) / Math.max(1, entry.distanceSq),
+      }))
+      .sort((a, b) => b.flux - a.flux);
+    const dominantId = starsByFlux[0]?.star.id;
+    const reference = starsByFlux[0]?.star;
+    const referenceBearing = reference
+      ? Math.atan2(reference.systemY - selectedBody.systemY, reference.systemX - selectedBody.systemX)
+      : 0;
+    const baselineFlux = Math.max(Number.MIN_VALUE, starsByFlux[0]?.flux ?? 1);
+    return starsByFlux.slice(0, 3).map(({ star, flux }) => ({
       id: star.id,
-      primary: star.id === nearestId,
-      brightness: Math.max(
-        0.12,
-        Math.min(1.5, Math.sqrt(Math.max(0.01, star.luminosityW) / baselineLuminosity))
-      ),
+      primary: star.id === dominantId,
+      relativeFlux: flux / baselineFlux,
+      longitudeOffset:
+        Math.atan2(star.systemY - selectedBody.systemY, star.systemX - selectedBody.systemX) -
+        referenceBearing,
+      brightness: Math.max(0.12, Math.min(1.5, Math.sqrt(flux / baselineFlux))),
       colour: SPECTRAL_TYPES[star.starType]?.colour ?? SPECTRAL_TYPES.G.colour,
     }));
   }

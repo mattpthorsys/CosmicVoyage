@@ -93,6 +93,21 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
 }
 `;
 
+exports[`SceneRenderer visual regressions > keeps atmospheric twilight on the globe raster through dawn, eclipse, and dusk 1`] = `
+{
+  "0": "f21758b36dc94655c3c287ecd08f94aa741c9edfff3cd0675a32b8fdcdbc88a2",
+  "0.2": "de0af72f25457d0bfe7899765f926c73c9eb17883f53a597e8f8c67bc8c1b2bb",
+  "0.35": "0b11a491214b8217eed5ab71754038a44f4edd5b797f8f0f83a12cf8e07fb2f6",
+  "0.36": "8c89eebd8b9fb226d02e37784feb0caed71af54f52d76a05d818726cf136f37c",
+  "0.3617394005527416": "13776e7ca92bd196f0df8d61915b939d02690dcd8f69b7fa48c043e1cfbeb1ab",
+  "0.4125": "76d7e88c50e02bee2061ae2ccd7277910e7895b19e45dcb0fe4fc54749e02f55",
+  "0.4631901620461734": "a90d4b8114aefda4ec879cd6d2884698ce033e14f53d4a877b99fde7a4bf7317",
+  "0.465": "a074e3c26c9f75192b7bfc4f4d77c04ed2e0ce5d19f2e95e59ec4444188cb4bc",
+  "0.475": "56066aa07ef42d594df84884bbceb3ccceca16f77440c479f518a6416cc6a759",
+  "0.65": "360ff1fdfceb3a9fc3e7db24ef28220c3ecaffe79df435cff4b7aa9878c8e9b6",
+}
+`;
+
 exports[`SceneRenderer visual regressions > keeps starbase interiors free of background star effects 1`] = `
 {
   "bounds": {
@@ -307,8 +322,9 @@ exports[`SceneRenderer visual regressions > renders the orbital operations scree
     "└": 5,
     "┘": 5,
     "█": 4364,
+    "☼": 1,
   },
-  "totalCalls": 21666,
+  "totalCalls": 21667,
 }
 `;
 

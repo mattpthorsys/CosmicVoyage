@@ -18,6 +18,21 @@ import { createSystemTravelStarfield } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import {
+  ORBIT_CAMERA_DISTANCE,
+  ORBIT_FOCAL_FACTOR,
+  orbitSunDirection,
+  orbitSurfaceNormal,
+  orbitSolarIncidence,
+  projectOrbitSource,
+  OrbitVector,
+} from './scenes/orbit_lighting';
+import {
+  createOrbitAtmosphere,
+  OrbitAtmosphere,
+  orbitSourceTransmittance,
+  sampleOrbitAtmospherePixel,
+} from './scenes/orbit_atmosphere';
+import {
   TextDashboardLine,
   TextMenuSection,
   TextModalTableModel,
@@ -74,11 +89,18 @@ interface OrbitProjectionCell {
 }
 
 interface OrbitGlobeTransform {
+  lights?: OrbitLight[];
   orbitPhase: number;
   cosPhase: number;
   sinPhase: number;
   cosTilt: number;
   sinTilt: number;
+}
+
+interface OrbitLight {
+  direction: OrbitVector;
+  weight: number;
+  colour: RgbColour;
 }
 
 interface OrbitLandingMapCache {
@@ -122,10 +144,9 @@ export class SceneRenderer {
   private hyperspaceSurveyService: HyperspaceSurveyService | null;
   private hyperspaceTileProvider: HyperspaceTileProvider;
   private hyperspaceFrameCache: HyperspaceFrameCache | null = null;
-  private readonly orbitProjectionCache = new Map<number, OrbitProjectionCell[]>();
+  private readonly orbitProjectionCache = new Map<string, OrbitProjectionCell[]>();
   private readonly orbitLandingMapCache = new WeakMap<Planet, OrbitLandingMapCache>();
   private readonly giantPaletteCache = new WeakMap<Planet, RgbColour[]>();
-  private readonly atmosphericScatteringCache = new WeakMap<Planet, RgbColour>();
   private lastHyperspaceRenderStats: HyperspaceRenderStats = {
     mode: 'skipped',
     prefetchMs: 0,
@@ -1525,7 +1546,6 @@ export class SceneRenderer {
       CONFIG.DEFAULT_BG_COLOUR
     );
     this.drawRotatingPlanetSphere(model, sphereCx, sphereCy, sphereRadius);
-    this.drawOrbitAtmosphericHorizon(model, sphereCx, sphereCy, sphereRadius);
     this.drawOrbitSunReference(
       model,
       sphereCx,
@@ -1632,6 +1652,24 @@ export class SceneRenderer {
     // reserved for the body's own rotation.
     const texturePhase = model.rotationPhase * Math.PI * 2;
     const globeTransform = this.createOrbitGlobeTransform(planet, orbitPhase);
+    const lights = model.stellarSources.map((source) => {
+      const colour = this.hexToRgbFallback(source.colour ?? '#FFFFFF');
+      const maximum = Math.max(1, colour.r, colour.g, colour.b);
+      return {
+        direction: orbitSunDirection(orbitPhase - (source.longitudeOffset ?? 0)),
+        weight: source.relativeFlux ?? (source.primary ? 1 : 0),
+        colour: {
+          r: (colour.r / maximum) ** 2.2,
+          g: (colour.g / maximum) ** 2.2,
+          b: (colour.b / maximum) ** 2.2,
+        },
+      };
+    });
+    const totalFlux = lights.reduce((sum, light) => sum + light.weight, 0);
+    if (totalFlux > 0) {
+      for (const light of lights) light.weight /= totalFlux;
+    }
+    globeTransform.lights = lights.filter((light) => light.weight > 0);
     const cachedSurface = this.getCachedSolidSurfaceData(planet);
     const solidMap =
       planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : (cachedSurface?.heightmap ?? null);
@@ -1641,8 +1679,22 @@ export class SceneRenderer {
         : (cachedSurface?.heightLevelColors ?? null);
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
-    const projection = this.getOrbitProjection(detailRadius);
     const background = this.hexToRgbFallback(TEXT_PALETTE.background);
+    const air = planet.effectiveAtmosphere;
+    const atmosphere =
+      air?.density === 'None'
+        ? null
+        : createOrbitAtmosphere(
+            air?.pressure ?? 0,
+            planet.effectiveSurfaceTemp,
+            planet.gravity,
+            planet.diameter,
+            air?.composition
+          );
+    const outerRadius = atmosphere?.outerRadius ?? 1;
+    const projectedOuter =
+      (ORBIT_FOCAL_FACTOR * outerRadius) / Math.sqrt(ORBIT_CAMERA_DISTANCE ** 2 - outerRadius ** 2);
+    const projection = this.getOrbitProjection(detailRadius, projectedOuter);
     for (const cell of projection) {
       let finalColour = this.sampleOrbitGlobeColour(
         planet,
@@ -1655,10 +1707,21 @@ export class SceneRenderer {
         cell.sampleDy,
         detailRadius
       );
-      if (!finalColour) continue;
+      if (!finalColour && !atmosphere) continue;
+      finalColour ??= background;
       if (cell.coverage < 1) {
         finalColour = interpolateColour(background, finalColour, cell.coverage);
       }
+      if (atmosphere) {
+        finalColour = this.blendOrbitAtmosphericLimb(
+          finalColour,
+          cell,
+          detailRadius,
+          atmosphere,
+          globeTransform.lights
+        );
+      }
+      if (cell.coverage === 0 && finalColour.r < 1 && finalColour.g < 1 && finalColour.b < 1) continue;
       const finalHex = rgbToHex(finalColour.r, finalColour.g, finalColour.b);
       this.screenBuffer.drawScaledChar(
         GLYPHS.BLOCK,
@@ -1673,12 +1736,13 @@ export class SceneRenderer {
   }
 
   /** Returns cached projected cells and antialiased coverage for a globe radius. */
-  private getOrbitProjection(detailRadius: number): OrbitProjectionCell[] {
-    const cached = this.orbitProjectionCache.get(detailRadius);
+  private getOrbitProjection(detailRadius: number, outerRadius = 1): OrbitProjectionCell[] {
+    const drawRadius = Math.ceil(detailRadius * outerRadius + 1);
+    const key = `${detailRadius}:${drawRadius}`;
+    const cached = this.orbitProjectionCache.get(key);
     if (cached) return cached;
 
     const cells: OrbitProjectionCell[] = [];
-    const drawRadius = Math.ceil(detailRadius + 1);
     const samplesPerAxis = 4;
     const sampleStep = 1 / samplesPerAxis;
     for (let dy = -drawRadius; dy <= drawRadius; dy++) {
@@ -1704,18 +1768,18 @@ export class SceneRenderer {
             sampleDyTotal += sampleDy;
           }
         }
-        if (covered === 0) continue;
+        if (covered === 0 && Math.hypot(dx, dy) > drawRadius) continue;
         cells.push({
           dx,
           dy,
-          sampleDx: sampleDxTotal / covered,
-          sampleDy: sampleDyTotal / covered,
+          sampleDx: covered ? sampleDxTotal / covered : dx,
+          sampleDy: covered ? sampleDyTotal / covered : dy,
           coverage: covered / (samplesPerAxis * samplesPerAxis),
         });
       }
     }
 
-    this.orbitProjectionCache.set(detailRadius, cells);
+    this.orbitProjectionCache.set(key, cells);
     return cells;
   }
 
@@ -1731,11 +1795,10 @@ export class SceneRenderer {
     dy: number,
     detailRadius: number
   ): RgbColour | null {
-    const nx = dx / detailRadius;
-    const ny = dy / detailRadius;
-    const d = nx * nx + ny * ny;
-    if (d > 1) return null;
-    const z = Math.sqrt(Math.max(0, 1 - d));
+    const normal = orbitSurfaceNormal(dx / detailRadius, -dy / detailRadius);
+    if (!normal) return null;
+    const { x: nx, z } = normal;
+    const ny = -normal.y;
     const viewLongitude = Math.atan2(nx, z);
     const illuminationLongitude = viewLongitude + globeTransform.orbitPhase;
     const viewLatitude = Math.asin(Math.max(-1, Math.min(1, -ny)));
@@ -1769,7 +1832,11 @@ export class SceneRenderer {
             texturePhase
           )
         : this.samplePendingSolidPlanetTexture(planet, textureX, textureY);
-    const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z);
+    const incidentLight = globeTransform.lights?.reduce(
+      (sum, light) => sum + Math.max(0, orbitSolarIncidence(normal, light.direction)) * light.weight,
+      0
+    );
+    const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z, incidentLight);
     const liquidCoverage = solidSample?.liquidCoverage ?? 0;
     let brightness = light.brightness;
     if (liquidCoverage > 0) {
@@ -1792,15 +1859,40 @@ export class SceneRenderer {
           )
         : baseColour;
     finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
-    const atmosphericTwilight = this.calculateAtmosphericGlobeTwilight(planet, light.glyph);
-    if (atmosphericTwilight > 0) {
-      finalColour = interpolateColour(
-        finalColour,
-        this.getAtmosphericScatteringColour(planet),
-        atmosphericTwilight
-      );
-    }
     return finalColour;
+  }
+
+  /** Area-samples a thin scattering shell on the existing half-cell raster, never a floating rim. */
+  private blendOrbitAtmosphericLimb(
+    colour: RgbColour,
+    cell: OrbitProjectionCell,
+    radius: number,
+    air: OrbitAtmosphere,
+    lights: OrbitLight[]
+  ): RgbColour {
+    const distance = Math.hypot(cell.dx, cell.dy) / radius;
+    if (distance < 0.9) return colour;
+    const radiance = { r: 0, g: 0, b: 0 };
+    for (const light of lights) {
+      const value = sampleOrbitAtmospherePixel(
+        cell.dx / radius,
+        -cell.dy / radius,
+        1 / radius,
+        light.direction,
+        air
+      );
+      radiance.r += value.r * light.weight * light.colour.r;
+      radiance.g += value.g * light.weight * light.colour.g;
+      radiance.b += value.b * light.weight * light.colour.b;
+    }
+    // Display exposure and gamma, not an artificial orange paint layer. Fade the
+    // inner boundary because ordinary surface haze is already in terrain lighting.
+    const exposure = 4 * this.smoothstep(0.9, 0.98, distance);
+    return {
+      r: Math.min(255, 255 * Math.pow(Math.pow(colour.r / 255, 2.2) + radiance.r * exposure, 1 / 2.2)),
+      g: Math.min(255, 255 * Math.pow(Math.pow(colour.g / 255, 2.2) + radiance.g * exposure, 1 / 2.2)),
+      b: Math.min(255, 255 * Math.pow(Math.pow(colour.b / 255, 2.2) + radiance.b * exposure, 1 / 2.2)),
+    };
   }
 
   /** Rotates an orbit-view surface normal into the planet’s body frame. */
@@ -1869,64 +1961,56 @@ export class SceneRenderer {
     viewWidth: number,
     viewHeight: number
   ): void {
-    const sun = this.getGlobeSunVector(model.illuminationPhase * Math.PI * 2);
-    if (sun.z >= -0.02 || model.stellarSources.length === 0) return;
-
-    const focalLength = radius * 0.95;
-    const projectedX = cx + (sun.x / -sun.z) * focalLength;
-    const projectedY = cy - (sun.y / -sun.z) * focalLength;
-    if (
-      projectedX <= viewX ||
-      projectedX >= viewX + viewWidth - 1 ||
-      projectedY <= viewY ||
-      projectedY >= viewY + viewHeight - 1
-    )
-      return;
-
-    const planetMaskRadius = radius + 1;
-    if (Math.hypot(projectedX - cx, projectedY - cy) <= planetMaskRadius) return;
-
-    const side = projectedX < cx ? -1 : 1;
     const primary = model.stellarSources.find((source) => source.primary) ?? model.stellarSources[0];
-    const primaryColour = this.getOrbitStellarSourceColour(primary.colour, primary.brightness);
-
-    this.screenBuffer.drawScaledChar(
-      GLYPHS.STELLAR_SOURCE,
-      projectedX,
-      projectedY,
-      primaryColour,
-      CONFIG.DEFAULT_BG_COLOUR,
-      0.5,
-      0.5
-    );
-
-    model.stellarSources
-      .filter((source) => source.id !== primary.id)
-      .slice(0, 2)
-      .forEach((source, index) => {
-        const offsetX = side > 0 ? 1 + index : -1 - index;
-        const offsetY = index === 0 ? -1 : 1;
-        const companionX = projectedX + offsetX;
-        const companionY = projectedY + offsetY;
-        if (
-          companionX <= viewX ||
-          companionX >= viewX + viewWidth - 1 ||
-          companionY <= viewY ||
-          companionY >= viewY + viewHeight - 1 ||
-          Math.hypot(companionX - cx, companionY - cy) <= planetMaskRadius
-        )
-          return;
-        const colour = this.getOrbitStellarSourceColour(source.colour, source.brightness * 0.72);
-        this.screenBuffer.drawScaledChar(
-          GLYPHS.STAR_DIM,
-          companionX,
-          companionY,
-          colour,
-          CONFIG.DEFAULT_BG_COLOUR,
-          0.5,
-          0.5
+    for (const source of model.stellarSources.slice(0, 3)) {
+      const sun = orbitSunDirection(model.illuminationPhase * Math.PI * 2 - (source.longitudeOffset ?? 0));
+      const projected = projectOrbitSource(sun);
+      if (!projected) continue;
+      const x = cx + 0.25 + projected.x * radius;
+      const y = cy + 0.25 - projected.y * radius;
+      // Coordinates denote the centre of the half-cell source, as for globe samples.
+      // Clip the glyph extent, but occult its point-source centre at the true limb.
+      const halfSize = 0.25;
+      if (
+        x - halfSize <= viewX ||
+        x + halfSize >= viewX + viewWidth - 1 ||
+        y - halfSize <= viewY ||
+        y + halfSize >= viewY + viewHeight - 1 ||
+        Math.hypot(projected.x, projected.y) <= 1
+      )
+        continue;
+      let colour = this.getOrbitStellarSourceColour(source.colour, source.brightness);
+      const planet = model.selectedBody;
+      const air = planet.effectiveAtmosphere;
+      const atmosphere =
+        air?.density === 'None'
+          ? null
+          : createOrbitAtmosphere(
+              air?.pressure ?? 0,
+              planet.effectiveSurfaceTemp,
+              planet.gravity,
+              planet.diameter,
+              air?.composition
+            );
+      if (atmosphere) {
+        const transmission = orbitSourceTransmittance(projected.x, projected.y, atmosphere);
+        const rgb = this.hexToRgbFallback(colour);
+        colour = rgbToHex(
+          rgb.r * transmission.r ** (1 / 2.2),
+          rgb.g * transmission.g ** (1 / 2.2),
+          rgb.b * transmission.b ** (1 / 2.2)
         );
-      });
+      }
+      this.screenBuffer.drawScaledChar(
+        source === primary ? GLYPHS.STELLAR_SOURCE : GLYPHS.STAR_DIM,
+        x - halfSize,
+        y - halfSize,
+        colour,
+        CONFIG.DEFAULT_BG_COLOUR,
+        0.5,
+        0.5
+      );
+    }
   }
 
   /** Returns orbit stellar source colour. */
@@ -1937,226 +2021,24 @@ export class SceneRenderer {
     return rgbToHex(brightened.r, brightened.g, brightened.b);
   }
 
-  /** Draws orbit atmospheric horizon. */
-  private drawOrbitAtmosphericHorizon(model: OrbitScreenModel, cx: number, cy: number, radius: number): void {
-    const atmosphere = model.selectedBody.effectiveAtmosphere;
-    if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return;
-
-    const sun = this.getGlobeSunVector(model.illuminationPhase * Math.PI * 2);
-    if (sun.z >= -0.02) return;
-
-    const focalLength = radius * 0.95;
-    const projectedX = cx + (sun.x / -sun.z) * focalLength;
-    const projectedY = cy - (sun.y / -sun.z) * focalLength;
-    const planetMaskRadius = radius;
-    const projectedDistance = Math.hypot(projectedX - cx, projectedY - cy);
-    const edgeDistance = Math.abs(projectedDistance - planetMaskRadius);
-    const edgeStrength = 1 - Math.min(1, edgeDistance / 1.6);
-    if (edgeStrength <= 0.02) return;
-
-    const pressureStrength = Math.max(0.22, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
-    const strength = edgeStrength * pressureStrength;
-    if (strength <= 0.08) return;
-
-    const source = model.stellarSources.find((candidate) => candidate.primary) ?? model.stellarSources[0];
-    const colour = this.hexToRgbFallback(
-      this.getAtmosphericHorizonColour(model.selectedBody, source?.colour, strength)
-    );
-    const side = projectedX < cx ? -1 : 1;
-    const detailScale = 0.5;
-    const detailRadius = radius / detailScale;
-    const denseRim =
-      atmosphere.pressure >= 0.45 ||
-      atmosphere.density === 'Dense' ||
-      atmosphere.density === 'Thick' ||
-      atmosphere.density === 'Superdense';
-    const cachedSurface = this.getCachedSolidSurfaceData(model.selectedBody);
-    const solidMap =
-      model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant'
-        ? null
-        : (cachedSurface?.heightmap ?? null);
-    const solidColours =
-      model.selectedBody.type === 'GasGiant' || model.selectedBody.type === 'IceGiant'
-        ? null
-        : (cachedSurface?.heightLevelColors ?? null);
-    const texturePhase = model.rotationPhase * Math.PI * 2;
-    const orbitPhase = model.illuminationPhase * Math.PI * 2;
-    const globeTransform = this.createOrbitGlobeTransform(model.selectedBody, orbitPhase);
-
-    for (let dy = -detailRadius; dy <= detailRadius; dy++) {
-      const ny = dy / detailRadius;
-      if (Math.abs(ny) > 0.985) continue;
-      const verticalFade = Math.sqrt(Math.max(0, 1 - ny * ny));
-      if (verticalFade * strength < 0.12) continue;
-      if (strength < 0.44 && Math.abs(dy) % 3 === 1) continue;
-
-      const edgeDx = side * Math.sqrt(Math.max(0, 1 - ny * ny)) * detailRadius;
-      const alpha = Math.min(0.42, (denseRim ? 0.38 : 0.26) * strength * (0.35 + verticalFade * 0.65));
-      const outer = this.sampleAtmosphericHorizonPixel(
-        model.selectedBody,
-        solidMap,
-        solidColours,
-        cachedSurface?.liquidOverlay ?? null,
-        texturePhase,
-        globeTransform,
-        edgeDx + side * 0.18,
-        dy,
-        detailRadius,
-        colour,
-        alpha,
-        4
-      );
-      if (outer) {
-        this.screenBuffer.drawScaledChar(
-          GLYPHS.BLOCK,
-          cx + (edgeDx + side * 0.18) * detailScale,
-          cy + dy * detailScale,
-          outer,
-          outer,
-          detailScale,
-          detailScale
-        );
-      }
-
-      if (!denseRim || verticalFade * strength <= 0.5) continue;
-      const inner = this.sampleAtmosphericHorizonPixel(
-        model.selectedBody,
-        solidMap,
-        solidColours,
-        cachedSurface?.liquidOverlay ?? null,
-        texturePhase,
-        globeTransform,
-        edgeDx - side * 0.62,
-        dy,
-        detailRadius,
-        colour,
-        alpha * 0.65,
-        4
-      );
-      if (!inner) continue;
-      this.screenBuffer.drawScaledChar(
-        GLYPHS.BLOCK,
-        cx + (edgeDx - side * 0.62) * detailScale,
-        cy + dy * detailScale,
-        inner,
-        inner,
-        detailScale,
-        detailScale
-      );
-    }
-  }
-
-  /** Samples atmosphere colour and opacity beyond the globe horizon. */
-  private sampleAtmosphericHorizonPixel(
-    planet: Planet,
-    solidMap: number[][] | null,
-    solidColours: string[] | null,
-    liquidOverlay: SurfaceLiquidOverlay | null,
-    texturePhase: number,
-    globeTransform: OrbitGlobeTransform,
-    dx: number,
-    dy: number,
-    detailRadius: number,
-    glowColour: RgbColour,
-    alpha: number,
-    samplesPerAxis: number
-  ): string | null {
-    const background = this.hexToRgbFallback(TEXT_PALETTE.background);
-    const step = 1 / Math.max(1, samplesPerAxis);
-    let coveredSamples = 0;
-    let sampleDxTotal = 0;
-    let sampleDyTotal = 0;
-    for (let sy = 0; sy < samplesPerAxis; sy++) {
-      for (let sx = 0; sx < samplesPerAxis; sx++) {
-        const sampleDx = dx + (sx + 0.5) * step - 0.5;
-        const sampleDy = dy + (sy + 0.5) * step - 0.5;
-        if (sampleDx * sampleDx + sampleDy * sampleDy > detailRadius * detailRadius) continue;
-        coveredSamples++;
-        sampleDxTotal += sampleDx;
-        sampleDyTotal += sampleDy;
-      }
-    }
-    if (coveredSamples === 0) return null;
-    const base = this.sampleOrbitGlobeColour(
-      planet,
-      solidMap,
-      solidColours,
-      liquidOverlay,
-      texturePhase,
-      globeTransform,
-      sampleDxTotal / coveredSamples,
-      sampleDyTotal / coveredSamples,
-      detailRadius
-    );
-    if (!base) return null;
-    const coverage = coveredSamples / (samplesPerAxis * samplesPerAxis);
-    const glowing = interpolateColour(base, glowColour, alpha);
-    const final = interpolateColour(background, glowing, coverage);
-    return rgbToHex(final.r, final.g, final.b);
-  }
-
-  /** Returns atmospheric horizon colour. */
-  private getAtmosphericHorizonColour(
-    planet: Planet,
-    starColour: string | undefined,
-    strength: number
-  ): string {
-    const atmosphere = planet.effectiveAtmosphere;
-    const composition = atmosphere.composition;
-    const dominantGas = Object.entries(composition).sort(([, a], [, b]) => b - a)[0]?.[0] ?? '';
-    const scatteringHex = this.getAtmosphericScatteringBaseColour(dominantGas, atmosphere.density);
-    const scattering = this.hexToRgbFallback(scatteringHex);
-    const star = this.hexToRgbFallback(starColour ?? '#FFFACD');
-    const starMix = Math.max(0.22, Math.min(0.48, 0.28 + strength * 0.16));
-    const mixed = interpolateColour(scattering, star, starMix);
-    const brightened = adjustBrightness(mixed, 1.05 + strength * 0.58);
-    return rgbToHex(brightened.r, brightened.g, brightened.b);
-  }
-
-  /** Returns atmospheric scattering base colour. */
-  private getAtmosphericScatteringBaseColour(dominantGas: string, density: string): string {
-    if (dominantGas.includes('Methane') || dominantGas.includes('Hydrogen Cyanide')) return '#5BD6C8';
-    if (dominantGas.includes('Sulfur') || dominantGas.includes('Hydrogen Sulfide')) return '#FFB04A';
-    if (dominantGas.includes('Carbon Dioxide') || dominantGas.includes('Carbon Monoxide')) return '#FF8F62';
-    if (dominantGas.includes('Hydrogen') || dominantGas.includes('Helium')) return '#B9D8FF';
-    if (dominantGas.includes('Ammonia')) return '#D5E7BE';
-    if (dominantGas.includes('Water')) return '#91D7FF';
-    if (dominantGas.includes('Oxygen') || dominantGas.includes('Ozone')) return '#74A9FF';
-    if (density === 'Trace' || density === 'Thin') return '#7DB7FF';
-    return '#6EA8FF';
-  }
-
-  /** Returns cached atmospheric scattering colour derived from stable composition data. */
-  private getAtmosphericScatteringColour(planet: Planet): RgbColour {
-    const cached = this.atmosphericScatteringCache.get(planet);
-    if (cached) return cached;
-    let dominantGas = '';
-    let dominantAbundance = Number.NEGATIVE_INFINITY;
-    const atmosphere = planet.effectiveAtmosphere;
-    for (const [gas, abundance] of Object.entries(atmosphere.composition)) {
-      if (abundance <= dominantAbundance) continue;
-      dominantGas = gas;
-      dominantAbundance = abundance;
-    }
-    const colour = this.hexToRgbFallback(
-      this.getAtmosphericScatteringBaseColour(dominantGas, atmosphere.density)
-    );
-    this.atmosphericScatteringCache.set(planet, colour);
-    return colour;
-  }
-
   /** Calculates globe lighting. */
   private calculateGlobeLighting(
     planet: Planet,
     longitude: number,
     latitude: number,
-    viewNormalZ: number
+    viewNormalZ: number,
+    incidentLight?: number
   ): { brightness: number; glyph: number } {
-    const subsolarLongitude = -0.55;
-    const subsolarLatitude = 0.12;
     const incidence =
-      Math.sin(latitude) * Math.sin(subsolarLatitude) +
-      Math.cos(latitude) * Math.cos(subsolarLatitude) * Math.cos(longitude - subsolarLongitude);
+      incidentLight ??
+      orbitSolarIncidence(
+        {
+          x: Math.cos(latitude) * Math.sin(longitude),
+          y: Math.sin(latitude),
+          z: Math.cos(latitude) * Math.cos(longitude),
+        },
+        orbitSunDirection(0)
+      );
     const mu0 = Math.max(0, incidence);
     const terminator = Math.max(0, Math.min(1, mu0 / 0.14));
     const dayMask = terminator * terminator * (3 - 2 * terminator);
@@ -2213,16 +2095,6 @@ export class SceneRenderer {
     const compression =
       1 - Math.min(0.24, ((luminance - targetLuminance) / 255) * highlight * (0.55 + pressure * 0.35));
     return adjustBrightness(colour, compression);
-  }
-
-  /** Calculates atmospheric globe twilight. */
-  private calculateAtmosphericGlobeTwilight(planet: Planet, lightGlyph: number): number {
-    const atmosphere = planet.effectiveAtmosphere;
-    if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return 0;
-    const pressure = Math.max(0, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
-    const enteringDay = this.smoothstep(0.08, 0.42, lightGlyph);
-    const leavingTerminator = 1 - this.smoothstep(0.48, 0.86, lightGlyph);
-    return Math.max(0, Math.min(0.18, enteringDay * leavingTerminator * pressure * 0.16));
   }
 
   /** Smoothly interpolates a value between two thresholds. */
@@ -2383,16 +2255,9 @@ export class SceneRenderer {
     return Math.pow(specularAlignment, 70) * Math.pow(sunVisible, 0.9) * limbFade;
   }
 
-  /** Returns globe sun vector. */
+  /** Returns the shared light direction used by globe shading and star projection. */
   private getGlobeSunVector(illuminationPhaseRadians: number): { x: number; y: number; z: number } {
-    const subsolarLongitude = -0.55 - illuminationPhaseRadians;
-    const subsolarLatitude = 0.12;
-    const cosSunLat = Math.cos(subsolarLatitude);
-    return {
-      x: cosSunLat * Math.sin(subsolarLongitude),
-      y: Math.sin(subsolarLatitude),
-      z: cosSunLat * Math.cos(subsolarLongitude),
-    };
+    return orbitSunDirection(illuminationPhaseRadians);
   }
 
   /** Converts projected latitude to a wrapped Mercator texture coordinate. */
