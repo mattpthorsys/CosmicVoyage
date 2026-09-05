@@ -17,6 +17,7 @@ export const CREW_SKILLS = [
 
 export type CrewSkill = (typeof CREW_SKILLS)[number];
 export type CrewRace = 'Human';
+export type CrewNameGender = 'female' | 'male';
 
 export interface CrewMember {
   id: string;
@@ -50,24 +51,37 @@ export const CREW_SKILL_LABELS: Record<CrewSkill, string> = {
   trade: 'Trade',
 };
 
-const FIRST_NAMES = [
-  'Anja',
-  'Tomas',
-  'Mara',
-  'Eli',
-  'Niko',
-  'Ila',
-  'Ren',
-  'Sera',
-  'Vale',
-  'Oren',
-  'Juno',
-  'Mika',
-  'Sanne',
-  'Idris',
-  'Lena',
-  'Kiran',
-];
+/** Balanced first-name pools used for generated human crew. */
+export const CREW_FIRST_NAMES: Record<CrewNameGender, readonly string[]> = {
+  female: [
+    'Anja',
+    'Mara',
+    'Sera',
+    'Lena',
+    'Nadiya',
+    'Imani',
+    'Priya',
+    'Elise',
+    'Hana',
+    'Sofia',
+    'Amina',
+    'Yara',
+  ],
+  male: [
+    'Tomas',
+    'Eli',
+    'Niko',
+    'Oren',
+    'Idris',
+    'Kiran',
+    'Mateo',
+    'Julian',
+    'Darius',
+    'Kenji',
+    'Omar',
+    'Pavel',
+  ],
+};
 
 const LAST_NAMES = [
   'Venn',
@@ -157,9 +171,9 @@ export function createSkillRecord(value: number = 0): Record<CrewSkill, number> 
 export function createStartingCrew(seed: string | number): CrewMember[] {
   const prng = new PRNG(`starting_crew_${String(seed)}`);
   const crew = [
-    createCrewMember('start-nav', ARCHETYPES[1], prng, 2),
-    createCrewMember('start-science', ARCHETYPES[0], prng, 2),
-    createCrewMember('start-medic', ARCHETYPES[2], prng, 2),
+    createCrewMember('start-nav', ARCHETYPES[1], prng, 2, 'male'),
+    createCrewMember('start-science', ARCHETYPES[0], prng, 2, 'female'),
+    createCrewMember('start-medic', ARCHETYPES[2], prng, 2, 'female'),
   ];
   ensureHelpfulStartingCoverage(crew);
   return crew;
@@ -175,8 +189,9 @@ export function generateRecruitCandidates(
   const candidates: CrewMember[] = [];
   for (let i = 0; i < count; i++) {
     const archetype = ARCHETYPES[prng.randomInt(0, ARCHETYPES.length - 1)];
+    const gender: CrewNameGender = i % 2 === 0 ? 'female' : 'male';
     candidates.push(
-      createCrewMember(`hire-${slug(starbaseName)}-${i}`, archetype, prng, prng.randomInt(1, 3))
+      createCrewMember(`hire-${slug(starbaseName)}-${i}`, archetype, prng, prng.randomInt(1, 3), gender)
     );
   }
   return candidates;
@@ -238,7 +253,13 @@ export function formatTopSkills(member: CrewMember, limit: number = 3): string {
 }
 
 /** Creates crew member. */
-function createCrewMember(id: string, archetype: CrewArchetype, prng: PRNG, level: number): CrewMember {
+function createCrewMember(
+  id: string,
+  archetype: CrewArchetype,
+  prng: PRNG,
+  level: number,
+  nameGender: CrewNameGender
+): CrewMember {
   const skills = createSkillRecord(0);
   for (const skill of CREW_SKILLS) skills[skill] = prng.randomInt(0, 1);
   Object.entries(archetype.baseSkills).forEach(([skill, value]) => {
@@ -251,9 +272,10 @@ function createCrewMember(id: string, archetype: CrewArchetype, prng: PRNG, leve
   const durability = prng.randomInt(archetype.durability[0], archetype.durability[1]);
   const maxHitPoints = 18 + durability * 3 + prng.randomInt(0, 5);
   const skillTotal = Object.values(skills).reduce((sum, value) => sum + value, 0);
+  const firstNames = CREW_FIRST_NAMES[nameGender];
   return {
     id,
-    name: `${FIRST_NAMES[prng.randomInt(0, FIRST_NAMES.length - 1)]} ${LAST_NAMES[prng.randomInt(0, LAST_NAMES.length - 1)]}`,
+    name: `${firstNames[prng.randomInt(0, firstNames.length - 1)]} ${LAST_NAMES[prng.randomInt(0, LAST_NAMES.length - 1)]}`,
     race: 'Human',
     role: archetype.role,
     hitPoints: maxHitPoints,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CREW_FIRST_NAMES,
   createStartingCrew,
   generateRecruitCandidates,
   getCrewSkillTotal,
@@ -52,5 +53,22 @@ describe('crew generation and progression', () => {
     expect(first).toEqual(second);
     expect(first.length).toBeGreaterThan(0);
     expect(first.every((candidate) => candidate.hireCost > 0 && candidate.maxHitPoints > 0)).toBe(true);
+  });
+
+  it('keeps generated staff names visibly mixed across male and female name pools', () => {
+    const starting = createStartingCrew('crew-name-balance');
+    const recruits = generateRecruitCandidates('Mixed Roster Station', 'crew-name-balance');
+    const names = [...starting, ...recruits].map((member) => member.name.split(' ')[0]);
+    const femaleNames = names.filter((name) => CREW_FIRST_NAMES.female.includes(name));
+    const maleNames = names.filter((name) => CREW_FIRST_NAMES.male.includes(name));
+
+    expect(femaleNames.length).toBeGreaterThan(0);
+    expect(maleNames.length).toBeGreaterThan(0);
+    expect(
+      recruits.filter((member) => CREW_FIRST_NAMES.female.includes(member.name.split(' ')[0]))
+    ).toHaveLength(3);
+    expect(
+      recruits.filter((member) => CREW_FIRST_NAMES.male.includes(member.name.split(' ')[0]))
+    ).toHaveLength(3);
   });
 });
