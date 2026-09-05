@@ -48,8 +48,8 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 9,
-    generationVersion: 5,
+    version: 10,
+    generationVersion: 6,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -164,8 +164,8 @@ describe('save game persistence', () => {
     const migrated = storage.loadSession();
 
     expect(migrated).toMatchObject({
-      version: 9,
-      generationVersion: 5,
+      version: 10,
+      generationVersion: 6,
       migratedFromGenerationVersion: 3,
     });
     expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
@@ -185,8 +185,8 @@ describe('save game persistence', () => {
     const migrated = storage.loadSession();
 
     expect(migrated).toMatchObject({
-      version: 9,
-      generationVersion: 5,
+      version: 10,
+      generationVersion: 6,
       migratedFromGenerationVersion: 4,
     });
     expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
@@ -232,7 +232,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(9);
+    expect(migrated.version).toBe(10);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
   });
@@ -273,7 +273,7 @@ describe('save game persistence', () => {
       },
     });
 
-    expect(migrated.version).toBe(9);
+    expect(migrated.version).toBe(10);
     expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
     expect(migrated.readyMissionIds).toEqual([]);
     expect(migrated.missionObjectiveProgress).toEqual({});
@@ -290,7 +290,7 @@ describe('save game persistence', () => {
       player: { ...legacy.player, ship: legacyShip },
     });
 
-    expect(migrated.version).toBe(9);
+    expect(migrated.version).toBe(10);
     expect(migrated.player.ship.surveyEquipmentClass).toBe(1);
     expect(migrated.economy).toEqual({});
   });
@@ -330,8 +330,8 @@ describe('save game persistence', () => {
       location: legacyLocation,
     });
 
-    expect(migrated.version).toBe(9);
-    expect(migrated.generationVersion).toBe(5);
+    expect(migrated.version).toBe(10);
+    expect(migrated.generationVersion).toBe(6);
     expect(migrated.migratedFromGenerationVersion).toBe(1);
     expect(migrated.location.systemSlot).toBe(0);
     expect(migrated.location).toMatchObject({ worldX: -7, worldY: -10 });
@@ -375,8 +375,8 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(9);
-    expect(migrated.generationVersion).toBe(5);
+    expect(migrated.version).toBe(10);
+    expect(migrated.generationVersion).toBe(6);
     expect(migrated.migratedFromGenerationVersion).toBe(2);
     expect(migrated.player.position).toMatchObject({
       worldX: -7,
@@ -408,8 +408,8 @@ describe('save game persistence', () => {
       generationVersion: 3,
     });
 
-    expect(migrated.version).toBe(9);
-    expect(migrated.generationVersion).toBe(5);
+    expect(migrated.version).toBe(10);
+    expect(migrated.generationVersion).toBe(6);
     expect(migrated.migratedFromGenerationVersion).toBe(3);
     expect(migrated.player.position).toMatchObject({ worldX: 3, worldY: -2 });
     expect(migrated.location).toMatchObject({ worldX: 3, worldY: -2 });
@@ -437,6 +437,31 @@ describe('save game persistence', () => {
         generationVersion: 3,
       })
     ).toThrow('Unsupported Galaxy generation version');
+  });
+
+  it.each(['session', 'manual'])(
+    'migrates version-nine %s storage while preserving assets and coordinates',
+    (kind) => {
+      const session = new MemoryStorage();
+      const persistent = new MemoryStorage();
+      const storage = new SaveGameStorage(session, persistent);
+      const store = kind === 'session' ? session : persistent;
+      const oldKey = `cosmic-voyage.${kind}.v9`;
+      const oldSave = { ...createSave(), version: 9, generationVersion: 5 };
+      store.setItem(oldKey, JSON.stringify(oldSave));
+      const result = kind === 'session' ? storage.loadSession() : storage.loadManual();
+      expect(result).toMatchObject({ version: 10, generationVersion: 6, migratedFromGenerationVersion: 5 });
+      expect(result?.player).toEqual(oldSave.player);
+      expect(result?.location).toEqual(oldSave.location);
+      expect(store.getItem(oldKey)).toBeNull();
+      expect(store.getItem(kind === 'session' ? SESSION_SAVE_KEY : MANUAL_SAVE_KEY)).not.toBeNull();
+    }
+  );
+
+  it('rejects version-nine payloads with incompatible generation identities', () => {
+    expect(() => parseGameSave({ ...createSave(), version: 9, generationVersion: 4 })).toThrow(
+      'Unsupported Galaxy generation version'
+    );
   });
 
   it('rejects impossible typed locations and malformed nested state', () => {

@@ -112,7 +112,8 @@ export class NebulaColourSampler {
     const galactic = this.milkyWayModel.sampleGalaxyField(galactocentric.xPc, galactocentric.yPc);
     // Spiral-arm gas supplies the broad probability; coordinate noise only shapes each cloud locally.
     const presence = broadCloud * 0.65 + finePresence * 0.12 + Math.min(1, galactic.gasDensity) * 0.23;
-    const threshold = 0.525 + CONFIG.NEBULA_SPARSITY * 0.05 - galactic.armInfluence * 0.035;
+    // Version-six gas is more diffuse between complexes; calibrate visibility to that field.
+    const threshold = 0.47 + CONFIG.NEBULA_SPARSITY * 0.05 - galactic.armInfluence * 0.035;
     const density = this.smoothstep(threshold, 0.96, presence);
     if (density < 0.004) return null;
 

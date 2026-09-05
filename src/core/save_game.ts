@@ -15,9 +15,11 @@ import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './dis
 import type { EconomySnapshot } from './starbase_commerce';
 import { CONFIG } from '../config';
 
-export const SAVE_GAME_VERSION = 9;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v9';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v9';
+export const SAVE_GAME_VERSION = 10;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v10';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v10';
+const VERSION_NINE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v9';
+const VERSION_NINE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v9';
 const LEGACY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
 const LEGACY_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v1';
 const PREVIOUS_SESSION_SAVE_KEY = 'cosmic-voyage.session.v2';
@@ -164,7 +166,11 @@ export interface GameSaveV9 extends Omit<GameSaveV8, 'version'> {
   version: 9;
 }
 
-export type GameSave = GameSaveV9;
+export interface GameSaveV10 extends Omit<GameSaveV9, 'version'> {
+  version: 10;
+}
+
+export type GameSave = GameSaveV10;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -205,6 +211,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV7
     | GameSaveV8
     | GameSaveV9
+    | GameSaveV10
   >;
   if (
     record.version !== 1 &&
@@ -215,6 +222,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 6 &&
     record.version !== 7 &&
     record.version !== 8 &&
+    record.version !== 9 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -272,8 +280,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 8:
       save = migrateV8Save(candidate as unknown as GameSaveV8);
       break;
+    case 9:
+      save = migrateV9Save(candidate as unknown as GameSaveV9);
+      break;
     default:
-      save = candidate as unknown as GameSaveV9;
+      save = candidate as unknown as GameSaveV10;
   }
   if (save.generationVersion !== CONFIG.GALAXY_MODEL_VERSION) {
     throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
@@ -472,6 +483,19 @@ function migrateV7Save(save: GameSaveV7): GameSave {
 /** Advances generation-four saves after the bounded spiral-arm reconstruction. */
 function migrateV8Save(save: GameSaveV8): GameSave {
   if (save.generationVersion !== 4) {
+    throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
+  }
+  return migrateV9Save({
+    ...save,
+    version: 9,
+    generationVersion: 5,
+    migratedFromGenerationVersion: save.migratedFromGenerationVersion ?? save.generationVersion,
+  });
+}
+
+/** Retires generation-five identities after the disk density and coordinate noise correction. */
+function migrateV9Save(save: GameSaveV9): GameSave {
+  if (save.generationVersion !== 5) {
     throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
   }
   return {
@@ -753,6 +777,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_NINE_SESSION_SAVE_KEY,
       VERSION_EIGHT_SESSION_SAVE_KEY,
       VERSION_SEVEN_SESSION_SAVE_KEY,
       VERSION_SIX_SESSION_SAVE_KEY,
@@ -772,6 +797,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_NINE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(PREVIOUS_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_THREE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FOUR_SESSION_SAVE_KEY);
@@ -787,6 +813,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_NINE_MANUAL_SAVE_KEY,
       VERSION_EIGHT_MANUAL_SAVE_KEY,
       VERSION_SEVEN_MANUAL_SAVE_KEY,
       VERSION_SIX_MANUAL_SAVE_KEY,
@@ -806,6 +833,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_NINE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(PREVIOUS_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_THREE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FOUR_MANUAL_SAVE_KEY);

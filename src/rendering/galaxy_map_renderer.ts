@@ -140,10 +140,7 @@ export class GalaxyMapRenderer {
     pixelHeight: number
   ): readonly (string | null)[] {
     const colours = new Array<string | null>(pixelWidth * pixelHeight).fill(null);
-    // spanPc is the vertical scientific field. Expanding the horizontal field to match
-    // the viewport aspect keeps parsecs-per-pixel equal while fitting the full disk vertically.
-    const verticalSpanPc = model.spanPc;
-    const horizontalSpanPc = model.spanPc * (pixelWidth / Math.max(1, pixelHeight));
+    const { verticalSpanPc, horizontalSpanPc } = getGalaxyMapSpans(model.spanPc, pixelWidth, pixelHeight);
 
     for (let pixelY = 0; pixelY < pixelHeight; pixelY++) {
       const yFactor = (pixelY + 0.5) / pixelHeight - 0.5;
@@ -169,8 +166,7 @@ export class GalaxyMapRenderer {
   ): void {
     const pixelWidth = mapWidth * 2;
     const pixelHeight = mapHeight * 2;
-    const verticalSpanPc = model.spanPc;
-    const horizontalSpanPc = model.spanPc * (pixelWidth / Math.max(1, pixelHeight));
+    const { verticalSpanPc, horizontalSpanPc } = getGalaxyMapSpans(model.spanPc, pixelWidth, pixelHeight);
     const pixelX = ((model.playerXpc - model.centerXpc) / horizontalSpanPc + 0.5) * pixelWidth;
     const pixelY = (0.5 - (model.playerYpc - model.centerYpc) / verticalSpanPc) * pixelHeight;
     if (pixelX < 0 || pixelX >= pixelWidth || pixelY < 0 || pixelY >= pixelHeight) return;
@@ -190,6 +186,7 @@ export class GalaxyMapRenderer {
       [0, 1],
     ] as const;
     for (const [dx, dy] of ticks) {
+      if (x + dx < mapX || x + dx >= mapX + mapWidth || y + dy < mapY || y + dy >= mapY + mapHeight) continue;
       this.screenBuffer.drawScaledChar(GLYPHS.BLOCK, x + dx, y + dy, colour, null, 0.5, 0.5);
     }
   }
@@ -203,36 +200,39 @@ export class GalaxyMapRenderer {
   }
 }
 
-/** Converts enormous Galactic dynamic range into a restrained quantized amber-blue palette. */
-export function getGalaxyFieldColour(field: GalaxyFieldSample): string | null {
-  const oldLight = Math.log1p(field.oldStellarDensity * 3.2) / Math.log1p(42 * 3.2);
-  const bulgeLight = Math.min(1, Math.log1p(field.bulgeDensity * 2.6) / 3.15);
-  const barLight = Math.min(1, Math.log1p(field.barDensity * 2.2) / 2.52);
-  const coreLight = Math.max(bulgeLight, barLight * 0.82);
-  const stellarArmLight = Math.min(1, field.stellarArmInfluence);
-  const youngLight = Math.min(1, field.youngStellarDensity * 1.08);
-  const haloFloor = field.insideMainDisk ? 0 : oldLight * 0.18;
-  let brightness = Math.max(
-    haloFloor,
-    oldLight * 0.58 + bulgeLight * 0.3 + barLight * 0.52 + stellarArmLight * 0.16 + youngLight * 0.3
-  );
-  brightness *= 0.82 + field.texture * 0.26;
-  brightness *= 1 - Math.min(0.44, field.dustDensity * 0.09 + field.dustLaneDensity * 0.18);
-  if (brightness < 0.018) return null;
+/** Fits the scientific span to the shorter axis, preserving circles in landscape and portrait. */
+export function getGalaxyMapSpans(
+  spanPc: number,
+  width: number,
+  height: number
+): {
+  horizontalSpanPc: number;
+  verticalSpanPc: number;
+} {
+  const parsecsPerPixel = spanPc / Math.max(1, Math.min(width, height));
+  return { horizontalSpanPc: width * parsecsPerPixel, verticalSpanPc: height * parsecsPerPixel };
+}
 
-  const quantized = Math.round(Math.min(1, brightness) * 31) / 31;
-  const youngMix = Math.min(0.44, youngLight * (0.3 + field.armInfluence * 0.26));
-  const warmRed = 11 + quantized * (181 + coreLight * 56);
-  const warmGreen = 9 + quantized * (132 + coreLight * 64);
-  const warmBlue = 8 + quantized * (78 + coreLight * 55);
-  const youngRed = 14 + quantized * 178;
-  const youngGreen = 18 + quantized * 211;
-  const youngBlue = 28 + quantized * 227;
-  const dustWarmth = Math.min(0.16, field.dustDensity * 0.1);
-  const red = warmRed + (youngRed - warmRed) * youngMix + dustWarmth * 25;
-  const green = warmGreen + (youngGreen - warmGreen) * youngMix - dustWarmth * 8;
-  const blue = warmBlue + (youngBlue - warmBlue) * youngMix - dustWarmth * 18;
-  return rgbToHex(red, green, blue);
+/** Mixes stellar populations and wavelength-dependent dust absorption before display exposure. */
+export function getGalaxyFieldColour(field: GalaxyFieldSample): string | null {
+  // Arm light must scale with the stars there, never with an independent outline mask.
+  // The bar/bulge already belong to oldStellarDensity; do not add their light twice.
+  const oldLight = field.oldStellarDensity * 0.16;
+  const youngLight = field.youngStellarDensity * 0.85;
+  const coreFraction = Math.min(
+    1,
+    (field.bulgeDensity + field.barDensity * 0.72) / Math.max(0.001, field.oldStellarDensity)
+  );
+  const opticalDepth = field.dustDensity * 0.36 + field.dustLaneDensity * 1.1;
+  const red = (oldLight + youngLight * 0.63) * Math.exp(-opticalDepth * 0.65);
+  const green = (oldLight * (0.91 - coreFraction * 0.12) + youngLight * 0.81) * Math.exp(-opticalDepth * 0.9);
+  const blue = (oldLight * (0.78 - coreFraction * 0.28) + youngLight) * Math.exp(-opticalDepth * 1.25);
+  // A common exposure preserves population colours. No brightness floor or 32-step
+  // quantization: both previously turned a diffuse disk edge into hard concentric bands.
+  const peak = Math.max(red, green, blue);
+  if (peak < 0.002) return null;
+  const exposure = (255 * (1 - Math.exp(-peak * 1.5))) / peak;
+  return rgbToHex(red * exposure, green * exposure, blue * exposure);
 }
 
 /** Packs bounded RGB values into a CSS hexadecimal colour. */

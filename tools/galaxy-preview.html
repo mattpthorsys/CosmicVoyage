@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Galaxy rendering preview</title>
+    <style>
+      body {
+        margin: 0;
+        background: #010202;
+        overflow: hidden;
+      }
+      canvas {
+        position: absolute;
+        inset: 0;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="terminal"></canvas><canvas id="raster"></canvas>
+    <script type="module">
+      import '../src/assets/fonts/fonts.css';
+      import { CONFIG } from '../src/config.ts';
+      import { ScreenBuffer } from '../src/rendering/screen_buffer.ts';
+      import { MilkyWayModel } from '../src/generation/milky_way_model.ts';
+      import { GalaxyMapController } from '../src/core/galaxy_map.ts';
+      import { GalaxyMapRenderer } from '../src/rendering/galaxy_map_renderer.ts';
+      const query = new URLSearchParams(location.search);
+      const main = document.querySelector('#terminal');
+      const raster = document.querySelector('#raster');
+      const size = 8;
+      const cols = Math.floor(innerWidth / size);
+      const rows = Math.floor(innerHeight / size);
+      for (const canvas of [main, raster]) {
+        canvas.width = cols * size;
+        canvas.height = rows * size;
+      }
+      await document.fonts.load('8px PxPlus_IBM_CGA');
+      const buffer = new ScreenBuffer(main, main.getContext('2d'), false, raster, raster.getContext('2d'));
+      buffer.updateDimensions(cols, rows, size, size);
+      const galaxy = new MilkyWayModel(query.get('seed') ?? CONFIG.SEED);
+      const controller = new GalaxyMapController();
+      const renderer = new GalaxyMapRenderer(buffer, galaxy);
+      for (let i = 0; i < Number(query.get('zoom') ?? 0); i++) controller.zoom(1, galaxy, 0, 0);
+      const model = controller.createModel(galaxy, CONFIG.PLAYER_START_X, CONFIG.PLAYER_START_Y);
+      const start = performance.now();
+      renderer.draw(model);
+      buffer.renderFull();
+      document.body.dataset.renderMs = (performance.now() - start).toFixed(1);
+      const pixels = raster.getContext('2d').getImageData(0, 0, raster.width, raster.height).data;
+      let lit = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) > 25) lit++;
+      document.body.dataset.litPixels = String(lit);
+      document.body.dataset.ready = 'true';
+    </script>
+  </body>
+</html>

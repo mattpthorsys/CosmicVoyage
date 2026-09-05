@@ -2,7 +2,7 @@
 
 ## Scope And Coordinate Model
 
-Generation version 5 treats the navigable map as a top-down projection of the
+Generation version 6 treats the navigable map as a top-down projection of the
 Milky Way. It is not a hidden three-dimensional simulation.
 
 - One world cell is one light-year.
@@ -60,7 +60,7 @@ gameplay code must not duplicate Galactic formulas.
 ## Macro Structure And Micro Detail
 
 The Milky Way's macro structure is fixed so every game remains recognizably the
-Milky Way. Generation version 5 retains the Reid et al. maser-fit observed beta
+Milky Way. Generation version 6 retains the Reid et al. maser-fit observed beta
 ranges, kink radii, piecewise pitch angles, and widths for the major structures.
 Norma is joined to the measured Outer structure on the preceding winding;
 Scutum-Centaurus, Sagittarius-Carina, and Perseus receive bounded continuations;
@@ -76,6 +76,16 @@ weaker two-arm structure traced in infrared light. The central bar uses a
 mapping. The game seed controls fine structure, disk-edge irregularity, cluster
 ownership, individual systems, and gas/dust clumping. All seed labels include
 the generation version.
+
+Version 6 avalanches coordinate hashes before interpolation: unfinalized FNV
+hashes of adjacent decimal coordinates previously created vertical streaks.
+Cloud structure combines two rotated noise scales, with locally displaced gas
+filaments, irregular star-forming complexes, and offset dust lanes inside the
+measured arm envelopes. The smooth old population has only a modest arm excess;
+its width is measured normal to the spiral, not along an azimuthal arc. Central
+disk depletion is gradual, the bar/bulge dominates the centre, and the outer
+disk fades over several kiloparsecs. These are approximations, not a claim to
+know every cloud or the uncertain far-side arm structure.
 
 Spiral arms strongly affect gas, dust, young massive stars, and open clusters.
 Arm tracers are modulated into large complexes and gaps; they are not continuous
@@ -234,11 +244,11 @@ The whole-Galaxy image samples `MilkyWayModel.sampleGalaxyField` directly. It
 must never enumerate generated systems. `GalaxyMapRenderer` caches the static
 colour raster by model version, viewport, zoom, and dimensions; the player
 crosshair is drawn separately. Pixels use the shared two-pixels-per-cell raster
-and nearest-neighbour scaling used by orbital planets. `spanPc` is the vertical
-scientific field; the renderer expands the horizontal span to the viewport
-aspect ratio so parsecs per pixel stay equal and the whole disk is not cropped.
+and nearest-neighbour scaling used by orbital planets. `spanPc` is the shorter
+axis's scientific field; the renderer expands the other axis to the viewport
+aspect ratio so parsecs per pixel stay equal in landscape and portrait.
 
-Keep the map restrained: logarithmic brightness, amber/white old stellar light,
+Keep the map restrained: exposure-compressed brightness, warm-white old stellar light,
 clumpy cool young-star structure, a warm barred core, interrupted offset dust
 lanes, an irregular disk edge, and a high-contrast crosshair. Spiral structure
 must read as bounded tracks and complexes rather than contour lines or a
@@ -246,13 +256,23 @@ photographic pinwheel invented from visual intuition. The player crosshair
 begins below the core and the north marker points upward/coreward. Do not reveal
 undiscovered station locations on the whole-Galaxy view.
 
+The renderer mixes population light before wavelength-dependent dust absorption
+and a shared exposure curve. It must not add independent arm-outline brightness,
+count bar/bulge light twice, or quantize brightness into coarse steps. Empty
+space has no light floor. The colour composite is illustrative, not calibrated
+surface photometry. `tools/galaxy-preview.html` renders the actual pipeline with
+`?seed=...&zoom=0..3`; inspect it alongside the raster fingerprint and directional
+texture, clipping, cache, and population-colour tests when retuning the model.
+
 The local automatic-navigation target table includes a `HAB` field. `COLONY`
 means complete terraforming and `T-FORM` means an active partial project. Do not
 infer this from planet colour or name; read `Planet.terraforming.stage`.
 
 ## Persistence And Migration
 
-Save schema version 9 records generation version 5 identities. Version 8
+Save schema version 10 records generation version 6 identities. Version 9
+generation-five saves retain their coordinates and assets but migrate because
+the corrected density and noise change generated systems and clusters. Version 8
 generation-four saves retain their one-light-year coordinates but migrate
 because the arm environment and generation seeds changed. Version 7
 generation-three saves also retain their coordinates while migrating colony,
@@ -266,7 +286,7 @@ while relocating the vessel to hyperspace at the same projected physical
 location.
 Generated-body mutations, local catalogue records, station-market state, and
 active contracts are retired because their old coordinate identities could
-silently alias unrelated generation-three systems. Generated identity is stable
+silently alias unrelated current-generation systems. Generated identity is stable
 only within a generation version; changing Galactic formulas or seed labels
 requires a deliberate model-version migration and deterministic fixture
 updates.
@@ -310,6 +330,8 @@ retuning it rather than relying on visual intuition:
   <https://arxiv.org/abs/1910.03357>
 - Wegg, Gerhard, and Portail (2015), long-bar angle and half-length:
   <https://arxiv.org/abs/1504.01401>
+- Drimmel (2000), two dominant old-stellar arms versus four-arm dust structure:
+  <https://arxiv.org/abs/astro-ph/0005241>
 - Hayden et al. (2015), APOGEE disk metallicity structure:
   <https://arxiv.org/abs/1503.02110>
 - Kopparapu et al. (2013), temperature-dependent habitable zones:

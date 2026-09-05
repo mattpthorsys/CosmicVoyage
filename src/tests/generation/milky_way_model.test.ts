@@ -4,6 +4,60 @@ import { MilkyWayModel } from '../../generation/milky_way_model';
 import { PRNG } from '../../utils/prng';
 
 describe('MilkyWayModel', () => {
+  it.each(['haunting beauty', 'galaxy-anchor', 'dust-lanes'])(
+    'has no grid-aligned texture streaks for seed %s',
+    (seed) => {
+      const model = new MilkyWayModel(seed);
+      let horizontalVariation = 0;
+      let verticalVariation = 0;
+      for (let y = -12000; y <= 12000; y += 380) {
+        for (let x = -12000; x <= 12000; x += 380) {
+          const base = model.sampleGalaxyField(x, y).texture;
+          horizontalVariation += (model.sampleGalaxyField(x + 140, y).texture - base) ** 2;
+          verticalVariation += (model.sampleGalaxyField(x, y + 140).texture - base) ** 2;
+        }
+      }
+      // Adjacent-coordinate FNV noise previously varied mainly across X, producing stripes.
+      expect(horizontalVariation).toBeGreaterThan(1);
+      expect(horizontalVariation / verticalVariation).toBeGreaterThan(0.7);
+      expect(horizontalVariation / verticalVariation).toBeLessThan(1.4);
+    }
+  );
+
+  it('uses the same stellar density for map samples and generated cell environments', () => {
+    const model = new MilkyWayModel('shared-distribution');
+    for (const [x, y] of [
+      [0, 0],
+      [12500, -23000],
+      [-40000, 7000],
+    ]) {
+      const context = model.getCellContext(x, y);
+      const field = model.sampleGalaxyField(context.galactocentricXpc, context.galactocentricYpc);
+      const boost = context.cluster
+        ? 1 + context.cluster.influence * (context.cluster.kind === 'open' ? 2.2 : 3.5)
+        : 1;
+      expect(context.relativeStellarDensity).toBeCloseTo(field.density * boost, 10);
+    }
+  });
+
+  it('keeps an old stellar disk between arms and a genuinely elongated central bar', () => {
+    const model = new MilkyWayModel('smooth-populations');
+    const beta = (CONFIG.GALACTIC_BAR_ANGLE_DEG * Math.PI) / 180;
+    const along = model.sampleGalaxyField(3000 * Math.sin(beta), -3000 * Math.cos(beta));
+    const across = model.sampleGalaxyField(3000 * Math.cos(beta), 3000 * Math.sin(beta));
+    expect(along.barDensity).toBeGreaterThan(across.barDensity * 10);
+    expect(along.oldStellarDensity).toBeGreaterThan(across.oldStellarDensity * 1.2);
+    const outer = model.sampleGalaxyField(0, -14000);
+    const edge = model.sampleGalaxyField(0, -16000);
+    expect(outer.oldStellarDensity).toBeGreaterThan(edge.oldStellarDensity);
+    for (let i = 0; i < 36; i++) {
+      const angle = (i * Math.PI) / 18;
+      expect(
+        model.sampleGalaxyField(8150 * Math.sin(angle), -8150 * Math.cos(angle)).oldStellarDensity
+      ).toBeGreaterThan(0.9);
+    }
+  });
+
   it('anchors the player near the Solar galactocentric radius and remains order-independent', () => {
     const model = new MilkyWayModel('galaxy-anchor');
     const origin = model.getCellContext(0, 0);

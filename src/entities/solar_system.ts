@@ -1497,26 +1497,28 @@ export class SolarSystem {
           ? 0.45
           : 1;
     const massFactor = this.clamp(Math.sqrt(planet.mass / 5.972e24), 0.2, 7);
+    // Apply the existing hot/close-orbit population limit to rare outcomes as well as averages.
+    const restrictedMoons = effectiveTemp > 390 || planet.orbitDistance < 0.35 * AU_IN_METERS;
 
     if (planet.type === 'GasGiant') {
       const expected = (6 + massFactor * 2.6 + stableWidth * 1.4) * heatPenalty * tidalPenalty;
-      const thermalCap = effectiveTemp > 650 ? 2 : effectiveTemp > 390 ? 5 : 24;
+      const thermalCap = effectiveTemp > 650 ? 2 : restrictedMoons ? 5 : 24;
       return this.clamp(Math.round(prng.random(expected * 0.65, expected * 1.25)), 0, thermalCap);
     }
     if (planet.type === 'IceGiant') {
       const expected = (3 + massFactor * 1.8 + stableWidth) * heatPenalty * tidalPenalty;
-      const thermalCap = effectiveTemp > 650 ? 2 : effectiveTemp > 390 ? 5 : 14;
+      const thermalCap = effectiveTemp > 650 ? 2 : restrictedMoons ? 5 : 14;
       return this.clamp(Math.round(prng.random(expected * 0.55, expected * 1.2)), 0, thermalCap);
     }
     if (planet.type === 'Frozen') {
       const expected = (0.35 + massFactor * 0.45) * heatPenalty * tidalPenalty;
-      return this.clamp(Math.floor(prng.random(0, expected + 1.4)), 0, 3);
+      return this.clamp(Math.floor(prng.random(0, expected + 1.4)), 0, restrictedMoons ? 1 : 3);
     }
 
     const impactMoonChance =
       this.clamp(0.1 + (massFactor - 0.4) * 0.16, 0.03, 0.45) * heatPenalty * tidalPenalty;
     if (prng.random() > impactMoonChance) return 0;
-    return prng.random() < 0.82 ? 1 : 2;
+    return Math.min(prng.random() < 0.82 ? 1 : 2, restrictedMoons ? 1 : 2);
   }
 
   /** Selects a moon type from its host planet and orbital conditions. */

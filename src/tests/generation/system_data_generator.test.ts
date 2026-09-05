@@ -428,6 +428,37 @@ describe('SystemDataGenerator', () => {
     expect(giantWithMoons).toBe(true);
   });
 
+  it.each(['Rock', 'Oceanic', 'Frozen', 'GasGiant', 'IceGiant'])(
+    'caps rare hot or close-orbit %s moon outcomes as well as their average',
+    (type) => {
+      const system = Object.create(SolarSystem.prototype) as {
+        getMajorMoonTargetCount: (
+          planet: Planet,
+          temperature: number,
+          outer: number,
+          inner: number,
+          prng: PRNG
+        ) => number;
+      };
+      for (const [temperature, orbitAu] of [
+        [500, 1],
+        [180, 0.2],
+      ]) {
+        const planet = { type, mass: 1e27, orbitDistance: orbitAu * 1.495978707e11 } as Planet;
+        let calls = 0;
+        const prng = {
+          random: (min?: number, max?: number) => {
+            if (max !== undefined) return max;
+            return calls++ === 0 ? 0 : 0.99;
+          },
+        } as PRNG;
+        const count = system.getMajorMoonTargetCount(planet, temperature, 1e10, 1e7, prng);
+        expect(count).toBeGreaterThan(0);
+        expect(count).toBeLessThanOrEqual(type.endsWith('Giant') ? 5 : 1);
+      }
+    }
+  );
+
   it('resolves moon orbital insertion to the parent planet context', () => {
     const seed = new PRNG('haunting beauty');
     const generator = new SystemDataGenerator(seed);

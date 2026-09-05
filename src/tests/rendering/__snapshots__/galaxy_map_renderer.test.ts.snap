@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Galaxy raster > matches the reviewed default-seed raster fingerprint, including colours and projected positions 1`] = `
+{
+  "hash": 3792604725,
+  "pixels": 6477,
+}
+`;

@@ -401,9 +401,17 @@ export class MilkyWayModel {
     const azimuthRad = Math.atan2(galactocentricXpc, -galactocentricYpc);
     const edgeNoise = this.coordinateNoise(galactocentricXpc / 1100, galactocentricYpc / 1100, 'disk-edge');
     const localDiskEdgePc = CONFIG.GALACTIC_DISK_RADIUS_PC + (edgeNoise - 0.5) * 900;
-    const diskEdge = 1 - this.smoothstep(localDiskEdgePc - 1500, localDiskEdgePc, radiusPc);
-    const innerHole = this.smoothstep(650, 2600, radiusPc);
-    const thinDisk = Math.exp((CONFIG.GALACTIC_SOLAR_RADIUS_PC - radiusPc) / 2700) * diskEdge * innerHole;
+    // The outer disk fades over kiloparsecs; it is not a sharply bounded luminous plate.
+    const diskEdge = 1 - this.smoothstep(localDiskEdgePc - 4000, localDiskEdgePc + 1500, radiusPc);
+    // Smooth central depletion of the axisymmetric disk leaves the bar/bulge dominant,
+    // without a hollow centre or an artificial bright ring at the depletion boundary.
+    const innerHole = 0.06 + 0.94 * this.smoothstep(0, 5500, radiusPc);
+    const stellarArmInfluence = this.getStellarArmInfluence(radiusPc, azimuthRad);
+    const thinDisk =
+      Math.exp((CONFIG.GALACTIC_SOLAR_RADIUS_PC - radiusPc) / 2700) *
+      diskEdge *
+      innerHole *
+      (1 + stellarArmInfluence * 0.22);
     const thickDisk =
       0.11 *
       Math.exp((CONFIG.GALACTIC_SOLAR_RADIUS_PC - radiusPc) / 2200) *
@@ -417,44 +425,57 @@ export class MilkyWayModel {
     const barHalfLengthPc = CONFIG.GALACTIC_BAR_HALF_LENGTH_PC;
     const barEllipticalRadius = Math.sqrt((barAlong / barHalfLengthPc) ** 2 + (barAcross / 1150) ** 2);
     const barEnd = 1 - this.smoothstep(0.82, 1.08, Math.abs(barAlong) / barHalfLengthPc);
-    const barDensity = 5.2 * Math.exp(-barEllipticalRadius * 2.15) * barEnd;
+    const barDensity = 9 * Math.exp(-barEllipticalRadius * 1.8) * barEnd;
     const bulgeDensity = 8.6 * Math.exp(-radiusPc / 760);
     const bulge = bulgeDensity + barDensity * 0.72;
     const halo = 0.0015 * Math.pow(CONFIG.GALACTIC_SOLAR_RADIUS_PC / Math.max(650, radiusPc), 2.65);
-    const stellarArmInfluence = this.getStellarArmInfluence(radiusPc, azimuthRad);
     const arm = this.getSpiralArmSample(radiusPc, azimuthRad);
-    const fineNoise = this.coordinateNoise(galactocentricXpc / 260, galactocentricYpc / 260, 'macro');
-    // Arm tracers occur in large star-forming complexes with genuine gaps, not continuous tubes.
-    // A broader second field keeps those complexes visible in the whole-Galaxy pixel raster.
-    const clumpNoise = this.coordinateNoise(galactocentricXpc / 620, galactocentricYpc / 620, 'arms');
+    const fineNoise = this.structureNoise(galactocentricXpc / 230, galactocentricYpc / 230, 'macro');
+    const clumpNoise = this.structureNoise(galactocentricXpc / 780, galactocentricYpc / 780, 'arms');
+    // Gas follows the observed arm envelope, but turbulence displaces its filaments locally.
+    // Measured arm centres remain fixed, independent of these seeded cloud details.
+    const filamentOffsetPc = (clumpNoise - 0.5) * arm.widthPc * 1.8;
+    const filament =
+      arm.widthPc > 0
+        ? Math.exp(-0.5 * ((arm.signedDistancePc + filamentOffsetPc) / (arm.widthPc * 0.64)) ** 2)
+        : 0;
+    const complexes = this.smoothstep(0.28, 0.78, clumpNoise);
     const molecularRing = Math.exp(-0.5 * ((radiusPc - 4500) / 1350) ** 2);
     const gasRadial = Math.exp(-Math.abs(radiusPc - 6200) / 5800) * diskEdge;
     const gasDensity = this.clamp(
       gasRadial *
-        (0.08 + molecularRing * 0.14 + arm.influence * 0.94) *
-        (0.76 + fineNoise * 0.22 + clumpNoise * 0.38),
+        (0.1 + molecularRing * 0.14 + arm.influence * (0.32 + filament * 0.75)) *
+        (0.45 + complexes * 0.85 + fineNoise * 0.25),
       0,
       1.4
     );
-    const dustNoise = this.coordinateNoise(galactocentricXpc / 310, galactocentricYpc / 310, 'dust');
+    const dustNoise = this.structureNoise(galactocentricXpc / 360, galactocentricYpc / 360, 'dust');
     const dustLaneDensity =
       arm.widthPc > 0
         ? arm.influence *
-          Math.exp(-0.5 * ((arm.signedDistancePc + arm.widthPc * 0.42) / (arm.widthPc * 0.52)) ** 2) *
-          (0.16 + clumpNoise * 0.84)
+          Math.exp(
+            -0.5 *
+              ((arm.signedDistancePc + filamentOffsetPc + arm.widthPc * 0.48) / (arm.widthPc * 0.34)) ** 2
+          ) *
+          gasRadial *
+          (0.2 + dustNoise * 0.8)
         : 0;
     const dustDensity = this.clamp(gasDensity * (0.24 + dustNoise * 0.36) + dustLaneDensity * 0.42, 0, 1.5);
     const youngStellarDensity = this.clamp(
-      arm.influence * gasRadial * (0.08 + fineNoise * 0.2 + Math.pow(clumpNoise, 1.65) * 1.42) +
-        molecularRing * 0.025,
+      arm.influence *
+        gasRadial *
+        Math.exp(-Math.max(0, radiusPc - 7000) / 6000) *
+        (0.12 + filament * (0.12 + complexes * 1.5)) *
+        (0.55 + fineNoise * 0.9) +
+        molecularRing * 0.018,
       0,
       1.6
     );
     const localNormalization = 1.112;
     const relativeStellarDensity = this.clamp(
       ((thinDisk + thickDisk + bulge + halo) / localNormalization) *
-        (1 + arm.influence * 0.12 + stellarArmInfluence * 0.08) *
-        (0.94 + fineNoise * 0.12),
+        (1 + arm.influence * 0.12) *
+        (0.97 + fineNoise * 0.06),
       0.0001,
       42
     );
@@ -508,7 +529,10 @@ export class MilkyWayModel {
         const endpointWeight =
           this.smoothstep(arm.trackBetaMinRad, arm.trackBetaMinRad + arm.endpointTaperRad, beta) *
           (1 - this.smoothstep(arm.trackBetaMaxRad - arm.endpointTaperRad, arm.trackBetaMaxRad, beta));
-        const influence = Math.exp(-0.5 * (signedDistancePc / widthPc) ** 2) * endpointWeight;
+        const radialWeight =
+          this.smoothstep(arm.minRadiusPc, arm.minRadiusPc + 600, armRadiusPc) *
+          (1 - this.smoothstep(arm.maxRadiusPc - 800, arm.maxRadiusPc, armRadiusPc));
+        const influence = Math.exp(-0.5 * (signedDistancePc / widthPc) ** 2) * endpointWeight * radialWeight;
         if (influence > strongestInfluence) {
           strongestInfluence = influence;
           strongestSignedDistancePc = signedDistancePc;
@@ -566,7 +590,9 @@ export class MilkyWayModel {
     );
     const nearestArmSeparation = Math.min(wrappedSeparation, Math.PI - wrappedSeparation);
     const widthPc = this.lerp(820, 1450, this.clamp((radiusPc - 3500) / 10500, 0, 1));
-    const transverseInfluence = Math.exp(-0.5 * ((radiusPc * nearestArmSeparation) / widthPc) ** 2);
+    // Arc length is almost along an arm, not across it: project onto the spiral normal.
+    const normalDistancePc = radiusPc * nearestArmSeparation * Math.sin(pitchRad);
+    const transverseInfluence = Math.exp(-0.5 * (normalDistancePc / widthPc) ** 2);
     const radialTaper =
       this.smoothstep(3200, 4700, radiusPc) *
       (1 - this.smoothstep(13200, CONFIG.GALACTIC_DISK_RADIUS_PC, radiusPc));
@@ -709,6 +735,14 @@ export class MilkyWayModel {
     return 'halo';
   }
 
+  /** Combines rotated scales so cloud complexes have no preferred Cartesian grid direction. */
+  private structureNoise(x: number, y: number, label: string): number {
+    return (
+      this.coordinateNoise(x * 0.8 - y * 0.6, x * 0.6 + y * 0.8, label) * 0.65 +
+      this.coordinateNoise(x * 1.92 + y * 1.44 + 17.3, -x * 1.44 + y * 1.92 - 9.1, label) * 0.35
+    );
+  }
+
   /** Returns deterministic low-frequency coordinate noise without mutable PRNG state. */
   private coordinateNoise(x: number, y: number, label: string): number {
     const x0 = Math.floor(x);
@@ -732,7 +766,14 @@ export class MilkyWayModel {
       hash ^= value.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    return (hash >>> 0) / 0xffffffff;
+    // FNV alone leaves adjacent decimal coordinates correlated, drawing vertical stripes.
+    // Avalanche all bits before converting to noise, including the low-entropy last digit.
+    hash ^= hash >>> 16;
+    hash = Math.imul(hash, 0x85ebca6b);
+    hash ^= hash >>> 13;
+    hash = Math.imul(hash, 0xc2b2ae35);
+    hash ^= hash >>> 16;
+    return (hash >>> 0) / 0x100000000;
   }
 
   /** Returns smooth Hermite interpolation between two scalar edges, including reversed edges. */
