@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CONFIG } from '../../config';
 import { hexToRgb } from '../../rendering/colour';
 import { LocalNebulaColourProvider } from '../../rendering/nebula_colour_provider';
@@ -20,6 +20,65 @@ function colourDistance(first: string, second: string): number {
 }
 
 describe('NebulaRenderer', () => {
+  it.each(['haunting beauty', 'quiet-sky', 'cloudy-sky'])(
+    'shows a small restrained nebula in the initial viewport for seed %s',
+    (seed) => {
+      const sampler = new NebulaColourSampler(`${seed}_nebula`);
+      const samples = [];
+      for (let y = -12; y < 12; y++) {
+        for (let x = -20; x < 20; x++) {
+          samples.push(luminance(sampler.sample(CONFIG.PLAYER_START_X + x, CONFIG.PLAYER_START_Y + y)));
+        }
+      }
+      expect(Math.max(...samples)).toBeGreaterThan(12);
+      expect(Math.max(...samples)).toBeLessThan(40);
+      expect(samples.filter((light) => light > 5).length).toBeGreaterThan(40);
+      expect(samples.filter((light) => light > 5).length).toBeLessThan(samples.length * 0.3);
+      expect(samples.filter((light) => light < 1.5).length).toBeGreaterThan(samples.length * 0.6);
+    }
+  );
+
+  it('anchors the starting cloud to physical coordinates and respects disabled nebulae', () => {
+    const sampler = new NebulaColourSampler();
+    const origin = {
+      x: CONFIG.PLAYER_START_X,
+      y: CONFIG.PLAYER_START_Y,
+      scale: CONFIG.HYPERSPACE_CELL_LIGHT_YEARS,
+    };
+    const original = sampler.sample(origin.x + 14 / origin.scale, origin.y - 6 / origin.scale);
+    try {
+      vi.spyOn(CONFIG, 'HYPERSPACE_CELL_LIGHT_YEARS', 'get').mockReturnValue(2);
+      expect(luminance(sampler.sample(origin.x + 7, origin.y - 3))).toBeGreaterThan(12);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(luminance(original)).toBeGreaterThan(12);
+    try {
+      vi.spyOn(CONFIG, 'NEBULA_INTENSITY', 'get').mockReturnValue(0);
+      expect(sampler.sample(origin.x + 14 / origin.scale, origin.y - 6 / origin.scale)).toBe(
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('keeps dense starting-area samples identical across cache clearing and reversed worker batches', async () => {
+    const requests = Array.from({ length: 24 * 40 }, (_, index) => ({
+      worldX: CONFIG.PLAYER_START_X + (index % 40) - 20,
+      worldY: CONFIG.PLAYER_START_Y + Math.floor(index / 40) - 12,
+    }));
+    const expected = new NebulaColourSampler();
+    const samples = requests.map(({ worldX, worldY }) => expected.sample(worldX, worldY));
+    const provider = new LocalNebulaColourProvider();
+    const batch = await provider.getBackgroundColorsAsync([...requests].reverse());
+    expect(batch.map((sample) => sample.colour).reverse()).toEqual(samples);
+    expected.clearCache();
+    for (let index = requests.length - 1; index >= 0; index--) {
+      expect(expected.sample(requests[index].worldX, requests[index].worldY)).toBe(samples[index]);
+    }
+  });
+
   it('matches the worker-safe nebula sampler exactly', () => {
     const renderer = new NebulaRenderer(new LocalNebulaColourProvider());
     const sampler = new NebulaColourSampler();

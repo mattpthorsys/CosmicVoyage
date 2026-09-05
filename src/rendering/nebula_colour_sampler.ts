@@ -16,6 +16,7 @@ type NebulaRegion = {
 };
 
 const BLACK: RgbColour = { r: 0, g: 0, b: 0 };
+const STARTING_CLOUD = { offsetXLy: 14, offsetYLy: -6, halfLengthLy: 18, halfWidthLy: 8 } as const;
 
 const NEBULA_PALETTES: Record<NebulaKind, string[]> = {
   emission: ['#100205', '#26070C', '#3E1119', '#55212A', '#60404A'],
@@ -62,6 +63,34 @@ export class NebulaColourSampler {
 
   /** Samples the deterministic nebula colour field at world coordinates. */
   sample(worldX: number, worldY: number): string {
+    const background = this.sampleGalacticCloud(worldX, worldY);
+    return this.blendStartingCloud(worldX, worldY, background);
+  }
+
+  /** Adds a small authored reflection wisp to the initial sensor view, with seeded substructure. */
+  private blendStartingCloud(worldX: number, worldY: number, background: string): string {
+    // This is a faint, exposure-enhanced navigation backdrop, not a catalogue nebula at Sol.
+    // Physical offsets keep it world-anchored when moving, resizing, or changing cell scale.
+    const localX =
+      (worldX - CONFIG.PLAYER_START_X) * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS - STARTING_CLOUD.offsetXLy;
+    const localY =
+      (worldY - CONFIG.PLAYER_START_Y) * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS - STARTING_CLOUD.offsetYLy;
+    const along = localX * 0.92 - localY * 0.392;
+    const across = localX * 0.392 + localY * 0.92;
+    const radius = Math.hypot(along / STARTING_CLOUD.halfLengthLy, across / STARTING_CLOUD.halfWidthLy);
+    if (radius >= 1.35 || CONFIG.NEBULA_INTENSITY <= 0) return background;
+
+    const cloud = this.fbm(localX / 8 + 53.1, localY / 8 - 24.7, 3, 0.55, 2.1);
+    const filament = this.ridgedNoise(along / 10 + 7.4, across / 3 - 19.2, 3);
+    const edge = 1 - this.smoothstep(0.12, 1.22, radius + (cloud - 0.5) * 0.24);
+    const opacity = edge * (0.38 + filament * 0.24) * Math.max(0, Math.min(1, CONFIG.NEBULA_INTENSITY));
+    const reflectedLight = this.sampleNebulaPalette('reflection', 0.53 + cloud * 0.23);
+    const colour = interpolateColour(hexToRgb(background), reflectedLight, opacity);
+    return rgbToHex(colour.r, colour.g, colour.b);
+  }
+
+  /** Samples sparse diffuse gas and individual clouds from the shared Galactic environment. */
+  private sampleGalacticCloud(worldX: number, worldY: number): string {
     const scale = CONFIG.NEBULA_SCALE;
     const region = this.getNebulaRegion(worldX, worldY, scale);
     if (!region) return this.defaultBgColor;

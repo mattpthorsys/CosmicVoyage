@@ -37,4 +37,16 @@ describe('PerlinNoise', () => {
 
     expect(reverseSamples).toEqual(forwardSamples);
   });
+
+  it('does not alias close fractional samples through rounded cache keys', () => {
+    const forward = new PerlinNoise('fractional-order', { coordinateHashedGradients: true });
+    const reverse = new PerlinNoise('fractional-order', { coordinateHashedGradients: true });
+    const first = forward.get(0.3011, -0.4121);
+    const second = forward.get(0.3019, -0.4129);
+    expect(first).not.toBe(second);
+    expect(reverse.get(0.3019, -0.4129)).toBe(second);
+    expect(reverse.get(0.3011, -0.4121)).toBe(first);
+    forward.clearCache();
+    expect(forward.get(0.3011, -0.4121)).toBe(first);
+  });
 });

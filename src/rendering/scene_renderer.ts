@@ -327,7 +327,7 @@ export class SceneRenderer {
         const index = viewY * cols + viewX;
 
         if (tile.starChar) {
-          cells[index] = this.createCell(tile.starChar, tile.starColor, CONFIG.TRANSPARENT_COLOUR, true);
+          cells[index] = this.createCell(tile.starChar, tile.starColor, tile.bg, false);
         } else {
           cells[index] = this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
         }
@@ -383,7 +383,7 @@ export class SceneRenderer {
           Math.hypot(viewX - viewCenterX, viewY - viewCenterY)
         );
         cells[index] = tile.starChar
-          ? this.createCell(tile.starChar, tile.starColor, CONFIG.TRANSPARENT_COLOUR, true)
+          ? this.createCell(tile.starChar, tile.starColor, tile.bg, false)
           : this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
       }
     }
@@ -406,11 +406,13 @@ export class SceneRenderer {
     player: PlayerViewSnapshot
   ): void {
     const cells = backgroundCells.slice();
-    cells[viewCenterY * this.screenBuffer.getCols() + viewCenterX] = this.createCell(
+    const playerIndex = viewCenterY * this.screenBuffer.getCols() + viewCenterX;
+    // A glyph replaces foreground only; clearing its background punches a hole in the cloud.
+    cells[playerIndex] = this.createCell(
       player.render.char,
       player.render.fgColor,
-      CONFIG.TRANSPARENT_COLOUR,
-      true
+      backgroundCells[playerIndex].bg,
+      false
     );
     this.screenBuffer.stageCells(cells);
   }

@@ -334,6 +334,47 @@ function hexRgb(hex: string): { r: number; g: number; b: number } {
 }
 
 describe('SceneRenderer visual regressions', () => {
+  it.each([
+    [40, 24],
+    [120, 60],
+  ])(
+    'keeps the starting nebula visible and world-anchored through movement in a %ix%i view',
+    (cols, rows) => {
+      const { buffer, stagedFrames } = createMockScreenBuffer(cols, rows);
+      const nebula = new NebulaRenderer();
+      const generator = new SystemDataGenerator(new PRNG(CONFIG.SEED));
+      const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), nebula, generator);
+      const player = new Player();
+      renderer.drawHyperspace(player);
+      const initial = stagedFrames.at(-1) as { bg: string; char: string | null }[];
+      const light = initial.map((cell) => {
+        const rgb = hexToRgb(cell.bg);
+        return rgb.r * 0.2126 + rgb.g * 0.7152 + rgb.b * 0.0722;
+      });
+      expect(Math.max(...light)).toBeGreaterThan(12);
+      expect(light.filter((value) => value > 5).length).toBeGreaterThan(40);
+      expect(light.filter((value) => value < 1.5).length).toBeGreaterThan(cols * rows * 0.6);
+      expect(
+        initial.some(
+          (cell, index) => cell.char !== ' ' && cell.char !== player.render.char && light[index] > 5
+        )
+      ).toBe(true);
+      player.position.worldX += 1;
+      player.position.worldY += 1;
+      renderer.drawHyperspace(player);
+      const shifted = stagedFrames.at(-1) as { bg: string }[];
+      for (let y = 0; y < rows - 1; y++) {
+        for (let x = 0; x < cols - 1; x++) {
+          expect(shifted[y * cols + x].bg).toBe(initial[(y + 1) * cols + x + 1].bg);
+        }
+      }
+      renderer.clearCaches();
+      nebula.clearCache();
+      renderer.drawHyperspace(player);
+      expect(stagedFrames.at(-1)).toEqual(shifted);
+    }
+  );
+
   it('shifts hyperspace frames by one-cell movement without rebuilding the full viewport', () => {
     const { buffer, stagedFrames } = createMockScreenBuffer(7, 5);
     let mapCalls = 0;

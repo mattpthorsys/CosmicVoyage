@@ -78,10 +78,13 @@ export class PerlinNoise {
   public get(x: number, y: number): number {
     // Note: Cache precision now comes from CONFIG when key is created
     const precision = Math.max(0, Math.min(10, CONFIG.NEBULA_CACHE_PRECISION)); // Ideally get from config if needed here
-    const memKey = `${x.toFixed(precision)},${y.toFixed(precision)}`;
+    // Nebula callers already cache complete colours. Rounded scalar keys would reuse a
+    // neighbour's value and make worker batches or viewport traversal change the picture.
+    // Retain legacy caching for terrain, whose seeded generation is intentionally unchanged.
+    const memKey = this.coordinateHashedGradients ? null : `${x.toFixed(precision)},${y.toFixed(precision)}`;
 
     // Use instance memory cache
-    if (Object.hasOwn(this.memory, memKey)) {
+    if (memKey !== null && Object.hasOwn(this.memory, memKey)) {
       return this.memory[memKey];
     }
 
@@ -100,7 +103,7 @@ export class PerlinNoise {
     const v = this.interp(y - yf, xt, xb);
 
     // Store in instance memory cache
-    this.memory[memKey] = v;
+    if (memKey !== null) this.memory[memKey] = v;
     return v;
   }
 

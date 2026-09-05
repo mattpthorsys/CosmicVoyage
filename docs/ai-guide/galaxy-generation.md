@@ -264,6 +264,22 @@ surface photometry. `tools/galaxy-preview.html` renders the actual pipeline with
 `?seed=...&zoom=0..3`; inspect it alongside the raster fingerprint and directional
 texture, clipping, cache, and population-colour tests when retuning the model.
 
+The hyperspace backdrop additionally guarantees one small, authored reflection
+wisp near the configured start (14 ly east and 6 ly coreward). It is an
+exposure-enhanced navigation visualization, not a claim that a bright catalogued
+nebula lies next to the Sun. Its size and position are in light-years, its
+filaments are seeded, and it blends smoothly into the sparse procedural field.
+It does not change the stellar population or introduce surface-travel effects.
+Use `tools/galaxy-preview.html?mode=hyperspace` to inspect the starting scene;
+`x` and `y` offset the camera in world cells. Dense reverse-order samples, real
+scene shifts, and cache rebuilding must produce identical world colours.
+
+Coordinate-hashed Perlin sampling deliberately skips rounded scalar-value
+caching: it previously substituted whichever neighbouring fraction was sampled
+first. Complete nebula colours remain cached by their renderer/provider; legacy
+terrain noise retains its existing behaviour. Foreground stars and the ship
+must preserve each cell's nebula background rather than clear holes through it.
+
 The local automatic-navigation target table includes a `HAB` field. `COLONY`
 means complete terraforming and `T-FORM` means an active partial project. Do not
 infer this from planet colour or name; read `Planet.terraforming.stage`.

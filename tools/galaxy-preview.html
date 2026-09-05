@@ -26,6 +26,13 @@
       import { MilkyWayModel } from '../src/generation/milky_way_model.ts';
       import { GalaxyMapController } from '../src/core/galaxy_map.ts';
       import { GalaxyMapRenderer } from '../src/rendering/galaxy_map_renderer.ts';
+      import { SceneRenderer } from '../src/rendering/scene_renderer.ts';
+      import { DrawingContext } from '../src/rendering/drawing_context.ts';
+      import { NebulaRenderer } from '../src/rendering/nebula_renderer.ts';
+      import { NebulaColourSampler } from '../src/rendering/nebula_colour_sampler.ts';
+      import { SystemDataGenerator } from '../src/generation/system_data_generator.ts';
+      import { Player } from '../src/core/player.ts';
+      import { PRNG } from '../src/utils/prng.ts';
       const query = new URLSearchParams(location.search);
       const main = document.querySelector('#terminal');
       const raster = document.querySelector('#raster');
@@ -39,16 +46,44 @@
       await document.fonts.load('8px PxPlus_IBM_CGA');
       const buffer = new ScreenBuffer(main, main.getContext('2d'), false, raster, raster.getContext('2d'));
       buffer.updateDimensions(cols, rows, size, size);
-      const galaxy = new MilkyWayModel(query.get('seed') ?? CONFIG.SEED);
+      const seed = query.get('seed') ?? CONFIG.SEED;
+      const galaxy = new MilkyWayModel(seed);
       const controller = new GalaxyMapController();
       const renderer = new GalaxyMapRenderer(buffer, galaxy);
       for (let i = 0; i < Number(query.get('zoom') ?? 0); i++) controller.zoom(1, galaxy, 0, 0);
       const model = controller.createModel(galaxy, CONFIG.PLAYER_START_X, CONFIG.PLAYER_START_Y);
       const start = performance.now();
-      renderer.draw(model);
+      if (query.get('mode') === 'hyperspace') {
+        const sampler = new NebulaColourSampler(`${seed}_nebula`);
+        const nebula = new NebulaRenderer({
+          getBackgroundColor: (x, y) => sampler.sample(x, y),
+          getBackgroundColorsAsync: async (requests) =>
+            requests.map(({ worldX, worldY }) => ({
+              worldX,
+              worldY,
+              colour: sampler.sample(worldX, worldY),
+            })),
+          clearCache: () => sampler.clearCache(),
+        });
+        const player = new Player();
+        player.position.worldX += Number(query.get('x') ?? 0);
+        player.position.worldY += Number(query.get('y') ?? 0);
+        const scene = new SceneRenderer(
+          buffer,
+          new DrawingContext(buffer),
+          nebula,
+          new SystemDataGenerator(new PRNG(seed))
+        );
+        scene.drawHyperspace(player);
+      } else {
+        renderer.draw(model);
+      }
       buffer.renderFull();
       document.body.dataset.renderMs = (performance.now() - start).toFixed(1);
-      const pixels = raster.getContext('2d').getImageData(0, 0, raster.width, raster.height).data;
+      const measuredCanvas = query.get('mode') === 'hyperspace' ? main : raster;
+      const pixels = measuredCanvas
+        .getContext('2d')
+        .getImageData(0, 0, measuredCanvas.width, measuredCanvas.height).data;
       let lit = 0;
       for (let i = 0; i < pixels.length; i += 4)
         if (Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) > 25) lit++;
