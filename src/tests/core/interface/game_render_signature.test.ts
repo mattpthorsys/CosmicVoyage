@@ -109,6 +109,18 @@ describe('Game main render signatures', () => {
     expect(game.canSkipMainRender('hyperspace', signature)).toBe(false);
   });
 
+  it('invalidates a cached scene after the renderer resizes the canvas', () => {
+    const game = createRenderGateHarness();
+    game.forceFullRender = false;
+    game.lastMainRenderSignature = 'cached-scene';
+    game.renderer = { consumeLayoutInvalidation: () => true };
+
+    game.syncRendererLayoutInvalidation();
+
+    expect(game.forceFullRender).toBe(true);
+    expect(game.lastMainRenderSignature).toBe('');
+  });
+
   it('redraws overlays without repainting an unchanged main scene', () => {
     const game = createRenderGateHarness();
     const overlayContext = {} as CanvasRenderingContext2D;

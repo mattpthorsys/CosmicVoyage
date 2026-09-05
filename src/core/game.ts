@@ -6096,6 +6096,7 @@ export class Game {
   private _render(): void {
     const currentState = this.stateManager.state;
     try {
+      this.syncRendererLayoutInvalidation();
       const renderNow = performance.now();
       const mainRenderSignature = this.getMainRenderSignature(renderNow);
       const shouldRenderMainScene = !this.canSkipMainRender(currentState, mainRenderSignature);
@@ -6289,6 +6290,13 @@ export class Game {
       this._publishStatusUpdate(); // Try to show error
       this.stopGame(); // Stop loop on render errors
     }
+  }
+
+  /** Makes a canvas resize visible to the render-signature gate before it may skip a frame. */
+  private syncRendererLayoutInvalidation(): void {
+    if (!this.renderer.consumeLayoutInvalidation?.()) return;
+    this.forceFullRender = true;
+    this.lastMainRenderSignature = '';
   }
 
   /** Returns whether the active interface should hide foreground HUD elements. */

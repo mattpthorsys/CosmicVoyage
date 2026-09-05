@@ -51,6 +51,7 @@ export class RendererFacade {
   private readonly orbitAssetQueue = new Set<Planet>();
   private isOrbitAssetPreparationScheduled = false;
   private hudResizeFrame: number | null = null;
+  private layoutInvalidated = false;
 
   /** Initializes RendererFacade. */
   constructor(
@@ -182,6 +183,13 @@ export class RendererFacade {
     return this.screenBuffer.getRows();
   }
 
+  /** Returns and clears the pending main-scene redraw request from a canvas resize. */
+  public consumeLayoutInvalidation(): boolean {
+    const invalidated = this.layoutInvalidated;
+    this.layoutInvalidated = false;
+    return invalidated;
+  }
+
   /** Handler for the statusUpdateNeeded event. */
   private _handleStatusUpdate(data: StatusUpdateEvent): void {
     logger.debug(
@@ -239,16 +247,24 @@ export class RendererFacade {
     const charWidthPx = baseCharWidth; // Use calculated char width
     const charHeightPx = baseCharHeight; // Use calculated char height
 
-    // Set canvas physical pixel dimensions
-    this.canvas.width = cols * charWidthPx;
-    this.canvas.height = rows * charHeightPx;
-    this.orbitCanvas.width = this.canvas.width;
-    this.orbitCanvas.height = this.canvas.height;
-    this.overlayCanvas.width = this.canvas.width;
-    this.overlayCanvas.height = this.canvas.height;
-
-    // Update internal buffers and context settings
-    this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
+    const canvasWidth = cols * charWidthPx;
+    const canvasHeight = rows * charHeightPx;
+    const canvasResized = this.canvas.width !== canvasWidth || this.canvas.height !== canvasHeight;
+    if (canvasResized) {
+      // Assigning canvas dimensions clears its pixels. Only do that for a real grid change and
+      // tell Game to repaint before it next considers the cached render signature.
+      this.canvas.width = canvasWidth;
+      this.canvas.height = canvasHeight;
+      this.orbitCanvas.width = canvasWidth;
+      this.orbitCanvas.height = canvasHeight;
+      this.overlayCanvas.width = canvasWidth;
+      this.overlayCanvas.height = canvasHeight;
+      this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
+      this.nebulaRenderer.clearCache();
+      this.sceneRenderer.clearCaches();
+      this.galaxyMapRenderer.clearCache();
+      this.layoutInvalidated = true;
+    }
 
     // Measured DOM heights determine the reserved canvas space after responsive layout applies.
     const finalStatusBarHeightPx =
@@ -274,12 +290,7 @@ export class RendererFacade {
     this.overlayCanvas.style.top = `${canvasMarginTop}px`;
     this.overlayCanvas.style.width = `${this.canvas.width}px`;
     this.overlayCanvas.style.height = `${this.canvas.height}px`;
-    this.clearOverlay();
-
-    this.nebulaRenderer.clearCache(); // Clear nebula cache on resize
-    this.sceneRenderer.clearCaches();
-    this.galaxyMapRenderer.clearCache();
-    this.screenBuffer.clear(false);
+    if (canvasResized) this.clearOverlay();
 
     logger.info(
       `[RendererFacade.fitToScreen] Resized complete. Grid: ${cols}x${rows}, Canvas: ${this.canvas.width}x${this.canvas.height}px, Avail: ${availableWidth}x${availableHeight}px`
