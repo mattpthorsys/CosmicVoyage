@@ -36,24 +36,36 @@ export class GalaxyMapRenderer {
     const panelWidth = cols - 2;
     const panelHeight = rows - 2;
     const mapX = panelX + 1;
-    const mapY = panelY + 2;
+    const mapY = panelY + 3;
     const mapWidth = Math.max(8, panelWidth - 2);
-    const mapHeight = Math.max(4, panelHeight - 7);
+    const mapHeight = Math.max(1, panelHeight - 8);
     this.fillPanel(panelX, panelY, panelWidth, panelHeight);
     this.drawFrame(panelX, panelY, panelWidth, panelHeight);
     this.drawRaster(model, mapX, mapY, mapWidth, mapHeight);
     this.drawPlayerCrosshair(model, mapX, mapY, mapWidth, mapHeight);
     this.drawGalacticNorthMarker(mapX, mapY);
 
-    this.drawCentred('MILKY WAY // GALACTIC NAVIGATION', panelY + 1, TEXT_PALETTE.textBright);
+    const available = cols - 4;
+    const title = 'MILKY WAY // GALACTIC NAVIGATION';
+    this.drawCentred(title.length <= available ? title : 'MILKY WAY', panelY + 1, TEXT_PALETTE.textBright);
     const radiusKpc = model.playerGalactocentricRadiusPc / 1000;
     const distanceLy = model.playerDistanceFromSolLy;
     const location = `R_GC ${radiusKpc.toFixed(2)} kpc  ${model.armName.toUpperCase()}  ${model.humanRegion.toUpperCase()}`;
     const coordinates = `GRID ${model.playerWorldX},${model.playerWorldY}  SOL ${distanceLy.toFixed(0)} ly  ${model.zoomLabel}`;
-    this.drawCentred(location, panelY + panelHeight - 3, TEXT_PALETTE.amber);
-    this.drawCentred(coordinates, panelY + panelHeight - 2, TEXT_PALETTE.textMuted);
     this.drawCentred(
-      'ARROWS PAN   +/- ZOOM   HOME RECENTRE   G/ESC CLOSE',
+      location.length <= available ? location : `R_GC ${radiusKpc.toFixed(2)} kpc`,
+      panelY + panelHeight - 3,
+      TEXT_PALETTE.amber
+    );
+    const compactCoordinates = `SOL ${distanceLy < 1e6 ? distanceLy.toFixed(0) : distanceLy.toExponential(1)} ly`;
+    this.drawCentred(
+      coordinates.length <= available ? coordinates : compactCoordinates,
+      panelY + panelHeight - 2,
+      TEXT_PALETTE.textMuted
+    );
+    const legend = 'ARROWS PAN   +/- ZOOM   HOME RECENTRE   G/ESC CLOSE';
+    this.drawCentred(
+      legend.length <= available ? legend : '^v<> +/- G/ESC',
       panelY + panelHeight - 1,
       TEXT_PALETTE.cyanSignal
     );
@@ -61,7 +73,8 @@ export class GalaxyMapRenderer {
 
   /** Labels screen-up as the coreward Galactic north used by interstellar movement. */
   private drawGalacticNorthMarker(mapX: number, mapY: number): void {
-    this.screenBuffer.drawString('^ N // CORE', mapX + 1, mapY + 1, TEXT_PALETTE.amber, '#010202');
+    // The detail canvas composites above terminal text, so reserve a non-raster row.
+    this.screenBuffer.drawString('^ N // CORE', mapX + 1, mapY - 1, TEXT_PALETTE.amber, '#010202');
   }
 
   /** Fills the modal area so the underlying physical scene cannot bleed through. */

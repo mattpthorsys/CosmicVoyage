@@ -125,9 +125,9 @@ describe('Galaxy raster', () => {
     [40, 24],
   ])('clips all half-cell pixels and crosshair ticks in a %ix%i viewport', (cols, rows) => {
     const { renderer, model, pixels, buffer, context } = createRasterHarness(cols, rows);
-    const spans = getGalaxyMapSpans(model.spanPc, (cols - 4) * 2, (rows - 9) * 2);
+    const spans = getGalaxyMapSpans(model.spanPc, (cols - 4) * 2, (rows - 10) * 2);
     expect(Math.min(spans.horizontalSpanPc, spans.verticalSpanPc)).toBe(model.spanPc);
-    expect(spans.horizontalSpanPc / (cols - 4)).toBeCloseTo(spans.verticalSpanPc / (rows - 9), 8);
+    expect(spans.horizontalSpanPc / (cols - 4)).toBeCloseTo(spans.verticalSpanPc / (rows - 10), 8);
     // Place the crosshair at the upper left: its outer ticks must not paint the frame.
     renderer.draw({ ...model, playerXpc: -spans.horizontalSpanPc / 2, playerYpc: spans.verticalSpanPc / 2 });
     expect(pixels.mock.calls.filter((call) => call[3] === '#5FFFF0')).toHaveLength(5);
@@ -135,7 +135,7 @@ describe('Galaxy raster', () => {
     for (const [, x, y, , , width, height] of pixels.mock.calls) {
       expect(x).toBeGreaterThanOrEqual(2);
       expect(x).toBeLessThan(cols - 2);
-      expect(y).toBeGreaterThanOrEqual(3);
+      expect(y).toBeGreaterThanOrEqual(4);
       expect(y).toBeLessThan(rows - 6);
       expect(width).toBe(0.5);
       expect(height).toBe(0.5);
@@ -148,23 +148,23 @@ describe('Galaxy raster', () => {
   it('reuses static samples for player movement and invalidates them for pan, zoom, resize and explicit clearing', () => {
     const { renderer, model, samples, buffer } = createRasterHarness(40, 24);
     renderer.draw(model);
-    expect(samples).toHaveBeenCalledTimes(36 * 2 * 15 * 2);
+    expect(samples).toHaveBeenCalledTimes(36 * 2 * 14 * 2);
     samples.mockClear();
     renderer.draw({ ...model, playerXpc: 500 });
     expect(samples).not.toHaveBeenCalled();
     for (const changed of [{ ...model, centerXpc: 100 }, { ...model, spanPc: 16000 }, model]) {
       samples.mockClear();
       renderer.draw(changed);
-      expect(samples).toHaveBeenCalledTimes(36 * 2 * 15 * 2);
+      expect(samples).toHaveBeenCalledTimes(36 * 2 * 14 * 2);
     }
     samples.mockClear();
     buffer.updateDimensions(48, 28, 8, 8);
     renderer.draw(model);
-    expect(samples).toHaveBeenCalledTimes(44 * 2 * 19 * 2);
+    expect(samples).toHaveBeenCalledTimes(44 * 2 * 18 * 2);
     samples.mockClear();
     renderer.clearCache();
     renderer.draw(model);
-    expect(samples).toHaveBeenCalledTimes(44 * 2 * 19 * 2);
+    expect(samples).toHaveBeenCalledTimes(44 * 2 * 18 * 2);
   });
 
   it('matches the reviewed default-seed raster fingerprint, including colours and projected positions', () => {
@@ -175,5 +175,32 @@ describe('Galaxy raster', () => {
       hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
     }
     expect({ pixels: pixels.mock.calls.length, hash: hash >>> 0 }).toMatchSnapshot();
+  });
+
+  it.each([
+    [20, 12],
+    [24, 46],
+    [100, 70],
+  ])('keeps complete labels outside the raster at %ix%i, including after zoom', (cols, rows) => {
+    const { renderer, model, buffer, pixels } = createRasterHarness(cols, rows);
+    const labels = vi.spyOn(buffer, 'drawString');
+    renderer.draw({ ...model, spanPc: 8000 });
+    expect(labels.mock.calls.some(([text]) => text === '^ N // CORE')).toBe(true);
+    for (const [text, x, y] of labels.mock.calls) {
+      expect(x).toBeGreaterThanOrEqual(2);
+      expect(x + text.length).toBeLessThanOrEqual(cols - 2);
+      expect(
+        pixels.mock.calls.some(([, px, py]) => px >= x && px < x + text.length && py >= y && py < y + 1)
+      ).toBe(false);
+    }
+    if (cols < 35) {
+      expect(labels.mock.calls.map(([text]) => text)).toEqual([
+        '^ N // CORE',
+        'MILKY WAY',
+        'R_GC 8.15 kpc',
+        'SOL 0 ly',
+        '^v<> +/- G/ESC',
+      ]);
+    }
   });
 });

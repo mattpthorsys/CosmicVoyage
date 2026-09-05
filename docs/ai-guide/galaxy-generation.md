@@ -247,6 +247,9 @@ crosshair is drawn separately. Pixels use the shared two-pixels-per-cell raster
 and nearest-neighbour scaling used by orbital planets. `spanPc` is the shorter
 axis's scientific field; the renderer expands the other axis to the viewport
 aspect ratio so parsecs per pixel stay equal in landscape and portrait.
+Reserve a terminal row above the raster for the coreward marker: the detail
+canvas composites over terminal glyphs regardless of their draw-call order.
+Narrow views use complete compact labels rather than truncated full-width text.
 
 Keep the map restrained: exposure-compressed brightness, warm-white old stellar light,
 clumpy cool young-star structure, a warm barred core, interrupted offset dust
