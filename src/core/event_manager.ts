@@ -5,6 +5,7 @@ import type { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import type { Starbase } from '../entities/starbase';
 import type { MoveRequestData } from '../systems/movement_system';
+import type { TravelTelemetryModel } from './travel_telemetry';
 
 export interface GameStateChangedEvent {
   previousState: GameState;
@@ -14,6 +15,7 @@ export interface GameStateChangedEvent {
 export interface StatusUpdateEvent {
   message: string;
   hasStarbase: boolean;
+  telemetry?: TravelTelemetryModel;
 }
 
 export interface CommandStripUpdateEvent {

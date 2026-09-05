@@ -41,16 +41,16 @@
         background-color: #000000; /* Black background */
         box-sizing: border-box; /* Include padding in width */
         font-size: 1.5em; /* Base font size (scaled by JS/TS) */
-        height: 4.5em; /* Approx 3 lines based on base font size */
-        overflow: hidden; /* Hide overflow */
-        white-space: pre-wrap; /* Allow wrapping for longer messages */
+        min-height: 4.5em; /* Three telemetry rows; measured again by the renderer. */
+        overflow: hidden;
+        white-space: normal;
         border-top: 1px solid #ffa500; /* Amber border */
         line-height: 1.4; /* Adjust line spacing if needed */
         color: #ffa500; /* Default status bar text color */
       }
       #commandStrip {
         position: fixed;
-        bottom: 4.5em;
+        bottom: 4.5em; /* Replaced by the renderer's measured status-bar offset. */
         left: 0;
         width: 100%;
         min-height: 1.8em;
@@ -58,7 +58,7 @@
         background-color: #001010;
         box-sizing: border-box;
         overflow: hidden;
-        white-space: nowrap;
+        white-space: normal;
         border-top: 1px solid #006a6a;
         color: #9fffe0;
       }

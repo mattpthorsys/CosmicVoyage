@@ -50,6 +50,7 @@ export class RendererFacade {
   private readonly eventUnsubscribers: Unsubscribe[];
   private readonly orbitAssetQueue = new Set<Planet>();
   private isOrbitAssetPreparationScheduled = false;
+  private hudResizeFrame: number | null = null;
 
   /** Initializes RendererFacade. */
   constructor(
@@ -186,17 +187,31 @@ export class RendererFacade {
     logger.debug(
       `[RendererFacade:_handleStatusUpdate] Received STATUS_UPDATE_NEEDED with message: "${data.message}"`
     );
-    this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
+    const previousHeight = this.statusBarUpdater.getStatusBarElement().offsetHeight;
+    if (data.telemetry) this.statusBarUpdater.updateTelemetry(data.telemetry);
+    else this.statusBarUpdater.updateStatus(data.message, data.hasStarbase);
+    if (this.statusBarUpdater.getStatusBarElement().offsetHeight !== previousHeight) this.scheduleHudResize();
   }
 
   /** Handles command strip update. */
   private _handleCommandStripUpdate(data: CommandStripUpdateEvent): void {
     if (!this.commandStripUpdater) return;
+    const previousHeight = this.commandStripUpdater.getElement().offsetHeight;
     if (data.commandBar) {
       this.commandStripUpdater.update(data.commandBar);
     } else {
       this.commandStripUpdater.update(data.actions, data.primaryActionId, data.targetName);
     }
+    if (this.commandStripUpdater.getElement().offsetHeight !== previousHeight) this.scheduleHudResize();
+  }
+
+  /** Reflows the canvas after a responsive HUD row is added or removed. */
+  private scheduleHudResize(): void {
+    if (this.hudResizeFrame !== null) return;
+    this.hudResizeFrame = requestAnimationFrame(() => {
+      this.hudResizeFrame = null;
+      this.fitToScreen();
+    });
   }
 
   /** Adjusts canvas size and rendering parameters to fit the window or container. */
@@ -205,11 +220,12 @@ export class RendererFacade {
     const baseCharHeight = CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE;
     const baseCharWidth = baseCharHeight * CONFIG.CHAR_ASPECT_RATIO;
 
-    // Estimate status bar height based on character size BEFORE setting final canvas size
+    this.statusBarUpdater.updateMaxChars(baseCharWidth, baseCharHeight);
+    this.commandStripUpdater?.updateMaxChars(baseCharWidth, baseCharHeight);
     const roughStatusBarHeightPx =
-      this.statusBarUpdater.getStatusBarElement().offsetHeight || baseCharHeight * 0.85 * 1.4 * 3 + 10; // Fallback estimate
+      this.statusBarUpdater.getStatusBarElement().offsetHeight || baseCharHeight * 4 + 12;
     const roughCommandStripHeightPx =
-      this.commandStripUpdater?.getElement().offsetHeight || baseCharHeight * 1.45 + 8;
+      this.commandStripUpdater?.getElement().offsetHeight || baseCharHeight * 2;
 
     const availableHeight = Math.max(
       100,
@@ -234,15 +250,12 @@ export class RendererFacade {
     // Update internal buffers and context settings
     this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
 
-    // Update status bar internal calculations AFTER setting its font size etc.
-    this.statusBarUpdater.updateMaxChars(charWidthPx, charHeightPx);
-    this.commandStripUpdater?.updateMaxChars(charWidthPx, charHeightPx);
-
-    // Recalculate final status bar height AFTER updateMaxChars applied styles
+    // Measured DOM heights determine the reserved canvas space after responsive layout applies.
     const finalStatusBarHeightPx =
       this.statusBarUpdater.getStatusBarElement().offsetHeight || roughStatusBarHeightPx;
     const finalCommandStripHeightPx =
       this.commandStripUpdater?.getElement().offsetHeight || roughCommandStripHeightPx;
+    this.commandStripUpdater?.setBottomOffset(finalStatusBarHeightPx);
 
     // Center the canvas dynamically using margins
     const canvasMarginLeft = Math.max(0, (window.innerWidth - this.canvas.width) / 2);
@@ -538,6 +551,10 @@ export class RendererFacade {
   /** Releases resources owned by. */
   destroy(): void {
     logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
+    if (this.hudResizeFrame !== null) {
+      cancelAnimationFrame(this.hudResizeFrame);
+      this.hudResizeFrame = null;
+    }
     this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
   }
 } // End RendererFacade class

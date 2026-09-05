@@ -6,6 +6,10 @@ import { TEXT_PALETTE } from './text_palette';
 
 export class CommandStripUpdater {
   private readonly element: HTMLElement;
+  private commandRoot: HTMLElement | null = null;
+  private primaryGroup: HTMLElement | null = null;
+  private actionsGroup: HTMLElement | null = null;
+  private readonly buttonNodes = new Map<string, HTMLElement>();
 
   /** Initializes CommandStripUpdater. */
   constructor(element: HTMLElement) {
@@ -15,10 +19,8 @@ export class CommandStripUpdater {
     this.element.style.color = TEXT_PALETTE.text;
     this.element.style.boxSizing = 'border-box';
     this.element.style.overflow = 'hidden';
-    this.element.style.whiteSpace = 'nowrap';
-    this.element.style.display = 'flex';
-    this.element.style.alignItems = 'center';
-    this.element.style.gap = '8px';
+    this.element.style.whiteSpace = 'normal';
+    this.element.style.display = 'block';
     this.ensureCommandBarStyles();
   }
 
@@ -31,11 +33,15 @@ export class CommandStripUpdater {
   updateMaxChars(charWidthPx: number, charHeightPx: number): void {
     const fontSize = charHeightPx > 0 ? charHeightPx * 0.82 : 13;
     this.element.style.fontSize = `${fontSize}px`;
-    this.element.style.height = `calc(${fontSize * 1.45}px + 8px)`;
+    this.element.style.minHeight = `calc(${fontSize * 1.45}px + 8px)`;
+    this.element.style.height = 'auto';
     const paddingLR = charWidthPx > 0 ? charWidthPx : 10;
     this.element.style.padding = `4px ${paddingLR}px`;
-    const statusHeight = fontSize * 1.4 * 3 + 10;
-    this.element.style.bottom = `${statusHeight}px`;
+  }
+
+  /** Positions the command panel immediately above the measured telemetry panel. */
+  setBottomOffset(offsetPx: number): void {
+    this.element.style.bottom = `${Math.max(0, Math.ceil(offsetPx))}px`;
   }
 
   /** Updates. */
@@ -44,14 +50,18 @@ export class CommandStripUpdater {
     primaryActionId?: string,
     targetName?: string
   ): void {
-    while (this.element.firstChild) {
-      this.element.removeChild(this.element.firstChild);
-    }
-
     if (!Array.isArray(actionsOrModel)) {
       this.updateCommandBar(actionsOrModel);
       return;
     }
+
+    while (this.element.firstChild) {
+      this.element.removeChild(this.element.firstChild);
+    }
+    this.commandRoot = null;
+    this.primaryGroup = null;
+    this.actionsGroup = null;
+    this.buttonNodes.clear();
 
     if (targetName) {
       const target = document.createElement('span');
@@ -75,60 +85,103 @@ export class CommandStripUpdater {
 
   /** Updates command bar. */
   private updateCommandBar(model: CommandBarModel): void {
-    if (model.targetName) {
-      const target = document.createElement('span');
-      target.textContent = `TARGET ${model.targetName}`;
-      target.title = model.context;
-      target.style.color = TEXT_PALETTE.cyanSignal;
-      target.style.marginRight = '4px';
-      this.element.appendChild(target);
-    }
+    this.ensureCommandLayout();
+    const primary = (model.leftButtons ?? []).filter((button) => button.id !== 'red-reserved');
+    const routine = [...model.buttons, ...(model.rightButtons ?? [])].filter(
+      (button) => button.id !== 'red-reserved'
+    );
+    this.renderButtonGroup(this.primaryGroup!, primary, model);
+    this.renderButtonGroup(this.actionsGroup!, routine, model);
+  }
 
-    const left = model.leftButtons ?? [];
-    const right = model.rightButtons ?? [];
-    [...left, ...model.buttons, ...right].forEach((button) => {
-      this.element.appendChild(
-        this.createButton(button, button.id === model.primaryButtonId, button.id === model.selectedButtonId)
+  /** Creates the persistent command zones used at every responsive width. */
+  private ensureCommandLayout(): void {
+    if (this.commandRoot && this.primaryGroup && this.actionsGroup) return;
+    while (this.element.firstChild) this.element.removeChild(this.element.firstChild);
+    const root = document.createElement('div');
+    root.className = 'cosmic-command-layout';
+    const primary = document.createElement('div');
+    primary.className = 'cosmic-command-primary';
+    const actions = document.createElement('div');
+    actions.className = 'cosmic-command-actions';
+    root.appendChild(primary);
+    root.appendChild(actions);
+    this.element.appendChild(root);
+    this.commandRoot = root;
+    this.primaryGroup = primary;
+    this.actionsGroup = actions;
+  }
+
+  /** Updates command buttons in place and restores their model ordering within a zone. */
+  private renderButtonGroup(
+    group: HTMLElement,
+    buttons: readonly CommandBarButton[],
+    model: CommandBarModel
+  ): void {
+    const active = new Set(buttons.map((button) => button.id));
+    for (const [id, node] of this.buttonNodes) {
+      if (node.parentElement === group) node.hidden = !active.has(id);
+    }
+    for (const button of buttons) {
+      let node = this.buttonNodes.get(button.id);
+      if (!node) {
+        node = this.createButton(button, false, false);
+        this.buttonNodes.set(button.id, node);
+      }
+      this.updateButton(
+        node,
+        button,
+        button.id === model.primaryButtonId,
+        button.id === model.selectedButtonId
       );
-    });
+      node.hidden = false;
+      group.appendChild(node);
+    }
   }
 
   /** Creates button. */
   private createButton(button: CommandBarButton, primary: boolean, selected: boolean): HTMLElement {
     const el = document.createElement('button');
-    const enabled = button.enabled !== false;
     el.type = 'button';
-    el.disabled = !enabled;
-    el.textContent = `${button.key ? `[${this.formatKey(button.key)}] ` : ''}${button.label}${primary ? ' *' : ''}`;
-    el.title = button.detail ?? button.label;
     el.style.fontFamily = CONFIG.FONT_FAMILY;
     el.style.fontSize = 'inherit';
     el.style.lineHeight = '1';
-    el.style.padding = '3px 8px';
     el.style.borderRadius = '0';
+    el.style.textTransform = 'uppercase';
+    el.style.letterSpacing = '0';
+    el.style.whiteSpace = 'nowrap';
+    el.addEventListener('click', () => {
+      const id = el.dataset.commandId;
+      const action = el.dataset.commandAction;
+      if (el.disabled || !id || !action) return;
+      eventManager.publish(GameEvents.COMMAND_BAR_ACTION_SELECTED, { id, action });
+    });
+    this.updateButton(el, button, primary, selected);
+    return el;
+  }
+
+  /** Replaces one button's live values without recreating its element or event handler. */
+  private updateButton(el: HTMLElement, button: CommandBarButton, primary: boolean, selected: boolean): void {
+    const enabled = button.enabled !== false;
+    el.dataset.commandId = button.id;
+    el.dataset.commandAction = button.action;
+    el.textContent = `${button.key ? `[${this.formatKey(button.key)}] ` : ''}${button.label}${primary ? ' *' : ''}`;
+    el.title = button.detail ?? button.label;
+    (el as HTMLButtonElement).disabled = !enabled;
+    el.style.padding = '3px 8px';
     el.style.border = `1px solid ${this.getBorderColour(button)}`;
     el.style.backgroundColor = enabled
       ? this.getBackgroundColour(button, primary, selected)
       : TEXT_PALETTE.panelBackground;
     el.style.color = enabled ? this.getForegroundColour(button, primary, selected) : TEXT_PALETTE.textDim;
     el.style.cursor = enabled ? 'pointer' : 'default';
-    el.style.textTransform = 'uppercase';
-    el.style.letterSpacing = '0';
-    el.style.whiteSpace = 'nowrap';
     el.style.boxShadow =
       selected && enabled
         ? '0 0 10px rgba(140, 255, 255, 0.35)'
         : primary && enabled
           ? '0 0 8px rgba(0, 255, 160, 0.35)'
           : 'none';
-    if (button.tone === 'green' && enabled && !selected) {
-      el.classList.add('cosmic-command-button-green');
-    }
-    el.addEventListener('click', () => {
-      if (!enabled) return;
-      eventManager.publish(GameEvents.COMMAND_BAR_ACTION_SELECTED, { id: button.id, action: button.action });
-    });
-    return el;
+    el.classList.toggle('cosmic-command-button-green', button.tone === 'green' && enabled && !selected);
   }
 
   /** Returns border colour. */
@@ -197,6 +250,16 @@ export class CommandStripUpdater {
       }
       .cosmic-command-button-green {
         animation: cosmic-command-green-flash 1.55s steps(2, end) infinite;
+      }
+      .cosmic-command-layout { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px; align-items: center; }
+      .cosmic-command-primary, .cosmic-command-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+      .cosmic-command-actions { justify-content: flex-end; }
+      @media (max-width: 720px) {
+        .cosmic-command-layout { grid-template-columns: 1fr; gap: 4px; }
+        .cosmic-command-actions { justify-content: flex-start; }
+      }
+      @media (max-width: 460px) {
+        .cosmic-command-layout button { padding: 3px 5px !important; }
       }
     `;
     document.head.appendChild(style);

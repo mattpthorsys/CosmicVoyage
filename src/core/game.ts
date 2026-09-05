@@ -21,9 +21,13 @@ import { CargoSystem } from '../systems/cargo_systems';
 import { MiningSite, MiningSystem } from '../systems/mining_system';
 import { TerminalOverlay } from '../rendering/terminal_overlay';
 import { AstrometricOverlay } from '../rendering/astrometric_overlay';
-import { DeepSpacePhenomenonProperties, SystemDataGenerator } from '../generation/system_data_generator';
+import {
+  DeepSpacePhenomenonProperties,
+  InterstellarMediumKind,
+  SystemDataGenerator,
+} from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
-import { AvailableAction, createAvailableActions, formatAvailableActions } from './available_actions';
+import { AvailableAction, createAvailableActions } from './available_actions';
 import { commandButton, CommandBarButton, CommandBarModel } from './command_bar';
 import { getStationSections, StarbaseScreenModel, StarbaseSectionId, StarbaseTableRow } from './starbase_ui';
 import {
@@ -112,6 +116,7 @@ import { StarbaseController } from './starbase_controller';
 import { getOperationalCapabilities } from './operational_capabilities';
 import { SurfacePrefetchService } from './surface_prefetch';
 import { GalaxyMapController } from './galaxy_map';
+import { TelemetryField, TravelTelemetryModel } from './travel_telemetry';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -132,6 +137,15 @@ type QuantityOperation =
   | { type: 'sell'; itemKey: string }
   | { type: 'jettison'; itemKey: string }
   | { type: 'mine'; x?: number; y?: number };
+
+const COMPACT_INTERSTELLAR_MEDIUM_LABELS: Record<InterstellarMediumKind, string> = {
+  'cold-void': 'COLD VOID',
+  'diffuse-hydrogen': 'H I',
+  'molecular-dust': 'MOLECULAR',
+  'ionised-plasma': 'PLASMA',
+  'radiation-front': 'RAD FRONT',
+  'gravitational-shear': 'GRAV SHEAR',
+};
 
 interface SurfaceExtractionSelectorState {
   mode: 'mine' | 'pickup';
@@ -267,6 +281,9 @@ export class Game {
   private lastPublishedCommandSignature: string = '';
   private lastHyperspaceUpdateSignature: string = '';
   private lastHyperspaceUpdateStatus: string = '';
+  private currentStateUpdateStatus: string = '';
+  private lastNotificationSource: string = '';
+  private notificationExpiresAt: number = 0;
   private currentVisualDeltaSeconds = 0;
   private orbitScreenCache: OrbitScreenCache | null = null;
   private preparingSurfacePlanet: Planet | null = null;
@@ -3495,23 +3512,9 @@ export class Game {
           planet: () => this._updatePlanet(deltaTime),
           starbase: () => this._updateStarbase(deltaTime),
         });
-        // Update main status message ONLY if the state update provided one
-        // AND the current message isn't an error/failure/important action result
-        if (
-          stateUpdateStatus &&
-          (this.statusMessage === '' ||
-            !(
-              this.statusMessage.toLowerCase().includes('error') ||
-              this.statusMessage.toLowerCase().includes('fail') ||
-              this.statusMessage.toLowerCase().includes('cannot') ||
-              this.statusMessage.startsWith('Mined') ||
-              this.statusMessage.startsWith('Sold') ||
-              this.statusMessage.startsWith('Scan') ||
-              this.statusMessage.startsWith('Purchased')
-            ))
-        ) {
-          this.statusMessage = stateUpdateStatus;
-        }
+        // State updates feed persistent telemetry. Action and error messages retain the
+        // dedicated notification line instead of replacing the instrument readings.
+        this.currentStateUpdateStatus = stateUpdateStatus;
       } catch (updateError) {
         // --- Improved Error Logging ---
         const stateWhenErrorOccurred = this.stateManager?.state ?? 'UNKNOWN'; // Safely get state
@@ -3610,42 +3613,16 @@ export class Game {
       if (peekedSystem) {
         const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
         const objectLabel = peekedSystem.isStarless ? 'Free planetary mass' : 'Near';
-        const actions = createAvailableActions({
-          state: 'hyperspace',
-          player: this.player,
-          system: null,
-          planet: null,
-          starbase: null,
-          isNearHyperspaceSystem: true,
-          nearbySystemName: peekedSystem.name,
-        });
-        baseStatus += ` | ${objectLabel} ${peekedSystem.name}${starbaseText}. Actions: ${formatAvailableActions(actions)}`;
+        baseStatus += ` | ${objectLabel} ${peekedSystem.name}${starbaseText}.`;
       } else {
         // Hash indicated star, but peek failed? Log warning.
         logger.warn(
           `[Game:_updateHyperspace] Hash indicated explorable contact at ${this.player.position.worldX},${this.player.position.worldY} but peek failed.`
         );
-        const actions = createAvailableActions({
-          state: 'hyperspace',
-          player: this.player,
-          system: null,
-          planet: null,
-          starbase: null,
-          isNearHyperspaceSystem: true,
-        });
-        baseStatus += ` | Near navigable contact. Actions: ${formatAvailableActions(actions, 2)}`;
+        baseStatus += ' | Near navigable contact.';
       }
     } else {
       this.stateManager.resetPeekedSystem(); // Clear peek cache if not near star
-      const actions = createAvailableActions({
-        state: 'hyperspace',
-        player: this.player,
-        system: null,
-        planet: null,
-        starbase: null,
-        isNearHyperspaceSystem: false,
-      });
-      baseStatus += ` | Actions: ${formatAvailableActions(actions, 5)}`;
     }
     this.lastHyperspaceUpdateSignature = viewportSignature;
     this.lastHyperspaceUpdateStatus = baseStatus;
@@ -3757,29 +3734,6 @@ export class Game {
         status += ` | Near ${nearestStar.name}.`;
       }
     }
-    const nearestStar =
-      system.stars.length > 0
-        ? system.getNearestStar(this.player.position.systemX, this.player.position.systemY)
-        : null;
-    const distSqToStar = nearestStar
-      ? this.player.distanceSqToSystemCoords(nearestStar.systemX, nearestStar.systemY)
-      : Infinity;
-    const nearStar = Boolean(
-      nearestStar && distSqToStar < (CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER) ** 2
-    );
-    const actions = createAvailableActions({
-      state: 'system',
-      player: this.player,
-      system,
-      planet: null,
-      starbase: null,
-      nearbyObject,
-      nearbyStar: nearStar ? nearestStar : null,
-      selectedTargetName: selectedTarget ? this.getTargetName(selectedTarget) : null,
-      hasSelectedTarget: Boolean(selectedTarget),
-      isNearSystemEdge: this.isPlayerNearExit(),
-    });
-    status += ` | Actions: ${formatAvailableActions(actions, 5)}`;
     return status;
   }
 
@@ -6074,20 +6028,13 @@ export class Game {
       0,
       Math.min(mapSize - 1, Math.floor(this.orbitModeState.landingY))
     );
-    const actions = createAvailableActions({
-      state: 'orbit',
-      player: this.player,
-      system: this.stateManager.currentSystem,
-      planet: selectedBody,
-      starbase: null,
-    });
     const orbitText =
       selectedBody.orbitDistance <= 0
         ? 'none'
         : `${formatDistanceAu(selectedBody.orbitDistance)} from primary`;
     const signalText =
       selectedBody.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(selectedBody.orbitDistance);
-    return `Orbit: ${selectedBody.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.orbitModeState.mode} | Site ${this.orbitModeState.landingX},${this.orbitModeState.landingY} | Actions: ${formatAvailableActions(actions, 4)}.`;
+    return `Orbit: ${selectedBody.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.orbitModeState.mode} | Site ${this.orbitModeState.landingX},${this.orbitModeState.landingY}.`;
   }
 
   /** Updates planet. */
@@ -6112,14 +6059,6 @@ export class Game {
     } else {
       status += ` | Scan: N/A (${planet.type})`;
     }
-    const actions = createAvailableActions({
-      state: 'planet',
-      player: this.player,
-      system: this.stateManager.currentSystem,
-      planet,
-      starbase: null,
-    });
-    status += ` | Actions: ${formatAvailableActions(actions, 4)}.`;
     return status;
   }
 
@@ -6609,34 +6548,7 @@ export class Game {
       logger.error(`[Game:_publishStatusUpdate] Error getting cargo total: ${e}`);
     }
 
-    let zoomLabel = '';
-    if (this.stateManager.state === 'system') {
-      const zoomFactor = getSystemZoomFactor(this.currentZoomLevelIndex);
-      zoomLabel = ` | Zoom: ${zoomFactor.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`;
-    }
-
-    const roverState = !this.player.terrainVehicle.available
-      ? 'lost'
-      : this.player.terrainVehicle.onFoot
-        ? 'on foot'
-        : this.player.terrainVehicle.deployed
-          ? 'disembarked'
-          : 'embarked';
-    const roverStatus =
-      this.stateManager.state === 'planet'
-        ? ` | Rover: ${roverState} ${this.player.terrainVehicle.fuel.toFixed(0)}/${this.player.terrainVehicle.maxFuel} fuel ${this.formatCargoLoad(this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold), this.player.terrainVehicle.cargoHold.capacity)} m^3`
-        : '';
-
-    const commonStatus =
-      this.popupState === 'active'
-        ? '' // Don't show stats when popup is fully active
-        : ` | Fuel: ${this.player.resources.fuel.toFixed(0)}/${
-            this.player.resources.maxFuel
-          } | Cargo: ${this.formatCargoLoad(currentCargoTotal, this.player.cargoHold.capacity)} | Cr: ${this.player.resources.credits.toLocaleString()}` +
-          roverStatus +
-          zoomLabel; // Append zoom label
-
-    const finalStatus = this.statusMessage + commonStatus;
+    const telemetry = this.createTravelTelemetry(currentCargoTotal);
     const hasStarbase = this.stateManager.state === 'starbase';
 
     const actions = this.getCurrentAvailableActions();
@@ -6646,10 +6558,14 @@ export class Game {
       targetName: this.getCommandStripTargetName(),
       commandBar: this.createCommandBarModel(actions),
     };
-    const statusSignature = `${hasStarbase ? 'starbase' : 'standard'}|${finalStatus}`;
+    const statusSignature = JSON.stringify({ hasStarbase, telemetry });
     if (statusSignature !== this.lastPublishedStatusSignature) {
       this.lastPublishedStatusSignature = statusSignature;
-      eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, { message: finalStatus, hasStarbase });
+      eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
+        message: telemetry.notification || '',
+        hasStarbase,
+        telemetry,
+      });
     }
 
     const commandSignature = JSON.stringify(commandUpdate);
@@ -6657,6 +6573,256 @@ export class Game {
       this.lastPublishedCommandSignature = commandSignature;
       eventManager.publish(GameEvents.COMMAND_STRIP_UPDATE_NEEDED, commandUpdate);
     }
+  }
+
+  /** Builds persistent travel readings independently from temporary gameplay messages. */
+  private createTravelTelemetry(currentCargoTotal: number): TravelTelemetryModel {
+    const state = this.stateManager.state;
+    const resources: TelemetryField[] = [
+      {
+        id: 'fuel',
+        label: 'FUEL',
+        value: `${this.player.resources.fuel.toFixed(0)}/${this.player.resources.maxFuel.toFixed(0)}`,
+        tone:
+          this.player.resources.fuel / Math.max(1, this.player.resources.maxFuel) < 0.2
+            ? 'warning'
+            : 'default',
+      },
+      {
+        id: 'cargo',
+        label: 'CARGO',
+        value: this.formatCargoLoad(currentCargoTotal, this.player.cargoHold.capacity),
+        priority: 'secondary',
+      },
+      {
+        id: 'credits',
+        label: 'CR',
+        value: this.player.resources.credits.toLocaleString(),
+        priority: 'optional',
+      },
+    ];
+    const telemetry: TravelTelemetryModel = {
+      mode: state,
+      navigation: [],
+      target: [],
+      environment: [],
+      resources,
+      ...this.getTelemetryNotification(),
+    };
+
+    if (state === 'hyperspace') {
+      const survey = this.getCurrentHyperspaceSurvey();
+      const contact = this.toNavigationContact(survey.nearestSystemContact);
+      const movementFuelCost =
+        CONFIG.HYPERSPACE_MOVE_FUEL_COST *
+        getEngineFuelUseMultiplier(this.player.ship.engineClass) *
+        getOperationalCapabilities(this.player.crew, this.player.ship).hyperspaceFuelMultiplier;
+      const fuelReach = Math.floor(this.player.resources.fuel / Math.max(0.001, movementFuelCost));
+      telemetry.mode = 'HYPERSPACE';
+      telemetry.navigation = [
+        {
+          id: 'mode',
+          label: 'NAV',
+          compactLabel: 'N',
+          value: 'HYPERSPACE',
+          compactValue: 'HYPER',
+          tone: 'signal',
+        },
+        {
+          id: 'position',
+          label: 'POS',
+          value: `${this.player.position.worldX},${this.player.position.worldY}`,
+          priority: 'secondary',
+        },
+      ];
+      telemetry.target = contact
+        ? [
+            {
+              id: 'contact',
+              label: 'CONTACT',
+              compactLabel: 'TGT',
+              value: `${contact.name} ${contact.starType}`,
+              compactValue: contact.name,
+              tone: 'signal',
+            },
+            {
+              id: 'bearing',
+              label: 'BRG',
+              value: `${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`,
+              priority: 'secondary',
+            },
+          ]
+        : [
+            {
+              id: 'contact',
+              label: 'CONTACT',
+              compactLabel: 'TGT',
+              value: 'NO RESOLVED CONTACT',
+              compactValue: 'NO CONTACT',
+              tone: 'muted',
+            },
+          ];
+      telemetry.environment = [
+        {
+          id: 'medium',
+          label: 'ISM',
+          value: survey.medium.label,
+          compactValue: COMPACT_INTERSTELLAR_MEDIUM_LABELS[survey.medium.kind],
+        },
+        {
+          id: 'sensor',
+          label: 'SENSOR',
+          value: `${(survey.medium.sensorRangeMultiplier * 100).toFixed(0)}%`,
+          priority: 'secondary',
+        },
+        {
+          id: 'reach',
+          label: 'RANGE',
+          value: formatHyperspaceSpan(fuelReach),
+          tone: 'signal',
+          priority: 'secondary',
+        },
+      ];
+      return telemetry;
+    }
+
+    if (state === 'system') {
+      const system = this.stateManager.currentSystem;
+      const target = this.getSelectedTarget();
+      telemetry.mode = 'SYSTEM TRAVEL';
+      telemetry.navigation = [
+        {
+          id: 'mode',
+          label: 'NAV',
+          compactLabel: 'N',
+          value: 'SYSTEM',
+          compactValue: 'SYS',
+          tone: 'signal',
+        },
+        {
+          id: 'position',
+          label: 'POS',
+          value: `${this.player.position.systemX.toExponential(1)},${this.player.position.systemY.toExponential(1)}m`,
+          priority: 'secondary',
+        },
+      ];
+      telemetry.target = [
+        {
+          id: 'target',
+          label: 'TARGET',
+          value: target ? this.getTargetName(target) : system?.name || 'UNRESOLVED',
+          tone: target ? 'signal' : 'muted',
+        },
+      ];
+      telemetry.environment = [
+        { id: 'system', label: 'SYSTEM', value: system?.architecture.kind || 'UNKNOWN' },
+        {
+          id: 'zoom',
+          label: 'ZOOM',
+          value: `${getSystemZoomFactor(this.currentZoomLevelIndex).toLocaleString(undefined, { maximumFractionDigits: 2 })}x`,
+          priority: 'secondary',
+        },
+      ];
+      return telemetry;
+    }
+
+    if (state === 'planet') {
+      const planet = this.stateManager.currentPlanet;
+      const rover = this.player.terrainVehicle;
+      const roverState = !rover.available
+        ? 'LOST'
+        : rover.onFoot
+          ? 'ON FOOT'
+          : rover.deployed
+            ? 'DEPLOYED'
+            : 'EMBARKED';
+      telemetry.mode = 'SURFACE TRAVEL';
+      telemetry.navigation = [
+        {
+          id: 'mode',
+          label: 'NAV',
+          compactLabel: 'N',
+          value: 'SURFACE',
+          compactValue: 'SURF',
+          tone: 'signal',
+        },
+        {
+          id: 'position',
+          label: 'SITE',
+          value: `${this.player.position.surfaceX},${this.player.position.surfaceY}`,
+          priority: 'secondary',
+        },
+      ];
+      telemetry.target = [
+        { id: 'world', label: 'WORLD', value: planet?.name || 'UNRESOLVED', tone: 'signal' },
+      ];
+      telemetry.environment = [
+        {
+          id: 'temperature',
+          label: 'TEMP',
+          value: planet ? `${planet.getCurrentTemperature()}K` : 'UNKNOWN',
+        },
+        {
+          id: 'gravity',
+          label: 'GRAV',
+          value: planet ? `${planet.gravity.toFixed(2)}g` : 'UNKNOWN',
+          priority: 'secondary',
+        },
+      ];
+      resources.unshift({
+        id: 'rover',
+        label: 'ROVER',
+        value: `${roverState} ${rover.fuel.toFixed(0)}/${rover.maxFuel}`,
+        tone: rover.fuel <= 0 ? 'warning' : 'default',
+      });
+      return telemetry;
+    }
+
+    if (state === 'orbit') {
+      const body = this.getSelectedOrbitBody();
+      telemetry.mode = 'ORBIT';
+      telemetry.navigation = [
+        { id: 'mode', label: 'NAV', value: 'ORBIT', tone: 'signal' },
+        {
+          id: 'site',
+          label: 'SITE',
+          value: `${this.orbitModeState.landingX},${this.orbitModeState.landingY}`,
+          priority: 'secondary',
+        },
+      ];
+      telemetry.target = [{ id: 'body', label: 'BODY', value: body?.name || 'UNRESOLVED', tone: 'signal' }];
+      telemetry.environment = [{ id: 'mode', label: 'MODE', value: this.orbitModeState.mode.toUpperCase() }];
+      return telemetry;
+    }
+
+    const starbase = this.stateManager.currentStarbase;
+    telemetry.mode = 'STARBASE';
+    telemetry.navigation = [{ id: 'mode', label: 'NAV', value: 'DOCKED', tone: 'signal' }];
+    telemetry.target = [
+      { id: 'station', label: 'STATION', value: starbase?.name || 'UNRESOLVED', tone: 'signal' },
+    ];
+    telemetry.environment = [{ id: 'panel', label: 'PANEL', value: this.starbaseMode.getSectionLabel() }];
+    return telemetry;
+  }
+
+  /** Gives player-facing action results a bounded lifetime in the event line. */
+  private getTelemetryNotification(): Pick<TravelTelemetryModel, 'notification' | 'notificationTone'> {
+    const message = this.statusMessage.trim();
+    const isStateReading = !message || message === this.currentStateUpdateStatus;
+    const now = performance.now();
+    if (!isStateReading && message !== this.lastNotificationSource) {
+      this.lastNotificationSource = message;
+      this.notificationExpiresAt = now + 6000;
+    }
+    if (isStateReading || now >= this.notificationExpiresAt) {
+      return {};
+    }
+    const lower = message.toLowerCase();
+    return {
+      notification: message,
+      notificationTone:
+        lower.includes('error') || lower.includes('cannot') || lower.includes('fail') ? 'warning' : 'signal',
+    };
   }
 
   /** Creates command bar model. */

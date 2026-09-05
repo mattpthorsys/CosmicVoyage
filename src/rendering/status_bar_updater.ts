@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import { CONFIG } from '../config';
 import { TEXT_PALETTE } from './text_palette';
+import type { TelemetryField, TravelTelemetryModel } from '../core/travel_telemetry';
 
 // Define Markers (Ensure these match the tags you use in status messages)
 const MARKERS = {
@@ -36,6 +37,10 @@ export class StatusBarUpdater {
   private currentTheme: 'default' | 'tan' = 'default';
   private colorMap: Record<string, string> = {};
   private fgColorDefault: string = TEXT_PALETTE.text;
+  private readonly telemetryGroups = new Map<string, HTMLElement>();
+  private readonly telemetryFields = new Map<string, { root: HTMLElement; value: HTMLElement }>();
+  private telemetryRoot: HTMLElement | null = null;
+  private telemetryEvent: HTMLElement | null = null;
 
   /** Initializes StatusBarUpdater. */
   constructor(statusBarElement: HTMLElement, initialTheme: 'default' | 'tan' = 'default') {
@@ -48,8 +53,8 @@ export class StatusBarUpdater {
     // Apply base styling
     this.statusBarElement.style.fontFamily = CONFIG.FONT_FAMILY;
     this.statusBarElement.style.backgroundColor = TEXT_PALETTE.background;
-    this.statusBarElement.style.whiteSpace = 'pre-wrap';
-    this.statusBarElement.style.lineHeight = '1.4';
+    this.statusBarElement.style.whiteSpace = 'normal';
+    this.statusBarElement.style.lineHeight = '1.2';
     this.statusBarElement.style.overflow = 'hidden';
     this.statusBarElement.style.boxSizing = 'border-box';
 
@@ -99,7 +104,8 @@ export class StatusBarUpdater {
     if (!this.statusBarElement) return;
     const sbFontSize = charHeightPx > 0 ? charHeightPx * 0.85 : 16 * 0.85; // Fallback font size
     this.statusBarElement.style.fontSize = `${sbFontSize}px`;
-    this.statusBarElement.style.height = `calc(${sbFontSize * 1.4 * 3}px + 10px)`; // ~3 lines + padding
+    this.statusBarElement.style.minHeight = `calc(${sbFontSize * 4.9}px + 14px)`;
+    this.statusBarElement.style.height = 'auto';
     const paddingLR = charWidthPx > 0 ? charWidthPx : 10; // Fallback padding
     this.statusBarElement.style.padding = `5px ${paddingLR}px`;
 
@@ -118,6 +124,21 @@ export class StatusBarUpdater {
       this.statusBarMaxChars = 240; // Fallback
     }
     // logger.debug(`[StatusBarUpdater.updateMaxChars] Status bar max chars: ${this.statusBarMaxChars}`); // Can be noisy
+  }
+
+  /** Renders fixed telemetry regions from named readings instead of a concatenated status sentence. */
+  updateTelemetry(model: TravelTelemetryModel): void {
+    this.ensureTelemetryLayout();
+    this.statusBarElement.dataset.telemetryMode = model.mode.toLowerCase().replace(/\s+/g, '-');
+    this.statusBarElement.dataset.telemetry = 'true';
+    this.renderTelemetryGroup('navigation', model.navigation);
+    this.renderTelemetryGroup('target', model.target);
+    this.renderTelemetryGroup('environment', model.environment);
+    this.renderTelemetryGroup('resources', model.resources);
+    if (this.telemetryEvent) {
+      this.telemetryEvent.textContent = model.notification || 'SYSTEMS NOMINAL';
+      this.telemetryEvent.dataset.tone = model.notificationTone || 'muted';
+    }
   }
 
   /** Parses message with markers into colored segments */
@@ -172,6 +193,11 @@ export class StatusBarUpdater {
       logger.warn('[StatusBarUpdater.updateStatus] Called but statusBarElement is missing.');
       return;
     }
+    this.statusBarElement.dataset.telemetry = 'false';
+    this.telemetryRoot = null;
+    this.telemetryEvent = null;
+    this.telemetryGroups.clear();
+    this.telemetryFields.clear();
 
     let fullMessage = rawMessage;
     // Append starbase indicator *with tags* so it gets parsed for color
@@ -242,5 +268,109 @@ export class StatusBarUpdater {
       this.statusBarElement.appendChild(span);
     });
     // --- End Correction ---
+  }
+
+  /** Creates the stable panel regions once, retaining nodes through telemetry updates. */
+  private ensureTelemetryLayout(): void {
+    if (this.telemetryRoot && this.telemetryEvent) return;
+    while (this.statusBarElement.firstChild)
+      this.statusBarElement.removeChild(this.statusBarElement.firstChild);
+    const root = document.createElement('div');
+    root.className = 'cosmic-telemetry-grid';
+    for (const groupId of ['navigation', 'target', 'environment', 'resources']) {
+      const group = document.createElement('section');
+      group.className = `cosmic-telemetry-group cosmic-telemetry-${groupId}`;
+      group.dataset.group = groupId;
+      root.appendChild(group);
+      this.telemetryGroups.set(groupId, group);
+    }
+    const event = document.createElement('div');
+    event.className = 'cosmic-telemetry-event';
+    this.statusBarElement.appendChild(root);
+    this.statusBarElement.appendChild(event);
+    this.telemetryRoot = root;
+    this.telemetryEvent = event;
+    this.ensureTelemetryStyles();
+  }
+
+  /** Updates one stable region while preserving field nodes and their visual position. */
+  private renderTelemetryGroup(groupId: string, fields: readonly TelemetryField[]): void {
+    const group = this.telemetryGroups.get(groupId);
+    if (!group) return;
+    const activeKeys = new Set(fields.map((field) => `${groupId}:${field.id}`));
+    for (const [key, entry] of this.telemetryFields) {
+      if (key.startsWith(`${groupId}:`)) entry.root.hidden = !activeKeys.has(key);
+    }
+    for (const field of fields) {
+      const key = `${groupId}:${field.id}`;
+      let entry = this.telemetryFields.get(key);
+      if (!entry) {
+        const root = document.createElement('div');
+        root.className = 'cosmic-telemetry-field';
+        const label = document.createElement('span');
+        label.className = 'cosmic-telemetry-label';
+        const value = document.createElement('span');
+        value.className = 'cosmic-telemetry-value';
+        root.appendChild(label);
+        root.appendChild(value);
+        group.appendChild(root);
+        entry = { root, value };
+        this.telemetryFields.set(key, entry);
+      }
+      const label = entry.root.firstElementChild as HTMLElement;
+      label.textContent = field.label;
+      if (field.compactLabel) label.dataset.compactLabel = field.compactLabel;
+      else delete label.dataset.compactLabel;
+      entry.value.textContent = field.value;
+      if (field.compactValue) entry.value.dataset.compactValue = field.compactValue;
+      else delete entry.value.dataset.compactValue;
+      entry.root.hidden = false;
+      entry.root.dataset.tone = field.tone || 'default';
+      entry.root.dataset.priority = field.priority || 'essential';
+      entry.value.title = field.value;
+    }
+  }
+
+  /** Installs responsive grid rules once for the persistent DOM panel. */
+  private ensureTelemetryStyles(): void {
+    if (document.getElementById('cosmic-telemetry-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'cosmic-telemetry-styles';
+    style.textContent = `
+      #statusBar[data-telemetry='true'] { display: block; border-top-color: ${TEXT_PALETTE.cyanDeep}; }
+      .cosmic-telemetry-grid { display: grid; grid-template-columns: minmax(18ch, .85fr) minmax(28ch, 1.65fr); grid-template-areas: 'navigation target' 'environment resources'; gap: 3px 14px; }
+      .cosmic-telemetry-navigation { grid-area: navigation; }
+      .cosmic-telemetry-target { grid-area: target; }
+      .cosmic-telemetry-environment { grid-area: environment; }
+      .cosmic-telemetry-resources { grid-area: resources; }
+      .cosmic-telemetry-group { min-width: 0; display: flex; align-items: baseline; gap: 3px 9px; flex-wrap: wrap; }
+      .cosmic-telemetry-field { min-width: 0; display: inline-flex; gap: .45ch; align-items: baseline; }
+      .cosmic-telemetry-label { color: ${TEXT_PALETTE.textMuted}; }
+      .cosmic-telemetry-value { min-width: 0; color: ${TEXT_PALETTE.text}; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+      .cosmic-telemetry-target .cosmic-telemetry-field { flex: 1 1 auto; }
+      .cosmic-telemetry-target .cosmic-telemetry-value { white-space: normal; }
+      .cosmic-telemetry-field[data-tone='signal'] .cosmic-telemetry-value { color: ${TEXT_PALETTE.cyanSignal}; }
+      .cosmic-telemetry-field[data-tone='warning'] .cosmic-telemetry-value { color: ${TEXT_PALETTE.amber}; }
+      .cosmic-telemetry-field[data-tone='muted'] .cosmic-telemetry-value { color: ${TEXT_PALETTE.textDim}; }
+      .cosmic-telemetry-resources { justify-content: flex-end; }
+      .cosmic-telemetry-event { min-height: 1.2em; margin-top: 2px; padding-top: 2px; border-top: 1px solid ${TEXT_PALETTE.cyanDeep}; color: ${TEXT_PALETTE.textDim}; overflow-wrap: anywhere; white-space: normal; }
+      .cosmic-telemetry-event[data-tone='signal'] { color: ${TEXT_PALETTE.cyanSignal}; }
+      .cosmic-telemetry-event[data-tone='warning'] { color: ${TEXT_PALETTE.amber}; }
+      @media (max-width: 900px) {
+        .cosmic-telemetry-grid { grid-template-columns: minmax(12ch, .85fr) minmax(18ch, 1.35fr); gap: 3px 10px; }
+        .cosmic-telemetry-resources { justify-content: flex-start; }
+      }
+      @media (max-width: 560px) {
+        #statusBar[data-telemetry='true'] { font-size: 12px !important; }
+        .cosmic-telemetry-grid { grid-template-columns: minmax(0, .7fr) minmax(0, 1.7fr); gap: 2px 8px; }
+        .cosmic-telemetry-group { gap: 2px 5px; flex-wrap: nowrap; }
+        .cosmic-telemetry-field[data-priority='secondary'], .cosmic-telemetry-field[data-priority='optional'] { display: none; }
+        .cosmic-telemetry-label[data-compact-label] { font-size: 0; white-space: nowrap; }
+        .cosmic-telemetry-label[data-compact-label]::after { content: attr(data-compact-label); font-size: 12px; }
+        .cosmic-telemetry-value[data-compact-value] { font-size: 0; overflow-wrap: normal; white-space: nowrap; }
+        .cosmic-telemetry-value[data-compact-value]::after { content: attr(data-compact-value); font-size: 12px; }
+      }
+    `;
+    document.head.appendChild(style);
   }
 }

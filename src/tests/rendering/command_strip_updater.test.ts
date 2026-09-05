@@ -44,4 +44,21 @@ describe('CommandStripUpdater command bar', () => {
     expect(publish).toHaveBeenCalledTimes(1);
     publish.mockRestore();
   });
+
+  it('retains command nodes and hides the reserved alert placeholder', () => {
+    const element = document.createElement('div');
+    const updater = new CommandStripUpdater(element);
+    const model = {
+      context: 'interstellar',
+      buttons: [commandButton('move', 'Move', 'TRAVEL_MOVE', { key: 'Arrows' })],
+      rightButtons: [commandButton('red-reserved', 'Alert', 'RED_RESERVED', { tone: 'red', enabled: false })],
+    };
+    updater.update(model);
+    const move = element.querySelector('button');
+    expect(element.textContent).not.toContain('Alert');
+
+    updater.update({ ...model, selectedButtonId: 'move' });
+    expect(element.querySelector('button')).toBe(move);
+    expect(element.querySelector('button')?.style.color).toBe(TEXT_PALETTE.inverseText);
+  });
 });
