@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AU_IN_METERS, SOLAR_LUMINOSITY_W } from '../../constants/physics';
 import {
   getOrbitStellarIrradiance,
+  getOrbitViewExposure,
   sampleOrbitStellarDisc,
 } from '../../rendering/scenes/orbit_stellar_light';
 import { projectOrbitSource } from '../../rendering/scenes/orbit_lighting';
@@ -16,6 +17,16 @@ const sun = {
 };
 
 describe('physical orbit starlight', () => {
+  it('adapts the whole orbital view to distant stars and combined companion light', () => {
+    const single = getOrbitViewExposure([sun]);
+    expect(single).toBeCloseTo(Math.PI, 10);
+    expect(getOrbitViewExposure([{ ...sun, irradianceWm2: sun.irradianceWm2 / 4 }])).toBeCloseTo(
+      single * 4,
+      10
+    );
+    expect(getOrbitViewExposure([sun, { ...sun, id: 'B', primary: false }])).toBeCloseTo(single / 2, 10);
+    expect(getOrbitViewExposure([{ ...sun, irradianceWm2: 0 }])).toBeLessThan(Infinity);
+  });
   it('preserves absolute irradiance and treats zero output as darkness', () => {
     expect(getOrbitStellarIrradiance(sun)).toEqual({ r: 1, g: 1, b: 1 });
     expect(getOrbitStellarIrradiance({ ...sun, irradianceWm2: sun.irradianceWm2 / 4 })).toEqual({

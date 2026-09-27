@@ -27,12 +27,17 @@ import {
   OrbitVector,
 } from './scenes/orbit_lighting';
 import {
-  createOrbitAtmosphere,
+  createBodyOrbitAtmosphere,
   OrbitAtmosphere,
   orbitSourceTransmittance,
-  sampleOrbitAtmospherePixel,
+  sampleOrbitAtmospherePixelTransfer,
 } from './scenes/orbit_atmosphere';
-import { getOrbitStellarIrradiance, sampleOrbitStellarDisc } from './scenes/orbit_stellar_light';
+import {
+  getOrbitStellarIrradiance,
+  getOrbitViewExposure,
+  sampleOrbitStellarDisc,
+} from './scenes/orbit_stellar_light';
+import { toneMapOrbitRadiance } from './scenes/orbit_tone_map';
 import {
   TextDashboardLine,
   TextMenuSection,
@@ -101,8 +106,14 @@ interface OrbitGlobeTransform {
 interface OrbitLight {
   direction: OrbitVector;
   weight: number;
-  colour: RgbColour;
   irradiance: RgbColour;
+}
+
+interface OrbitSurfaceSample {
+  normal: OrbitVector;
+  albedo: RgbColour;
+  liquidCoverage: number;
+  reflectiveColour: RgbColour | null;
 }
 
 interface OrbitLandingMapCache {
@@ -1656,17 +1667,11 @@ export class SceneRenderer {
     // reserved for the body's own rotation.
     const texturePhase = model.rotationPhase * Math.PI * 2;
     const globeTransform = this.createOrbitGlobeTransform(planet, orbitPhase);
+    const exposure = getOrbitViewExposure(model.stellarSources);
     const lights = model.stellarSources.map((source) => {
-      const colour = this.hexToRgbFallback(source.colour ?? '#FFFFFF');
-      const maximum = Math.max(1, colour.r, colour.g, colour.b);
       return {
         direction: orbitSunDirection(orbitPhase - (source.longitudeOffset ?? 0)),
         weight: source.relativeFlux ?? (source.primary ? 1 : 0),
-        colour: {
-          r: (colour.r / maximum) ** 2.2,
-          g: (colour.g / maximum) ** 2.2,
-          b: (colour.b / maximum) ** 2.2,
-        },
         irradiance: getOrbitStellarIrradiance(source),
       };
     });
@@ -1685,23 +1690,13 @@ export class SceneRenderer {
     const detailScale = 0.5;
     const detailRadius = radius / detailScale;
     const background = this.hexToRgbFallback(TEXT_PALETTE.background);
-    const air = planet.effectiveAtmosphere;
-    const atmosphere =
-      air?.density === 'None'
-        ? null
-        : createOrbitAtmosphere(
-            air?.pressure ?? 0,
-            planet.effectiveSurfaceTemp,
-            planet.gravity,
-            planet.diameter,
-            air?.composition
-          );
+    const atmosphere = createBodyOrbitAtmosphere(planet);
     const outerRadius = atmosphere?.outerRadius ?? 1;
     const projectedOuter =
       (ORBIT_FOCAL_FACTOR * outerRadius) / Math.sqrt(ORBIT_CAMERA_DISTANCE ** 2 - outerRadius ** 2);
     const projection = this.getOrbitProjection(detailRadius, projectedOuter);
     for (const cell of projection) {
-      let finalColour = this.sampleOrbitGlobeColour(
+      const surface = this.sampleOrbitGlobeSurface(
         planet,
         solidMap,
         solidColours,
@@ -1712,14 +1707,14 @@ export class SceneRenderer {
         cell.sampleDy,
         detailRadius
       );
-      if (!finalColour && !atmosphere) continue;
-      finalColour ??= background;
-      if (cell.coverage < 1) {
+      if (!surface && !atmosphere) continue;
+      // Atmospheric transfer includes the surface's subpixel coverage already.
+      // Applying the separate silhouette mask again would darken the limb twice.
+      let finalColour = atmosphere
+        ? this.composeOrbitAtmosphere(surface, cell, detailRadius, atmosphere, lights, exposure)
+        : this.shadeOrbitGlobeSurface(planet, surface!, globeTransform);
+      if (!atmosphere && cell.coverage < 1)
         finalColour = interpolateColour(background, finalColour, cell.coverage);
-      }
-      if (atmosphere) {
-        finalColour = this.blendOrbitAtmosphericLimb(finalColour, cell, detailRadius, atmosphere, lights);
-      }
       if (cell.coverage === 0 && finalColour.r < 1 && finalColour.g < 1 && finalColour.b < 1) continue;
       const finalHex = rgbToHex(finalColour.r, finalColour.g, finalColour.b);
       this.screenBuffer.drawScaledChar(
@@ -1782,8 +1777,8 @@ export class SceneRenderer {
     return cells;
   }
 
-  /** Samples surface colour for one orbit-view globe cell. */
-  private sampleOrbitGlobeColour(
+  /** Samples body-fixed material separately from illumination and atmospheric transport. */
+  private sampleOrbitGlobeSurface(
     planet: Planet,
     solidMap: number[][] | null,
     solidColours: string[] | null,
@@ -1793,14 +1788,11 @@ export class SceneRenderer {
     dx: number,
     dy: number,
     detailRadius: number
-  ): RgbColour | null {
+  ): OrbitSurfaceSample | null {
     const normal = orbitSurfaceNormal(dx / detailRadius, -dy / detailRadius);
     if (!normal) return null;
     const { x: nx, z } = normal;
     const ny = -normal.y;
-    const viewLongitude = Math.atan2(nx, z);
-    const illuminationLongitude = viewLongitude + globeTransform.orbitPhase;
-    const viewLatitude = Math.asin(Math.max(-1, Math.min(1, -ny)));
     const bodyNormal = this.transformOrbitViewNormalWithCachedTrig(nx, -ny, z, globeTransform);
     const bodyLatitude = Math.asin(Math.max(-1, Math.min(1, bodyNormal.y)));
     const textureLongitude = Math.atan2(bodyNormal.x, bodyNormal.z) + texturePhase;
@@ -1831,12 +1823,29 @@ export class SceneRenderer {
             texturePhase
           )
         : this.samplePendingSolidPlanetTexture(planet, textureX, textureY);
+    return {
+      normal,
+      albedo: solidSample?.colour ?? this.hexToRgbFallback(fallbackColour ?? '#88BBBB'),
+      liquidCoverage: solidSample?.liquidCoverage ?? 0,
+      reflectiveColour: solidSample?.reflectiveColour ?? null,
+    };
+  }
+
+  /** Retains the existing material shading for bodies outside the clear-atmosphere model. */
+  private shadeOrbitGlobeSurface(
+    planet: Planet,
+    surface: OrbitSurfaceSample,
+    globeTransform: OrbitGlobeTransform
+  ): RgbColour {
+    const { normal, albedo, liquidCoverage, reflectiveColour } = surface;
+    const { z } = normal;
+    const illuminationLongitude = Math.atan2(normal.x, z) + globeTransform.orbitPhase;
+    const viewLatitude = Math.asin(Math.max(-1, Math.min(1, normal.y)));
     const incidentLight = globeTransform.lights?.reduce(
       (sum, light) => sum + Math.max(0, orbitSolarIncidence(normal, light.direction)) * light.weight,
       0
     );
     const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z, incidentLight);
-    const liquidCoverage = solidSample?.liquidCoverage ?? 0;
     let brightness = light.brightness;
     if (liquidCoverage > 0) {
       const liquidBrightness = this.calculateLiquidGlobeBrightness(
@@ -1847,52 +1856,68 @@ export class SceneRenderer {
       );
       brightness += (liquidBrightness - light.brightness) * liquidCoverage;
     }
-    const albedo = solidSample?.colour ?? this.hexToRgbFallback(fallbackColour ?? '#88BBBB');
     const baseColour = adjustBrightness(albedo, brightness);
-    let finalColour =
-      liquidCoverage > 0 && solidSample?.reflectiveColour
-        ? interpolateColour(
-            baseColour,
-            solidSample.reflectiveColour,
-            this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph * liquidCoverage
-          )
-        : baseColour;
-    finalColour = this.capAtmosphericGlobeHighlight(planet, finalColour, light.glyph);
-    return finalColour;
+    return liquidCoverage > 0 && reflectiveColour
+      ? interpolateColour(
+          baseColour,
+          reflectiveColour,
+          this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph * liquidCoverage
+        )
+      : baseColour;
   }
 
-  /** Area-samples a thin scattering shell on the existing half-cell raster, never a floating rim. */
-  private blendOrbitAtmosphericLimb(
-    colour: RgbColour,
+  /** Combines attenuated reflected light and scattering in the same linear radiance units. */
+  private composeOrbitAtmosphere(
+    surface: OrbitSurfaceSample | null,
     cell: OrbitProjectionCell,
     radius: number,
     air: OrbitAtmosphere,
-    lights: OrbitLight[]
+    lights: OrbitLight[],
+    exposure: number
   ): RgbColour {
-    const distance = Math.hypot(cell.dx, cell.dy) / radius;
-    if (distance < 0.9) return colour;
     const radiance = { r: 0, g: 0, b: 0 };
     // Diffuse scattering uses the small-source approximation. Only the direct
     // stellar marker needs disc integration at this raster's angular resolution.
     for (const light of lights) {
-      const value = sampleOrbitAtmospherePixel(
+      if (light.irradiance.r + light.irradiance.g + light.irradiance.b <= 0) continue;
+      const value = sampleOrbitAtmospherePixelTransfer(
         cell.dx / radius,
         -cell.dy / radius,
         1 / radius,
         light.direction,
         air
       );
-      radiance.r += value.r * light.irradiance.r;
-      radiance.g += value.g * light.irradiance.g;
-      radiance.b += value.b * light.irradiance.b;
+      const reflectance = this.getOrbitSurfaceReflectance(surface, light.direction);
+      radiance.r += (reflectance.r * value.surface.r + value.scattering.r) * light.irradiance.r;
+      radiance.g += (reflectance.g * value.surface.g + value.scattering.g) * light.irradiance.g;
+      radiance.b += (reflectance.b * value.surface.b + value.scattering.b) * light.irradiance.b;
     }
-    // Display exposure and gamma, not an artificial orange paint layer. Fade the
-    // inner boundary because ordinary surface haze is already in terrain lighting.
-    const exposure = 4 * this.smoothstep(0.9, 0.98, distance);
+    // One exposure follows combined stellar irradiance and retains colour ratios.
+    return toneMapOrbitRadiance(radiance, exposure);
+  }
+
+  /** Decodes surface reflectance, retaining a bounded liquid glint aligned to each star. */
+  private getOrbitSurfaceReflectance(surface: OrbitSurfaceSample | null, sun: OrbitVector): RgbColour {
+    if (!surface) return { r: 0, g: 0, b: 0 };
+    let colour = surface.albedo;
+    if (surface.liquidCoverage > 0 && surface.reflectiveColour) {
+      const n = surface.normal;
+      const incidence = n.x * sun.x + n.y * sun.y + n.z * sun.z;
+      const viewLength = Math.hypot(n.x, n.y, ORBIT_CAMERA_DISTANCE - n.z);
+      const alignment =
+        ((2 * incidence * n.x - sun.x) * -n.x +
+          (2 * incidence * n.y - sun.y) * -n.y +
+          (2 * incidence * n.z - sun.z) * (ORBIT_CAMERA_DISTANCE - n.z)) /
+        viewLength;
+      const glint = incidence > 0 ? Math.max(0, alignment) ** 70 * surface.liquidCoverage : 0;
+      // The existing material gloss is a bounded reflectance approximation;
+      // it passes through the same incoming and outgoing gas as diffuse light.
+      colour = interpolateColour(colour, surface.reflectiveColour, Math.min(1, glint));
+    }
     return {
-      r: Math.min(255, 255 * Math.pow(Math.pow(colour.r / 255, 2.2) + radiance.r * exposure, 1 / 2.2)),
-      g: Math.min(255, 255 * Math.pow(Math.pow(colour.g / 255, 2.2) + radiance.g * exposure, 1 / 2.2)),
-      b: Math.min(255, 255 * Math.pow(Math.pow(colour.b / 255, 2.2) + radiance.b * exposure, 1 / 2.2)),
+      r: (colour.r / 255) ** 2.2,
+      g: (colour.g / 255) ** 2.2,
+      b: (colour.b / 255) ** 2.2,
     };
   }
 
@@ -1963,22 +1988,12 @@ export class SceneRenderer {
     viewHeight: number
   ): void {
     const primary = model.stellarSources.find((source) => source.primary) ?? model.stellarSources[0];
+    const exposure = getOrbitViewExposure(model.stellarSources) / Math.PI;
+    const atmosphere = createBodyOrbitAtmosphere(model.selectedBody);
     for (const source of model.stellarSources.slice(0, 3)) {
       const sun = orbitSunDirection(model.illuminationPhase * Math.PI * 2 - (source.longitudeOffset ?? 0));
       const projected = projectOrbitSource(sun);
       if (!projected) continue;
-      const planet = model.selectedBody;
-      const air = planet.effectiveAtmosphere;
-      const atmosphere =
-        air?.density === 'None'
-          ? null
-          : createOrbitAtmosphere(
-              air?.pressure ?? 0,
-              planet.effectiveSurfaceTemp,
-              planet.gravity,
-              planet.diameter,
-              air?.composition
-            );
       const transmission = { r: 0, g: 0, b: 0 };
       let visibleWeight = 0;
       let projectedX = 0;
@@ -2011,22 +2026,25 @@ export class SceneRenderer {
         continue;
       const rgb = this.hexToRgbFallback(this.getOrbitStellarSourceColour(source.colour, source.brightness));
       const physical = source.irradianceWm2 === undefined ? null : getOrbitStellarIrradiance(source);
-      const colour = rgbToHex(
-        physical
-          ? 255 * (1 - Math.exp(-physical.r * transmission.r)) ** (1 / 2.2)
-          : rgb.r * transmission.r ** (1 / 2.2),
-        physical
-          ? 255 * (1 - Math.exp(-physical.g * transmission.g)) ** (1 / 2.2)
-          : rgb.g * transmission.g ** (1 / 2.2),
-        physical
-          ? 255 * (1 - Math.exp(-physical.b * transmission.b)) ** (1 / 2.2)
-          : rgb.b * transmission.b ** (1 / 2.2)
-      );
+      const colour = physical
+        ? toneMapOrbitRadiance(
+            {
+              r: physical.r * transmission.r,
+              g: physical.g * transmission.g,
+              b: physical.b * transmission.b,
+            },
+            exposure
+          )
+        : {
+            r: rgb.r * transmission.r ** (1 / 2.2),
+            g: rgb.g * transmission.g ** (1 / 2.2),
+            b: rgb.b * transmission.b ** (1 / 2.2),
+          };
       this.screenBuffer.drawScaledChar(
         source === primary ? GLYPHS.STELLAR_SOURCE : GLYPHS.STAR_DIM,
         x - halfSize,
         y - halfSize,
-        colour,
+        rgbToHex(colour.r, colour.g, colour.b),
         CONFIG.DEFAULT_BG_COLOUR,
         0.5,
         0.5
@@ -2092,30 +2110,10 @@ export class SceneRenderer {
       return { brightness, glyph: Math.max(0.03, Math.min(1, litFace)) };
     }
 
-    const atmosphereStrength = hasDenseAir ? 1 : 0.45;
     const day = Math.pow(mu0, hasDenseAir ? 0.52 : 0.78);
     const limb = hasDenseAir ? 0.78 + 0.22 * mu : 0.66 + 0.34 * mu;
-    const haze =
-      dayMask * (1 - mu) * 0.08 * atmosphereStrength + nightMask * 0.025 * atmosphereStrength * (1 - mu);
-    const brightness = Math.max(0.07, Math.min(1.16, 0.07 + day * limb * 0.99 + haze));
-    return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu) + haze)) };
-  }
-
-  /** Limits atmospheric highlights so text-mode colours retain contrast. */
-  private capAtmosphericGlobeHighlight(planet: Planet, colour: RgbColour, lightGlyph: number): RgbColour {
-    const atmosphere = planet.effectiveAtmosphere;
-    if (!atmosphere || atmosphere.pressure < 0.006 || atmosphere.density === 'None') return colour;
-    const pressure = Math.max(0, Math.min(1, Math.log10(atmosphere.pressure * 8 + 1) / 1.25));
-    const highlight = this.smoothstep(0.72, 1, lightGlyph);
-    if (highlight <= 0) return colour;
-
-    const luminance = colour.r * 0.2126 + colour.g * 0.7152 + colour.b * 0.0722;
-    const targetLuminance = 174 + pressure * 18;
-    if (luminance <= targetLuminance) return colour;
-
-    const compression =
-      1 - Math.min(0.24, ((luminance - targetLuminance) / 255) * highlight * (0.55 + pressure * 0.35));
-    return adjustBrightness(colour, compression);
+    const brightness = Math.max(0.07, Math.min(1.16, 0.07 + day * limb * 0.99));
+    return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu))) };
   }
 
   /** Smoothly interpolates a value between two thresholds. */

@@ -1,11 +1,19 @@
 import { RgbColour } from '../colour';
-import { ORBIT_CAMERA_DISTANCE, ORBIT_FOCAL_FACTOR, OrbitVector } from './orbit_lighting';
+import type { Planet } from '../../entities/planet';
+import { ORBIT_CAMERA_DISTANCE, ORBIT_FOCAL_FACTOR, orbitSurfaceNormal, OrbitVector } from './orbit_lighting';
 
 export interface OrbitAtmosphere {
   scaleHeight: number;
   outerRadius: number;
   extinction: RgbColour;
   projectedLayers: readonly number[];
+}
+
+export interface OrbitAtmosphereTransfer {
+  /** Scattered radiance per unit incident stellar irradiance. */
+  scattering: RgbColour;
+  /** Lambertian surface radiance for unit albedo, including both atmospheric paths. */
+  surface: RgbColour;
 }
 
 // Molar mass (g/mol), mean polarizability (A^3). Polarizabilities: NIST CCCBDB,
@@ -25,6 +33,25 @@ const MOLECULES: Record<string, readonly [number, number]> = {
   'Hydrogen Sulfide': [34.08, 3.631],
   'Sulfur Dioxide': [64.066, 3.882],
 };
+
+/** Places the optical boundary at solid terrain or the giant's visible cloud deck. */
+export function createBodyOrbitAtmosphere(
+  body: Pick<Planet, 'type' | 'effectiveAtmosphere' | 'effectiveSurfaceTemp' | 'gravity' | 'diameter'>
+): OrbitAtmosphere | null {
+  const air = body.effectiveAtmosphere;
+  if (!air || air.density === 'None') return null;
+  // Giant textures already depict clouds, not a surface beneath the deep gas
+  // envelope. These representative cloud-top pressures are rendering defaults,
+  // not predictions of cloud condensation (see docs/orbit-atmosphere.md).
+  const cloudTopBar = body.type === 'GasGiant' ? 0.5 : body.type === 'IceGiant' ? 0.3 : Infinity;
+  return createOrbitAtmosphere(
+    Math.min(air.pressure, cloudTopBar),
+    body.effectiveSurfaceTemp,
+    body.gravity,
+    body.diameter,
+    air.composition
+  );
+}
 
 /** Builds a clear, isothermal molecular atmosphere; distances are in planet radii. */
 export function createOrbitAtmosphere(
@@ -125,20 +152,23 @@ export function orbitSourceTransmittance(x: number, y: number, air: OrbitAtmosph
   };
 }
 
-/** Returns single-scattered linear RGB radiance along a camera ray, with solid-body shadowing. */
-export function sampleOrbitAtmosphere(
+/** Returns scattered and transmitted surface light per unit irradiance along one camera ray. */
+export function sampleOrbitAtmosphereTransfer(
   x: number,
   y: number,
   sun: OrbitVector,
   air: OrbitAtmosphere
-): RgbColour {
+): OrbitAtmosphereTransfer {
   const length = Math.hypot(x, y, ORBIT_FOCAL_FACTOR);
   const vx = x / length;
   const vy = y / length;
   const vz = -ORBIT_FOCAL_FACTOR / length;
   const along = ORBIT_CAMERA_DISTANCE * vz;
   const impact2 = ORBIT_CAMERA_DISTANCE ** 2 - along * along;
-  const result = { r: 0, g: 0, b: 0 };
+  const result: OrbitAtmosphereTransfer = {
+    scattering: { r: 0, g: 0, b: 0 },
+    surface: { r: 0, g: 0, b: 0 },
+  };
   if (impact2 >= air.outerRadius ** 2) return result;
   const halfChord = Math.sqrt(air.outerRadius ** 2 - impact2);
   const start = -along - halfChord;
@@ -158,26 +188,61 @@ export function sampleOrbitAtmosphere(
     const column = solarColumn(px, py, pz, sun, air) + viewColumn;
     // Integrate extinction within each view segment analytically. Midpoint-only
     // attenuation wrongly suppresses the whole segment when optical depth is large.
-    result.r += Math.exp(-air.extinction.r * column) * -Math.expm1(-air.extinction.r * densityStep) * phase;
-    result.g += Math.exp(-air.extinction.g * column) * -Math.expm1(-air.extinction.g * densityStep) * phase;
-    result.b += Math.exp(-air.extinction.b * column) * -Math.expm1(-air.extinction.b * densityStep) * phase;
+    result.scattering.r +=
+      Math.exp(-air.extinction.r * column) * -Math.expm1(-air.extinction.r * densityStep) * phase;
+    result.scattering.g +=
+      Math.exp(-air.extinction.g * column) * -Math.expm1(-air.extinction.g * densityStep) * phase;
+    result.scattering.b +=
+      Math.exp(-air.extinction.b * column) * -Math.expm1(-air.extinction.b * densityStep) * phase;
     viewColumn += densityStep;
+  }
+  const normal = orbitSurfaceNormal(x, y);
+  if (normal) {
+    const incidence = Math.max(0, normal.x * sun.x + normal.y * sun.y + normal.z * sun.z);
+    if (incidence > 0) {
+      // Integrate the complete ground-to-camera path independently of the view
+      // marching resolution. Both terms are in radiance / stellar irradiance.
+      const groundColumn = densityColumn(impact2, -halfChord, end + along, air);
+      const column = groundColumn + solarColumn(normal.x, normal.y, normal.z, sun, air);
+      const diffuse = incidence / Math.PI;
+      result.surface = {
+        r: diffuse * Math.exp(-air.extinction.r * column),
+        g: diffuse * Math.exp(-air.extinction.g * column),
+        b: diffuse * Math.exp(-air.extinction.b * column),
+      };
+    }
   }
   return result;
 }
 
-/** Integrates a display pixel in polar strips so subpixel atmospheric layers cannot be missed. */
-export function sampleOrbitAtmospherePixel(
+/** Returns molecular scattering alone for optical diagnostics. */
+export function sampleOrbitAtmosphere(
+  x: number,
+  y: number,
+  sun: OrbitVector,
+  air: OrbitAtmosphere
+): RgbColour {
+  return sampleOrbitAtmosphereTransfer(x, y, sun, air).scattering;
+}
+
+/** Area-integrates surface transmission and scattering together at the silhouette. */
+export function sampleOrbitAtmospherePixelTransfer(
   x: number,
   y: number,
   size: number,
   sun: OrbitVector,
   air: OrbitAtmosphere
-): RgbColour {
+): OrbitAtmosphereTransfer {
   const distance = Math.hypot(x, y);
-  if (distance < 0.98) return sampleOrbitAtmosphere(x, y, sun, air);
-  const result = { r: 0, g: 0, b: 0 };
   const half = size / 2;
+  // Interior pixels need one ray. A footprint touching the limb needs area
+  // integration even if its centre is over solid terrain.
+  if (distance + Math.SQRT2 * half < 1) return sampleOrbitAtmosphereTransfer(x, y, sun, air);
+  const result: OrbitAtmosphereTransfer = {
+    scattering: { r: 0, g: 0, b: 0 },
+    surface: { r: 0, g: 0, b: 0 },
+  };
+  if (distance - Math.SQRT2 * half >= air.projectedLayers[air.projectedLayers.length - 1]) return result;
   const angle = Math.atan2(y, x);
   const angularRadius = Math.asin(Math.min(1, (Math.SQRT2 * half) / distance));
   const angleStep = (angularRadius * 2) / 4;
@@ -201,15 +266,29 @@ export function sampleOrbitAtmospherePixel(
       for (let j = 0; j < count; j++) {
         const fraction = count === 1 ? 0.5 : 0.5 + (j === 0 ? -1 : 1) / (2 * Math.sqrt(3));
         const radius = low + (end - low) * fraction;
-        const sample = sampleOrbitAtmosphere(radius * cosine, radius * sine, sun, air);
+        const sample = sampleOrbitAtmosphereTransfer(radius * cosine, radius * sine, sun, air);
         const area = (radius * (end - low) * angleStep) / (count * size * size);
-        result.r += sample.r * area;
-        result.g += sample.g * area;
-        result.b += sample.b * area;
+        result.scattering.r += sample.scattering.r * area;
+        result.scattering.g += sample.scattering.g * area;
+        result.scattering.b += sample.scattering.b * area;
+        result.surface.r += sample.surface.r * area;
+        result.surface.g += sample.surface.g * area;
+        result.surface.b += sample.surface.b * area;
       }
       low = end;
       if (low >= high) break;
     }
   }
   return result;
+}
+
+/** Returns area-averaged molecular scattering alone for optical diagnostics. */
+export function sampleOrbitAtmospherePixel(
+  x: number,
+  y: number,
+  size: number,
+  sun: OrbitVector,
+  air: OrbitAtmosphere
+): RgbColour {
+  return sampleOrbitAtmospherePixelTransfer(x, y, size, sun, air).scattering;
 }

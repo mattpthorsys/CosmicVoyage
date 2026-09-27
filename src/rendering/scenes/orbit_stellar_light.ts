@@ -6,6 +6,17 @@ import type { OrbitVector } from './orbit_lighting';
 const SOLAR_TEMPERATURE = 5772;
 const SOLAR_IRRADIANCE = SOLAR_LUMINOSITY_W / (4 * Math.PI * AU_IN_METERS ** 2);
 
+/** Adapts a single orbit view to its combined visible stellar irradiance. */
+export function getOrbitViewExposure(sources: readonly OrbitStellarSource[]): number {
+  const visibleFlux = sources.reduce((total, source) => {
+    const rgb = getOrbitStellarIrradiance(source);
+    return total + rgb.r * 0.2126 + rgb.g * 0.7152 + rgb.b * 0.0722;
+  }, 0);
+  // The floor keeps extremely faint systems dark while ordinary outer-system
+  // planets remain legible after the observer has adapted to local starlight.
+  return Math.PI / Math.max(0.0005, visibleFlux);
+}
+
 /** Samples Planck spectra at the Rayleigh model's RGB wavelengths, relative to sunlight at Earth. */
 export function getOrbitStellarIrradiance(source: OrbitStellarSource): RgbColour {
   const temperature = source.temperatureK ?? SOLAR_TEMPERATURE;

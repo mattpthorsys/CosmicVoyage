@@ -1,15 +1,49 @@
 import { describe, expect, it } from 'vitest';
 import {
   createOrbitAtmosphere,
+  createBodyOrbitAtmosphere,
   orbitSourceTransmittance,
   sampleOrbitAtmosphere,
   sampleOrbitAtmospherePixel,
+  sampleOrbitAtmospherePixelTransfer,
+  sampleOrbitAtmosphereTransfer,
 } from '../../rendering/scenes/orbit_atmosphere';
 
 const air = createOrbitAtmosphere(1, 288.15, 1, 12742)!;
 const contact = { x: 1 / 3, y: 0, z: -Math.sqrt(8) / 3 };
 
 describe('orbital molecular scattering', () => {
+  it('uses gas above visible giant clouds without capping rocky surface pressure', () => {
+    const body = {
+      type: 'GasGiant',
+      effectiveAtmosphere: { density: 'Dense', pressure: 90, composition: { Hydrogen: 85, Helium: 15 } },
+      effectiveSurfaceTemp: 130,
+      gravity: 2.4,
+      diameter: 140000,
+    };
+    for (const [type, pressure] of [
+      ['GasGiant', 0.5],
+      ['IceGiant', 0.3],
+      ['Rock', 90],
+    ] as const) {
+      expect(createBodyOrbitAtmosphere({ ...body, type })).toEqual(
+        createOrbitAtmosphere(pressure, 130, 2.4, 140000, body.effectiveAtmosphere.composition)
+      );
+    }
+    expect(
+      createBodyOrbitAtmosphere({
+        ...body,
+        effectiveAtmosphere: { ...body.effectiveAtmosphere, pressure: 0.01 },
+      })
+    ).toEqual(createOrbitAtmosphere(0.01, 130, 2.4, 140000, body.effectiveAtmosphere.composition));
+    expect(
+      createBodyOrbitAtmosphere({
+        ...body,
+        effectiveAtmosphere: { ...body.effectiveAtmosphere, density: 'None' },
+      })
+    ).toBeNull();
+    expect(body.effectiveAtmosphere.pressure).toBe(90);
+  });
   it('captures subpixel contact light at different limb angles without changing the display grid', () => {
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 6) {
       const x = Math.cos(angle);
@@ -140,5 +174,49 @@ describe('orbital molecular scattering', () => {
     // Compare warm radiance, not R/B: an almost-black shadow can have a huge
     // colour ratio while contributing no perceptible sunset light.
     expect(besideSun.r - besideSun.b).toBeGreaterThan((awayFromSun.r - awayFromSun.b) * 2);
+  });
+
+  it('dims reflected terrain along both atmospheric paths as the star approaches the horizon', () => {
+    const noon = sampleOrbitAtmosphereTransfer(0, 0, { x: 0, y: 0, z: 1 }, air).surface;
+    const angle = (80 * Math.PI) / 180;
+    const grazing = sampleOrbitAtmosphereTransfer(
+      0,
+      0,
+      { x: Math.sin(angle), y: 0, z: Math.cos(angle) },
+      air
+    ).surface;
+    expect(noon.r).toBeLessThan(1 / Math.PI);
+    expect(noon.r).toBeGreaterThan(noon.g);
+    expect(noon.g).toBeGreaterThan(noon.b);
+    expect(grazing.r).toBeGreaterThan(0);
+    expect(grazing.r).toBeLessThan(noon.r * Math.cos(angle));
+    expect(grazing.b / grazing.r).toBeLessThan(noon.b / noon.r);
+    expect(sampleOrbitAtmosphereTransfer(0, 0, { x: 0, y: 0, z: -1 }, air).surface).toEqual({
+      r: 0,
+      g: 0,
+      b: 0,
+    });
+  });
+
+  it('lets increasing gas pressure veil the surface without inventing coloured material', () => {
+    const sun = { x: 0, y: 0, z: 1 };
+    const thin = createOrbitAtmosphere(0.006, 288.15, 1, 12742)!;
+    const dense = createOrbitAtmosphere(90, 288.15, 1, 12742)!;
+    const thinSurface = sampleOrbitAtmosphereTransfer(0, 0, sun, thin).surface;
+    const earthSurface = sampleOrbitAtmosphereTransfer(0, 0, sun, air).surface;
+    const denseSurface = sampleOrbitAtmosphereTransfer(0, 0, sun, dense).surface;
+    expect(thinSurface.g).toBeGreaterThan(earthSurface.g);
+    expect(earthSurface.g).toBeGreaterThan(denseSurface.g);
+    expect(denseSurface.g).toBeLessThan(earthSurface.g * 0.01);
+  });
+
+  it('integrates terrain coverage and scattering through the same limb footprint', () => {
+    const sun = { x: 0.6, y: 0, z: 0.8 };
+    const inside = sampleOrbitAtmospherePixelTransfer(0.985, 0, 1 / 24, sun, air);
+    const outside = sampleOrbitAtmospherePixelTransfer(1.2, 0, 1 / 24, sun, air);
+    expect(inside.surface.r).toBeGreaterThan(0);
+    expect(inside.scattering.b).toBeGreaterThan(0);
+    expect(outside.surface).toEqual({ r: 0, g: 0, b: 0 });
+    expect(outside.scattering).toEqual({ r: 0, g: 0, b: 0 });
   });
 });

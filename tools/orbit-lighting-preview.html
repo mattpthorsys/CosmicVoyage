@@ -30,7 +30,7 @@
     </style>
   </head>
   <body>
-    <p>Orbital lighting: fixed terrain; clear molecular atmospheres (no clouds or aerosols)</p>
+    <p>Orbital lighting: fixed terrain or giant cloud textures; clear gas above the visible boundary</p>
     <main></main>
     <script type="module">
       import '../src/assets/fonts/fonts.css';
@@ -41,7 +41,22 @@
       import { SystemDataGenerator } from '../src/generation/system_data_generator.ts';
       import { PRNG } from '../src/utils/prng.ts';
       import { Planet } from '../src/entities/planet.ts';
+      import { ORBIT_CAMERA_DISTANCE, orbitSunDirection } from '../src/rendering/scenes/orbit_lighting.ts';
       await document.fonts.ready;
+      const initialSun = orbitSunDirection(0);
+      const fullPhase = (1 + Math.atan2(initialSun.x, initialSun.z) / (2 * Math.PI)) % 1;
+      const occultedPhase = (fullPhase + 0.5) % 1;
+      const contactOffset =
+        Math.acos(Math.sqrt(1 - 1 / ORBIT_CAMERA_DISTANCE ** 2) / Math.sqrt(1 - initialSun.y ** 2)) /
+        (2 * Math.PI);
+      const phases = [
+        { name: 'Full', phase: fullPhase },
+        { name: 'Quarter', phase: (fullPhase + 0.25) % 1 },
+        { name: 'Crescent', phase: occultedPhase - contactOffset - 0.012 },
+        { name: 'Ingress', phase: occultedPhase - contactOffset },
+        { name: 'Occulted', phase: occultedPhase },
+        { name: 'Egress', phase: occultedPhase + contactOffset },
+      ];
       const profiles = [
         {
           name: 'Earth-like',
@@ -71,22 +86,44 @@
           gases: { Nitrogen: 78, Oxygen: 21, Argon: 1 },
           distance: 2,
         },
+        {
+          name: 'Gas giant / deep pressure 90 bar',
+          type: 'GasGiant',
+          pressure: 90,
+          temperature: 130,
+          gases: { Hydrogen: 85, Helium: 15 },
+          diameter: 140000,
+          gravity: 2.4,
+          distance: 5,
+        },
+        {
+          name: 'Ice giant / deep pressure 90 bar',
+          type: 'IceGiant',
+          pressure: 90,
+          temperature: 78,
+          gases: { Hydrogen: 80, Helium: 18, Methane: 2 },
+          diameter: 50000,
+          gravity: 1.1,
+          distance: 20,
+        },
       ];
       for (const profile of profiles) {
-        for (const phase of [0.2, 0.35, 0.3617394005527416, 0.4125, 0.4631901620461734, 0.475]) {
+        for (const { name: phaseName, phase } of phases) {
           const planet = Object.create(Planet.prototype);
           Object.defineProperties(planet, {
             name: { value: 'Lighting fixture' },
-            type: { value: 'Rock' },
+            type: { value: profile.type ?? 'Rock' },
+            orbitDistance: { value: (profile.distance ?? 1) * 1.496e11 },
+            systemPRNG: { value: new PRNG('lighting-giant') },
             heightmap: {
               value: Array.from({ length: 32 }, (_, y) => Array.from({ length: 32 }, (_, x) => (x + y) % 8)),
             },
             heightLevelColors: {
               value: Array.from({ length: 256 }, (_, i) => '#' + i.toString(16).padStart(2, '0') + '7050'),
             },
-            diameter: { value: 11000 },
+            diameter: { value: profile.diameter ?? 11000 },
             density: { value: 5.1 },
-            gravity: { value: 0.95 },
+            gravity: { value: profile.gravity ?? 0.95 },
             surfaceTemp: { value: profile.temperature },
             axialTilt: { value: 0.23 },
             orbitalInclination: { value: 0.03 },
@@ -171,7 +208,14 @@
           result.dataset.litPixels = Array.from(pixels).filter((v, i) => i % 4 !== 3 && v > 30).length;
           const label = document.createElement('figcaption');
           label.textContent =
-            profile.name + ' / phase ' + phase.toFixed(4) + ' / ' + frameMs.toFixed(1) + 'ms/frame';
+            profile.name +
+            ' / ' +
+            phaseName +
+            ' ' +
+            phase.toFixed(4) +
+            ' / ' +
+            frameMs.toFixed(1) +
+            'ms/frame';
           figure.append(result, label);
           document.querySelector('main').append(figure);
         }
