@@ -1,6 +1,7 @@
 import { Planet } from '../../entities/planet';
 import { getCoastalVegetationColour, SurfaceLiquidOverlay } from '../../entities/planet/surface_liquid';
-import { hexToRgb, RgbColour } from '../colour';
+import { getSurfaceMaterialIndex, SurfaceMaterialMap } from '../../entities/planet/surface_material';
+import { hexToRgb, interpolateColour, RgbColour } from '../colour';
 import { ORBIT_CAMERA_DISTANCE, ORBIT_FOCAL_FACTOR } from './orbit_lighting';
 
 interface SolidOrbitTextureLevel {
@@ -14,6 +15,7 @@ interface SolidOrbitTexture {
   sourceHeightmap: number[][];
   sourceHeightColours: string[];
   sourceLiquid: SurfaceLiquidOverlay | null;
+  sourceMaterials: SurfaceMaterialMap | null;
   reflectiveColour: RgbColour | null;
   levels: SolidOrbitTextureLevel[];
 }
@@ -21,6 +23,7 @@ interface SolidOrbitTexture {
 interface DisplayPalette {
   colours: RgbColour[];
   liquid: Uint8Array;
+  material: Uint8Array;
 }
 
 interface FilteredLevelSample {
@@ -52,9 +55,10 @@ export class SolidPlanetOrbitTextureRenderer {
     planet: Planet,
     heightmap: number[][],
     heightColours: string[],
-    liquid: SurfaceLiquidOverlay | null
+    liquid: SurfaceLiquidOverlay | null,
+    materials: SurfaceMaterialMap | null = null
   ): void {
-    this.getOrCreateTexture(planet, heightmap, heightColours, liquid);
+    this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials);
   }
 
   /** Samples filtered albedo and liquid coverage without smoothing the final display pixel. */
@@ -66,10 +70,40 @@ export class SolidPlanetOrbitTextureRenderer {
     u: number,
     v: number,
     projectedDiameter: number,
-    viewNormalZ: number
+    viewNormalZ: number,
+    materials: SurfaceMaterialMap | null = null
   ): SolidOrbitTextureSample {
-    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid);
+    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials);
     const lod = this.calculateLod(texture.levels, v, projectedDiameter, viewNormalZ);
+    return this.sampleTexture(texture, u, v, lod);
+  }
+
+  /** Uses the same albedo and coastline filtering for a flat landing-map raster. */
+  sampleMap(
+    planet: Planet,
+    heightmap: number[][],
+    heightColours: string[],
+    liquid: SurfaceLiquidOverlay | null,
+    u: number,
+    v: number,
+    width: number,
+    height: number,
+    materials: SurfaceMaterialMap | null = null
+  ): SolidOrbitTextureSample {
+    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials);
+    const base = texture.levels[0];
+    const footprint = Math.max(base.width / Math.max(1, width), base.height / Math.max(1, height));
+    const lod = Math.min(texture.levels.length - 1, Math.log2(Math.max(1, footprint)));
+    return this.sampleTexture(texture, u, v, lod);
+  }
+
+  /** Trilinearly filters a prepared surface without rebuilding or decoding source colours. */
+  private sampleTexture(
+    texture: SolidOrbitTexture,
+    u: number,
+    v: number,
+    lod: number
+  ): SolidOrbitTextureSample {
     const lowIndex = Math.floor(lod);
     const highIndex = Math.min(texture.levels.length - 1, lowIndex + 1);
     const mix = lod - lowIndex;
@@ -100,23 +134,26 @@ export class SolidPlanetOrbitTextureRenderer {
     planet: Planet,
     heightmap: number[][],
     heightColours: string[],
-    liquid: SurfaceLiquidOverlay | null
+    liquid: SurfaceLiquidOverlay | null,
+    materials: SurfaceMaterialMap | null
   ): SolidOrbitTexture {
     const cached = this.textureCache.get(planet);
     if (
       cached &&
       cached.sourceHeightmap === heightmap &&
       cached.sourceHeightColours === heightColours &&
-      cached.sourceLiquid === liquid
+      cached.sourceLiquid === liquid &&
+      cached.sourceMaterials === materials
     ) {
       return cached;
     }
 
-    const base = this.buildBaseLevel(heightmap, heightColours, liquid);
+    const base = this.buildBaseLevel(heightmap, heightColours, liquid, materials);
     const texture: SolidOrbitTexture = {
       sourceHeightmap: heightmap,
       sourceHeightColours: heightColours,
       sourceLiquid: liquid,
+      sourceMaterials: materials,
       reflectiveColour: liquid ? hexToRgb(liquid.reflectiveColour) : null,
       levels: this.buildMipChain(base),
     };
@@ -128,11 +165,18 @@ export class SolidPlanetOrbitTextureRenderer {
   private buildBaseLevel(
     heightmap: number[][],
     heightColours: string[],
-    liquid: SurfaceLiquidOverlay | null
+    liquid: SurfaceLiquidOverlay | null,
+    materials: SurfaceMaterialMap | null
   ): SolidOrbitTextureLevel {
     const sourceHeight = Math.max(1, heightmap.length);
     const sourceWidth = Math.max(1, heightmap[0]?.length ?? 0);
     const palette = this.buildDisplayPalette(heightColours, liquid);
+    const materialSourceWidth = materials?.sourceWidth ?? materials?.width;
+    const materialSourceHeight = materials?.sourceHeight ?? materials?.height;
+    const materialPalette =
+      materials && materialSourceWidth === sourceWidth && materialSourceHeight === sourceHeight
+        ? materials.palette.map(hexToRgb)
+        : null;
     const colours = new Uint8ClampedArray(BASE_TEXTURE_WIDTH * BASE_TEXTURE_HEIGHT * 3);
     const liquidCoverage = new Uint8ClampedArray(BASE_TEXTURE_WIDTH * BASE_TEXTURE_HEIGHT);
 
@@ -166,7 +210,15 @@ export class SolidPlanetOrbitTextureRenderer {
             const weight = overlapX * overlapY;
             const rawHeight = row[Math.min(row.length - 1, Math.max(0, sourceX))] ?? 0;
             const heightIndex = Math.max(0, Math.min(palette.colours.length - 1, Math.round(rawHeight)));
-            const colour = palette.colours[heightIndex];
+            const colour =
+              materialPalette && materials && palette.material[heightIndex]
+                ? interpolateColour(
+                    palette.colours[heightIndex],
+                    materialPalette[getSurfaceMaterialIndex(materials, sourceX, sourceY)] ??
+                      palette.colours[heightIndex],
+                    materials.strength
+                  )
+                : palette.colours[heightIndex];
             red += colour.r * weight;
             green += colour.g * weight;
             blue += colour.b * weight;
@@ -199,6 +251,7 @@ export class SolidPlanetOrbitTextureRenderer {
     const levelCount = Math.max(1, heightColours.length);
     const colours = new Array<RgbColour>(levelCount);
     const liquidLevels = new Uint8Array(levelCount);
+    const materialLevels = new Uint8Array(levelCount);
 
     for (let height = 0; height < levelCount; height++) {
       if (liquid && height <= liquid.seaLevel) {
@@ -209,9 +262,10 @@ export class SolidPlanetOrbitTextureRenderer {
 
       const vegetationColour = getCoastalVegetationColour(height, liquid);
       colours[height] = hexToRgb(vegetationColour ?? heightColours[height] ?? fallback);
+      materialLevels[height] = vegetationColour ? 0 : 1;
     }
 
-    return { colours, liquid: liquidLevels };
+    return { colours, liquid: liquidLevels, material: materialLevels };
   }
 
   /** Builds progressively area-filtered levels for stable texture minification. */

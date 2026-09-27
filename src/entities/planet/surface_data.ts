@@ -25,6 +25,7 @@ export function readReadySurfaceData(source: ReadySurfaceSource): SurfaceData | 
   }
 
   return {
+    materialMap: hasOwn('materialMap') ? (record.materialMap as SurfaceData['materialMap']) : null,
     heightmap: hasOwn('heightmap') ? (record.heightmap as SurfaceData['heightmap']) : null,
     heightLevelColors: hasOwn('heightLevelColors')
       ? (record.heightLevelColors as SurfaceData['heightLevelColors'])

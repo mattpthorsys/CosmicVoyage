@@ -638,6 +638,49 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it('draws shared materials on the surface and refreshes landing colours when material data changes', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(100, 54);
+    const renderer = createSceneRenderer(buffer) as any;
+    const planet = createSolidPlanet();
+    const materials = {
+      width: 16,
+      height: 16,
+      sourceWidth: 16,
+      sourceHeight: 16,
+      indices: new Uint8Array(256),
+      palette: ['#736454'],
+      strength: 1,
+    };
+    Object.defineProperty(planet, 'materialMap', { value: materials });
+    renderer.drawPlanetSurface(new Player(), planet);
+    expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK && call.bg === '#736454')).toBe(true);
+
+    const first = renderer.getOrbitLandingMapColours(
+      planet,
+      planet.heightmap,
+      planet.heightLevelColors,
+      null,
+      [],
+      16,
+      16,
+      materials
+    );
+    expect(new Set(first)).toEqual(new Set(['#736454']));
+    const replacement = { ...materials, palette: ['#ABCDEF'] };
+    const next = renderer.getOrbitLandingMapColours(
+      planet,
+      planet.heightmap,
+      planet.heightLevelColors,
+      null,
+      [],
+      16,
+      16,
+      replacement
+    );
+    expect(new Set(next)).toEqual(new Set(['#ABCDEF']));
+    expect(next).not.toBe(first);
+  });
+
   it('renders gas giant surfaces with turbulent band and storm variation', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(100, 54);
     const renderer = createSceneRenderer(buffer);
@@ -990,11 +1033,31 @@ describe('SceneRenderer visual regressions', () => {
       [20, 100, 140, 220],
     ];
 
-    const seamSample = renderer.sampleWrappedHeight(heightmap, 0.99, 0.5);
-    const nearStartSample = renderer.sampleWrappedHeight(heightmap, 0.01, 0.5);
+    const planet = {} as Planet;
+    const palette = Array.from({ length: 256 }, (_, h) => `#${h.toString(16).padStart(2, '0').repeat(3)}`);
+    const seamSample = renderer.sampleSolidPlanetTexture(
+      planet,
+      heightmap,
+      palette,
+      null,
+      0.999999,
+      0.5,
+      52,
+      1
+    );
+    const nearStartSample = renderer.sampleSolidPlanetTexture(
+      planet,
+      heightmap,
+      palette,
+      null,
+      0.000001,
+      0.5,
+      52,
+      1
+    );
 
-    expect(seamSample.height).toBeLessThan(50);
-    expect(nearStartSample.height).toBeLessThan(50);
+    expect(Math.abs(seamSample.colour.r - nearStartSample.colour.r)).toBeLessThan(1);
+    expect(nearStartSample.colour.r).toBeLessThan(50);
   });
 
   it('autosizes reusable modal tables without clipping long option names', () => {

@@ -112,5 +112,9 @@ describe('surface liquid overlays', () => {
     });
 
     expect(request).toEqual(legacy);
+    expect(request.materialMap?.indices).toBeInstanceOf(Uint8Array);
+    expect(request.materialMap?.sourceWidth).toBe(request.heightmap?.[0].length);
+    expect(request.materialMap?.width).toBeLessThanOrEqual(257);
+    expect(structuredClone(request).materialMap).toEqual(request.materialMap);
   });
 });

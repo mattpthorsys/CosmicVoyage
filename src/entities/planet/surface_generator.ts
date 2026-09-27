@@ -6,6 +6,7 @@ import { generateSurfaceElementMap, SurfaceElementGenerationProfile } from './su
 import { generateRgbPaletteCache, generateHeightLevelColors } from './surface_colour_generator';
 import { createSurfaceLiquidOverlay, isLiquidCovered, SurfaceLiquidOverlay } from './surface_liquid';
 import { RgbColour } from '../../rendering/colour';
+import { createSurfaceMaterialMap, SurfaceMaterialMap } from './surface_material';
 
 // Interface for the generated surface data package
 export interface SurfaceData {
@@ -14,6 +15,7 @@ export interface SurfaceData {
   rgbPaletteCache: RgbColour[] | null;
   surfaceElementMap: string[][] | null;
   liquidOverlay: SurfaceLiquidOverlay | null;
+  materialMap?: SurfaceMaterialMap | null;
 }
 
 export interface SurfaceGenerationRequest {
@@ -85,6 +87,7 @@ function generateSurfaceDataInternal(
   let rgbPaletteCache: RgbColour[] | null = null;
   let surfaceElementMap: string[][] | null = null;
   let liquidOverlay: SurfaceLiquidOverlay | null = null;
+  let materialMap: SurfaceMaterialMap | null = null;
 
   rgbPaletteCache = generateRgbPaletteCache(planetType);
 
@@ -109,6 +112,7 @@ function generateSurfaceDataInternal(
         heightmap,
         managedBiosphere: profile.managedBiosphere,
       });
+      materialMap = createSurfaceMaterialMap(planetType, mapSeed, heightmap, profile.surfaceTemp);
 
       surfaceElementMap = generateSurfaceElementMap(
         planetType,
@@ -150,7 +154,7 @@ function generateSurfaceDataInternal(
     }
   }
 
-  return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay };
+  return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay, materialMap };
 }
 
 /** Masks submerged elements. */

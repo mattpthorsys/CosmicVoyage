@@ -4,7 +4,9 @@ import { NebulaRenderer } from './nebula_renderer';
 import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
-import { getCoastalVegetationColour, SurfaceLiquidOverlay } from '../entities/planet/surface_liquid';
+import { SurfaceLiquidOverlay } from '../entities/planet/surface_liquid';
+import { getSurfaceDisplayColour, SurfaceMaterialMap } from '../entities/planet/surface_material';
+import { SurfaceData } from '../entities/planet/surface_generator';
 import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
@@ -122,6 +124,9 @@ interface OrbitLandingMapCache {
   width: number;
   height: number;
   surfaceHeightmap: number[][] | null;
+  surfaceColours: string[] | null;
+  liquid: SurfaceLiquidOverlay | null;
+  materials: SurfaceMaterialMap | null;
   colours: string[];
 }
 
@@ -213,7 +218,8 @@ export class SceneRenderer {
         planet,
         surface.heightmap,
         surface.heightLevelColors,
-        surface.liquidOverlay
+        surface.liquidOverlay,
+        surface.materialMap ?? null
       );
     }
   }
@@ -1037,10 +1043,14 @@ export class SceneRenderer {
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
         const submerged = !!liquidOverlay && height <= liquidOverlay.seaLevel;
-        const vegetationColour = submerged ? null : getCoastalVegetationColour(height, liquidOverlay);
-        const terrainColor = submerged
-          ? liquidOverlay.colour
-          : vegetationColour || heightColors[height] || '#FF00FF';
+        const terrainColor = getSurfaceDisplayColour(
+          height,
+          heightColors,
+          liquidOverlay,
+          surfaceData?.materialMap,
+          wrappedMapX,
+          wrappedMapY
+        );
         const screenX = viewport.x + x;
         const screenY = viewport.y + y;
         this.screenBuffer.drawChar(GLYPHS.BLOCK, screenX, screenY, terrainColor, terrainColor);
@@ -1071,7 +1081,7 @@ export class SceneRenderer {
     if (surfaceOverlay?.scanCursor) this.drawSurfaceScanCursor(surfaceOverlay.scanCursor, viewport);
     this.drawSurfaceHud(player, planet, viewport);
     if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
-    if (this.screenBuffer.getCols() < 96) this.drawHeightmapLegend(planet);
+    if (this.screenBuffer.getCols() < 96) this.drawSurfaceColourLegend(planet);
   }
 
   /** Returns surface viewport. */
@@ -1734,7 +1744,8 @@ export class SceneRenderer {
         globeTransform,
         cell.sampleDx,
         cell.sampleDy,
-        detailRadius
+        detailRadius,
+        cachedSurface?.materialMap ?? null
       );
       if (!surface && !atmosphere) continue;
       // Atmospheric transfer includes the surface's subpixel coverage already.
@@ -1831,7 +1842,8 @@ export class SceneRenderer {
     globeTransform: OrbitGlobeTransform,
     dx: number,
     dy: number,
-    detailRadius: number
+    detailRadius: number,
+    materials: SurfaceMaterialMap | null = null
   ): OrbitSurfaceSample | null {
     const normal = orbitSurfaceNormal(dx / detailRadius, -dy / detailRadius);
     if (!normal) return null;
@@ -1852,7 +1864,8 @@ export class SceneRenderer {
             textureX,
             textureY,
             detailRadius * 2,
-            z
+            z,
+            materials
           )
         : null;
     const fallbackColour = solidSample
@@ -2085,7 +2098,8 @@ export class SceneRenderer {
     u: number,
     v: number,
     projectedDiameter: number,
-    viewNormalZ: number
+    viewNormalZ: number,
+    materials: SurfaceMaterialMap | null = null
   ): SolidOrbitTextureSample {
     if (!heightmap || !heightColours || heightmap.length === 0) {
       return {
@@ -2102,16 +2116,13 @@ export class SceneRenderer {
       u,
       v,
       projectedDiameter,
-      viewNormalZ
+      viewNormalZ,
+      materials
     );
   }
 
   /** Returns cached solid surface data. */
-  private getCachedSolidSurfaceData(planet: Planet): {
-    heightmap: number[][] | null;
-    heightLevelColors: string[] | null;
-    liquidOverlay: SurfaceLiquidOverlay | null;
-  } | null {
+  private getCachedSolidSurfaceData(planet: Planet): SurfaceData | null {
     return readReadySurfaceData(planet);
   }
 
@@ -2123,44 +2134,6 @@ export class SceneRenderer {
       Math.min(palette.length - 1, Math.floor((u * 0.45 + v * 0.55) * palette.length))
     );
     return palette[index] ?? '#88BBBB';
-  }
-
-  /** Samples heightmap data with wrapped longitude and clamped latitude. */
-  private sampleWrappedHeight(
-    heightmap: number[][],
-    u: number,
-    v: number
-  ): { height: number; x: number; y: number } {
-    const size = heightmap.length;
-    const x = this.wrapUnit(u) * size;
-    const y = Math.max(0, Math.min(size - 1.000001, v * size));
-    const x0 = Math.floor(x) % size;
-    const x1 = (x0 + 1) % size;
-    const y0 = Math.max(0, Math.min(size - 1, Math.floor(y)));
-    const y1 = Math.max(0, Math.min(size - 1, y0 + 1));
-    const tx = x - Math.floor(x);
-    const ty = y - Math.floor(y);
-    const h00 = heightmap[y0]?.[x0] ?? 0;
-    const h10 = heightmap[y0]?.[x1] ?? h00;
-    const h01 = heightmap[y1]?.[x0] ?? h00;
-    const h11 = heightmap[y1]?.[x1] ?? h10;
-    const top = h00 * (1 - tx) + h10 * tx;
-    const bottom = h01 * (1 - tx) + h11 * tx;
-    return { height: top * (1 - ty) + bottom * ty, x, y };
-  }
-
-  /** Maps a sampled terrain height to its configured display colour. */
-  private sampleHeightColour(heightColours: string[], height: number): string {
-    if (heightColours.length === 0) return '#88BBBB';
-    const clamped = Math.max(0, Math.min(heightColours.length - 1, height));
-    const lowIndex = Math.floor(clamped);
-    const highIndex = Math.min(heightColours.length - 1, lowIndex + 1);
-    const mix = clamped - lowIndex;
-    if (mix <= 0 || lowIndex === highIndex) return heightColours[lowIndex] ?? '#88BBBB';
-    const low = this.hexToRgbFallback(heightColours[lowIndex] ?? '#88BBBB');
-    const high = this.hexToRgbFallback(heightColours[highIndex] ?? heightColours[lowIndex] ?? '#88BBBB');
-    const blended = interpolateColour(low, high, mix);
-    return rgbToHex(blended.r, blended.g, blended.b);
   }
 
   /** Samples procedural bands and storms for a giant planet cell. */
@@ -2296,7 +2269,8 @@ export class SceneRenderer {
       cachedSurface?.liquidOverlay ?? null,
       palette,
       detailWidth,
-      detailHeight
+      detailHeight,
+      cachedSurface?.materialMap ?? null
     );
     for (let row = 0; row < detailHeight; row++) {
       for (let col = 0; col < detailWidth; col++) {
@@ -2344,10 +2318,19 @@ export class SceneRenderer {
     liquid: SurfaceLiquidOverlay | null,
     palette: string[],
     width: number,
-    height: number
+    height: number,
+    materials: SurfaceMaterialMap | null = null
   ): string[] {
     const cached = this.orbitLandingMapCache.get(planet);
-    if (cached && cached.width === width && cached.height === height && cached.surfaceHeightmap === map) {
+    if (
+      cached &&
+      cached.width === width &&
+      cached.height === height &&
+      cached.surfaceHeightmap === map &&
+      cached.surfaceColours === colours &&
+      cached.liquid === liquid &&
+      cached.materials === materials
+    ) {
       return cached.colours;
     }
 
@@ -2360,22 +2343,32 @@ export class SceneRenderer {
         const u = col / Math.max(1, width);
         let colour = this.sampleGiantMapBand(planet, palette, giantPalette, col, row, width, height);
         if (map && colours) {
-          const sample = this.sampleWrappedHeight(map, u, v);
-          const heightValue = Math.max(
-            0,
-            Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(sample.height))
+          const sample = this.solidPlanetOrbitTextureRenderer.sampleMap(
+            planet,
+            map,
+            colours,
+            liquid,
+            u,
+            v,
+            width,
+            height,
+            materials
           );
-          colour =
-            liquid && heightValue <= liquid.seaLevel
-              ? liquid.colour
-              : (getCoastalVegetationColour(heightValue, liquid) ??
-                this.sampleHeightColour(colours, sample.height));
+          colour = rgbToHex(sample.colour.r, sample.colour.g, sample.colour.b);
         }
         raster[row * width + col] = colour;
       }
     }
 
-    this.orbitLandingMapCache.set(planet, { width, height, surfaceHeightmap: map, colours: raster });
+    this.orbitLandingMapCache.set(planet, {
+      width,
+      height,
+      surfaceHeightmap: map,
+      surfaceColours: colours,
+      liquid,
+      materials,
+      colours: raster,
+    });
     return raster;
   }
 
@@ -2947,9 +2940,11 @@ export class SceneRenderer {
     });
   }
 
-  /** Draws a legend for the heightmap colours on the planet surface view. */
-  private drawHeightmapLegend(planet: Planet): void {
-    const heightColors = readReadySurfaceData(planet)?.heightLevelColors ?? null;
+  /** Shows material brightness, or the legacy elevation palette when no material map exists. */
+  private drawSurfaceColourLegend(planet: Planet): void {
+    const surface = readReadySurfaceData(planet);
+    const materialPalette = surface?.materialMap?.palette;
+    const heightColors = materialPalette ?? surface?.heightLevelColors ?? null;
     if (!heightColors || heightColors.length === 0) return;
     const rows = this.screenBuffer.getRows();
     const cols = this.screenBuffer.getCols();
@@ -2965,8 +2960,20 @@ export class SceneRenderer {
         this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour);
       }
     }
-    this.screenBuffer.drawString('High', startX - 4, startY, TEXT_PALETTE.text, null);
-    this.screenBuffer.drawString('Low', startX - 3, startY + legendHeight - 1, TEXT_PALETTE.text, null);
+    this.screenBuffer.drawString(
+      materialPalette ? 'Dark' : 'Low',
+      startX - 4,
+      startY,
+      TEXT_PALETTE.text,
+      null
+    );
+    this.screenBuffer.drawString(
+      materialPalette ? 'Light' : 'High',
+      startX - (materialPalette ? 5 : 3),
+      startY + legendHeight - 1,
+      TEXT_PALETTE.text,
+      null
+    );
   }
 
   /** Helper to draw an error message centered on the screen */

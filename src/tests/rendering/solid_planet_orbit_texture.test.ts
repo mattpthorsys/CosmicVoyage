@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { Planet } from '../../entities/planet';
 import { SurfaceLiquidOverlay } from '../../entities/planet/surface_liquid';
 import { SolidPlanetOrbitTextureRenderer } from '../../rendering/scenes/solid_planet_orbit_texture';
+import { getSurfaceDisplayColour, SurfaceMaterialMap } from '../../entities/planet/surface_material';
+import { hexToRgb } from '../../rendering/colour';
 
 /** Creates an identity-only planet suitable for the renderer's weak cache. */
 function createTexturePlanet(): Planet {
@@ -19,6 +21,85 @@ function channelSpread(values: number[]): number {
 }
 
 describe('SolidPlanetOrbitTextureRenderer', () => {
+  it('uses the same material geography in orbital, landing, and native surface samples', () => {
+    const renderer = new SolidPlanetOrbitTextureRenderer();
+    const planet = createTexturePlanet();
+    const heights = Array.from({ length: 32 }, () => Array<number>(32).fill(128));
+    const palette = createPalette(() => '#FF00FF');
+    const materials: SurfaceMaterialMap = {
+      width: 32,
+      height: 32,
+      sourceWidth: 32,
+      sourceHeight: 32,
+      palette: ['#605040', '#C0B0A0'],
+      indices: Uint8Array.from({ length: 32 * 32 }, (_, index) => (index % 32 < 16 ? 0 : 1)),
+      strength: 1,
+    };
+    for (const [u, x] of [
+      [0.25, 8],
+      [0.75, 24],
+    ]) {
+      const native = hexToRgb(getSurfaceDisplayColour(128, palette, null, materials, x, 16));
+      expect(renderer.sample(planet, heights, palette, null, u, 0.5, 52, 1, materials).colour).toEqual(
+        native
+      );
+      expect(renderer.sampleMap(planet, heights, palette, null, u, 0.5, 32, 32, materials).colour).toEqual(
+        native
+      );
+    }
+    const replaced = { ...materials, palette: ['#102030', '#405060'] };
+    expect(renderer.sample(planet, heights, palette, null, 0.25, 0.5, 52, 1, replaced).colour).toEqual(
+      hexToRgb('#102030')
+    );
+  });
+
+  it('prefilters material boundaries through rotation and preserves overlying water and vegetation', () => {
+    const renderer = new SolidPlanetOrbitTextureRenderer();
+    const planet = createTexturePlanet();
+    const palette = createPalette(() => '#806040');
+    const materials: SurfaceMaterialMap = {
+      width: 256,
+      height: 256,
+      sourceWidth: 256,
+      sourceHeight: 256,
+      palette: ['#000000', '#FFFFFF'],
+      indices: Uint8Array.from({ length: 256 * 256 }, (_, index) => (index + Math.floor(index / 256)) % 2),
+      strength: 1,
+    };
+    const heights = Array.from({ length: 256 }, () => Array<number>(256).fill(128));
+    const samples = [0.101, 0.102, 0.103, 0.104].map((u) =>
+      renderer.sample(planet, heights, palette, null, u, 0.5, 52, 1, materials)
+    );
+    expect(channelSpread(samples.map((sample) => sample.colour.r))).toBeLessThanOrEqual(1);
+    expect(samples[0].colour.r).toBeGreaterThan(120);
+    expect(samples[0].colour.r).toBeLessThan(136);
+    const liquid: SurfaceLiquidOverlay = {
+      kind: 'water',
+      label: 'Water',
+      seaLevel: 140,
+      coverage: 1,
+      colour: '#204060',
+      reflectiveColour: '#80B8D0',
+      coastalVegetation: null,
+    };
+    const water = renderer.sample(planet, heights, palette, liquid, 0.25, 0.5, 52, 1, materials);
+    expect(water.colour).toEqual(hexToRgb(liquid.colour));
+    expect(water.liquidCoverage).toBe(1);
+    const vegetated = {
+      ...liquid,
+      seaLevel: 100,
+      coastalVegetation: {
+        minHeight: 110,
+        maxHeight: 150,
+        shoreColour: '#285838',
+        uplandColour: '#547048',
+      },
+    };
+    const shore = renderer.sample(planet, heights, palette, vegetated, 0.25, 0.5, 52, 1, materials);
+    expect(shore.colour).toEqual(hexToRgb('#285838'));
+    expect(shore.liquidCoverage).toBe(0);
+  });
+
   it('prefilters sub-pixel terrain so small rotation changes do not shimmer', () => {
     const renderer = new SolidPlanetOrbitTextureRenderer();
     const planet = createTexturePlanet();

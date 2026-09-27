@@ -1,8 +1,8 @@
 # Orbital Surface Improvement
 
 The first texture adjustment is committed as `5a97330`. It raises the source
-texture resolution and improves the central filtering estimate. Material colours
-still primarily follow elevation, and lighting uses a smooth spherical normal.
+texture resolution and improves the central filtering estimate. At that baseline,
+material colours primarily followed elevation. Lighting uses a smooth spherical normal.
 The baseline below separates source-map detail, orbital filtering, illumination,
 and atmospheric transfer before changing materials, relief, or display contrast.
 
@@ -90,18 +90,71 @@ with masked globe statistics.
 
 Six small rotation steps keep lighting fixed and record consecutive pixel
 differences. Inspect the pictures as well: high contrast alone can also mean
-aliasing. Capture timings include the diagnostic canvas copy and full buffer
-render; they are comparable under the same collector but are not game FPS.
-Generation, texture preparation, and the first atmospheric frame are separate.
+aliasing. Chrome's virtual clock can report zero elapsed time for later fixtures:
+the collector's timing fields must not be used as performance benchmarks.
+For timing, use an ordinary browser session or a wall-clock Node profiler.
+
+## Shared Material Implementation
+
+Solid worlds now carry a dry albedo map (`surface_material.ts`) sampled at up to
+257x257 cells, with one byte per sample and a 256-colour palette. Its native
+source dimensions map each sample back to the terrain grid so surface, orbit,
+and landing views share the same geography. It combines broad and regional
+seeded fields sampled in Cartesian coordinates on the sphere, then adds a small
+elevation contribution. The resulting palette tints each body's existing
+height colour at a restrained type-specific strength, retaining the underlying
+elevation contrast and crater and basin cues. This makes irregular material regions without
+longitude seams or polygonal cells. The field uses the inverse of the renderer's
+Mercator mapping and duplicates the longitude endpoint exactly. Its independent
+seed leaves elevation, liquid placement, and resource RNG intact.
+
+The colours represent plausible mixtures, not a simulation of mineral formation
+or measured reflectance spectra. The lunar distinction follows dark basaltic
+plains and lighter highlands described by [NASA](https://science.nasa.gov/moon/viewing-tips/).
+Icy surfaces use relatively clean and contaminated ice as a restrained visual
+analogy; [NASA's Europa summary](https://science.nasa.gov/jupiter/jupiter-moons/europa/europa-facts/)
+describes non-ice material mixed into its surface. Those analogies do not imply
+all generated planets have the same composition or history. Hot icy-type
+fixtures use exposed-rock colours; this is a visual fallback, not a phase solver.
+
+Water and managed vegetation cover the dry material. Orbital textures prefilter
+that resolved colour, and the landing map uses the same texture mip chain.
+Surface travel reads the native material palette. Material replacement also
+invalidates both orbital and landing caches. Atmosphere, exposure, and per-star
+illumination remain separate from albedo; optically thick air can still obscure
+terrain. Molten worlds retain their thermal palette and giants retain their
+existing atmosphere textures.
+
+The focused generation and rendering tests cover deterministic fields, crater
+contrast, seam closure, spatial coherence, worker-safe data, material
+replacement, water and vegetation precedence, cross-view consistency, and
+texture stability during small rotations.
+
+### Verification
+
+The focused tests pass (59 tests across four files), including cross-view colour
+consistency and preservation of crater-height contrast. A rendering regression
+caught and fixed an invalid RGB conversion in the tint path, which had made dry
+terrain appear black. The legacy elevation legend labels were also corrected.
+Bounding material maps at 257x257 also brings the worker-compatibility test back
+under its existing timeout without weakening the test.
+
+Corrected captures are under `/tmp/orbit-surfaces-final-full`,
+`/tmp/orbit-surfaces-final-quarter`, `/tmp/orbit-surfaces-final-triple`, and
+`/tmp/orbit-surfaces-final-small`. Full and quarter phases use one source;
+the triple capture uses three sources at quarter phase. Review the bare stage as
+well as the air stage, since thick atmospheres can conceal terrain. The
+generated elevation maps match the baseline hashes; the material field is
+separate from unchanged terrain and crater generation.
+Chrome's virtual clock can report zero elapsed time for later fixtures, so
+capture timing is not a performance benchmark. `npm run check` passes: 528 tests
+across 86 files, lint, application and test typechecks, and production build.
+Surface slope lighting and physically scaled relief remain separate work.
 
 ## Next Implementation Decisions
 
-- Introduce deterministic, geologically coherent material regions into shared
-  surface data so orbit, the landing map, and surface travel show the same
-  geography. Derive
-  plausible contrasts from planet type, existing geology, liquids, and climate;
-  retain a documented distinction between representative material choices and
-  a physically predicted mineral map.
+- Review the shared material provinces at native orbital sizes. Adjust their
+  scale and contrast only after inspecting the same deterministic fixtures.
 - Establish an explicit elevation scale before calculating terrain slopes.
   The current normalized 0..255 height field is not measured in metres.
   Relief normals must transform with the body and respond separately to each
@@ -119,7 +172,7 @@ Generation, texture preparation, and the first atmospheric frame are separate.
   PNGs and contact sheets before refreshing signatures. Then run the focused
   orbital rendering regressions and the project check before committing.
 
-The user requests a model-switch checkpoint before substantial tests and data
-collection. Baseline collection is complete. Production-code work should resume
-after the user's model choice; broad verification should wait for a fresh
-checkpoint.
+The initial replacement palette obscured familiar crater colour cues, as
+confirmed during visual review. Tinting the existing height palette instead
+preserves those cues; cratered fixtures are visible in the quarter-lit capture.
+Crater generation and terrain heights were not changed by this work.

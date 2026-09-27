@@ -84,7 +84,7 @@
       import { Planet } from '../src/entities/planet.ts';
       import { PRNG } from '../src/utils/prng.ts';
       import { AU_IN_METERS } from '../src/constants/physics.ts';
-      import { getCoastalVegetationColour } from '../src/entities/planet/surface_liquid.ts';
+      import { getSurfaceDisplayColour } from '../src/entities/planet/surface_material.ts';
       import { ScreenBuffer } from '../src/rendering/screen_buffer.ts';
       import { SceneRenderer } from '../src/rendering/scene_renderer.ts';
       import { DrawingContext } from '../src/rendering/drawing_context.ts';
@@ -225,19 +225,17 @@
         const heightPixels = elevation.getContext('2d').createImageData(width, height);
         const colourPixels = colours.getContext('2d').createImageData(width, height);
         const liquid = surface.liquidOverlay;
-        const palette = surface.heightLevelColors.map((colour, value) =>
-          hexToRgb(
-            liquid && value <= liquid.seaLevel
-              ? liquid.colour
-              : (getCoastalVegetationColour(value, liquid) ?? colour)
-          )
-        );
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
-            const value = Math.max(0, Math.min(palette.length - 1, Math.round(surface.heightmap[y][x])));
+            const value = Math.max(
+              0,
+              Math.min(surface.heightLevelColors.length - 1, Math.round(surface.heightmap[y][x]))
+            );
             const i = (y * width + x) * 4;
             heightPixels.data.set([value, value, value, 255], i);
-            const rgb = palette[value];
+            const rgb = hexToRgb(
+              getSurfaceDisplayColour(value, surface.heightLevelColors, liquid, surface.materialMap, x, y)
+            );
             colourPixels.data.set([rgb.r, rgb.g, rgb.b, 255], i);
           }
         }
