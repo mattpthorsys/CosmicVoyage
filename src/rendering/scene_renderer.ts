@@ -65,7 +65,7 @@ interface VisiblePlanetMarker {
 
 interface HyperspaceBackgroundCell extends CellState {
   visibilityRadius?: number;
-  detailRadius?: number;
+  rangeFaded?: boolean;
 }
 
 interface HyperspaceFrameCache {
@@ -352,7 +352,7 @@ export class SceneRenderer {
           cells[index] = this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
         }
         cells[index].visibilityRadius = tile.visibilityRadius;
-        cells[index].detailRadius = tile.detailRadius;
+        cells[index].rangeFaded = tile.rangeFaded;
       }
     }
     return cells;
@@ -412,7 +412,7 @@ export class SceneRenderer {
           ? this.createCell(tile.starChar, tile.starColor, tile.bg, false)
           : this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
         cells[index].visibilityRadius = tile.visibilityRadius;
-        cells[index].detailRadius = tile.detailRadius;
+        cells[index].rangeFaded = tile.rangeFaded;
       }
     }
     return cells;
@@ -421,7 +421,7 @@ export class SceneRenderer {
   /** Returns hyperspace range band. */
   private getHyperspaceRangeBand(rangeCells: number, cell: HyperspaceBackgroundCell): number {
     if (rangeCells > (cell.visibilityRadius ?? Infinity)) return 2;
-    if (rangeCells > (cell.detailRadius ?? Infinity)) return 1;
+    if (cell.rangeFaded) return -1 - rangeCells;
     return 0;
   }
 

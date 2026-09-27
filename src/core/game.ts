@@ -2879,7 +2879,9 @@ export class Game {
       : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
     const detectionRadius = props.exists
       ? getStellarDetectionRadii(props).statusRadius
-      : CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS;
+      : phenomenon?.type === 'rogue-planet'
+        ? CONFIG.ROGUE_PLANET_VISIBILITY_RADIUS_CELLS
+        : CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS;
     const isNavigable =
       (props.exists || isNavigablePhenomenon(phenomenon)) &&
       Math.hypot(cursor.dx, cursor.dy) <= detectionRadius;
@@ -2902,7 +2904,12 @@ export class Game {
       return;
     }
     const observedStarType = phenomenon?.type === 'neutron-star' ? 'NS' : props.starType;
-    const observedKind = phenomenon?.type === 'neutron-star' ? 'neutron-star' : props.objectKind;
+    const observedKind =
+      phenomenon?.type === 'neutron-star'
+        ? 'neutron-star'
+        : phenomenon?.type === 'rogue-planet'
+          ? 'rogue-planet'
+          : props.objectKind;
     const quality = this.getInterstellarObservationQuality(cursor, observedKind, detectionRadius);
     const lines = this.formatInterstellarObserveReport(
       target,
@@ -2985,12 +2992,7 @@ export class Game {
   ): { confidence: number; rangeCells: number; label: string; signature: string; rangeLabel: string } {
     const rangeCells = Math.hypot(cursor.dx, cursor.dy);
     // Stellar source strength is already represented by its flux-based detection horizon.
-    const sourceStrength =
-      objectKind === 'rogue-planet'
-        ? 0.18
-        : objectKind === 'neutron-star'
-          ? 0.75 // The periodic radio beacon resolves better than the tiny optical disc.
-          : 1;
+    const sourceStrength = objectKind === 'neutron-star' ? 0.75 : 1;
     const capabilityBonus = getOperationalCapabilities(
       this.player.crew,
       this.player.ship
@@ -3045,7 +3047,9 @@ export class Game {
             : 'stellar source';
     const identity =
       quality.confidence >= 72
-        ? `${target.name} ${starType ?? target.starType}`
+        ? objectKind === 'rogue-planet'
+          ? `${target.name} / ${classLabel}`
+          : `${target.name} ${starType ?? target.starType}`
         : quality.confidence >= 48
           ? `${objectKind === 'neutron-star' ? '' : starType ? `${starType.slice(0, 1)}-class ` : ''}${classLabel}`
           : quality.label;

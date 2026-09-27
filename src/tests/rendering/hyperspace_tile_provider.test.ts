@@ -53,7 +53,7 @@ describe('HyperspaceTileProvider', () => {
       starChar: null,
       starColor: null,
       visibilityRadius: CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS,
-      detailRadius: CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * 0.5,
+      rangeFaded: true,
     });
     expect(near.starChar).toBeTruthy();
     expect(near.starColor).toMatch(/^#[0-9A-F]{6}$/);

@@ -223,4 +223,25 @@ describe('travel command menu', () => {
     expect(faintLines).not.toContain('Dimfall');
     expect(faintLines).toMatch(/no stable stellar or planetary-mass body at this bearing/);
   });
+
+  it('observes a rogue planet within its wider visual horizon', () => {
+    const game = createTravelHarness('hyperspace', 'NONE');
+    game.stateManager.peekAtSystem = () => ({ name: 'Rogue Mira', starType: null, starbase: null });
+    game.systemDataGenerator.getDeepSpacePhenomenonProperties = () => ({
+      exists: true,
+      type: 'rogue-planet',
+      name: 'Rogue Mira',
+      char: 'o',
+      colour: '#395052',
+    });
+    const range = Math.round(CONFIG.ROGUE_PLANET_VISIBILITY_RADIUS_CELLS * 0.9);
+    game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: range, dy: 0 });
+    const lines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
+    expect(lines).toContain(`GRID: <hl>${range},0</hl>`);
+    expect(lines).toContain('faint point-source');
+
+    game.scanHyperspaceObserveCursor({ mode: 'hyperspace', dx: 80, dy: 0 });
+    const closerLines = game.terminalOverlay.addMessageLines.mock.calls.at(-1)?.[0].join('\n') ?? '';
+    expect(closerLines).toContain('planetary-mass object');
+  });
 });

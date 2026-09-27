@@ -42,17 +42,21 @@ squared. Range follows its square root, as required by inverse-square flux.
 A solar source has the existing approximately 59 ly horizon; ordinary stellar
 sources are bounded to 8..180 ly. The 8 ly floor represents close sensor
 acquisition, not optical detectability alone. Brown dwarfs have a separate
-18 ly infrared horizon. HUD annotations use a smaller horizon capped at 60 ly,
-so brighter objects need not flood the display with long leader lines.
+36 ly infrared horizon, and rogue planets remain visually traceable out to
+about 196 ly. Both distances double the previous radii, covering four times
+the area. Their glyphs blend gradually with the actual nebula background as
+range changes. HUD annotations stay local so distant contacts do not crowd the
+screen; stellar annotations are capped at 60 ly.
 Passive ranging is additionally reduced by the existing medium multiplier;
 glyphs and directed observations use the clear-medium instrument horizon.
 These are instrument/gameplay limits, not naked-eye visibility or a calibrated
 survey limiting magnitude. A source beyond the viewport is not automatically
 marked onscreen even if its physical detection horizon is larger.
 
-Tile caches retain each source's visibility and detail thresholds, including
-hidden sources. Moving across either threshold must give the same frame as a
-fresh render; integer-bucketed range keys are unsafe at fractional thresholds.
+Tile caches retain each source's visibility threshold and whether its colour
+depends on range, including hidden sources. Moving through a fade or across a
+threshold must give the same frame as a fresh render; integer-bucketed range
+keys are unsafe at fractional thresholds.
 
 ## Evolved Stars
 

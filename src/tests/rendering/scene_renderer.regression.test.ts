@@ -410,6 +410,44 @@ describe('SceneRenderer visual regressions', () => {
     }
   });
 
+  it('refreshes fading brown and rogue contacts as their range changes in shifted frames', () => {
+    const cols = 81;
+    const rows = 9;
+    const { buffer, stagedFrames } = createMockScreenBuffer(cols, rows);
+    const generator = {
+      getSystemMapProperties: (x: number, y: number) => ({
+        exists: x === 35 && y === 0,
+        starType: x === 35 && y === 0 ? 'T5' : null,
+        objectKind: x === 35 && y === 0 ? 'brown-dwarf' : null,
+      }),
+      getDeepSpacePhenomenonProperties: (x: number, y: number) =>
+        x === 30 && y === 0
+          ? { exists: true, type: 'rogue-planet', char: 'o', colour: '#89C6C8' }
+          : { exists: false },
+    } as unknown as SystemDataGenerator;
+    const nebula = new NebulaRenderer();
+    const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), nebula, generator);
+    const player = new Player();
+    const brownColours: Array<string | null> = [];
+    const rogueColours: Array<string | null> = [];
+
+    for (const worldX of [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0]) {
+      player.position.worldX = worldX;
+      renderer.drawHyperspace(player);
+      const shifted = stagedFrames.at(-1) as { char: string | null; fg: string | null }[];
+      brownColours.push(shifted[4 * cols + 40 + 35 - worldX].fg);
+      rogueColours.push(shifted[4 * cols + 40 + 30 - worldX].fg);
+      renderer.clearCaches();
+      renderer.drawHyperspace(player);
+      expect(stagedFrames.at(-1)).toEqual(shifted);
+    }
+
+    expect(new Set(brownColours).size).toBeGreaterThan(1);
+    expect(new Set(rogueColours).size).toBeGreaterThan(1);
+    expect(brownColours.at(-1)).toBe(brownColours[0]);
+    expect(rogueColours.at(-1)).toBe(rogueColours[0]);
+  });
+
   it('shifts hyperspace frames by one-cell movement without rebuilding the full viewport', () => {
     const { buffer, stagedFrames } = createMockScreenBuffer(7, 5);
     let mapCalls = 0;
