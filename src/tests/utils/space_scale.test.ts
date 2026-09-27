@@ -31,7 +31,7 @@ describe('space scale formatting', () => {
     );
     expect(CONFIG.NEBULA_SCALE * CONFIG.HYPERSPACE_CELL_LINEAR_SCALE).toBeCloseTo(0.05);
     expect(CONFIG.NORMAL_STAR_DETECTION_RADIUS_CELLS / CONFIG.HYPERSPACE_CELL_LINEAR_SCALE).toBeCloseTo(
-      18,
+      36,
       0
     );
   });

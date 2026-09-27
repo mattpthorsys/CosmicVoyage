@@ -382,12 +382,12 @@ describe('SceneRenderer visual regressions', () => {
     }
   );
 
-  it('rebuilds faint-star cells at detection boundaries when shifting in either direction', () => {
-    const { buffer, stagedFrames } = createMockScreenBuffer(31, 9);
+  it.each(['M9V', 'DC'])('fades %s across its detection boundary in both travel directions', (starType) => {
+    const { buffer, stagedFrames } = createMockScreenBuffer(41, 9);
     const generator = {
       getSystemMapProperties: (x: number, y: number) => ({
-        exists: x === 9 && y === 0,
-        starType: 'DC',
+        exists: x === 17 && y === 0,
+        starType,
         name: 'Cool remnant',
         hasStarbase: false,
         objectKind: 'stellar',
@@ -396,18 +396,59 @@ describe('SceneRenderer visual regressions', () => {
     } as unknown as SystemDataGenerator;
     const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), new NebulaRenderer(), generator);
     const player = new Player();
-    for (const worldX of [0, 1, 2, 1, 0, -1]) {
+    const contrasts: number[] = [];
+    for (const worldX of [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2, 1, 0]) {
       player.position.worldX = worldX;
       player.position.worldY = 0;
       renderer.drawHyperspace(player);
-      const shifted = stagedFrames.at(-1) as { char: string | null }[];
-      expect(shifted[4 * 31 + 15 + 9 - worldX].char === ' ').toBe(
-        Math.abs(9 - worldX) > CONFIG.MIN_STAR_DETECTION_RADIUS_CELLS
-      );
+      const shifted = stagedFrames.at(-1) as { char: string | null; fg: string; bg: string }[];
+      const contact = shifted[4 * 41 + 20 + 17 - worldX];
+      expect(contact.char === ' ').toBe(Math.abs(17 - worldX) > CONFIG.MIN_STAR_DETECTION_RADIUS_CELLS);
+      contrasts.push(contact.char === ' ' ? 0 : Math.abs(hexLuma(contact.fg) - hexLuma(contact.bg)));
       renderer.clearCaches();
       renderer.drawHyperspace(player);
       expect(stagedFrames.at(-1)).toEqual(shifted);
     }
+    // A glyph's presence alone missed the original full-brightness pop at the horizon.
+    expect(contrasts.slice(0, 2)).toEqual([0, 0]);
+    expect(contrasts[2]).toBeGreaterThan(0);
+    expect(contrasts[2]).toBeLessThan(contrasts[7] * 0.1);
+    for (let i = 2; i <= 7; i++) expect(contrasts[i]).toBeGreaterThan(contrasts[i - 1]);
+    expect(contrasts.slice(8)).toEqual(contrasts.slice(0, 7).reverse());
+  });
+
+  it('fades a distant contact as it enters and leaves the viewport', () => {
+    const cols = 21;
+    const { buffer, stagedFrames } = createMockScreenBuffer(cols, 21);
+    const generator = {
+      getSystemMapProperties: (x: number, y: number) => ({
+        exists: x === 0 && y === -10,
+        starType: 'T5',
+        objectKind: 'brown-dwarf',
+      }),
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), new NebulaRenderer(), generator);
+    const player = new Player();
+    const contrasts: number[] = [];
+
+    for (const offset of [0, 1, 2, 3, 4, 3, 2, 1, 0]) {
+      player.position.worldY = -offset;
+      renderer.drawHyperspace(player);
+      const frame = stagedFrames.at(-1) as { char: string; fg: string; bg: string }[];
+      const contact = frame[offset * cols + 10];
+      expect(contact.char).not.toBe(' ');
+      contrasts.push(Math.abs(hexLuma(contact.fg) - hexLuma(contact.bg)));
+      renderer.clearCaches();
+      renderer.drawHyperspace(player);
+      expect(stagedFrames.at(-1)).toEqual(frame);
+    }
+
+    expect(contrasts[0]).toBe(0);
+    for (let index = 1; index <= 4; index++) {
+      expect(contrasts[index]).toBeGreaterThan(contrasts[index - 1]);
+    }
+    expect(contrasts.slice(5)).toEqual(contrasts.slice(0, 4).reverse());
   });
 
   it('refreshes fading brown and rogue contacts as their range changes in shifted frames', () => {

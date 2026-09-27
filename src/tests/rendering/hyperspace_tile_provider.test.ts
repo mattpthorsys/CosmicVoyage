@@ -81,11 +81,13 @@ describe('HyperspaceTileProvider', () => {
     } as unknown as SystemDataGenerator;
     const provider = new HyperspaceTileProvider(createNebulaRenderer(), generator);
 
-    const near = provider.getTile(20, -4, CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS);
+    const near = provider.getTile(20, -4, 0);
+    const boundary = provider.getTile(20, -4, CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS);
     const distant = provider.getTile(20, -4, CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS + 1);
 
     expect(near.starChar).toBe('?');
     expect(near.starColor).toBe('#288077');
+    expect(boundary.starColor).toBe(boundary.bg);
     expect(distant.starChar).toBeNull();
   });
 

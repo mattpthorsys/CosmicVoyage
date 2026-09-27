@@ -39,14 +39,19 @@ There is no hidden Z coordinate; travel distances remain projected distances.
 
 The 550 nm Planck approximation scales visible luminosity with actual radius
 squared. Range follows its square root, as required by inverse-square flux.
-A solar source has the existing approximately 59 ly horizon; ordinary stellar
-sources are bounded to 8..180 ly. The 8 ly floor represents close sensor
+A solar source has an approximately 118 ly horizon; ordinary stellar
+sources are bounded to 16..360 ly. The 16 ly floor represents close sensor
 acquisition, not optical detectability alone. Brown dwarfs have a separate
-36 ly infrared horizon, and rogue planets remain visually traceable out to
-about 196 ly. Both distances double the previous radii, covering four times
-the area. Their glyphs blend gradually with the actual nebula background as
-range changes. HUD annotations stay local so distant contacts do not crowd the
-screen; stellar annotations are capped at 60 ly.
+72 ly infrared horizon, and rogue planets remain visually traceable out to
+about 392 ly. Stellar and rogue-planet horizons double their previous radii,
+covering four times their previous area; other deep-space signals keep their
+existing range. Every range-limited contact, including red dwarfs, white dwarfs,
+and deep-space signals, blends gradually with the actual nebula background as
+range changes. A smoothstep fade reaches zero contrast with zero slope at the
+horizon, avoiding a full-brightness pop when a source enters or leaves range.
+A short viewport-edge fade also prevents a distant contact from appearing at
+full brightness when it first scrolls onscreen. HUD annotations stay local so
+distant contacts do not crowd the screen; stellar annotations are capped at 60 ly.
 Passive ranging is additionally reduced by the existing medium multiplier;
 glyphs and directed observations use the clear-medium instrument horizon.
 These are instrument/gameplay limits, not naked-eye visibility or a calibrated

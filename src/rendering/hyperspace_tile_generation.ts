@@ -26,7 +26,7 @@ export interface HyperspaceTileSample extends HyperspaceTileRequest {
 type TileSystemProps = Pick<SystemMapProperties, 'exists' | 'starType' | 'objectKind' | 'stellarEvolution'>;
 type TilePhenomenonProps = Pick<DeepSpacePhenomenonProperties, 'exists' | 'char' | 'colour' | 'type'>;
 
-/** Blends faint contacts into the real nebula background until they are close enough to resolve. */
+/** Blends range-limited contacts into the nebula with a flat slope at the detection boundary. */
 function fadedContactColour(
   bg: string,
   source: string,
@@ -34,8 +34,9 @@ function fadedContactColour(
   radius: number,
   strength: number
 ): string {
-  const proximity = Math.max(0, 1 - rangeCells / radius) ** 1.5;
-  const colour = interpolateColour(hexToRgb(bg), hexToRgb(dimHexColour(source, strength)), proximity);
+  const proximity = Math.max(0, Math.min(1, 1 - rangeCells / radius));
+  const opacity = proximity * proximity * (3 - 2 * proximity);
+  const colour = interpolateColour(hexToRgb(bg), hexToRgb(dimHexColour(source, strength)), opacity);
   return rgbToHex(colour.r, colour.g, colour.b);
 }
 
@@ -62,7 +63,7 @@ export function createHyperspaceTile(
         starChar: null,
         starColor: null,
         visibilityRadius,
-        ...(isBrownDwarf ? { rangeFaded: true } : {}),
+        rangeFaded: true,
       };
     }
 
@@ -70,11 +71,10 @@ export function createHyperspaceTile(
     return {
       bg,
       starChar: star.char,
-      starColor: isBrownDwarf
-        ? fadedContactColour(bg, star.color, rangeCells, visibilityRadius, 0.75)
-        : star.color,
+      // Cool stars and remnants also have short horizons; fading only brown dwarfs leaves them popping.
+      starColor: fadedContactColour(bg, star.color, rangeCells, visibilityRadius, isBrownDwarf ? 0.75 : 1),
       visibilityRadius,
-      ...(isBrownDwarf ? { rangeFaded: true } : {}),
+      rangeFaded: true,
     };
   }
 
@@ -89,18 +89,16 @@ export function createHyperspaceTile(
         starChar: null,
         starColor: null,
         visibilityRadius,
-        ...(isRoguePlanet ? { rangeFaded: true } : {}),
+        rangeFaded: true,
       };
     const dimFactor =
       phenomenon.type === 'ancient-signal' ? 0.62 : phenomenon.type === 'neutron-star' ? 0.85 : 0.45;
     return {
       bg,
       starChar: phenomenon.char,
-      starColor: isRoguePlanet
-        ? fadedContactColour(bg, phenomenon.colour, rangeCells, visibilityRadius, dimFactor)
-        : dimHexColour(phenomenon.colour, dimFactor),
+      starColor: fadedContactColour(bg, phenomenon.colour, rangeCells, visibilityRadius, dimFactor),
       visibilityRadius,
-      ...(isRoguePlanet ? { rangeFaded: true } : {}),
+      rangeFaded: true,
     };
   }
 

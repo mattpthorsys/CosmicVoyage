@@ -12,7 +12,7 @@ import { PLANET_TYPES } from '../constants/planetary';
 import { SPECTRAL_TYPES } from '../constants/stellar';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
-import { adjustBrightness, interpolateColour, rgbToHex, RgbColour } from './colour';
+import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex, RgbColour } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield } from './starfield';
 import { StarbaseScreenModel } from '../core/starbase_ui';
@@ -433,6 +433,20 @@ export class SceneRenderer {
     player: PlayerViewSnapshot
   ): void {
     const cells = backgroundCells.slice();
+    const cols = this.screenBuffer.getCols();
+    const rows = this.screenBuffer.getRows();
+    for (let index = 0; index < cells.length; index++) {
+      const cell = cells[index];
+      if (!cell.char || cell.char === ' ') continue;
+      const x = index % cols;
+      const y = Math.floor(index / cols);
+      const edgeDistance = Math.min(x, y, cols - 1 - x, rows - 1 - y);
+      if (edgeDistance >= 4) continue;
+      const amount = Math.max(0, edgeDistance / 4);
+      const opacity = amount * amount * (3 - 2 * amount);
+      const colour = interpolateColour(hexToRgb(cell.bg), hexToRgb(cell.fg), opacity);
+      cells[index] = this.createCell(cell.char, rgbToHex(colour.r, colour.g, colour.b), cell.bg, false);
+    }
     const playerIndex = viewCenterY * this.screenBuffer.getCols() + viewCenterX;
     // A glyph replaces foreground only; clearing its background punches a hole in the cloud.
     cells[playerIndex] = this.createCell(
