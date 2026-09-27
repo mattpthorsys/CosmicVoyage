@@ -28,14 +28,14 @@ const MOLECULES: Record<string, readonly [number, number]> = {
 
 /** Builds a clear, isothermal molecular atmosphere; distances are in planet radii. */
 export function createOrbitAtmosphere(
-  pressureAtm: number,
+  pressureBar: number,
   temperatureK: number,
   gravityG: number,
   diameterKm: number,
   composition: Readonly<Record<string, number>> = {}
 ): OrbitAtmosphere | null {
-  if (![pressureAtm, temperatureK, gravityG, diameterKm].every(Number.isFinite)) return null;
-  if (pressureAtm <= 0 || temperatureK <= 0 || gravityG <= 0 || diameterKm <= 0) return null;
+  if (![pressureBar, temperatureK, gravityG, diameterKm].every(Number.isFinite)) return null;
+  if (pressureBar <= 0 || temperatureK <= 0 || gravityG <= 0 || diameterKm <= 0) return null;
   // Unknown species use air-equivalent optical properties, not invented colours.
   // Number fractions weight alpha squared because scattering cross section scales
   // with alpha squared, whereas molecular mass determines hydrostatic scale height.
@@ -55,16 +55,47 @@ export function createOrbitAtmosphere(
   const scaleHeight = (8314.46 * temperatureK) / (molarMass * gravityG * 9.80665 * radiusM);
   // A thin-shell approximation is not valid for an extended escaping envelope.
   if (scaleHeight > 0.02) return null;
-  const density = pressureAtm * (288.15 / temperatureK) * radiusM * scatteringRatio;
+  // The stored pressure is bar; the reference Rayleigh coefficients use 101325 Pa.
+  const density = (pressureBar / 1.01325) * (288.15 / temperatureK) * radiusM * scatteringRatio;
+  const extinction = { r: 5.8e-6 * density, g: 13.5e-6 * density, b: 33.1e-6 * density };
+  // Dense atmospheres can remain optically significant beyond eight scale heights.
+  // Stop where the largest tangent optical depth falls below 1e-4 (bounded isothermal model).
+  const topHeight = Math.max(
+    8,
+    Math.min(20, Math.log((extinction.b * Math.sqrt(2 * Math.PI * scaleHeight)) / 1e-4))
+  );
   return {
     scaleHeight,
-    outerRadius: 1 + scaleHeight * 8,
-    projectedLayers: [0, 1, 2, 4, 8].map((height) => {
+    outerRadius: 1 + scaleHeight * topHeight,
+    projectedLayers: [
+      ...[0, 0.5, 1, 2, 4, 6, 8, 12, 16].filter((height) => height < topHeight),
+      topHeight,
+    ].map((height) => {
       const radius = 1 + scaleHeight * height;
       return (ORBIT_FOCAL_FACTOR * radius) / Math.sqrt(ORBIT_CAMERA_DISTANCE ** 2 - radius ** 2);
     }),
-    extinction: { r: 5.8e-6 * density, g: 13.5e-6 * density, b: 33.1e-6 * density },
+    extinction,
   };
+}
+
+// Six-point Gauss-Legendre quadrature on each side of closest approach. Splitting
+// at the tangent prevents a long grazing ray from stepping over the dense layer.
+const COLUMN_NODES = [-0.9324695142, -0.6612093865, -0.2386191861, 0.2386191861, 0.6612093865, 0.9324695142];
+const COLUMN_WEIGHTS = [0.1713244924, 0.360761573, 0.4679139346, 0.4679139346, 0.360761573, 0.1713244924];
+
+/** Integrates density between signed distances from a ray's tangent point. */
+function densityColumn(impact2: number, start: number, end: number, air: OrbitAtmosphere): number {
+  if (start < 0 && end > 0)
+    return densityColumn(impact2, start, 0, air) + densityColumn(impact2, 0, end, air);
+  const midpoint = (start + end) / 2;
+  const half = (end - start) / 2;
+  let column = 0;
+  for (let i = 0; i < COLUMN_NODES.length; i++) {
+    const t = midpoint + half * COLUMN_NODES[i];
+    const altitude = Math.max(0, Math.sqrt(impact2 + t * t) - 1);
+    column += COLUMN_WEIGHTS[i] * Math.exp(-altitude / air.scaleHeight);
+  }
+  return column * half;
 }
 
 /** Integrates exponential molecular density along a sun ray, stopping at the shell boundary. */
@@ -72,35 +103,21 @@ function solarColumn(x: number, y: number, z: number, sun: OrbitVector, air: Orb
   const r2 = x * x + y * y + z * z;
   const along = x * sun.x + y * sun.y + z * sun.z;
   if (along < 0 && r2 - along * along < 1) return Infinity;
-  const distance = -along + Math.sqrt(Math.max(0, along * along + air.outerRadius ** 2 - r2));
-  const step = distance / 8;
-  let column = 0;
-  for (let i = 0; i < 8; i++) {
-    const t = (i + 0.5) * step;
-    const altitude = Math.hypot(x + sun.x * t, y + sun.y * t, z + sun.z * t) - 1;
-    column += Math.exp(-Math.max(0, altitude) / air.scaleHeight) * step;
-  }
-  return column;
+  const impact2 = Math.max(0, r2 - along * along);
+  const end = Math.sqrt(Math.max(0, air.outerRadius ** 2 - impact2));
+  return densityColumn(impact2, along, end, air);
 }
 
 /** Attenuates a point-like host star along the same ray used to project it behind the limb. */
 export function orbitSourceTransmittance(x: number, y: number, air: OrbitAtmosphere): RgbColour {
   const length = Math.hypot(x, y, ORBIT_FOCAL_FACTOR);
-  const vx = x / length;
-  const vy = y / length;
   const vz = -ORBIT_FOCAL_FACTOR / length;
   const along = ORBIT_CAMERA_DISTANCE * vz;
   const impact2 = ORBIT_CAMERA_DISTANCE ** 2 - along * along;
   if (impact2 <= 1) return { r: 0, g: 0, b: 0 };
   if (impact2 >= air.outerRadius ** 2) return { r: 1, g: 1, b: 1 };
   const halfChord = Math.sqrt(air.outerRadius ** 2 - impact2);
-  const step = (2 * halfChord) / 32;
-  let column = 0;
-  for (let i = 0; i < 32; i++) {
-    const t = -along - halfChord + (i + 0.5) * step;
-    column +=
-      Math.exp(-(Math.hypot(vx * t, vy * t, ORBIT_CAMERA_DISTANCE + vz * t) - 1) / air.scaleHeight) * step;
-  }
+  const column = densityColumn(impact2, -halfChord, halfChord, air);
   return {
     r: Math.exp(-air.extinction.r * column),
     g: Math.exp(-air.extinction.g * column),
@@ -126,22 +143,24 @@ export function sampleOrbitAtmosphere(
   const halfChord = Math.sqrt(air.outerRadius ** 2 - impact2);
   const start = -along - halfChord;
   const end = impact2 < 1 ? -along - Math.sqrt(1 - impact2) : -along + halfChord;
-  const step = (end - start) / 16;
+  const step = (end - start) / 32;
   const cosine = vx * sun.x + vy * sun.y + vz * sun.z;
   // Rayleigh scattering is NOT strongly forward-peaked. No invented aerosol
   // lobe: warm contact colours emerge from wavelength-dependent extinction.
   const phase = (3 * (1 + cosine * cosine)) / (16 * Math.PI);
   let viewColumn = 0;
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 32; i++) {
     const t = start + (i + 0.5) * step;
     const px = vx * t;
     const py = vy * t;
     const pz = ORBIT_CAMERA_DISTANCE + vz * t;
     const densityStep = Math.exp(-Math.max(0, Math.hypot(px, py, pz) - 1) / air.scaleHeight) * step;
-    const column = solarColumn(px, py, pz, sun, air) + viewColumn + densityStep * 0.5;
-    result.r += Math.exp(-air.extinction.r * column) * air.extinction.r * densityStep * phase;
-    result.g += Math.exp(-air.extinction.g * column) * air.extinction.g * densityStep * phase;
-    result.b += Math.exp(-air.extinction.b * column) * air.extinction.b * densityStep * phase;
+    const column = solarColumn(px, py, pz, sun, air) + viewColumn;
+    // Integrate extinction within each view segment analytically. Midpoint-only
+    // attenuation wrongly suppresses the whole segment when optical depth is large.
+    result.r += Math.exp(-air.extinction.r * column) * -Math.expm1(-air.extinction.r * densityStep) * phase;
+    result.g += Math.exp(-air.extinction.g * column) * -Math.expm1(-air.extinction.g * densityStep) * phase;
+    result.b += Math.exp(-air.extinction.b * column) * -Math.expm1(-air.extinction.b * densityStep) * phase;
     viewColumn += densityStep;
   }
   return result;

@@ -7364,6 +7364,9 @@ export class Game {
     colour: string;
     longitudeOffset: number;
     relativeFlux: number;
+    irradianceWm2: number;
+    temperatureK: number;
+    angularRadius: number;
   }> {
     const system = this.stateManager.currentSystem;
     if (!system || system.stars.length === 0) return [];
@@ -7385,10 +7388,18 @@ export class Game {
       ? Math.atan2(reference.systemY - selectedBody.systemY, reference.systemX - selectedBody.systemX)
       : 0;
     const baselineFlux = Math.max(Number.MIN_VALUE, starsByFlux[0]?.flux ?? 1);
-    return starsByFlux.slice(0, 3).map(({ star, flux }) => ({
+    return starsByFlux.slice(0, 3).map(({ star, flux, distanceSq }) => ({
       id: star.id,
       primary: star.id === dominantId,
       relativeFlux: flux / baselineFlux,
+      irradianceWm2: flux / (4 * Math.PI),
+      temperatureK:
+        star.radiusM > 0
+          ? Math.pow(star.luminosityW / (4 * Math.PI * star.radiusM ** 2 * 5.670374419e-8), 0.25)
+          : (SPECTRAL_TYPES[star.starType]?.temp ?? SPECTRAL_TYPES.G.temp),
+      angularRadius: Math.asin(
+        Math.min(1, Math.max(0, star.radiusM || 0) / Math.sqrt(Math.max(1, distanceSq)))
+      ),
       longitudeOffset:
         Math.atan2(star.systemY - selectedBody.systemY, star.systemX - selectedBody.systemX) -
         referenceBearing,

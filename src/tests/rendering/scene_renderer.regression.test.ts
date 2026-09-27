@@ -5,6 +5,7 @@ import { DrawingContext } from '../../rendering/drawing_context';
 import { ScreenBuffer } from '../../rendering/screen_buffer';
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { Player } from '../../core/player';
+import type { OrbitStellarSource } from '../../core/orbit_ui';
 import { Planet } from '../../entities/planet';
 import { Starbase } from '../../entities/starbase';
 import { SolarSystem } from '../../entities/solar_system';
@@ -14,6 +15,7 @@ import { CONFIG } from '../../config';
 import { AU_IN_METERS, GLYPHS } from '../../constants';
 import { TEXT_PALETTE } from '../../rendering/text_palette';
 import { hexToRgb } from '../../rendering/colour';
+import { createOrbitAtmosphere } from '../../rendering/scenes/orbit_atmosphere';
 import {
   ORBIT_CAMERA_DISTANCE,
   orbitSunDirection,
@@ -1072,7 +1074,20 @@ describe('SceneRenderer visual regressions', () => {
       const positions = new Set(atmospheric.map((call) => `${call.x},${call.y}`));
       expect(airless.every((call) => positions.has(`${call.x},${call.y}`))).toBe(true);
       // A physical atmosphere may extend beyond solid terrain, but not detach from it.
-      expect(atmospheric.every((call) => Math.hypot(call.x - 24, call.y - 27) <= 12.5)).toBe(true);
+      const planet = createAtmosphericOrbitPlanet();
+      const air = createOrbitAtmosphere(
+        planet.effectiveAtmosphere.pressure,
+        planet.effectiveSurfaceTemp,
+        planet.gravity,
+        planet.diameter,
+        planet.effectiveAtmosphere.composition
+      )!;
+      const projectedOuter = air.projectedLayers.at(-1)!;
+      expect(
+        atmospheric.every(
+          (call) => Math.hypot(call.x - 24, call.y - 27) <= 12 * projectedOuter + Math.SQRT2 * 0.25
+        )
+      ).toBe(true);
       expect(atmospheric.every((call) => Number.isInteger(call.x * 2) && Number.isInteger(call.y * 2))).toBe(
         true
       );
@@ -1084,10 +1099,25 @@ describe('SceneRenderer visual regressions', () => {
           const rgb = hexToRgb(call.fg);
           return (rgb.r / 255) ** 2.2 - (rgb.b / 255) ** 2.2;
         };
-        const peak = atmospheric.reduce((best, call) => (warmth(call) > warmth(best) ? call : best));
         const sun = projectOrbitSource(orbitSunDirection(phase * Math.PI * 2))!;
-        expect(warmth(peak)).toBeGreaterThan(0);
-        expect(Math.hypot((peak.x - 24) / 12 - sun.x, (peak.y - 27) / 12 + sun.y)).toBeLessThan(0.2);
+        // Compare the warm arc's centroid, not one raster cell's maximum. Optical
+        // depth and subpixel coverage can put that maximum beside the star.
+        let total = 0;
+        let warmX = 0;
+        let warmY = 0;
+        let oppositeWarmth = 0;
+        for (const call of atmospheric) {
+          const weight = Math.max(0, warmth(call));
+          const x = (call.x - 24) / 12;
+          const y = -(call.y - 27) / 12;
+          total += weight;
+          warmX += x * weight;
+          warmY += y * weight;
+          if (x * sun.x + y * sun.y < 0) oppositeWarmth += weight;
+        }
+        expect(total).toBeGreaterThan(0);
+        expect(Math.hypot(warmX / total - sun.x, warmY / total - sun.y)).toBeLessThan(0.2);
+        expect(oppositeWarmth).toBeLessThan(total * 0.01);
       }
     }
     const night = globePixels(0.4125);
@@ -1096,6 +1126,109 @@ describe('SceneRenderer visual regressions', () => {
       Math.max(...day.map((call) => hexLuma(call.fg))) * 0.3
     );
     expect(signatures).toMatchSnapshot();
+  });
+
+  it('keeps a partially visible stellar disc outside the limb until it is fully occulted', () => {
+    /** Renders an airless contact to isolate finite-disc occultation from gas extinction. */
+    const sourceAt = (illuminationPhase: number, angularRadius: number): DrawCall | undefined => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const planet = createFeaturelessOrbitPlanet();
+      createSceneRenderer(buffer).drawOrbitInterface({
+        title: '',
+        subtitle: '',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [],
+        mode: 'overview',
+        rotationPhase: 0,
+        illuminationPhase,
+        stellarSources: [
+          {
+            id: 'A',
+            primary: true,
+            brightness: 1,
+            colour: '#FFFFFF',
+            irradianceWm2: 1361,
+            temperatureK: 5772,
+            angularRadius,
+          },
+        ],
+        landingCursorX: 0,
+        landingCursorY: 0,
+        mapSize: 32,
+        description: [],
+        telemetry: [],
+        footer: [],
+      });
+      return drawCalls.find((call) => call.char === GLYPHS.STELLAR_SOURCE);
+    };
+    for (const phase of [0.3617394005527416 + 0.0004, 0.4631901620461734 - 0.0004]) {
+      expect(sourceAt(phase, 0)).toBeUndefined();
+      const partial = sourceAt(phase, 0.00465)!;
+      expect(partial).toBeDefined();
+      expect(hexLuma(partial.fg)).toBeGreaterThan(0);
+      expect(Math.hypot(partial.x - 24, partial.y - 27)).toBeGreaterThan(12);
+    }
+    expect(sourceAt(0.4125, 0.00465)).toBeUndefined();
+  });
+
+  it('renders absolute atmospheric light without normalising away distance, spectra, or companion energy', () => {
+    const solar: OrbitStellarSource = {
+      id: 'A',
+      primary: true,
+      brightness: 1,
+      relativeFlux: 1,
+      colour: '#FFFFFF',
+      irradianceWm2: 1361,
+      temperatureK: 5772,
+      angularRadius: 0.00465,
+    };
+    /** Sums linear-light globe pixels so gamma does not disguise energy scaling. */
+    const energy = (stellarSources: OrbitStellarSource[]): number[] => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const planet = createAtmosphericOrbitPlanet();
+      createSceneRenderer(buffer).drawOrbitInterface({
+        title: '',
+        subtitle: '',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [],
+        mode: 'overview',
+        rotationPhase: 0.35,
+        illuminationPhase: 0.3617394005527416,
+        stellarSources,
+        landingCursorX: 0,
+        landingCursorY: 0,
+        mapSize: 32,
+        description: [],
+        telemetry: [],
+        footer: [],
+      });
+      const result = [0, 0, 0];
+      for (const call of drawCalls) {
+        if (call.char !== GLYPHS.BLOCK || call.scaleX !== 0.5 || call.x >= 40) continue;
+        const colour = hexToRgb(call.fg);
+        [colour.r, colour.g, colour.b].forEach((value, i) => {
+          result[i] += (value / 255) ** 2.2;
+        });
+      }
+      return result;
+    };
+    const background = energy([{ ...solar, irradianceWm2: 0 }]);
+    /** Removes terrain illumination, which intentionally retains its existing exposure. */
+    const scattered = (sources: OrbitStellarSource[]): number[] =>
+      energy(sources).map((value, i) => value - background[i]);
+    const full = scattered([solar]);
+    const distant = scattered([{ ...solar, irradianceWm2: 1361 / 4, angularRadius: 0.00465 / 2 }]);
+    const binary = scattered([solar, { ...solar, id: 'B', primary: false }]);
+    for (let channel = 0; channel < 3; channel++) {
+      expect(full[channel]).toBeGreaterThan(0);
+      expect(distant[channel] / full[channel]).toBeCloseTo(0.25, 1);
+      expect(binary[channel] / full[channel]).toBeCloseTo(2, 1);
+    }
+    const cool = scattered([{ ...solar, temperatureK: 3000 }]);
+    expect(cool[2] / cool[0]).toBeLessThan(full[2] / full[0]);
+    expect(cool[0]).toBeLessThan(full[0]);
   });
 
   it('renders orbital globe samples as solid colour mini-cells instead of shade glyph bands', () => {

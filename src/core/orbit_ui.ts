@@ -23,6 +23,12 @@ export interface OrbitStellarSource {
   longitudeOffset?: number;
   /** Irradiance relative to the dominant source, including inverse-square distance. */
   relativeFlux?: number;
+  /** Bolometric irradiance at the selected body in W/m^2. */
+  irradianceWm2?: number;
+  /** Effective blackbody temperature inferred from stellar luminosity and radius. */
+  temperatureK?: number;
+  /** Apparent stellar radius at the selected body, in radians. */
+  angularRadius?: number;
 }
 
 export interface OrbitScreenModel {

@@ -74,10 +74,63 @@ describe('orbital molecular scattering', () => {
         { x: 0, y: 0, z: -1 },
         air
       );
-      expect(colour).toEqual({ r: 0, g: 0, b: 0 });
+      // Very high, tenuous gas can see the Sun; its radiance remains sub-visible.
+      expect(Math.max(colour.r, colour.g, colour.b)).toBeLessThan(1e-7);
     }
     expect(sampleOrbitAtmosphere(-1.001, 0, contact, air)).toEqual({ r: 0, g: 0, b: 0 });
     expect(sampleOrbitAtmosphere(1.1, 0, contact, air)).toEqual({ r: 0, g: 0, b: 0 });
+  });
+
+  it('matches a resolved tangent-column integration for thin and dense atmospheres', () => {
+    for (const pressure of [0.006, 1.01325, 90]) {
+      const atmosphere = createOrbitAtmosphere(pressure, 288.15, 1, 12742)!;
+      const x = 1.003;
+      const impact2 = (9 * x * x) / (x * x + 8);
+      const half = Math.sqrt(atmosphere.outerRadius ** 2 - impact2);
+      const step = (2 * half) / 4096;
+      let column = 0;
+      for (let i = 0; i < 4096; i++) {
+        const t = -half + (i + 0.5) * step;
+        column += Math.exp(-(Math.sqrt(impact2 + t * t) - 1) / atmosphere.scaleHeight) * step;
+      }
+      const transmission = orbitSourceTransmittance(x, 0, atmosphere);
+      for (const channel of ['r', 'g', 'b'] as const) {
+        expect(transmission[channel]).toBeCloseTo(Math.exp(-atmosphere.extinction[channel] * column), 3);
+      }
+    }
+  });
+
+  it('uses bar consistently and extends the shell for optically dense gas', () => {
+    const standardAir = createOrbitAtmosphere(1.01325, 288.15, 1, 12742)!;
+    expect(standardAir.extinction.r).toBeCloseTo(5.8e-6 * 6371000, 8);
+    const dense = createOrbitAtmosphere(90, 288.15, 1, 12742)!;
+    expect(dense.outerRadius).toBeGreaterThan(standardAir.outerRadius);
+    expect(dense.projectedLayers.every((value, i, values) => i === 0 || value > values[i - 1])).toBe(true);
+  });
+
+  it('matches the analytic single-scattering solution looking directly along a stellar ray', () => {
+    for (const x of [1.001, 1.005, 1.01]) {
+      const length = Math.sqrt(x * x + 8);
+      const sun = { x: x / length, y: 0, z: -Math.sqrt(8) / length };
+      const impact2 = (9 * x * x) / (x * x + 8);
+      const half = Math.sqrt(air.outerRadius ** 2 - impact2);
+      const step = (2 * half) / 4096;
+      let column = 0;
+      for (let i = 0; i < 4096; i++) {
+        const t = -half + (i + 0.5) * step;
+        column += Math.exp(-(Math.sqrt(impact2 + t * t) - 1) / air.scaleHeight) * step;
+      }
+      const radiance = sampleOrbitAtmosphere(x, 0, sun, air);
+      for (const channel of ['r', 'g', 'b'] as const) {
+        // Along this unobstructed chord, incoming + outgoing optical depth is
+        // constant: L / E = phase(0) * tau * exp(-tau).
+        const tau = column * air.extinction[channel];
+        const expected = (3 / (8 * Math.PI)) * tau * Math.exp(-tau);
+        // Bound absolute error to <0.5% of the analytic peak phase(0)/e,
+        // including strongly extinguished channels whose relative error is large.
+        expect(Math.abs(radiance[channel] - expected)).toBeLessThan(2e-4);
+      }
+    }
   });
 
   it('concentrates the warm contact light beside the apparent sun rather than around the whole limb', () => {

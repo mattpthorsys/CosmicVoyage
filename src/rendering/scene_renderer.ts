@@ -32,6 +32,7 @@ import {
   orbitSourceTransmittance,
   sampleOrbitAtmospherePixel,
 } from './scenes/orbit_atmosphere';
+import { getOrbitStellarIrradiance, sampleOrbitStellarDisc } from './scenes/orbit_stellar_light';
 import {
   TextDashboardLine,
   TextMenuSection,
@@ -101,6 +102,7 @@ interface OrbitLight {
   direction: OrbitVector;
   weight: number;
   colour: RgbColour;
+  irradiance: RgbColour;
 }
 
 interface OrbitLandingMapCache {
@@ -1665,6 +1667,7 @@ export class SceneRenderer {
           g: (colour.g / maximum) ** 2.2,
           b: (colour.b / maximum) ** 2.2,
         },
+        irradiance: getOrbitStellarIrradiance(source),
       };
     });
     const totalFlux = lights.reduce((sum, light) => sum + light.weight, 0);
@@ -1715,13 +1718,7 @@ export class SceneRenderer {
         finalColour = interpolateColour(background, finalColour, cell.coverage);
       }
       if (atmosphere) {
-        finalColour = this.blendOrbitAtmosphericLimb(
-          finalColour,
-          cell,
-          detailRadius,
-          atmosphere,
-          globeTransform.lights
-        );
+        finalColour = this.blendOrbitAtmosphericLimb(finalColour, cell, detailRadius, atmosphere, lights);
       }
       if (cell.coverage === 0 && finalColour.r < 1 && finalColour.g < 1 && finalColour.b < 1) continue;
       const finalHex = rgbToHex(finalColour.r, finalColour.g, finalColour.b);
@@ -1875,6 +1872,8 @@ export class SceneRenderer {
     const distance = Math.hypot(cell.dx, cell.dy) / radius;
     if (distance < 0.9) return colour;
     const radiance = { r: 0, g: 0, b: 0 };
+    // Diffuse scattering uses the small-source approximation. Only the direct
+    // stellar marker needs disc integration at this raster's angular resolution.
     for (const light of lights) {
       const value = sampleOrbitAtmospherePixel(
         cell.dx / radius,
@@ -1883,9 +1882,9 @@ export class SceneRenderer {
         light.direction,
         air
       );
-      radiance.r += value.r * light.weight * light.colour.r;
-      radiance.g += value.g * light.weight * light.colour.g;
-      radiance.b += value.b * light.weight * light.colour.b;
+      radiance.r += value.r * light.irradiance.r;
+      radiance.g += value.g * light.irradiance.g;
+      radiance.b += value.b * light.irradiance.b;
     }
     // Display exposure and gamma, not an artificial orange paint layer. Fade the
     // inner boundary because ordinary surface haze is already in terrain lighting.
@@ -1968,20 +1967,6 @@ export class SceneRenderer {
       const sun = orbitSunDirection(model.illuminationPhase * Math.PI * 2 - (source.longitudeOffset ?? 0));
       const projected = projectOrbitSource(sun);
       if (!projected) continue;
-      const x = cx + 0.25 + projected.x * radius;
-      const y = cy + 0.25 - projected.y * radius;
-      // Coordinates denote the centre of the half-cell source, as for globe samples.
-      // Clip the glyph extent, but occult its point-source centre at the true limb.
-      const halfSize = 0.25;
-      if (
-        x - halfSize <= viewX ||
-        x + halfSize >= viewX + viewWidth - 1 ||
-        y - halfSize <= viewY ||
-        y + halfSize >= viewY + viewHeight - 1 ||
-        Math.hypot(projected.x, projected.y) <= 1
-      )
-        continue;
-      let colour = this.getOrbitStellarSourceColour(source.colour, source.brightness);
       const planet = model.selectedBody;
       const air = planet.effectiveAtmosphere;
       const atmosphere =
@@ -1994,15 +1979,49 @@ export class SceneRenderer {
               planet.diameter,
               air?.composition
             );
-      if (atmosphere) {
-        const transmission = orbitSourceTransmittance(projected.x, projected.y, atmosphere);
-        const rgb = this.hexToRgbFallback(colour);
-        colour = rgbToHex(
-          rgb.r * transmission.r ** (1 / 2.2),
-          rgb.g * transmission.g ** (1 / 2.2),
-          rgb.b * transmission.b ** (1 / 2.2)
-        );
+      const transmission = { r: 0, g: 0, b: 0 };
+      let visibleWeight = 0;
+      let projectedX = 0;
+      let projectedY = 0;
+      for (const sample of sampleOrbitStellarDisc(sun, source.angularRadius)) {
+        const point = projectOrbitSource(sample.direction);
+        if (!point || Math.hypot(point.x, point.y) <= 1) continue;
+        const value = atmosphere
+          ? orbitSourceTransmittance(point.x, point.y, atmosphere)
+          : { r: 1, g: 1, b: 1 };
+        transmission.r += value.r * sample.weight;
+        transmission.g += value.g * sample.weight;
+        transmission.b += value.b * sample.weight;
+        const weight = (value.r + value.g + value.b) * sample.weight;
+        projectedX += point.x * weight;
+        projectedY += point.y * weight;
+        visibleWeight += weight;
       }
+      if (visibleWeight < 1e-12) continue;
+      // Place the glyph at the transmitted disc's centroid during partial occultation.
+      const x = cx + 0.25 + (projectedX / visibleWeight) * radius;
+      const y = cy + 0.25 - (projectedY / visibleWeight) * radius;
+      const halfSize = 0.25;
+      if (
+        x - halfSize <= viewX ||
+        x + halfSize >= viewX + viewWidth - 1 ||
+        y - halfSize <= viewY ||
+        y + halfSize >= viewY + viewHeight - 1
+      )
+        continue;
+      const rgb = this.hexToRgbFallback(this.getOrbitStellarSourceColour(source.colour, source.brightness));
+      const physical = source.irradianceWm2 === undefined ? null : getOrbitStellarIrradiance(source);
+      const colour = rgbToHex(
+        physical
+          ? 255 * (1 - Math.exp(-physical.r * transmission.r)) ** (1 / 2.2)
+          : rgb.r * transmission.r ** (1 / 2.2),
+        physical
+          ? 255 * (1 - Math.exp(-physical.g * transmission.g)) ** (1 / 2.2)
+          : rgb.g * transmission.g ** (1 / 2.2),
+        physical
+          ? 255 * (1 - Math.exp(-physical.b * transmission.b)) ** (1 / 2.2)
+          : rgb.b * transmission.b ** (1 / 2.2)
+      );
       this.screenBuffer.drawScaledChar(
         source === primary ? GLYPHS.STELLAR_SOURCE : GLYPHS.STAR_DIM,
         x - halfSize,

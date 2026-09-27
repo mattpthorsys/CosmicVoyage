@@ -30,7 +30,7 @@
     </style>
   </head>
   <body>
-    <p>Orbital lighting: fixed terrain; atmospheric and airless phase sweeps</p>
+    <p>Orbital lighting: fixed terrain; clear molecular atmospheres (no clouds or aerosols)</p>
     <main></main>
     <script type="module">
       import '../src/assets/fonts/fonts.css';
@@ -42,7 +42,37 @@
       import { PRNG } from '../src/utils/prng.ts';
       import { Planet } from '../src/entities/planet.ts';
       await document.fonts.ready;
-      for (const atmospheric of [true, false]) {
+      const profiles = [
+        {
+          name: 'Earth-like',
+          pressure: 1.01325,
+          temperature: 288,
+          gases: { Nitrogen: 78, Oxygen: 21, Argon: 1 },
+        },
+        { name: 'Airless', pressure: 0, temperature: 288, gases: {} },
+        { name: 'Thin CO2', pressure: 0.006, temperature: 210, gases: { 'Carbon Dioxide': 95, Nitrogen: 5 } },
+        {
+          name: 'Dense CO2 (clear gas only)',
+          pressure: 90,
+          temperature: 735,
+          gases: { 'Carbon Dioxide': 96, Nitrogen: 4 },
+        },
+        {
+          name: 'Cool star / equal total flux',
+          pressure: 1.01325,
+          temperature: 288,
+          gases: { Nitrogen: 78, Oxygen: 21, Argon: 1 },
+          starTemperature: 3000,
+        },
+        {
+          name: 'Double distance / quarter flux',
+          pressure: 1.01325,
+          temperature: 288,
+          gases: { Nitrogen: 78, Oxygen: 21, Argon: 1 },
+          distance: 2,
+        },
+      ];
+      for (const profile of profiles) {
         for (const phase of [0.2, 0.35, 0.3617394005527416, 0.4125, 0.4631901620461734, 0.475]) {
           const planet = Object.create(Planet.prototype);
           Object.defineProperties(planet, {
@@ -57,16 +87,18 @@
             diameter: { value: 11000 },
             density: { value: 5.1 },
             gravity: { value: 0.95 },
-            surfaceTemp: { value: 288 },
+            surfaceTemp: { value: profile.temperature },
             axialTilt: { value: 0.23 },
             orbitalInclination: { value: 0.03 },
             moons: { value: [] },
             atmosphere: {
-              value: atmospheric
-                ? { density: 'Dense', pressure: 1.1, composition: { Nitrogen: 78, Oxygen: 21, Argon: 1 } }
-                : { density: 'None', pressure: 0, composition: {} },
+              value: {
+                density: profile.pressure ? 'Dense' : 'None',
+                pressure: profile.pressure,
+                composition: profile.gases,
+              },
             },
-            getCurrentTemperature: { value: () => 288 },
+            getCurrentTemperature: { value: () => profile.temperature },
           });
           const mainCanvas = document.createElement('canvas');
           const raster = document.createElement('canvas');
@@ -95,7 +127,18 @@
             selectedBody: planet,
             bodies: [],
             mode: 'overview',
-            stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
+            stellarSources: [
+              {
+                id: 'A',
+                primary: true,
+                brightness: 1,
+                colour: '#FFFACD',
+                irradianceWm2: 1361 / (profile.distance ?? 1) ** 2,
+                temperatureK: profile.starTemperature ?? 5772,
+                angularRadius:
+                  (0.00465 / (profile.distance ?? 1)) * (5772 / (profile.starTemperature ?? 5772)) ** 2,
+              },
+            ],
             rotationPhase: 0.35,
             illuminationPhase: phase,
             landingCursorX: 12,
@@ -128,12 +171,7 @@
           result.dataset.litPixels = Array.from(pixels).filter((v, i) => i % 4 !== 3 && v > 30).length;
           const label = document.createElement('figcaption');
           label.textContent =
-            (atmospheric ? 'Atmosphere' : 'Airless') +
-            ' / phase ' +
-            phase.toFixed(4) +
-            ' / ' +
-            frameMs.toFixed(1) +
-            'ms/frame';
+            profile.name + ' / phase ' + phase.toFixed(4) + ' / ' + frameMs.toFixed(1) + 'ms/frame';
           figure.append(result, label);
           document.querySelector('main').append(figure);
         }
