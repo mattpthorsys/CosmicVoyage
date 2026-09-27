@@ -10,12 +10,6 @@ import { LocalHyperspaceTileGenerationProvider } from '../../rendering/hyperspac
 describe('complete hyperspace tile generation', () => {
   it.each([
     [
-      'red dwarf',
-      { exists: true, starType: 'M9V', objectKind: 'stellar' as const },
-      null,
-      CONFIG.MIN_STAR_DETECTION_RADIUS_CELLS,
-    ],
-    [
       'cool white dwarf',
       { exists: true, starType: 'DC', objectKind: 'stellar' as const },
       null,
@@ -62,6 +56,20 @@ describe('complete hyperspace tile generation', () => {
       expect(contrast(tiles.at(-1)!.starColor)).toBeGreaterThan(contrast(tiles[2].starColor));
       expect(new Set(tiles.slice(1).map((tile) => tile.starColor)).size).toBeGreaterThanOrEqual(4);
       expect(tiles.slice(1).every((tile) => tile.rangeFaded)).toBe(true);
+    }
+  );
+
+  it.each(['K9V', 'M9V', 'G2V', 'O5V'])(
+    'keeps %s visible across the viewport beyond its sensor horizon',
+    (starType) => {
+      const system = { exists: true, starType, objectKind: 'stellar' as const };
+      const farRange = CONFIG.MAX_STAR_DETECTION_RADIUS_CELLS + 1;
+      const tile = createHyperspaceTile('#091519', system, null, 12, -3, farRange);
+      const closeTile = createHyperspaceTile('#091519', system, null, 12, -3, 0);
+      expect(tile.starChar).toBeTruthy();
+      expect(tile.starColor).toBe(closeTile.starColor);
+      expect(tile.visibilityRadius).toBeUndefined();
+      expect(tile.rangeFaded).toBeUndefined();
     }
   );
 

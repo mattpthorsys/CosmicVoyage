@@ -56,6 +56,13 @@ export function createHyperspaceTile(
     }
 
     const isBrownDwarf = systemProps.objectKind === 'brown-dwarf';
+    const isPhotosphericStar =
+      systemProps.objectKind === 'stellar' && /^[OBAFGKMW]/.test(systemProps.starType!);
+    const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
+    if (isPhotosphericStar) {
+      return { bg, starChar: star.char, starColor: star.color };
+    }
+
     const visibilityRadius = getStellarDetectionRadii(systemProps).statusRadius;
     if (rangeCells > visibilityRadius) {
       return {
@@ -67,11 +74,9 @@ export function createHyperspaceTile(
       };
     }
 
-    const star = getRenderedStarCell(systemProps.starType!, worldX, worldY);
     return {
       bg,
       starChar: star.char,
-      // Cool stars and remnants also have short horizons; fading only brown dwarfs leaves them popping.
       starColor: fadedContactColour(bg, star.color, rangeCells, visibilityRadius, isBrownDwarf ? 0.75 : 1),
       visibilityRadius,
       rangeFaded: true,

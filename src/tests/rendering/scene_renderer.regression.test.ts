@@ -382,7 +382,7 @@ describe('SceneRenderer visual regressions', () => {
     }
   );
 
-  it.each(['M9V', 'DC'])('fades %s across its detection boundary in both travel directions', (starType) => {
+  it.each(['DA2', 'DC'])('fades %s across its detection boundary in both travel directions', (starType) => {
     const { buffer, stagedFrames } = createMockScreenBuffer(41, 9);
     const generator = {
       getSystemMapProperties: (x: number, y: number) => ({
@@ -449,6 +449,36 @@ describe('SceneRenderer visual regressions', () => {
       expect(contrasts[index]).toBeGreaterThan(contrasts[index - 1]);
     }
     expect(contrasts.slice(5)).toEqual(contrasts.slice(0, 4).reverse());
+  });
+
+  it('keeps red and orange dwarfs visible across hyperspace travel frames', () => {
+    const cols = 101;
+    const rows = 15;
+    const { buffer, stagedFrames } = createMockScreenBuffer(cols, rows);
+    const generator = {
+      getSystemMapProperties: (x: number, y: number) => ({
+        exists: y === 0 && (x === -45 || x === 45),
+        starType: x === -45 ? 'M9V' : 'K9V',
+        objectKind: 'stellar',
+      }),
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), new NebulaRenderer(), generator);
+    const player = new Player();
+
+    for (const worldX of [0, 1, 2, 1, 0]) {
+      player.position.worldX = worldX;
+      renderer.drawHyperspace(player);
+      const frame = stagedFrames.at(-1) as { char: string; fg: string; bg: string }[];
+      for (const starX of [-45, 45]) {
+        const contact = frame[7 * cols + 50 + starX - worldX];
+        expect(contact.char).not.toBe(' ');
+        expect(contact.fg).not.toBe(contact.bg);
+      }
+      renderer.clearCaches();
+      renderer.drawHyperspace(player);
+      expect(stagedFrames.at(-1)).toEqual(frame);
+    }
   });
 
   it('refreshes fading brown and rogue contacts as their range changes in shifted frames', () => {

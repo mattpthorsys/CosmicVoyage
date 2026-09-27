@@ -39,27 +39,29 @@ There is no hidden Z coordinate; travel distances remain projected distances.
 
 The 550 nm Planck approximation scales visible luminosity with actual radius
 squared. Range follows its square root, as required by inverse-square flux.
-A solar source has an approximately 118 ly horizon; ordinary stellar
-sources are bounded to 16..360 ly. The 16 ly floor represents close sensor
-acquisition, not optical detectability alone. Brown dwarfs have a separate
+A solar source has an approximately 118 ly sensor horizon; ordinary stellar
+sensor horizons are bounded to 16..360 ly. The 16 ly floor represents close
+sensor acquisition, not optical detectability alone. Photospheric stars,
+including red and orange dwarfs, are drawn across the entire viewport even
+beyond their sensor horizon. Brown dwarfs have a separate
 72 ly infrared horizon, and rogue planets remain visually traceable out to
 about 392 ly. Stellar and rogue-planet horizons double their previous radii,
 covering four times their previous area; other deep-space signals keep their
-existing range. Every range-limited contact, including red dwarfs, white dwarfs,
-and deep-space signals, blends gradually with the actual nebula background as
+existing range. Range-limited contacts, including brown dwarfs, white dwarfs,
+rogue planets, and deep-space signals, blend gradually with the actual nebula background as
 range changes. A smoothstep fade reaches zero contrast with zero slope at the
 horizon, avoiding a full-brightness pop when a source enters or leaves range.
 A short viewport-edge fade also prevents a distant contact from appearing at
 full brightness when it first scrolls onscreen. HUD annotations stay local so
 distant contacts do not crowd the screen; stellar annotations are capped at 60 ly.
 Passive ranging is additionally reduced by the existing medium multiplier;
-glyphs and directed observations use the clear-medium instrument horizon.
+directed observations use the clear-medium instrument horizon.
 These are instrument/gameplay limits, not naked-eye visibility or a calibrated
 survey limiting magnitude. A source beyond the viewport is not automatically
 marked onscreen even if its physical detection horizon is larger.
 
-Tile caches retain each source's visibility threshold and whether its colour
-depends on range, including hidden sources. Moving through a fade or across a
+Tile caches retain each range-limited source's visibility threshold and whether
+its colour depends on range, including hidden sources. Moving through a fade or across a
 threshold must give the same frame as a fresh render; integer-bucketed range
 keys are unsafe at fractional thresholds.
 
