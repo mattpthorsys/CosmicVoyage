@@ -286,6 +286,14 @@ export function parseGameSave(value: string | unknown): GameSave {
     default:
       save = candidate as unknown as GameSaveV10;
   }
+  // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
+  if (save.generationVersion === 6) {
+    save = {
+      ...save,
+      generationVersion: CONFIG.GALAXY_MODEL_VERSION,
+      migratedFromGenerationVersion: save.migratedFromGenerationVersion ?? 6,
+    };
+  }
   if (save.generationVersion !== CONFIG.GALAXY_MODEL_VERSION) {
     throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
   }

@@ -2,6 +2,7 @@ import { CONFIG } from '../config';
 import { MineralRichness } from '../constants/planetary';
 import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger'; // Import the logger
+import type { OrbitHost } from './stellar_body';
 
 export type StationKind = 'starbase' | 'automated-depot';
 
@@ -46,6 +47,7 @@ export class Starbase {
   // Orbital Properties - Made MUTABLE to allow SolarSystem to update them
   orbitDistance: number; // Made mutable (removed readonly)
   orbitAngle: number; // Made mutable (removed readonly)
+  orbitHost: OrbitHost = { kind: 'barycentric' };
   systemX: number; // Made mutable (removed readonly)
   systemY: number; // Made mutable (removed readonly)
 

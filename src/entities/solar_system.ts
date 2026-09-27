@@ -31,6 +31,7 @@ import {
   TerraformingStage,
 } from './habitability';
 import { reserveColonyWorldName } from './colony_naming';
+import { getStableOrbitRange } from './orbital_stability';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -69,7 +70,16 @@ export class SolarSystem {
       `[System:${starX},${starY}] Initialized PRNG with seed: ${this.systemPRNG.getInitialSeed()}`
     );
 
-    this.architecture = basicProps.architecture ?? this.createFallbackArchitecture(basicProps);
+    const blueprint = basicProps.architecture ?? this.createFallbackArchitecture(basicProps);
+    // Catalogue descriptors are cached. Live orbital motion must never mutate that blueprint.
+    this.architecture = {
+      ...blueprint,
+      stars: blueprint.stars.map((star) => ({
+        ...star,
+        environment: { ...star.environment },
+        orbit: star.orbit ? { ...star.orbit } : null,
+      })),
+    };
     this.stars = this.architecture.stars;
     this.isStarless = this.architecture.kind === 'starless' || basicProps.objectKind === 'rogue-planet';
     if (!this.isStarless) {
@@ -126,6 +136,24 @@ export class SolarSystem {
     this.stations = this.starbase ? Object.freeze([this.starbase]) : Object.freeze([]);
 
     if (this.starbase) {
+      let host = this.colonyWorld?.orbitHost ?? this.getDefaultPlanetOrbitHost();
+      let range = getStableOrbitRange(this.architecture, host);
+      if (!range) {
+        host = { kind: 'barycentric' };
+        range = getStableOrbitRange(this.architecture, host);
+      }
+      this.starbase.orbitHost = { ...host };
+      if (range) {
+        const margin = Math.min(range.minRadius * 0.05, (range.maxRadius - range.minRadius) * 0.05);
+        this.starbase.orbitDistance = this.clamp(
+          this.starbase.orbitDistance,
+          range.minRadius + margin,
+          range.maxRadius - margin
+        );
+      }
+      const center = this.getOrbitCenter(host);
+      this.starbase.systemX = center.x + Math.cos(this.starbase.orbitAngle) * this.starbase.orbitDistance;
+      this.starbase.systemY = center.y + Math.sin(this.starbase.orbitAngle) * this.starbase.orbitDistance;
       logger.info(
         `[System:${this.name}] ${this.starbase.kind} generated at orbit distance ${this.starbase.orbitDistance.toExponential(2)}m.`
       );
@@ -135,24 +163,24 @@ export class SolarSystem {
     let maxOrbit_m = 0;
     this.planets.forEach((p) => {
       if (p) {
+        const moonExtent = p.moons.reduce((max, moon) => Math.max(max, moon.orbitDistance), 0);
         maxOrbit_m = Math.max(
           maxOrbit_m,
-          p.orbitDistance,
-          Math.sqrt(p.systemX * p.systemX + p.systemY * p.systemY)
+          this.getOrbitCenterExtent(p.orbitHost) + p.orbitDistance + moonExtent
         );
-        // Also consider furthest moon orbit relative to star (approx)
-        if (p.moons && p.moons.length > 0) {
-          const furthestMoonOrbit = p.moons.reduce((max, moon) => Math.max(max, moon.orbitDistance), 0);
-          maxOrbit_m = Math.max(maxOrbit_m, p.orbitDistance + furthestMoonOrbit); // Approximate max extent
-        }
       }
     });
     if (this.starbase) {
-      maxOrbit_m = Math.max(maxOrbit_m, this.starbase.orbitDistance);
+      maxOrbit_m = Math.max(
+        maxOrbit_m,
+        this.getOrbitCenterExtent(this.starbase.orbitHost) + this.starbase.orbitDistance
+      );
     }
     this.stars.forEach((star) => {
-      maxOrbit_m = Math.max(maxOrbit_m, Math.sqrt(star.systemX * star.systemX + star.systemY * star.systemY));
-      if (star.orbit) maxOrbit_m = Math.max(maxOrbit_m, star.orbit.radius);
+      maxOrbit_m = Math.max(
+        maxOrbit_m,
+        this.getOrbitCenterExtent({ kind: 'circumstellar', starId: star.id }) + star.radiusM
+      );
     });
 
     logger.debug(`[System:${this.name}] Furthest object orbit distance: ${maxOrbit_m.toExponential(2)}m`);
@@ -447,18 +475,23 @@ export class SolarSystem {
     const secondary = this.stars.find((star) => star.id === 'B');
     if (!primary || !secondary) return;
 
-    const separation = Math.max(0.05 * AU_IN_METERS, this.architecture.binarySeparation);
+    const separation = Math.max(
+      0.05 * AU_IN_METERS,
+      3 * (primary.radiusM + secondary.radiusM),
+      this.architecture.binarySeparation
+    );
+    this.architecture.binarySeparation = separation;
     const totalMass = primary.massKg + secondary.massKg;
     const baseAngle = secondary.orbit?.angle ?? 0;
     const periodSeconds = this.calculateKeplerPeriodSeconds(separation, totalMass);
     primary.orbit = {
-      center: 'barycenter',
+      center: this.stars.length > 2 ? 'ab-barycenter' : 'barycenter',
       radius: separation * (secondary.massKg / totalMass),
       angle: baseAngle + Math.PI,
       periodSeconds,
     };
     secondary.orbit = {
-      center: 'barycenter',
+      center: this.stars.length > 2 ? 'ab-barycenter' : 'barycenter',
       radius: separation * (primary.massKg / totalMass),
       angle: baseAngle,
       periodSeconds,
@@ -466,7 +499,8 @@ export class SolarSystem {
 
     const tertiary = this.stars.find((star) => star.id === 'C');
     if (tertiary) {
-      const outerSeparation = Math.max(separation * 5, this.architecture.outerSeparation);
+      const outerSeparation = Math.max(separation * 10, this.architecture.outerSeparation);
+      this.architecture.outerSeparation = outerSeparation;
       const outerTotalMass = totalMass + tertiary.massKg;
       tertiary.orbit = {
         center: 'barycenter',
@@ -492,6 +526,19 @@ export class SolarSystem {
       }
       star.systemX = Math.cos(star.orbit.angle) * star.orbit.radius;
       star.systemY = Math.sin(star.orbit.angle) * star.orbit.radius;
+    }
+    // Jacobi hierarchy: C and the AB centre orbit their common barycentre.
+    // A/B's stored radii and angles are relative to that moving AB centre.
+    const tertiary = this.stars.find((star) => star.id === 'C');
+    const innerStars = this.stars.filter((star) => star.id === 'A' || star.id === 'B');
+    const innerMass = innerStars.reduce((sum, star) => sum + star.massKg, 0);
+    if (tertiary && innerMass > 0) {
+      const offsetX = (-tertiary.systemX * tertiary.massKg) / innerMass;
+      const offsetY = (-tertiary.systemY * tertiary.massKg) / innerMass;
+      for (const star of innerStars) {
+        star.systemX += offsetX;
+        star.systemY += offsetY;
+      }
     }
   }
 
@@ -563,30 +610,24 @@ export class SolarSystem {
     // const AU_IN_METERS = 1.495978707e11; // Defined globally in constants.ts now
 
     // Define realistic distance ranges in METERS (e.g., 0.2 AU to 50+ AU)
-    const stabilityInnerLimit =
-      this.architecture.kind === 'single'
-        ? 0.2 * AU_IN_METERS
-        : Math.max(0.7 * AU_IN_METERS, this.architecture.binarySeparation * 4.2);
-    const MIN_INNER_ORBIT_M = stabilityInnerLimit; // e.g., ~3e10 meters
+    const stableRange = getStableOrbitRange(this.architecture, this.getDefaultPlanetOrbitHost());
+    const stabilityInnerLimit = this.architecture.kind === 'single' ? 0.2 * AU_IN_METERS : 0.7 * AU_IN_METERS;
+    const MIN_INNER_ORBIT_M = Math.max(stabilityInnerLimit, stableRange?.minRadius ?? Infinity);
     const MAX_INNER_ORBIT_M = 0.7 * AU_IN_METERS; // e.g., ~1e11 meters
-    const wideCompanionLimit =
-      this.architecture.kind === 'triple' && this.architecture.outerSeparation > 0
-        ? Math.max(MIN_INNER_ORBIT_M * 1.8, this.architecture.outerSeparation * 0.25)
-        : 50 * AU_IN_METERS;
-    const MIN_OUTER_ORBIT_M = Math.min(50 * AU_IN_METERS, wideCompanionLimit); // Example outer limit (adjust as needed)
+    const MIN_OUTER_ORBIT_M = Math.min(50 * AU_IN_METERS, stableRange?.maxRadius ?? 0);
+    const hasPrimaryRegion = MIN_INNER_ORBIT_M < MIN_OUTER_ORBIT_M;
 
     const orbitScaleBase = this.systemPRNG.random(1.5, 2.0);
-    let lastOrbitDistance = this.systemPRNG.random(
-      MIN_INNER_ORBIT_M,
-      Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M)
-    );
+    let lastOrbitDistance = hasPrimaryRegion
+      ? this.systemPRNG.random(MIN_INNER_ORBIT_M, Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M))
+      : 0;
     const MIN_PLANET_SEPARATION_M = 0.1 * AU_IN_METERS; // e.g., 0.1 AU separation minimum
-    const secondaryHosts = this.getSecondaryCircumstellarPlanetHosts();
-    const reservedSecondarySlots = Math.min(3, secondaryHosts.length * 2);
-    const primarySlotLimit = Math.max(1, CONFIG.MAX_PLANETS_PER_SYSTEM - reservedSecondarySlots);
+    const localHosts = this.getLocalCircumstellarPlanetHosts();
+    const reservedLocalSlots = Math.min(3, localHosts.length * 2);
+    const primarySlotLimit = Math.max(1, CONFIG.MAX_PLANETS_PER_SYSTEM - reservedLocalSlots);
 
     let planetsGenerated = 0;
-    for (let i = 0; i < primarySlotLimit; i++) {
+    for (let i = 0; hasPrimaryRegion && i < primarySlotLimit; i++) {
       logger.debug(`[System:${this.name}] Considering planet slot ${i + 1}...`);
 
       let currentOrbitDistance =
@@ -692,7 +733,7 @@ export class SolarSystem {
       }
     }
 
-    if (planetsGenerated === 0) {
+    if (planetsGenerated === 0 && hasPrimaryRegion) {
       const fallbackOrbit = this.clamp(
         lastOrbitDistance,
         MIN_INNER_ORBIT_M,
@@ -736,16 +777,15 @@ export class SolarSystem {
       logger.info(`[System:${this.name}] Added fallback planetary body for exploration pacing.`);
     }
 
-    planetsGenerated += this.generateSecondaryCircumstellarPlanets(secondaryHosts);
+    planetsGenerated += this.generateLocalCircumstellarPlanets(localHosts);
 
     logger.info(`[System:${this.name}] Planet generation complete. ${planetsGenerated} planets created.`);
   }
 
-  /** Returns secondary circumstellar planet hosts. */
-  private getSecondaryCircumstellarPlanetHosts(): StellarBody[] {
+  /** Reserves local exploration regions around sufficiently separated individual stars. */
+  private getLocalCircumstellarPlanetHosts(): StellarBody[] {
     if (this.architecture.kind === 'single' || this.architecture.kind === 'starless') return [];
     return this.stars.filter((star) => {
-      if (star.id === 'A') return false;
       const stableZone = this.getCircumstellarStableZone(star);
       return stableZone !== null && stableZone.maxOrbit_m / Math.max(stableZone.minOrbit_m, 1) >= 2.2;
     });
@@ -772,8 +812,9 @@ export class SolarSystem {
       Y: 0.02,
     };
     const minOrbit_m = Math.max(star.radiusM * 18, (minByClassAu[starClass] ?? 0.12) * AU_IN_METERS);
-    const stabilityFraction = this.architecture.kind === 'triple' && star.id === 'C' ? 0.14 : 0.16;
-    const maxOrbit_m = nearestStarDistance_m * stabilityFraction;
+    const range = getStableOrbitRange(this.architecture, { kind: 'circumstellar', starId: star.id });
+    if (!range) return null;
+    const maxOrbit_m = range.maxRadius;
     if (maxOrbit_m <= minOrbit_m * 1.7) return null;
     return { minOrbit_m, maxOrbit_m, nearestStarDistance_m };
   }
@@ -790,8 +831,8 @@ export class SolarSystem {
     return nearest;
   }
 
-  /** Generates secondary circumstellar planets. */
-  private generateSecondaryCircumstellarPlanets(hosts: StellarBody[]): number {
+  /** Generates planets around individual stars, including A in a wide multiple system. */
+  private generateLocalCircumstellarPlanets(hosts: StellarBody[]): number {
     if (hosts.length === 0) return 0;
     let generated = 0;
     for (const host of hosts) {
@@ -1165,17 +1206,36 @@ export class SolarSystem {
 
   /** Returns orbit center. */
   getOrbitCenter(host: OrbitHost): { x: number; y: number } {
-    if (host.kind === 'circumstellar' && host.starId) {
-      const star = this.stars.find((s) => s.id === host.starId);
+    if (host.kind === 'circumstellar') {
+      const star = this.stars.find((s) => s.id === (host.starId ?? 'A'));
       if (star) return { x: star.systemX, y: star.systemY };
+    }
+    if (host.kind === 'circumbinary') {
+      const pair = this.stars.filter((star) => star.id === 'A' || star.id === 'B');
+      const mass = pair.reduce((sum, star) => sum + star.massKg, 0);
+      if (mass > 0)
+        return {
+          x: pair.reduce((sum, star) => sum + star.systemX * star.massKg, 0) / mass,
+          y: pair.reduce((sum, star) => sum + star.systemY * star.massKg, 0) / mass,
+        };
     }
     return { x: 0, y: 0 };
   }
 
+  /** Bounds host motion over all circular phases, not just the system's initial snapshot. */
+  private getOrbitCenterExtent(host: OrbitHost): number {
+    const tertiary = this.stars.find((star) => star.id === 'C');
+    const abExtent = tertiary ? this.architecture.outerSeparation - (tertiary.orbit?.radius ?? 0) : 0;
+    if (host.kind === 'circumbinary') return abExtent;
+    if (host.kind !== 'circumstellar') return 0;
+    const star = this.stars.find((candidate) => candidate.id === (host.starId ?? 'A'));
+    return (star?.orbit?.radius ?? 0) + (star?.id === 'C' ? 0 : abExtent);
+  }
+
   /** Returns planet environment star. */
   private getPlanetEnvironmentStar(host: OrbitHost): StellarBody {
-    if (host.kind === 'circumstellar' && host.starId) {
-      return this.stars.find((star) => star.id === host.starId) ?? getPrimaryStar(this.architecture);
+    if (host.kind === 'circumstellar') {
+      return this.stars.find((star) => star.id === (host.starId ?? 'A')) ?? getPrimaryStar(this.architecture);
     }
     return getPrimaryStar(this.architecture);
   }
@@ -1183,9 +1243,10 @@ export class SolarSystem {
   /** Returns orbit host mass kg. */
   private getOrbitHostMassKg(host: OrbitHost): number {
     if (this.isStarless) return 0;
-    if (host.kind === 'circumstellar' && host.starId) {
+    if (host.kind === 'circumstellar') {
       return (
-        this.stars.find((star) => star.id === host.starId)?.massKg ?? getPrimaryStar(this.architecture).massKg
+        this.stars.find((star) => star.id === (host.starId ?? 'A'))?.massKg ??
+        getPrimaryStar(this.architecture).massKg
       );
     }
     if (host.kind === 'circumbinary') {
@@ -1383,7 +1444,7 @@ export class SolarSystem {
     const moonPRNG = planet.systemPRNG.seedNew('moons');
     const effectiveTemp = Math.max(this.getEffectiveTemperature(totalFlux), planet.surfaceTemp);
     const parentRadius_m = (planet.diameter * 1000) / 2;
-    const hostMass = parentStar.massKg || SOLAR_MASS_KG;
+    const hostMass = this.getOrbitHostMassKg(planet.orbitHost) || SOLAR_MASS_KG;
     const hillRadius_m = planet.orbitDistance * Math.pow(planet.mass / (3 * hostMass), 1 / 3);
     const outerStableOrbit_m =
       hillRadius_m * (planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 0.42 : 0.32);
@@ -1913,7 +1974,10 @@ export class SolarSystem {
         logger.warn(`[System:${this.name}] Invalid orbit distance for starbase. Skipping.`);
         return;
       }
-      const sbPeriod_s = this.calculateKeplerPeriodSeconds(sb_r, starMassKg);
+      const sbPeriod_s = this.calculateKeplerPeriodSeconds(
+        sb_r,
+        this.getOrbitHostMassKg(this.starbase.orbitHost)
+      );
       if (!Number.isFinite(sbPeriod_s) || sbPeriod_s <= 0) {
         logger.warn(`[System:${this.name}] Invalid orbital period for starbase. Skipping.`);
         return;
@@ -1921,8 +1985,9 @@ export class SolarSystem {
       const sb_deltaAngle = (2 * Math.PI * scaledDeltaTime) / sbPeriod_s;
       this.starbase.orbitAngle = (this.starbase.orbitAngle + sb_deltaAngle) % (Math.PI * 2);
       if (!Number.isFinite(this.starbase.orbitAngle)) this.starbase.orbitAngle = 0;
-      this.starbase.systemX = Math.cos(this.starbase.orbitAngle) * sb_r;
-      this.starbase.systemY = Math.sin(this.starbase.orbitAngle) * sb_r;
+      const center = this.getOrbitCenter(this.starbase.orbitHost);
+      this.starbase.systemX = center.x + Math.cos(this.starbase.orbitAngle) * sb_r;
+      this.starbase.systemY = center.y + Math.sin(this.starbase.orbitAngle) * sb_r;
       if (!Number.isFinite(this.starbase.systemX) || !Number.isFinite(this.starbase.systemY)) {
         logger.error(`[System:${this.name}] Non-finite position for starbase. Resetting.`);
         this.starbase.systemX = 0;

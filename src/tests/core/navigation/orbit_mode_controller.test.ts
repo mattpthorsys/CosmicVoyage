@@ -5,6 +5,7 @@ import { Game } from '../../../core/game';
 import { OrbitModeController, OrbitInteractionContext } from '../../../core/modes/orbit_mode_controller';
 import { Planet } from '../../../entities/planet';
 import { PRNG } from '../../../utils/prng';
+import type { StellarBody } from '../../../entities/stellar_body';
 
 const TIME_SCALE = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
@@ -39,6 +40,36 @@ function input(pressed: string[] = [], held: string[] = []) {
 }
 
 describe('orbital interaction controller', () => {
+  it('refreshes physical light data without rebuilding cached descriptions', () => {
+    const parent = createBody('Moving lights');
+    parent.systemX = 0;
+    parent.systemY = 0;
+    const star: StellarBody = {
+      id: 'A',
+      name: 'A',
+      starType: 'G',
+      massKg: 1.989e30,
+      radiusM: 6.957e8,
+      luminosityW: 3.828e26,
+      systemX: AU_IN_METERS,
+      systemY: 0,
+      orbit: null,
+      environment: { starType: 'G', ageGyr: 4.6, metallicityFeH: 0 },
+    };
+    const orbit = new OrbitModeController();
+    const first = orbit.createScreen(parent, [star], '', TIME_SCALE);
+    star.systemX *= 2;
+    const moved = orbit.createScreen(parent, [star], '', TIME_SCALE);
+    expect(moved.description).toBe(first.description);
+    expect(moved.stellarSources[0].irradianceWm2).toBeCloseTo(first.stellarSources[0].irradianceWm2! / 4, 8);
+    expect(moved.stellarSources[0].angularRadius).toBeLessThan(first.stellarSources[0].angularRadius!);
+    expect(orbit.createScreen(parent, [], '', TIME_SCALE).stellarSources).toEqual([]);
+    const sameNameDifferentBody = createBody(parent.name);
+    const changed = orbit.createScreen(sameNameDifferentBody, [], '', TIME_SCALE);
+    expect(changed.selectedBody).toBe(sameNameDifferentBody);
+    expect(changed.description).not.toBe(first.description);
+  });
+
   it('cycles planet and moons, surveys the selection, prepares neighbours, and redraws', () => {
     const parent = createBody('Parent');
     const moon = createBody('Moon');

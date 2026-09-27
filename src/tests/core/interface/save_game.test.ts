@@ -10,6 +10,7 @@ import {
 import { MissionProgressService } from '../../../core/mission_progress';
 import { ScanService } from '../../../core/scan_service';
 import { createDiscoveryRecord } from '../../../core/discovery';
+import { CONFIG } from '../../../config';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -49,7 +50,7 @@ class MemoryStorage implements Storage {
 function createSave(): GameSave {
   return {
     version: 10,
-    generationVersion: 6,
+    generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
@@ -165,7 +166,7 @@ describe('save game persistence', () => {
 
     expect(migrated).toMatchObject({
       version: 10,
-      generationVersion: 6,
+      generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       migratedFromGenerationVersion: 3,
     });
     expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
@@ -186,7 +187,7 @@ describe('save game persistence', () => {
 
     expect(migrated).toMatchObject({
       version: 10,
-      generationVersion: 6,
+      generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       migratedFromGenerationVersion: 4,
     });
     expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
@@ -331,7 +332,7 @@ describe('save game persistence', () => {
     });
 
     expect(migrated.version).toBe(10);
-    expect(migrated.generationVersion).toBe(6);
+    expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
     expect(migrated.migratedFromGenerationVersion).toBe(1);
     expect(migrated.location.systemSlot).toBe(0);
     expect(migrated.location).toMatchObject({ worldX: -7, worldY: -10 });
@@ -376,7 +377,7 @@ describe('save game persistence', () => {
     });
 
     expect(migrated.version).toBe(10);
-    expect(migrated.generationVersion).toBe(6);
+    expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
     expect(migrated.migratedFromGenerationVersion).toBe(2);
     expect(migrated.player.position).toMatchObject({
       worldX: -7,
@@ -409,7 +410,7 @@ describe('save game persistence', () => {
     });
 
     expect(migrated.version).toBe(10);
-    expect(migrated.generationVersion).toBe(6);
+    expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
     expect(migrated.migratedFromGenerationVersion).toBe(3);
     expect(migrated.player.position).toMatchObject({ worldX: 3, worldY: -2 });
     expect(migrated.location).toMatchObject({ worldX: 3, worldY: -2 });
@@ -450,7 +451,11 @@ describe('save game persistence', () => {
       const oldSave = { ...createSave(), version: 9, generationVersion: 5 };
       store.setItem(oldKey, JSON.stringify(oldSave));
       const result = kind === 'session' ? storage.loadSession() : storage.loadManual();
-      expect(result).toMatchObject({ version: 10, generationVersion: 6, migratedFromGenerationVersion: 5 });
+      expect(result).toMatchObject({
+        version: 10,
+        generationVersion: CONFIG.GALAXY_MODEL_VERSION,
+        migratedFromGenerationVersion: 5,
+      });
       expect(result?.player).toEqual(oldSave.player);
       expect(result?.location).toEqual(oldSave.location);
       expect(store.getItem(oldKey)).toBeNull();
@@ -462,6 +467,17 @@ describe('save game persistence', () => {
     expect(() => parseGameSave({ ...createSave(), version: 9, generationVersion: 4 })).toThrow(
       'Unsupported Galaxy generation version'
     );
+  });
+
+  it('retires generation-six local identities without changing the save schema or portable progress', () => {
+    const old = { ...createSave(), generationVersion: 6 };
+    const migrated = parseGameSave(old);
+    expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
+    expect(migrated.migratedFromGenerationVersion).toBe(6);
+    expect(migrated.version).toBe(old.version);
+    expect(migrated.player).toEqual(old.player);
+    expect(migrated.location).toEqual(old.location);
+    expect(old.generationVersion).toBe(6);
   });
 
   it('rejects impossible typed locations and malformed nested state', () => {

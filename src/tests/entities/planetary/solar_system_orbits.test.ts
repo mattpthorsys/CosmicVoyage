@@ -187,9 +187,9 @@ describe('SolarSystem orbital velocities', () => {
     );
 
     expect(secondaryPlanet).toBeTruthy();
-    expect(
-      (system as any).getSecondaryCircumstellarPlanetHosts().map((star: StellarBody) => star.id)
-    ).toContain(secondaryPlanet!.orbitHost.starId);
+    expect((system as any).getLocalCircumstellarPlanetHosts().map((star: StellarBody) => star.id)).toContain(
+      secondaryPlanet!.orbitHost.starId
+    );
 
     const host = system.stars.find((star) => star.id === secondaryPlanet!.orbitHost.starId)!;
     const stableZone = (system as any).getCircumstellarStableZone(host);
@@ -215,7 +215,7 @@ describe('SolarSystem orbital velocities', () => {
     };
     const system = manualSystem(architecture, 'close-binary-no-local-planets');
 
-    expect((system as any).getSecondaryCircumstellarPlanetHosts()).toHaveLength(0);
+    expect((system as any).getLocalCircumstellarPlanetHosts()).toHaveLength(0);
     expect(
       system.planets.some(
         (planet) => planet?.orbitHost.kind === 'circumstellar' && planet.orbitHost.starId === 'B'

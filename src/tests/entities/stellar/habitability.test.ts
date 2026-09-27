@@ -12,6 +12,7 @@ import {
   assessStellarHost,
   calculateHabitableZone,
   isBreathableTerraformingProfile,
+  isInsideHabitableFluxZone,
 } from '../../../entities/habitability';
 import { SolarSystem } from '../../../entities/solar_system';
 import { SystemDataGenerator, SystemMapProperties } from '../../../generation/system_data_generator';
@@ -65,6 +66,39 @@ function scaleReferenceCells(cells: number): number {
 }
 
 describe('habitability and human settlement', () => {
+  it('uses local companion distances instead of pretending a multiple system has one radial HZ', () => {
+    const architecture = createSingleStarArchitecture('G2V', 4.6);
+    architecture.kind = 'triple';
+    const b = createSingleStarArchitecture('G2V', 4.6).stars[0];
+    b.id = 'B';
+    b.systemX = -0.1 * AU_IN_METERS;
+    const c = createSingleStarArchitecture('K2V', 4.6).stars[0];
+    c.id = 'C';
+    c.systemX = 40 * AU_IN_METERS;
+    architecture.stars.push(b, c);
+    const cZone = calculateHabitableZone({ ...architecture, kind: 'single', stars: [c] })!;
+    const position = { systemX: c.systemX + cZone.preferredAu * AU_IN_METERS, systemY: 0 };
+    expect(calculateHabitableZone(architecture)).toBeNull();
+    expect(isInsideHabitableFluxZone(position, architecture)).toBe(true);
+    c.systemX += 20 * AU_IN_METERS;
+    expect(isInsideHabitableFluxZone(position, architecture)).toBe(false);
+    expect(assessStellarHost(architecture, { kind: 'circumstellar', starId: 'C' }).reasons).toContain(
+      'quiet, long-lived K-class host'
+    );
+  });
+
+  it('adds both stellar fluxes and rejects unsupported spectral fits rather than extrapolating', () => {
+    const architecture = createSingleStarArchitecture('G2V', 4.6);
+    const position = { systemX: 1.3 * AU_IN_METERS, systemY: 0 };
+    expect(isInsideHabitableFluxZone(position, architecture)).toBe(true);
+    architecture.kind = 'binary';
+    const b = { ...architecture.stars[0], id: 'B' as const };
+    architecture.stars.push(b);
+    expect(isInsideHabitableFluxZone(position, architecture)).toBe(false);
+    b.starType = 'O';
+    expect(isInsideHabitableFluxZone({ systemX: 100 * AU_IN_METERS, systemY: 0 }, architecture)).toBe(false);
+  });
+
   it('materializes the nearest starting hub with a named habitable colony and major starbase', () => {
     const seed = new PRNG('starting-hub-invariant');
     const generator = new SystemDataGenerator(seed);

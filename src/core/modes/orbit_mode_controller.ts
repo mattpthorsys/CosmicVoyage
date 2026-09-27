@@ -6,6 +6,7 @@ import type { InputManager } from '../input_manager';
 import { createOrbitStellarSources } from '../orbit_stellar_sources';
 import {
   createOrbitScreenModel,
+  getOrbitReferenceLabel,
   getPlanetMapSize,
   OrbitInteractionMode,
   OrbitScreenModel,
@@ -204,9 +205,11 @@ export class OrbitModeController {
     this.landingX = ((Math.floor(this.landingX) % mapSize) + mapSize) % mapSize;
     this.landingY = Math.max(0, Math.min(mapSize - 1, Math.floor(this.landingY)));
     const orbitText =
-      body.orbitDistance <= 0 ? 'none' : `${formatDistanceAu(body.orbitDistance)} from primary`;
+      body.orbitDistance <= 0
+        ? 'none'
+        : `${formatDistanceAu(body.orbitDistance)} about ${getOrbitReferenceLabel(body, parent)}`;
     const signalText = body.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(body.orbitDistance);
-    return `Orbit: ${body.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.mode} | Site ${this.landingX},${this.landingY}.`;
+    return `Orbit: ${body.name} | Orbit ${orbitText} | Radius light time ${signalText} | Mode: ${this.mode} | Site ${this.landingX},${this.landingY}.`;
   }
 
   /** Converts visual time into the body's physical rotation phase. */
@@ -242,7 +245,12 @@ export class OrbitModeController {
       selectedBody.isSurfaceReady() ? 'surface-ready' : 'surface-pending',
       alert,
     ].join('|');
-    if (!this.screenCache || this.screenCache.signature !== signature) {
+    if (
+      !this.screenCache ||
+      this.screenCache.signature !== signature ||
+      this.screenCache.model.parentPlanet !== parentPlanet ||
+      this.screenCache.model.selectedBody !== selectedBody
+    ) {
       this.screenCache = {
         signature,
         model: createOrbitScreenModel({
@@ -254,13 +262,14 @@ export class OrbitModeController {
           landingCursorY: this.landingY,
           rotationPhase: 0,
           illuminationPhase: 0,
-          stellarSources: createOrbitStellarSources(stars, selectedBody),
           alert,
         }),
       };
     }
     return {
       ...this.screenCache.model,
+      // Positions and luminosities are live data, unlike the cached descriptive text.
+      stellarSources: createOrbitStellarSources(stars, selectedBody),
       rotationPhase: this.getRotationPhase(selectedBody, simulatedSecondsPerRealSecond),
       illuminationPhase: this.getIlluminationPhase(),
     };

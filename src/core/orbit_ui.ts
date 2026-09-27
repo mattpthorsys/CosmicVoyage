@@ -50,6 +50,13 @@ export interface OrbitScreenModel {
   alert?: string;
 }
 
+/** Names the centre of the selected body's orbital radius, including a moon's actual parent. */
+export function getOrbitReferenceLabel(selected: Planet, parent: Planet): string {
+  if (selected !== parent) return `planet ${parent.name}`;
+  if (selected.orbitHost.kind === 'circumstellar') return `star ${selected.orbitHost.starId ?? 'A'}`;
+  return selected.orbitHost.kind === 'circumbinary' ? 'AB barycentre' : 'system barycentre';
+}
+
 /** Creates orbit screen model. */
 export function createOrbitScreenModel(args: {
   parentPlanet: Planet;
@@ -77,19 +84,16 @@ export function createOrbitScreenModel(args: {
 
   const atmosphere = selected.effectiveAtmosphere;
   const pressure = atmosphere.pressure < 0.001 ? '~0' : atmosphere.pressure.toFixed(3);
-  const parentSeparation =
-    selected === args.parentPlanet
-      ? selected.orbitDistance
-      : args.parentPlanet.orbitDistance + selected.orbitDistance;
-  const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(parentSeparation);
-  const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(parentSeparation);
+  const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(selected.orbitDistance);
+  const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(selected.orbitDistance);
+  const hostLabel = getOrbitReferenceLabel(selected, args.parentPlanet);
   const classText = describePlanetType(selected.type);
   const temperatureRange = `${selected.effectiveSurfaceTempMin}-${selected.effectiveSurfaceTempMax}K`;
   const description = [
     `Profile: ${selected.name} is a ${classText}. Gravity ${selected.gravity.toFixed(2)}g. Temperature ${selected.effectiveSurfaceTemp}K average, range ${temperatureRange}.`,
     selected.orbitDistance <= 0
       ? 'Orbit: none. Free planetary-mass object in interstellar space.'
-      : `Orbit: ${orbitText} from the system primary. One-way signal delay ${signalText}.`,
+      : `Orbit: ${orbitText} about ${hostLabel}. Light time across orbital radius ${signalText}.`,
     `Atmosphere: ${atmosphere.density.toLowerCase()}, ${pressure} bar. Hydrosphere: ${selected.effectiveHydrosphere.toLowerCase()}. Lithosphere: ${selected.lithosphere.toLowerCase()}.`,
     selected.type === 'GasGiant' || selected.type === 'IceGiant'
       ? `Resources: atmospheric signatures ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
@@ -123,7 +127,7 @@ export function createOrbitScreenModel(args: {
       `Class ${classText} | Diameter ${selected.diameter.toLocaleString()} km | Density ${selected.density.toFixed(2)} g/cm3`,
       selected.orbitDistance <= 0
         ? 'Orbit none | Light time none'
-        : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Light time ${formatLightTimeFromMeters(selected.orbitDistance)}`,
+        : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Host ${hostLabel} | Radius light time ${signalText}`,
       `Tilt ${((selected.axialTilt * 180) / Math.PI).toFixed(1)} deg | Rot ${selected.getRotationPeriodLabel()} | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
       `Incl ${((selected.orbitalInclination * 180) / Math.PI).toFixed(1)} deg`,
       `Temp now ${selected.getCurrentTemperature()}K | Avg ${selected.surfaceTemp}K | Range ${selected.surfaceTempMin}-${selected.surfaceTempMax}K`,

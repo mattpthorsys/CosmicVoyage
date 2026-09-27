@@ -54,6 +54,14 @@ system summaries, `SolarSystem` materializes planets, and habitability and
 settlement rules add deterministic overlays. Station eligibility must not be
 decided independently before planets exist.
 
+`SolarSystem` clones the catalogue's stellar architecture before advancing live
+orbits. In triples, the inner A/B pair moves around its own moving barycentre;
+the system origin remains the total stellar barycentre. Planets and stations
+carry explicit orbital hosts. `entities/orbital_stability.ts` supplies the
+shared circular-orbit screening limits for generation and habitability.
+See [the multi-star audit](../multi-star-audit.md) for assumptions and remaining
+scientific/gameplay limitations.
+
 ### Application and gameplay
 
 `src/core` and `src/systems` coordinate player actions and mutate game state.
@@ -106,7 +114,7 @@ result immediately.
 Subscriptions return an idempotent disposer:
 
 ```ts
-const unsubscribe = eventManager.subscribe(GameEvents.PLAYER_FUEL_CHANGED, payload => {
+const unsubscribe = eventManager.subscribe(GameEvents.PLAYER_FUEL_CHANGED, (payload) => {
   // React to the typed notification.
 });
 

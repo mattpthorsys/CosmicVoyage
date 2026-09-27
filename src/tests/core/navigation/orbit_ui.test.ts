@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MineralRichness } from '../../../constants';
+import { AU_IN_METERS, MineralRichness } from '../../../constants';
 import { Planet } from '../../../entities/planet';
 import { PlanetCharacteristics } from '../../../entities/planet/planet_characteristics_generator';
 import { PRNG } from '../../../utils/prng';
-import { createOrbitScreenModel } from '../../../core/orbit_ui';
+import { createOrbitScreenModel, getOrbitReferenceLabel } from '../../../core/orbit_ui';
+import { formatDistanceAu, formatLightTimeFromMeters } from '../../../utils/space_scale';
 
 /** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
@@ -35,6 +36,40 @@ function createCharacteristics(): PlanetCharacteristics {
 }
 
 describe('Orbit UI formatting', () => {
+  it('names the actual stellar host and uses a moon radius without adding its parent orbit', () => {
+    const parent = new Planet(
+      'C-I',
+      'IceGiant',
+      AU_IN_METERS,
+      0,
+      new PRNG('host-label'),
+      'G',
+      createCharacteristics(),
+      undefined,
+      { kind: 'circumstellar', starId: 'C' }
+    );
+    const moon = new Planet('C-I.1', 'Lunar', 4e8, Math.PI, new PRNG('moon-label'), 'G');
+    parent.moons.push(moon);
+    expect(getOrbitReferenceLabel(parent, parent)).toBe('star C');
+    expect(getOrbitReferenceLabel(moon, parent)).toBe('planet C-I');
+    for (const body of [parent, moon]) {
+      const model = createOrbitScreenModel({
+        parentPlanet: parent,
+        selectedBody: body,
+        selectedIndex: body === parent ? 0 : 1,
+        mode: 'overview',
+        landingCursorX: 0,
+        landingCursorY: 0,
+        rotationPhase: 0,
+        illuminationPhase: 0,
+      });
+      expect(model.description[1]).toBe(
+        `Orbit: ${formatDistanceAu(body.orbitDistance)} about ${getOrbitReferenceLabel(body, parent)}. Light time across orbital radius ${formatLightTimeFromMeters(body.orbitDistance)}.`
+      );
+      expect(model.description[1]).not.toContain('system primary');
+    }
+  });
+
   it('describes planet classes and shows no orbit for free-floating primaries', () => {
     const planet = new Planet(
       'Rogue Ice',

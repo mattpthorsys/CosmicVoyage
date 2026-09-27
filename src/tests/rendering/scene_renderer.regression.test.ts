@@ -429,6 +429,38 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it('centres a depot orbit on its moving host rather than the system origin', () => {
+    const { buffer } = createMockScreenBuffer(120, 60);
+    const context = new DrawingContext(buffer);
+    const drawOrbit = vi.spyOn(context, 'drawOrbit');
+    const renderer = new SceneRenderer(buffer, context, new NebulaRenderer(), {} as SystemDataGenerator);
+    const player = new Player();
+    player.position.systemX = 0;
+    player.position.systemY = 0;
+    const scale = 1e10;
+    const depot = new Starbase('hosted-depot', new PRNG('hosted-depot'), 'Regression', 'automated-depot');
+    depot.orbitHost = { kind: 'circumbinary' };
+    depot.orbitDistance = 5 * scale;
+    depot.systemX = 15 * scale;
+    depot.systemY = 4 * scale;
+    const system = createSystem();
+    Object.defineProperty(system, 'starbase', { value: depot });
+    const getCentre = vi.spyOn(system, 'getOrbitCenter').mockReturnValue({ x: 10 * scale, y: 4 * scale });
+    renderer.drawSolarSystem(player, system, scale);
+    expect(getCentre).toHaveBeenCalledWith(depot.orbitHost);
+    expect(drawOrbit).toHaveBeenCalledWith(
+      70,
+      34,
+      5,
+      GLYPHS.ORBIT_CHAR,
+      CONFIG.STARBASE_COLOUR,
+      0,
+      0,
+      119,
+      59
+    );
+  });
+
   it('does not draw background stars while travelling on a planet surface', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(100, 54);
     const renderer = createSceneRenderer(buffer);

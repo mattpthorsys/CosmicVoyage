@@ -833,7 +833,7 @@ export class SystemDataGenerator {
     ];
 
     if (kind === 'binary' || kind === 'triple') {
-      const companionType = this.generateCompanionStarType(primaryStarType, architecturePRNG);
+      const companionType = this.generateCompanionStarType(primaryStarType, ageGyr, architecturePRNG);
       stars.push(
         this.createStarBody('B', systemName, companionType, ageGyr, metallicityFeH, {
           center: 'barycenter',
@@ -845,7 +845,7 @@ export class SystemDataGenerator {
     }
 
     if (kind === 'triple') {
-      const companionType = this.generateCompanionStarType(primaryStarType, architecturePRNG);
+      const companionType = this.generateCompanionStarType(primaryStarType, ageGyr, architecturePRNG);
       stars.push(
         this.createStarBody('C', systemName, companionType, ageGyr, metallicityFeH, {
           center: 'barycenter',
@@ -867,7 +867,7 @@ export class SystemDataGenerator {
   }
 
   /** Generates companion star type. */
-  private generateCompanionStarType(primaryStarType: string, prng: PRNG): string {
+  private generateCompanionStarType(primaryStarType: string, ageGyr: number, prng: PRNG): string {
     const primaryClass = primaryStarType.charAt(0);
     const coolBias: Record<string, string[]> = {
       O: ['B', 'A', 'F', 'G'],
@@ -882,10 +882,16 @@ export class SystemDataGenerator {
       Y: ['Y', 'T'],
     };
     const broadType = prng.choice(coolBias[primaryClass] ?? ['M', 'K', 'G'])!;
+    const primaryMass = (SPECTRAL_TYPES[primaryStarType] ?? SPECTRAL_TYPES.G).mass;
     const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
-      (key) => key.startsWith(broadType) && (key.endsWith('V') || /^[LTY]\d$/.test(key))
+      (key) =>
+        key.startsWith(broadType) &&
+        (key.endsWith('V') || /^[LTY]\d$/.test(key)) &&
+        SPECTRAL_TYPES[key].mass <= primaryMass &&
+        ageGyr <= estimateMainSequenceLifetimeGyr(key) * 0.92
     );
-    return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : broadType;
+    // Coeval main-sequence companions must still be alive and no more massive than the designated primary.
+    return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : primaryStarType;
   }
 
   /** Creates star body. */

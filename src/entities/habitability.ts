@@ -7,7 +7,8 @@ import {
   estimateStellarActivity,
   getSpectralClass,
 } from './stellar_environment';
-import type { StellarArchitecture, StellarBody } from './stellar_body';
+import type { OrbitHost, StellarArchitecture, StellarBody } from './stellar_body';
+import { isOrbitWithinStableRange } from './orbital_stability';
 
 export type TerraformingStage = 'partial' | 'complete';
 
@@ -46,7 +47,10 @@ export interface HabitabilityAssessment {
 }
 
 /** Assesses whether a stellar architecture is quiet and long-lived enough for open-air terraforming. */
-export function assessStellarHost(architecture: StellarArchitecture): StellarHostAssessment {
+export function assessStellarHost(
+  architecture: StellarArchitecture,
+  host?: OrbitHost
+): StellarHostAssessment {
   if (architecture.kind === 'starless' || architecture.stars.length === 0) {
     return {
       score: 0,
@@ -57,7 +61,10 @@ export function assessStellarHost(architecture: StellarArchitecture): StellarHos
   }
 
   const primary =
-    architecture.stars.find((star) => star.id === architecture.primaryStarId) ?? architecture.stars[0];
+    architecture.stars.find(
+      (star) =>
+        star.id === (host?.kind === 'circumstellar' ? (host.starId ?? 'A') : architecture.primaryStarId)
+    ) ?? architecture.stars[0];
   const spectralClass = getSpectralClass(primary.starType);
   const subtype = getSpectralSubtype(primary.starType);
   const lifetimeGyr = estimateMainSequenceLifetimeGyr(primary.starType);
@@ -68,7 +75,7 @@ export function assessStellarHost(architecture: StellarArchitecture): StellarHos
 
   if (spectralClass === 'O' || spectralClass === 'B' || spectralClass === 'A') {
     score -= 100;
-    reasons.push('short-lived high-energy primary');
+    reasons.push('short-lived high-energy host');
   } else if (spectralClass === 'F' && subtype < 5) {
     score -= 72;
     reasons.push('early-F ultraviolet output and limited stable lifetime');
@@ -77,10 +84,10 @@ export function assessStellarHost(architecture: StellarArchitecture): StellarHos
     reasons.push('late-F host requires strong ultraviolet shielding');
   } else if (spectralClass === 'G') {
     score -= subtype >= 7 ? 0 : 7;
-    reasons.push('long-lived solar-class primary');
+    reasons.push('long-lived solar-class host');
   } else if (spectralClass === 'K') {
     score += subtype <= 5 ? 8 : 2;
-    reasons.push('quiet, long-lived K-class primary');
+    reasons.push('quiet, long-lived K-class host');
   } else if (spectralClass === 'M') {
     if (subtype <= 3 && primary.environment.ageGyr >= 3.5) {
       score -= 24;
@@ -91,7 +98,7 @@ export function assessStellarHost(architecture: StellarArchitecture): StellarHos
     }
   } else {
     score -= 100;
-    reasons.push('substellar primary cannot support ordinary open-air terraforming');
+    reasons.push('substellar host cannot support ordinary open-air terraforming');
   }
 
   if (primary.environment.ageGyr < 1.2) {
@@ -123,16 +130,14 @@ export function assessStellarHost(architecture: StellarArchitecture): StellarHos
   };
 }
 
-/** Calculates conservative temperature-dependent habitable-zone limits from the combined stellar luminosity. */
+/** Returns radial HZ limits only where a single central source makes them meaningful. */
 export function calculateHabitableZone(architecture: StellarArchitecture): HabitableZone | null {
-  if (architecture.stars.length === 0) return null;
+  if (architecture.stars.length !== 1) return null;
   const primary =
     architecture.stars.find((star) => star.id === architecture.primaryStarId) ?? architecture.stars[0];
-  const totalLuminositySolar = architecture.stars.reduce(
-    (sum, star) => sum + star.luminosityW / SOLAR_LUMINOSITY_W,
-    0
-  );
+  const totalLuminositySolar = primary.luminosityW / SOLAR_LUMINOSITY_W;
   const temperatureK = SPECTRAL_TYPES[primary.starType]?.temp ?? 5778;
+  if (temperatureK < 2600 || temperatureK > 7200) return null;
   const temperatureOffset = temperatureK - 5780;
   const innerFlux = effectiveStellarFlux(temperatureOffset, 'inner');
   const outerFlux = effectiveStellarFlux(temperatureOffset, 'outer');
@@ -146,24 +151,47 @@ export function calculateHabitableZone(architecture: StellarArchitecture): Habit
   };
 }
 
+/**
+ * Screens the current position using each star's spectrum and inverse-square irradiance.
+ * This is an instantaneous flux test, not a guarantee of an orbit-wide stable climate.
+ */
+export function isInsideHabitableFluxZone(
+  position: { systemX: number; systemY: number },
+  architecture: StellarArchitecture
+): boolean {
+  if (architecture.stars.length === 0) return false;
+  let inner = 0;
+  let outer = 0;
+  for (const star of architecture.stars) {
+    const distanceAu =
+      Math.hypot(position.systemX - star.systemX, position.systemY - star.systemY) / AU_IN_METERS;
+    if (!(distanceAu > 0)) return false;
+    const temperature = SPECTRAL_TYPES[star.starType]?.temp ?? 5778;
+    // The conservative-HZ fit is calibrated for 2600-7200 K, not hot stars or brown dwarfs.
+    if (temperature < 2600 || temperature > 7200) return false;
+    const fluxSolar = star.luminosityW / SOLAR_LUMINOSITY_W / (distanceAu * distanceAu);
+    inner += fluxSolar / effectiveStellarFlux(temperature - 5780, 'inner');
+    outer += fluxSolar / effectiveStellarFlux(temperature - 5780, 'outer');
+  }
+  return inner <= 1 && outer >= 1;
+}
+
 /** Scores a generated solid planet for complete or partial terraforming. */
 export function assessPlanetHabitability(
   planet: Planet,
   architecture: StellarArchitecture
 ): HabitabilityAssessment {
-  const host = assessStellarHost(architecture);
-  const habitableZone = calculateHabitableZone(architecture);
-  const orbitAu = planet.orbitDistance / AU_IN_METERS;
-  const stableOrbit = isPlanetOrbitStable(planet, architecture);
-  const insideConservativeHabitableZone = Boolean(
-    habitableZone && orbitAu >= habitableZone.innerAu && orbitAu <= habitableZone.outerAu
-  );
+  const host = assessStellarHost(architecture, planet.orbitHost);
+  const stableOrbit = isOrbitWithinStableRange(architecture, planet.orbitHost, planet.orbitDistance);
+  const insideConservativeHabitableZone = isInsideHabitableFluxZone(planet, architecture);
   const solid = !['GasGiant', 'IceGiant', 'Hycean', 'DwarfIce', 'Lunar'].includes(planet.type);
   const gravityComplete = planet.gravity >= 0.68 && planet.gravity <= 1.38;
   const gravityPartial = planet.gravity >= 0.42 && planet.gravity <= 1.62;
   const escapeSuitable = planet.escapeVelocity >= 6500;
   const temperatureDelta = Math.abs(planet.surfaceTemp - 287);
   const reasons = [...host.reasons];
+  if (architecture.stars.length > 1)
+    reasons.push('instantaneous multi-star flux; long-term climate not assessed');
   let score = host.score * 0.42;
 
   if (solid) score += 18;
@@ -171,7 +199,7 @@ export function assessPlanetHabitability(
   if (stableOrbit) score += 14;
   else reasons.push('orbit falls outside the architecture stability limit');
   if (insideConservativeHabitableZone) score += 16;
-  else reasons.push('orbit lies outside the conservative liquid-water flux zone');
+  else reasons.push('position does not meet the calibrated conservative liquid-water flux screen');
   if (gravityComplete) score += 14;
   else if (gravityPartial) score += 6;
   else reasons.push('surface gravity is unsuitable for long-term open settlement');
@@ -319,43 +347,6 @@ function effectiveStellarFlux(temperatureOffsetK: number, edge: 'inner' | 'outer
     coefficients.c * t ** 3 +
     coefficients.d * t ** 4
   );
-}
-
-/** Tests a planet against approximate Holman-Wiegert circumstellar or circumbinary limits. */
-function isPlanetOrbitStable(planet: Planet, architecture: StellarArchitecture): boolean {
-  if (architecture.kind === 'single') return true;
-  if (architecture.kind === 'starless' || architecture.stars.length < 2) return false;
-  const primary = architecture.stars[0];
-  const secondary = architecture.stars[1];
-  const totalMass = primary.massKg + secondary.massKg;
-  const mu = secondary.massKg / Math.max(1, totalMass);
-  const eccentricity = 0.2;
-  const binarySeparation = Math.max(0.001, architecture.binarySeparation);
-
-  if (planet.orbitHost.kind === 'circumbinary') {
-    const criticalRatio =
-      1.6 +
-      5.1 * eccentricity -
-      2.22 * eccentricity ** 2 +
-      4.12 * mu -
-      4.27 * eccentricity * mu -
-      5.09 * mu ** 2 +
-      4.61 * eccentricity ** 2 * mu ** 2;
-    return planet.orbitDistance >= criticalRatio * binarySeparation;
-  }
-
-  if (planet.orbitHost.kind === 'circumstellar') {
-    const criticalRatio =
-      0.464 -
-      0.38 * mu -
-      0.631 * eccentricity +
-      0.586 * mu * eccentricity +
-      0.15 * eccentricity ** 2 -
-      0.198 * mu * eccentricity ** 2;
-    return planet.orbitDistance <= criticalRatio * binarySeparation;
-  }
-
-  return false;
 }
 
 /** Extracts the numerical subclass, using a conservative midpoint when absent. */

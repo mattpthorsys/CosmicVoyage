@@ -2,7 +2,7 @@
 
 exports[`Galaxy raster > matches the reviewed default-seed raster fingerprint, including colours and projected positions 1`] = `
 {
-  "hash": 1365406902,
-  "pixels": 6223,
+  "hash": 3605118430,
+  "pixels": 6208,
 }
 `;

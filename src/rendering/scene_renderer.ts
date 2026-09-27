@@ -565,8 +565,9 @@ export class SceneRenderer {
 
     // --- Draw Starbase ---
     if (system.starbase) {
-      const barycenterViewX = Math.floor((0 - viewWorldStartX) / viewScale);
-      const barycenterViewY = Math.floor((0 - viewWorldStartY) / viewScale);
+      const center = system.getOrbitCenter(system.starbase.orbitHost);
+      const barycenterViewX = Math.floor((center.x - viewWorldStartX) / viewScale);
+      const barycenterViewY = Math.floor((center.y - viewWorldStartY) / viewScale);
       this._drawStarbaseInSystem(
         system.starbase,
         barycenterViewX,

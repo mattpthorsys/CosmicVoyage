@@ -4,6 +4,7 @@ import { SystemDataGenerator } from '../../generation/system_data_generator';
 import { SolarSystem } from '../../entities/solar_system';
 import { CONFIG } from '../../config';
 import { Planet } from '../../entities/planet';
+import { estimateMainSequenceLifetimeGyr } from '../../entities/stellar_environment';
 
 /** Finds generated system. */
 function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: number } {
@@ -200,6 +201,26 @@ describe('SystemDataGenerator', () => {
     expect(first.ageGyr).toBeLessThanOrEqual(13.2);
     expect(first.metallicityFeH).toBeGreaterThanOrEqual(-1.75);
     expect(first.metallicityFeH).toBeLessThanOrEqual(0.55);
+  });
+
+  it('generates coeval surviving companions no more massive than their primary', () => {
+    const generator = new SystemDataGenerator(new PRNG('coeval-companion-audit'));
+    let companions = 0;
+    for (let y = -80; y <= 80 && companions < 30; y++) {
+      for (let x = -80; x <= 80 && companions < 30; x++) {
+        const architecture = generator.getSystemProperties(x, y).architecture;
+        if (!architecture || architecture.stars.length < 2) continue;
+        const primary = architecture.stars.find((star) => star.id === 'A')!;
+        for (const star of architecture.stars.filter((candidate) => candidate.id !== 'A')) {
+          expect(star.environment.ageGyr).toBe(primary.environment.ageGyr);
+          expect(star.environment.metallicityFeH).toBe(primary.environment.metallicityFeH);
+          expect(star.massKg).toBeLessThanOrEqual(primary.massKg);
+          expect(star.environment.ageGyr).toBeLessThan(estimateMainSequenceLifetimeGyr(star.starType));
+          companions++;
+        }
+      }
+    }
+    expect(companions).toBeGreaterThanOrEqual(30);
   });
 
   it('keeps system generation independent from parent PRNG consumption and visit order', () => {
