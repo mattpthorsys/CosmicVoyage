@@ -46,7 +46,8 @@ import {
   setQuantitySelectorValue,
 } from './quantity_selector';
 import { createHelpReferenceLines } from './help_reference';
-import { createOrbitScreenModel, getPlanetMapSize, OrbitScreenModel } from './orbit_ui';
+import { getPlanetMapSize, OrbitScreenModel } from './orbit_ui';
+import { OrbitModeController } from './modes/orbit_mode_controller';
 import { formatMissionDetail, generateStarbaseMissions, generateStarbaseNotices } from './mission_board';
 import { MissionProgressService } from './mission_progress';
 import { ScanService } from './scan_service';
@@ -82,7 +83,6 @@ import { createShipStatusDashboard } from './ship_status_dashboard';
 import { TEXT_PALETTE } from '../rendering/text_palette';
 import { createPlayerViewSnapshot, createSceneViewModel } from '../rendering/scene_view_model';
 import {
-  OrbitModeController,
   GameModeDispatcher,
   InterfaceModeController,
   ShipMenuSection,
@@ -168,11 +168,6 @@ interface FrameProfile {
   renderPrepMs: number;
   overlayMs: number;
   fps: number;
-}
-
-interface OrbitScreenCache {
-  signature: string;
-  model: OrbitScreenModel;
 }
 
 interface HyperspaceNavigationContact {
@@ -285,7 +280,6 @@ export class Game {
   private lastNotificationSource: string = '';
   private notificationExpiresAt: number = 0;
   private currentVisualDeltaSeconds = 0;
-  private orbitScreenCache: OrbitScreenCache | null = null;
   private preparingSurfacePlanet: Planet | null = null;
   private profilerVisible: boolean = false;
   private lastFrameProfile: FrameProfile = {
@@ -964,7 +958,7 @@ export class Game {
   /** Handles game state change. */
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
     this.forceFullRender = true; // Always force redraw on state change
-    this.orbitScreenCache = null;
+    this.orbitModeState.invalidateScreen();
     this.lastHyperspaceUpdateSignature = '';
     this.lastHyperspaceUpdateStatus = '';
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
@@ -1407,132 +1401,40 @@ export class Game {
     this.forceFullRender = true;
   }
 
-  /** Handles orbit input. */
+  /** Routes orbital interaction through its controller and publishes location effects. */
   private _handleOrbitInput(): boolean {
-    if (this.stateManager.state !== 'orbit' || !this.stateManager.currentPlanet) {
+    const parentPlanet = this.stateManager.currentOrbitReferencePlanet;
+    if (this.stateManager.state !== 'orbit' || !this.stateManager.currentPlanet || !parentPlanet)
       return false;
-    }
-
-    const bodies = this.getOrbitBodies();
-    if (bodies.length === 0) return false;
-    this.orbitModeState.selectedBodyIndex = clampIndex(this.orbitModeState.selectedBodyIndex, bodies.length);
-    const selectedBody = bodies[this.orbitModeState.selectedBodyIndex];
-    const mapSize = getPlanetMapSize(selectedBody);
-
-    if (this.orbitModeState.mode === 'overview') {
-      if (this.inputManager.wasActionJustPressed('MOVE_LEFT')) {
-        this.orbitModeState.selectedBodyIndex =
-          (this.orbitModeState.selectedBodyIndex - 1 + bodies.length) % bodies.length;
-        this.resetOrbitLandingCursor();
-        this.surveySelectedOrbitBody();
-        this.prefetchOrbitSelectionWindow();
-        this.forceFullRender = true;
-        return true;
-      }
-      if (
-        this.inputManager.wasActionJustPressed('MOVE_RIGHT') ||
-        this.inputManager.wasActionJustPressed('CYCLE_TARGET')
-      ) {
-        this.orbitModeState.selectedBodyIndex = (this.orbitModeState.selectedBodyIndex + 1) % bodies.length;
-        this.resetOrbitLandingCursor();
-        this.surveySelectedOrbitBody();
-        this.prefetchOrbitSelectionWindow();
-        this.forceFullRender = true;
-        return true;
-      }
-      if (
-        this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
-        this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
-        this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
-      ) {
-        if (selectedBody.type === 'GasGiant' || selectedBody.type === 'IceGiant') {
-          this.orbitModeState.alert = 'No solid landing solution for giant-class atmosphere.';
-        } else if (!selectedBody.isSurfaceReady()) {
-          this.orbitModeState.alert = `Preparing ${selectedBody.name} landing data...`;
-          this.prepareOrbitLandingSurface(selectedBody);
-        } else {
-          this.orbitModeState.mode = 'landing';
-          this.orbitModeState.alert = 'Select landing coordinates.';
-        }
-        this.forceFullRender = true;
-        return true;
-      }
-      if (
-        this.inputManager.wasActionJustPressed('QUIT') ||
-        this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')
-      ) {
+    return this.orbitModeState.handleInput(this.inputManager, {
+      parentPlanet,
+      isActive: () =>
+        this.stateManager.state === 'orbit' && this.stateManager.currentOrbitReferencePlanet === parentPlanet,
+      survey: (body) => {
+        const resolution = this.scanService.resolvePlanet(body, 'surveyed', 100, 'orbital-survey');
+        this.completeMissionsForDiscovery(body, resolution.current.level);
+      },
+      prefetch: (bodies) => this.enqueueSurfacePrefetch(bodies),
+      leave: () => {
         this.stateManager.leaveOrbit();
-        if (this.stateManager.statusMessage) {
-          this.statusMessage = this.stateManager.statusMessage;
-          this.stateManager.statusMessage = '';
-        }
+        this.publishOrbitLocationStatus();
+      },
+      land: (body, x, y) => {
+        this.stateManager.landFromOrbit(body, x, y);
+        this.publishOrbitLocationStatus();
+      },
+      invalidate: () => {
         this.forceFullRender = true;
-        return true;
-      }
-      return false;
-    }
+      },
+    });
+  }
 
-    let moved = false;
-    if (
-      this.inputManager.wasActionJustPressed('MOVE_LEFT') ||
-      this.inputManager.isActionActive('MOVE_LEFT')
-    ) {
-      this.orbitModeState.landingX = (this.orbitModeState.landingX - 1 + mapSize) % mapSize;
-      moved = true;
+  /** Consumes the status produced by an orbital location transition. */
+  private publishOrbitLocationStatus(): void {
+    if (this.stateManager.statusMessage) {
+      this.statusMessage = this.stateManager.statusMessage;
+      this.stateManager.statusMessage = '';
     }
-    if (
-      this.inputManager.wasActionJustPressed('MOVE_RIGHT') ||
-      this.inputManager.isActionActive('MOVE_RIGHT')
-    ) {
-      this.orbitModeState.landingX = (this.orbitModeState.landingX + 1) % mapSize;
-      moved = true;
-    }
-    if (this.inputManager.wasActionJustPressed('MOVE_UP') || this.inputManager.isActionActive('MOVE_UP')) {
-      this.orbitModeState.landingY = Math.max(0, this.orbitModeState.landingY - 1);
-      moved = true;
-    }
-    if (
-      this.inputManager.wasActionJustPressed('MOVE_DOWN') ||
-      this.inputManager.isActionActive('MOVE_DOWN')
-    ) {
-      this.orbitModeState.landingY = Math.min(mapSize - 1, this.orbitModeState.landingY + 1);
-      moved = true;
-    }
-    if (moved) {
-      this.orbitModeState.alert = '';
-      this.forceFullRender = true;
-      return true;
-    }
-
-    if (
-      this.inputManager.wasActionJustPressed('QUIT') ||
-      this.inputManager.wasActionJustPressed('LEAVE_SYSTEM')
-    ) {
-      this.orbitModeState.mode = 'overview';
-      this.orbitModeState.alert = 'Landing selection cancelled.';
-      this.forceFullRender = true;
-      return true;
-    }
-
-    if (
-      this.inputManager.wasActionJustPressed('ENTER_SYSTEM') ||
-      this.inputManager.wasActionJustPressed('PRIMARY_ACTION') ||
-      this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
-    ) {
-      this.stateManager.landFromOrbit(
-        selectedBody,
-        this.orbitModeState.landingX,
-        this.orbitModeState.landingY
-      );
-      if (this.stateManager.statusMessage) {
-        this.statusMessage = this.stateManager.statusMessage;
-        this.stateManager.statusMessage = '';
-      }
-      this.forceFullRender = true;
-      return true;
-    }
-
-    return false;
   }
 
   /** Handles target menu input. */
@@ -6016,25 +5918,11 @@ export class Game {
     this.player.render.char = this.player.render.directionGlyph;
   }
 
-  /** Updates orbit. */
+  /** Advances orbital interaction using the visual clock. */
   private _updateOrbit(deltaTime: number): string {
-    const planet = this.stateManager.currentPlanet;
-    if (!planet) return 'Orbit Error: Planet data missing.';
-    this.orbitModeState.elapsedSeconds += this.currentVisualDeltaSeconds || deltaTime;
-    const selectedBody = this.getSelectedOrbitBody();
-    const mapSize = getPlanetMapSize(selectedBody);
-    this.orbitModeState.landingX = ((Math.floor(this.orbitModeState.landingX) % mapSize) + mapSize) % mapSize;
-    this.orbitModeState.landingY = Math.max(
-      0,
-      Math.min(mapSize - 1, Math.floor(this.orbitModeState.landingY))
-    );
-    const orbitText =
-      selectedBody.orbitDistance <= 0
-        ? 'none'
-        : `${formatDistanceAu(selectedBody.orbitDistance)} from primary`;
-    const signalText =
-      selectedBody.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(selectedBody.orbitDistance);
-    return `Orbit: ${selectedBody.name} | Orbit ${orbitText} | Signal ${signalText} | Mode: ${this.orbitModeState.mode} | Site ${this.orbitModeState.landingX},${this.orbitModeState.landingY}.`;
+    const parent = this.stateManager.currentOrbitReferencePlanet;
+    if (!this.stateManager.currentPlanet || !parent) return 'Orbit Error: Planet data missing.';
+    return this.orbitModeState.update(parent, this.currentVisualDeltaSeconds || deltaTime);
   }
 
   /** Updates planet. */
@@ -7188,39 +7076,14 @@ export class Game {
     });
   }
 
-  /** Returns orbit bodies. */
+  /** Returns the local orbital body list from its controller. */
   private getOrbitBodies(): Planet[] {
-    const parent = this.stateManager.currentOrbitReferencePlanet;
-    if (!parent) return [];
-    return [parent, ...parent.moons];
+    return this.orbitModeState.getBodies(this.stateManager.currentOrbitReferencePlanet);
   }
 
-  /** Returns selected orbit body. */
+  /** Resolves the controller's selection against the current orbital reference. */
   private getSelectedOrbitBody(): Planet {
-    const bodies = this.getOrbitBodies();
-    const parent = this.stateManager.currentOrbitReferencePlanet;
-    if (bodies.length === 0 || !parent) {
-      throw new Error('No orbital body selected.');
-    }
-    this.orbitModeState.selectedBodyIndex = clampIndex(this.orbitModeState.selectedBodyIndex, bodies.length);
-    return bodies[this.orbitModeState.selectedBodyIndex];
-  }
-
-  /** Resets orbit landing cursor. */
-  private resetOrbitLandingCursor(): void {
-    const selected = this.getSelectedOrbitBody();
-    const mapSize = getPlanetMapSize(selected);
-    this.orbitModeState.landingX = Math.floor(mapSize / 2);
-    this.orbitModeState.landingY = Math.floor(mapSize / 2);
-    this.orbitModeState.mode = 'overview';
-    this.orbitModeState.alert = '';
-  }
-
-  /** Records an orbital survey for the currently selected local body. */
-  private surveySelectedOrbitBody(): void {
-    const selected = this.getSelectedOrbitBody();
-    const resolution = this.scanService.resolvePlanet(selected, 'surveyed', 100, 'orbital-survey');
-    this.completeMissionsForDiscovery(selected, resolution.current.level);
+    return this.orbitModeState.getSelectedBody(this.stateManager.currentOrbitReferencePlanet);
   }
 
   /** Starts preparing the approached planet and its first two moons before orbital entry. */
@@ -7236,20 +7099,6 @@ export class Game {
     this.enqueueSurfacePrefetch(this.getOrbitBodies().slice(0, 3));
   }
 
-  /** Keeps the selected orbital body and nearby moons prepared ahead of navigation. */
-  private prefetchOrbitSelectionWindow(): void {
-    const bodies = this.getOrbitBodies();
-    if (bodies.length === 0) return;
-    const selected = clampIndex(this.orbitModeState.selectedBodyIndex, bodies.length);
-    const candidates = [
-      bodies[selected],
-      bodies[selected + 1],
-      bodies[selected - 1],
-      bodies[selected + 2],
-    ].filter((planet): planet is Planet => Boolean(planet));
-    this.enqueueSurfacePrefetch(candidates);
-  }
-
   /** Queues unique planetary rendering data and redraws orbit as bodies become ready. */
   private enqueueSurfacePrefetch(planets: Planet[]): void {
     const unique = [...new Set(planets)];
@@ -7262,45 +7111,15 @@ export class Game {
     });
   }
 
-  /** Creates current orbit screen. */
+  /** Builds the orbital view from current location and controller state. */
   private createCurrentOrbitScreen(): OrbitScreenModel {
-    const parentPlanet = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
-    const selectedBody = this.getSelectedOrbitBody();
-    const alert = this.orbitModeState.alert || this.statusMessage;
-    const cacheSignature = [
-      parentPlanet.name,
-      selectedBody.name,
-      this.orbitModeState.selectedBodyIndex,
-      this.orbitModeState.mode,
-      this.orbitModeState.landingX,
-      this.orbitModeState.landingY,
-      selectedBody.discovery.level,
-      selectedBody.scanned ? 'scanned' : 'pending',
-      selectedBody.isSurfaceReady() ? 'surface-ready' : 'surface-pending',
-      alert,
-    ].join('|');
-    if (!this.orbitScreenCache || this.orbitScreenCache.signature !== cacheSignature) {
-      this.orbitScreenCache = {
-        signature: cacheSignature,
-        model: createOrbitScreenModel({
-          parentPlanet,
-          selectedBody,
-          selectedIndex: this.orbitModeState.selectedBodyIndex,
-          mode: this.orbitModeState.mode,
-          landingCursorX: this.orbitModeState.landingX,
-          landingCursorY: this.orbitModeState.landingY,
-          rotationPhase: 0,
-          illuminationPhase: 0,
-          stellarSources: this.getOrbitStellarSources(selectedBody),
-          alert,
-        }),
-      };
-    }
-    return {
-      ...this.orbitScreenCache.model,
-      rotationPhase: this.getOrbitGlobeRotationPhase(selectedBody),
-      illuminationPhase: this.getOrbitGlobeIlluminationPhase(),
-    };
+    const parent = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
+    return this.orbitModeState.createScreen(
+      parent,
+      this.stateManager.currentSystem?.stars ?? [],
+      this.statusMessage,
+      Game.SIMULATED_SECONDS_PER_REAL_SECOND
+    );
   }
 
   /** Starts worker-backed surface preparation and redraws when the current planet becomes ready. */
@@ -7328,99 +7147,6 @@ export class Game {
           this.preparingSurfacePlanet = null;
         }
       });
-  }
-
-  /** Prepares the selected orbit body before exposing landing-site controls. */
-  private prepareOrbitLandingSurface(planet: Planet): void {
-    void planet
-      .prepareSurfaceReady()
-      .then(() => {
-        if (
-          this.stateManager.state === 'orbit' &&
-          this.getSelectedOrbitBody() === planet &&
-          this.orbitModeState.mode === 'overview'
-        ) {
-          this.resetOrbitLandingCursor();
-          this.orbitModeState.mode = 'landing';
-          this.orbitModeState.alert = 'Select landing coordinates.';
-          this.forceFullRender = true;
-        }
-      })
-      .catch((error) => {
-        if (this.stateManager.state === 'orbit' && this.getSelectedOrbitBody() === planet) {
-          this.orbitModeState.alert = `Landing data unavailable: ${
-            error instanceof Error ? error.message : String(error)
-          }`;
-          this.forceFullRender = true;
-        }
-      });
-  }
-
-  /** Uses the strongest local irradiance as the camera's reference light, not the nearest star. */
-  private getOrbitStellarSources(selectedBody: Planet): Array<{
-    id: string;
-    primary: boolean;
-    brightness: number;
-    colour: string;
-    longitudeOffset: number;
-    relativeFlux: number;
-    irradianceWm2: number;
-    temperatureK: number;
-    angularRadius: number;
-  }> {
-    const system = this.stateManager.currentSystem;
-    if (!system || system.stars.length === 0) return [];
-    const starsByFlux = system.stars
-      .map((star) => ({
-        star,
-        distanceSq:
-          Math.pow((star.systemX ?? 0) - (selectedBody.systemX ?? 0), 2) +
-          Math.pow((star.systemY ?? 0) - (selectedBody.systemY ?? 0), 2),
-      }))
-      .map((entry) => ({
-        ...entry,
-        flux: Math.max(0, entry.star.luminosityW) / Math.max(1, entry.distanceSq),
-      }))
-      .sort((a, b) => b.flux - a.flux);
-    const dominantId = starsByFlux[0]?.star.id;
-    const reference = starsByFlux[0]?.star;
-    const referenceBearing = reference
-      ? Math.atan2(reference.systemY - selectedBody.systemY, reference.systemX - selectedBody.systemX)
-      : 0;
-    const baselineFlux = Math.max(Number.MIN_VALUE, starsByFlux[0]?.flux ?? 1);
-    return starsByFlux.slice(0, 3).map(({ star, flux, distanceSq }) => ({
-      id: star.id,
-      primary: star.id === dominantId,
-      relativeFlux: flux / baselineFlux,
-      irradianceWm2: flux / (4 * Math.PI),
-      temperatureK:
-        star.radiusM > 0
-          ? Math.pow(star.luminosityW / (4 * Math.PI * star.radiusM ** 2 * 5.670374419e-8), 0.25)
-          : (SPECTRAL_TYPES[star.starType]?.temp ?? SPECTRAL_TYPES.G.temp),
-      angularRadius: Math.asin(
-        Math.min(1, Math.max(0, star.radiusM || 0) / Math.sqrt(Math.max(1, distanceSq)))
-      ),
-      longitudeOffset:
-        Math.atan2(star.systemY - selectedBody.systemY, star.systemX - selectedBody.systemX) -
-        referenceBearing,
-      brightness: Math.max(0.12, Math.min(1.5, Math.sqrt(flux / baselineFlux))),
-      colour: SPECTRAL_TYPES[star.starType]?.colour ?? SPECTRAL_TYPES.G.colour,
-    }));
-  }
-
-  /** Returns orbit globe rotation phase. */
-  private getOrbitGlobeRotationPhase(body: Planet): number {
-    const rotationPeriodSeconds = body.rotationPeriodHours * 60 * 60;
-    if (!Number.isFinite(rotationPeriodSeconds) || rotationPeriodSeconds <= 0) {
-      return this.orbitModeState.elapsedSeconds * 0.006;
-    }
-    const simulatedSeconds = this.orbitModeState.elapsedSeconds * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
-    return simulatedSeconds / rotationPeriodSeconds;
-  }
-
-  /** Returns orbit globe illumination phase. */
-  private getOrbitGlobeIlluminationPhase(): number {
-    return this.orbitModeState.elapsedSeconds * 0.06;
   }
 
   /** Creates current starbase screen. */

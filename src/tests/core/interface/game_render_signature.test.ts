@@ -165,26 +165,6 @@ describe('Game main render signatures', () => {
     expect(game.getGameDateTimeLabel()).toBe('01 Jan 3015 AD 01:30');
   });
 
-  it('advances orbital globe phase by simulated time over body rotation period', () => {
-    const game = createRenderGateHarness();
-    game.orbitModeState.elapsedSeconds = 40;
-    const body = { rotationPeriodHours: 24 };
-    const simulatedSecondsPerRealSecond = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
-
-    expect(game.getOrbitGlobeRotationPhase(body)).toBeCloseTo(
-      (40 * simulatedSecondsPerRealSecond) / (24 * 60 * 60)
-    );
-  });
-
-  it('keeps orbital illumination cadence separate from physical globe rotation', () => {
-    const game = createRenderGateHarness();
-    game.orbitModeState.elapsedSeconds = 40;
-    const body = { rotationPeriodHours: 24 };
-
-    expect(game.getOrbitGlobeIlluminationPhase()).toBeCloseTo(40 * 0.06);
-    expect(game.getOrbitGlobeRotationPhase(body)).not.toBeCloseTo(game.getOrbitGlobeIlluminationPhase());
-  });
-
   it('suppresses HUD foreground while modal navigation menus are open', () => {
     const game = createRenderGateHarness();
     game.shipMenuOpen = false;

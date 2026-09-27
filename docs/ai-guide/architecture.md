@@ -79,6 +79,11 @@ generate mission outcomes, or mutate player progression.
 - `GameStateManager` owns the active world location and current system/body.
 - `TravelModeController`, `OrbitModeController`, and `SurfaceModeController`
   own mode-specific transient interaction state.
+- `modes/orbit_mode_controller.ts` also owns orbital input, landing preparation,
+  visual time, and cached screen construction. Its effects interface connects
+  surveys, prefetch, location transitions, and redraws to `Game`.
+- `orbit_stellar_sources.ts` converts stellar positions and luminosities to
+  orbital lighting data without depending on `Game` or a renderer.
 - `StarbaseController` owns starbase panel, selection, scrolling, and alert
   state.
 - `ShipOperationsController` owns ship-menu state.

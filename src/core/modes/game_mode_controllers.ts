@@ -1,5 +1,4 @@
-import { CONFIG } from '../../config';
-import { OrbitInteractionMode } from '../orbit_ui';
+export { OrbitModeController } from './orbit_mode_controller';
 
 export type TravelObserveCursor = { mode: 'hyperspace' | 'system'; dx: number; dy: number };
 
@@ -34,25 +33,6 @@ export class TravelModeController {
       this.commandMoving = true;
       this.commandSelection = 0;
     }
-  }
-}
-
-export class OrbitModeController {
-  selectedBodyIndex = 0;
-  mode: OrbitInteractionMode = 'overview';
-  landingX = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
-  landingY = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
-  alert = '';
-  elapsedSeconds = 0;
-
-  /** Resets. */
-  reset(selectedBodyIndex = 0, mapSize = CONFIG.PLANET_MAP_BASE_SIZE): void {
-    this.selectedBodyIndex = Math.max(0, selectedBodyIndex);
-    this.mode = 'overview';
-    this.landingX = Math.floor(mapSize / 2);
-    this.landingY = Math.floor(mapSize / 2);
-    this.alert = '';
-    this.elapsedSeconds = 0;
   }
 }
 
