@@ -8,6 +8,7 @@ import {
 import {
   OrbitAtmosphereSampler,
   OrbitSolarColumnTable,
+  orbitSunlightTransmission,
 } from '../../rendering/scenes/orbit_atmosphere_sampler';
 import { toneMapOrbitRadiance } from '../../rendering/scenes/orbit_tone_map';
 import { getOrbitStellarIrradiance, getOrbitViewExposure } from '../../rendering/scenes/orbit_stellar_light';
@@ -80,6 +81,31 @@ function addRadiance(result: RgbColour, transfer: OrbitAtmosphereTransfer, irrad
 }
 
 describe('prepared orbital atmospheric transfer', () => {
+  it('bounds transmission interpolation error and preserves monotonic extinction', () => {
+    let previous = 1;
+    let maximumIncrease = 0;
+    let maximumRelativeError = 0;
+    // Uneven alignment with the lookup grid exercises interpolation between nodes.
+    for (let index = 0; index < 10001; index++) {
+      const depth = (40 * index) / 10001;
+      const reference = Math.exp(-depth);
+      const actual = orbitSunlightTransmission(depth);
+      maximumRelativeError = Math.max(maximumRelativeError, Math.abs(actual / reference - 1));
+      maximumIncrease = Math.max(maximumIncrease, actual - previous);
+      previous = actual;
+    }
+    expect(maximumRelativeError).toBeLessThan(4.8e-7);
+    expect(maximumIncrease).toBe(0);
+    expect(previous).toBeGreaterThan(0);
+    expect(orbitSunlightTransmission(0)).toBe(1);
+    for (const depth of [40, 40.000001, 64, 1000, Infinity]) {
+      expect(orbitSunlightTransmission(depth)).toBe(0);
+      expect(Math.abs(orbitSunlightTransmission(depth) - Math.exp(-depth))).toBeLessThan(4.3e-18);
+    }
+    expect(orbitSunlightTransmission(-1e-10)).toBe(Math.exp(1e-10));
+    expect(orbitSunlightTransmission(NaN)).toBeNaN();
+  });
+
   it.each(fixtures)('preserves sunlight transmission and the exact shadow boundary for $name', (fixture) => {
     const air = createOrbitAtmosphere(
       fixture.pressure,
@@ -176,6 +202,46 @@ describe('prepared orbital atmospheric transfer', () => {
       scattering: { r: 0, g: 0, b: 0 },
       surface: { r: 0, g: 0, b: 0 },
     });
+  });
+
+  it('preserves inclined multi-star illumination with prepared ray geometry', () => {
+    const air = createOrbitAtmosphere(90, 735, 0.9, 12104, { 'Carbon Dioxide': 96, Nitrogen: 4 })!;
+    const sampler = new OrbitAtmosphereSampler(air);
+    const lights = sources(0.001);
+    const exposure = getOrbitViewExposure(lights);
+    const directions = [
+      { x: 0, y: 1, z: 0 },
+      { x: 1, y: -2, z: -3 },
+      { x: -2, y: -1, z: 3 },
+    ];
+    for (const sign of [-1, 1]) {
+      for (const [x, y] of [
+        [0, 0],
+        [0.4, 0.3],
+        [0.98, 0.14],
+        [-1.002, 0],
+        [0, 1.005],
+        [0, -1.005],
+      ]) {
+        const reference = { r: 0, g: 0, b: 0 };
+        const fast = { r: 0, g: 0, b: 0 };
+        directions.forEach((direction, index) => {
+          const scale = sign / Math.hypot(direction.x, direction.y, direction.z);
+          const sun = { x: direction.x * scale, y: direction.y * scale, z: direction.z * scale };
+          const irradiance = getOrbitStellarIrradiance(lights[index]);
+          addRadiance(reference, sampleOrbitAtmospherePixelTransfer(x, y, 1 / 48, sun, air), irradiance);
+          addRadiance(fast, sampler.samplePixel(x, y, 1 / 48, sun), irradiance);
+        });
+        const expectedColour = toneMapOrbitRadiance(reference, exposure);
+        const actualColour = toneMapOrbitRadiance(fast, exposure);
+        for (const channel of channels) {
+          expect(
+            Math.abs(actualColour[channel] - expectedColour[channel]),
+            `inclined stars, sign ${sign}, pixel ${x},${y}, ${channel}`
+          ).toBeLessThan(0.5);
+        }
+      }
+    }
   });
 
   it('shares prepared rays between stars, resets them on resize, and snapshots optical inputs', () => {

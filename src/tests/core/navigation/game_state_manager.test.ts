@@ -147,6 +147,43 @@ describe('GameStateManager orbital exits', () => {
 });
 
 describe('GameStateManager system entry', () => {
+  it.each(['O', 'B'])('enters a blue %s-type system using the real system generator', (starType) => {
+    const player = new Player();
+    const seed = new PRNG(`blue-star-entry-${starType}`);
+    const generator = new SystemDataGenerator(seed);
+    // Force a rare hot primary in the catalogue, keeping architecture, planets,
+    // moons, and the entire entry transition on the production generation path.
+    const catalogue = vi.spyOn(generator, 'getSystemMapProperties').mockReturnValue({
+      exists: true,
+      starType,
+      name: `Blue ${starType} Regression`,
+      objectKind: 'stellar',
+      hasStarbase: false,
+      stationKind: null,
+      settlementStage: 'none',
+    });
+    const manager = new GameStateManager(player, seed, generator);
+    player.position.worldX = 17;
+    player.position.worldY = -23;
+    player.position.lastWorldMoveDx = 1;
+    player.position.lastWorldMoveDy = 0;
+    try {
+      expect(manager.enterSystem(), manager.statusMessage).toBe(true);
+      expect(manager.state).toBe('system');
+      expect(manager.currentSystem?.starType).toBe(starType);
+      expect(manager.currentSystem?.stars.length).toBeGreaterThan(0);
+      expect(Number.isFinite(player.position.systemX)).toBe(true);
+      expect(Number.isFinite(player.position.systemY)).toBe(true);
+      expect(Math.hypot(player.position.systemX, player.position.systemY)).toBeCloseTo(
+        manager.currentSystem!.edgeRadius * 0.85,
+        0
+      );
+    } finally {
+      catalogue.mockRestore();
+      manager.destroy();
+    }
+  });
+
   it('enters from the bottom of a system after upward hyperspace travel', () => {
     const { player, manager } = createManager();
     const system = { edgeRadius: 1000 };

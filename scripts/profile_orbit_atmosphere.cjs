@@ -1,12 +1,23 @@
 const path = require('node:path');
 const Module = require('node:module');
+const { execFileSync } = require('node:child_process');
 const { buildSync } = require('esbuild');
 
 /** Loads pure TypeScript optics through the project's existing build dependency. */
-function loadOptics(relativePath) {
+function loadOptics(relativePath, gitRef) {
   const filename = path.resolve(relativePath);
+  const input = gitRef
+    ? {
+        stdin: {
+          contents: execFileSync('git', ['show', `${gitRef}:${relativePath}`], { encoding: 'utf8' }),
+          sourcefile: filename,
+          resolveDir: path.dirname(filename),
+          loader: 'ts',
+        },
+      }
+    : { entryPoints: [filename] };
   const output = buildSync({
-    entryPoints: [filename],
+    ...input,
     bundle: true,
     platform: 'node',
     format: 'cjs',
@@ -20,7 +31,17 @@ function loadOptics(relativePath) {
 
 const optics = loadOptics('src/rendering/scenes/orbit_atmosphere.ts');
 const optimized = process.argv.includes('--optimized');
-const samplerModule = optimized ? loadOptics('src/rendering/scenes/orbit_atmosphere_sampler.ts') : null;
+const samplerRef = process.argv
+  .find((arg) => arg.startsWith('--sampler-ref='))
+  ?.slice('--sampler-ref='.length);
+const frameCount = Number(
+  process.argv.find((arg) => arg.startsWith('--frames='))?.slice('--frames='.length) ?? 4
+);
+if (samplerRef && !optimized) throw new Error('--sampler-ref requires --optimized');
+if (!Number.isInteger(frameCount) || frameCount < 2) throw new Error('--frames must be an integer >= 2');
+const samplerModule = optimized
+  ? loadOptics('src/rendering/scenes/orbit_atmosphere_sampler.ts', samplerRef)
+  : null;
 const fixtures = [
   {
     name: 'Earth',
@@ -56,7 +77,7 @@ for (const fixture of fixtures) {
       const setupMs = performance.now() - setupStart;
       const bound = Math.ceil(radius * air.projectedLayers.at(-1) + 1);
       const times = [];
-      for (let frame = 0; frame < 4; frame++) {
+      for (let frame = 0; frame < frameCount; frame++) {
         const start = performance.now();
         for (let y = -bound; y <= bound; y++) {
           for (let x = -bound; x <= bound; x++) {
@@ -78,10 +99,22 @@ for (const fixture of fixtures) {
         stars: starCount,
         setupMs: +setupMs.toFixed(2),
         firstFrameMs: +times[0].toFixed(2),
-        warmMeanMs: +(times.slice(1).reduce((a, b) => a + b, 0) / 3).toFixed(2),
+        warmMeanMs: +(times.slice(1).reduce((a, b) => a + b, 0) / (frameCount - 1)).toFixed(2),
         cache: sampler?.getCacheStats(),
       });
     }
   }
 }
-console.log(JSON.stringify({ mode: optimized ? 'optimized' : 'reference', results, checksum }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      mode: optimized ? 'optimized' : 'reference',
+      samplerRef: samplerRef ?? null,
+      frames: frameCount,
+      results,
+      checksum,
+    },
+    null,
+    2
+  )
+);

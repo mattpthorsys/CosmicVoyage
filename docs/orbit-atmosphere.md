@@ -88,6 +88,20 @@ Planet shadow intersections are evaluated before lookup, so interpolation does
 not smear light through the opaque globe. Out-of-domain points use the direct
 integral. Stellar marker transmission remains directly integrated.
 
+Prepared rays also retain the radius-dependent lookup coordinates, removing two
+square roots from every sun/segment evaluation. A sample position is represented
+by its distance along the camera ray, so its projection toward each star follows
+`camera dot sun + distance * (ray direction dot sun)`. The two freed position
+slots hold the lookup coordinates without enlarging the per-ray buffers.
+
+Sunlight attenuation uses a shared 160 KiB table for `exp(-opticalDepth)`, with
+512 samples per unit optical depth. Linear interpolation has relative error
+bounded by `exp(h) * h^2 / 8 < 4.8e-7`, where `h = 1/512`. Depths of 40 or more
+return zero with absolute transmission error below `4.3e-18`. The table is
+independent of atmosphere and stellar spectrum; each RGB extinction coefficient
+still determines its own optical depth. Camera-path attenuation remains directly
+computed once during ray preparation.
+
 View segments stop only when all RGB view transmissions fall below `1e-14`.
 The remaining single-scattered radiance per unit incident light is bounded by
 `3 / (8 pi)` times that transmission; the independently integrated ground path
@@ -98,7 +112,7 @@ pixel sizes, one/three stars and exposure adaptation. These limits must pass
 before treating the optimization as verified.
 
 The cache holds at most 32,768 prepared rays and 16,384 pixel entries. Numerical
-buffers occupy at most 58 MiB including the column table; bounded JavaScript
+buffers occupy less than 59 MiB including both lookup tables; bounded JavaScript
 object overhead is additional. Beyond that budget, uncached rays are evaluated
 normally without eviction churn. Changing bodies cannot accumulate one cache
 per visited planet.
@@ -111,19 +125,20 @@ globe radius averaged 84.64 ms with one star and 272.61 ms with three. Those
 measurements include CPU-profiling overhead and exclude texture sampling and
 final drawing.
 
-In the uninstrumented repeatable harness, warm dense-CO2 frames at the same
-radius averaged 84.77 ms in the reference and 19.99 ms prepared with one star
-(4.2x faster), and 275.06 ms versus 62.42 ms with three stars (4.4x faster).
-Prepared-table construction took about 24 ms. The prepared one-star first frame
-was 98.88 ms, versus 86.87 ms reference, before including that setup cost; with
-three stars it was 150.21 ms versus 279.07 ms. Thus, one-star scenes pay a short
-initial cost before benefiting from reuse. These are optics-only, machine-
-specific timings, not whole-frame renderer measurements.
+In two 12-frame runs comparing the sampler from `b8f3b75` with the extended
+sampler, warm dense-CO2 frames at a 48-sample globe radius averaged 16.52 ms
+versus 15.63 ms with one star, and 59.12 ms versus 54.02 ms with three (about
+5% and 9% faster). At radius 24, means were 6.28 ms versus 5.92 ms with one
+star, and 22.60 ms versus 19.52 ms with three (about 6% and 14% faster). These
+are optics-only, machine-specific timings, not whole-frame renderer measurements.
 
-For the largest benchmark case the lookup table and prepared-ray buffers retained
-53.8 MB of numeric storage (about 51.3 MiB), with additional JavaScript object
-overhead. The hard numeric-storage ceiling is 58 MiB. There is one active
-sampler, and changing bodies replaces rather than accumulates these caches.
+Earth-like frames were mostly flat: at radius 24, the one-star case averaged
+4.49 ms versus 4.98 ms (11% slower), while the three-star case averaged 17.93 ms
+versus 16.89 ms (6% faster). Prepared-table construction remained about 24 ms.
+The new shared table adds 160 KiB; the largest case retained 53.9 MB (about
+51.4 MiB) of numeric storage, with additional JavaScript object overhead. There
+is one active sampler, and changing bodies replaces rather than accumulates
+these caches.
 
 Run the repeatable optics harness in both modes under the same conditions:
 
@@ -137,10 +152,26 @@ npm run check
 The harness uses identical changing star directions and pixel grids for both
 modes. Its checksum prevents unused work; checksums are not an accuracy metric.
 The raster regression also compares the prepared renderer to the direct path at
-phase 0.2: one of 1,922 globe pixels changes by at most one RGB level, and the
-test limits changed pixels to below 0.1%. All other captured phase fingerprints
-remain unchanged. `tools/orbit-lighting-preview.html` remains useful for manual
+phase 0.2. At `b8f3b75`, one of 1,922 globe pixels changed by at most one RGB
+level, and all other captured phase fingerprints were unchanged. The test limits
+changed pixels to below 0.1%. `tools/orbit-lighting-preview.html` remains useful for manual
 inspection through dawn, dusk and full daylight when changing the model.
+
+The repeatable harness can compare the current sampler with a committed version
+or with the direct integrator:
+
+```sh
+node scripts/profile_orbit_atmosphere.cjs --optimized --sampler-ref=b8f3b75 --frames=12
+node scripts/profile_orbit_atmosphere.cjs --optimized --frames=12
+```
+
+`--sampler-ref` reads only the sampler from Git; its dependencies come from the
+working tree, so comparisons require unchanged optical helpers. Repeat timings
+to distinguish improvement from runtime noise. Setup times cover per-atmosphere
+preparation; the shared attenuation table is initialized once at module load.
+Transmission error-bound, inclined-star, orbital-raster, and direct-integration
+tests all pass with the current lookup resolution. Investigate any changed raster
+before updating snapshots.
 
 ## Limits and extension points
 

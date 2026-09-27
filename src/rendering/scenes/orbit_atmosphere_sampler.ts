@@ -19,6 +19,27 @@ const POINT_STRIDE = 7;
 const MAX_CACHED_RAYS = 32768;
 const MAX_CACHED_PIXELS = 16384;
 const MIN_VIEW_TRANSMITTANCE = 1e-14;
+const TRANSMISSION_SAMPLES_PER_DEPTH = 512;
+const MAX_TRANSMISSION_DEPTH = 40;
+const SUNLIGHT_TRANSMISSION = Float64Array.from(
+  { length: MAX_TRANSMISSION_DEPTH * TRANSMISSION_SAMPLES_PER_DEPTH + 1 },
+  (_, index) => Math.exp(-index / TRANSMISSION_SAMPLES_PER_DEPTH)
+);
+
+/**
+ * Interpolates Beer-Lambert transmission for a nonnegative optical depth.
+ * With h = 1/512, relative interpolation error is bounded by exp(h)*h*h/8
+ * (less than 4.8e-7). Discarding depths >= 40 loses at most exp(-40) < 4.3e-18.
+ * One table serves all wavelengths and atmospheres: only optical depth changes.
+ */
+export function orbitSunlightTransmission(opticalDepth: number): number {
+  if (!(opticalDepth >= 0)) return Math.exp(-opticalDepth);
+  if (opticalDepth >= MAX_TRANSMISSION_DEPTH) return 0;
+  const coordinate = opticalDepth * TRANSMISSION_SAMPLES_PER_DEPTH;
+  const index = Math.floor(coordinate);
+  const fraction = coordinate - index;
+  return SUNLIGHT_TRANSMISSION[index] * (1 - fraction) + SUNLIGHT_TRANSMISSION[index + 1] * fraction;
+}
 
 /**
  * Density columns from a point to the top of a spherical atmosphere.
@@ -54,6 +75,16 @@ export class OrbitSolarColumnTable {
 
   /** Looks up a sunlight column from squared radius and the signed projection toward the star. */
   sample(radiusSquared: number, along: number): number {
+    return this.samplePrepared(
+      radiusSquared,
+      along,
+      Math.sqrt(Math.max(0, radiusSquared - 1)),
+      this.air.outerRadius - Math.sqrt(radiusSquared)
+    );
+  }
+
+  /** Reuses a point's fixed ground-tangent distance and radial distance to the shell boundary. */
+  samplePrepared(radiusSquared: number, along: number, rho: number, minimum: number): number {
     const impact2 = Math.max(0, radiusSquared - along * along);
     if (along < 0 && impact2 < 1) return Infinity;
     const end = Math.sqrt(Math.max(0, this.topSquared - impact2));
@@ -61,8 +92,6 @@ export class OrbitSolarColumnTable {
     if (!(this.tangentLength > 0) || radiusSquared < 1 || radiusSquared > this.topSquared) {
       return integrateOrbitDensityColumn(impact2, along, end, this.air);
     }
-    const rho = Math.sqrt(Math.max(0, radiusSquared - 1));
-    const minimum = this.air.outerRadius - Math.sqrt(radiusSquared);
     const range = rho + this.tangentLength - minimum;
     const u = Math.max(0, Math.min(COLUMN_WIDTH - 1, ((end - along - minimum) / range) * (COLUMN_WIDTH - 1)));
     const v = Math.max(0, Math.min(COLUMN_HEIGHT - 1, (rho / this.tangentLength) * (COLUMN_HEIGHT - 1)));
@@ -83,7 +112,7 @@ interface PreparedRay {
   direction: OrbitVector;
   normal: OrbitVector | null;
   groundTransmission: RgbColour;
-  /** Per segment: x, y, z, radius squared, and the three view-path scattering weights. */
+  /** Per segment: ray distance, radius squared, rho, minimum, and three view-path scattering weights. */
   points: Float64Array;
   count: number;
 }
@@ -106,14 +135,15 @@ export class OrbitAtmosphereSampler {
 
   private readonly air: OrbitAtmosphere;
 
-  /** Reports retained numerical storage for offline profiling; JavaScript object overhead is additional. */
+  /** Includes the shared transmission table; JavaScript object overhead is additional. */
   getCacheStats(): { pixels: number; rays: number; numericBytes: number } {
     return {
       pixels: this.pixels.size,
       rays: this.cachedRays,
       numericBytes:
         (COLUMN_WIDTH * COLUMN_HEIGHT + this.cachedRays * VIEW_STEPS * POINT_STRIDE) *
-        Float64Array.BYTES_PER_ELEMENT,
+          Float64Array.BYTES_PER_ELEMENT +
+        SUNLIGHT_TRANSMISSION.byteLength,
     };
   }
 
@@ -189,10 +219,13 @@ export class OrbitAtmosphereSampler {
       const pz = ORBIT_CAMERA_DISTANCE + vz * t;
       const densityStep = Math.exp(-Math.max(0, Math.hypot(px, py, pz) - 1) / air.scaleHeight) * step;
       const offset = i * POINT_STRIDE;
-      points[offset] = px;
-      points[offset + 1] = py;
-      points[offset + 2] = pz;
-      points[offset + 3] = px * px + py * py + pz * pz;
+      const radiusSquared = px * px + py * py + pz * pz;
+      // Position is camera + direction*t. Keeping t frees two slots for the
+      // radius-only sunlight coordinates without increasing the ray cache.
+      points[offset] = t;
+      points[offset + 1] = radiusSquared;
+      points[offset + 2] = Math.sqrt(Math.max(0, radiusSquared - 1));
+      points[offset + 3] = air.outerRadius - Math.sqrt(radiusSquared);
       points[offset + 4] = Math.exp(-k.r * column) * -Math.expm1(-k.r * densityStep);
       points[offset + 5] = Math.exp(-k.g * column) * -Math.expm1(-k.g * densityStep);
       points[offset + 6] = Math.exp(-k.b * column) * -Math.expm1(-k.b * densityStep);
@@ -219,6 +252,7 @@ export class OrbitAtmosphereSampler {
   private accumulateRay(ray: PreparedRay, sun: OrbitVector, result: OrbitAtmosphereTransfer): void {
     const k = this.air.extinction;
     const cosine = ray.direction.x * sun.x + ray.direction.y * sun.y + ray.direction.z * sun.z;
+    const cameraAlong = ORBIT_CAMERA_DISTANCE * sun.z;
     const phase = (3 * (1 + cosine * cosine)) / (16 * Math.PI);
     const points = ray.points;
     let r = 0;
@@ -226,12 +260,17 @@ export class OrbitAtmosphereSampler {
     let b = 0;
     for (let i = 0; i < ray.count; i++) {
       const offset = i * POINT_STRIDE;
-      const along = points[offset] * sun.x + points[offset + 1] * sun.y + points[offset + 2] * sun.z;
-      const column = this.sunlight.sample(points[offset + 3], along);
+      const along = cameraAlong + points[offset] * cosine;
+      const column = this.sunlight.samplePrepared(
+        points[offset + 1],
+        along,
+        points[offset + 2],
+        points[offset + 3]
+      );
       if (!Number.isFinite(column)) continue;
-      r += Math.exp(-k.r * column) * points[offset + 4];
-      g += Math.exp(-k.g * column) * points[offset + 5];
-      b += Math.exp(-k.b * column) * points[offset + 6];
+      r += orbitSunlightTransmission(k.r * column) * points[offset + 4];
+      g += orbitSunlightTransmission(k.g * column) * points[offset + 5];
+      b += orbitSunlightTransmission(k.b * column) * points[offset + 6];
     }
     result.scattering.r += r * phase * ray.area;
     result.scattering.g += g * phase * ray.area;
@@ -242,9 +281,9 @@ export class OrbitAtmosphereSampler {
       if (incidence > 0) {
         const column = this.sunlight.sample(n.x * n.x + n.y * n.y + n.z * n.z, incidence);
         const diffuse = (incidence / Math.PI) * ray.area;
-        result.surface.r += diffuse * ray.groundTransmission.r * Math.exp(-k.r * column);
-        result.surface.g += diffuse * ray.groundTransmission.g * Math.exp(-k.g * column);
-        result.surface.b += diffuse * ray.groundTransmission.b * Math.exp(-k.b * column);
+        result.surface.r += diffuse * ray.groundTransmission.r * orbitSunlightTransmission(k.r * column);
+        result.surface.g += diffuse * ray.groundTransmission.g * orbitSunlightTransmission(k.g * column);
+        result.surface.b += diffuse * ray.groundTransmission.b * orbitSunlightTransmission(k.b * column);
       }
     }
   }
