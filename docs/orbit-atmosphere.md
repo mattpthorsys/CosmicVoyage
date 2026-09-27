@@ -1,8 +1,10 @@
 # Orbital sunrise and sunset
 
-Atmospheric planets use a clear-gas, single-scattering approximation over the
-entire disc and limb. The star, terrain terminator, planet shadow, and atmosphere use the
-same pinhole camera (currently three planet radii from the centre).
+All planets use the same spectral irradiance, linear surface reflectance, and
+display exposure. Atmospheric planets add a clear-gas, single-scattering
+approximation over the entire disc and limb. The star, terrain terminator,
+planet shadow, and atmosphere use the same pinhole camera (currently three
+planet radii from the centre).
 
 ## Inputs and calculation
 
@@ -20,6 +22,12 @@ same pinhole camera (currently three planet radii from the centre).
   strength through mean squared polarizability. Unknown gases use air-equivalent
   properties. The outer shell extends until its blue tangent optical depth is
   approximately below `1e-4`, bounded to 8-20 scale heights.
+  Pressure and composition control this calculation; descriptive density labels
+  do not disable a physically present atmosphere. For extended envelopes with
+  `H / radius > 0.02`, an equivalent shell limits the geometric scale height to
+  0.02 and increases extinction by `physical H / rendered H`. This preserves
+  vertical optical depth and avoids abruptly losing all haze at the threshold.
+  Its limb geometry is an approximation, not a model of atmospheric escape.
 - Giant textures already represent visible clouds. Only the gas above that
   optical boundary is added: representative cloud-top pressures of 0.5 bar for
   gas giants and 0.3 bar for ice giants, bounded by the stored pressure. These
@@ -41,6 +49,8 @@ same pinhole camera (currently three planet radii from the centre).
   linear reflectance and multiply this surface term before scattering is added.
   Both terms use the same stellar irradiance. Liquid materials retain a bounded
   gloss approximation aligned to each star, attenuated along the same paths.
+  Airless worlds use the same expression with optical depths set to zero,
+  matching the zero-pressure limit instead of changing to a separate shading model.
 - Pixels crossing the solid limb integrate surface and atmospheric light over
   the same footprint. Surface coverage is included once. Interior pixels also
   receive atmospheric transfer, so there is no artificial boundary at 90% of
@@ -50,19 +60,20 @@ same pinhole camera (currently three planet radii from the centre).
   partial occultation. Diffuse scattering uses the central stellar direction
   (small-source approximation) to keep frame costs practical.
 
-Absolute irradiance controls both atmosphere and reflected terrain light on
-atmospheric worlds. One exposure is shared by terrain, atmosphere, and direct
-stellar markers. It follows the sum of visible stellar irradiance, approximating
-an observer whose eyes have adapted to the available light; a small lower bound
-keeps extremely faint systems dark. After combining light, the tone curve
+Absolute irradiance controls both atmosphere and reflected terrain light for
+all body types. One exposure convention is shared by terrain, atmosphere, and
+direct stellar markers. It follows the sum of visible stellar irradiance as an
+adapted instrument view, including very faint illumination. This is not a model
+of human dark adaptation or detector noise. Zero illumination still produces
+zero reflected light; dark hemispheres remain dark unless another star lights
+them. Real albedo and spectral differences remain visible. After combining light, the tone curve
 compresses luminance once, then scales red, green, and blue together before
 gamma encoding. This preserves surface and stellar colours at high exposure.
 There is no separate rim boost, radial fade, artificial surface haze, or
 surface-only highlight compression. A faint blue daylight limb remains physically
 possible; no orbital-phase mask forces it to disappear. Warm twilight is determined
 by grazing light paths and the planet's shadow. Output pixels are not calibrated
-radiometry. Airless bodies and envelopes outside the model retain the existing
-material shading path.
+radiometry.
 Legacy UI fixtures without physical source data default to a solar spectrum and
 Earth-level irradiation scaled by their relative flux.
 
@@ -180,7 +191,8 @@ aerosols, dust, ozone/other absorption bands, refraction, multiple scattering,
 stellar limb darkening, and atmospheric escape are not calculated. In particular,
 a dense clear CO2 example is **not** a prediction of Venus's cloudy appearance;
 dust-free thin CO2 is **not** a prediction of a dusty Martian sunset. Very extended
-envelopes (`H / radius > 0.02`) are outside this model and are skipped. Large
+envelopes (`H / radius > 0.02`) use the equivalent optical shell described above;
+their true extended geometry requires a separate vertical-structure model. Large
 apparent stars would require disc-integrated diffuse scattering.
 Dense clear atmospheres can obscure rocky terrain completely; predicting giant
 cloud-top heights instead of using representative defaults needs vertical structure. The current
@@ -207,6 +219,7 @@ rim contrast and occultation colour must be reviewed together at the same exposu
 
 - [Bruneton's atmospheric scattering equations and reference implementation](https://ebruneton.github.io/precomputed_atmospheric_scattering/atmosphere/functions.glsl.html)
 - [Physically Based Rendering: Planck spectra and blackbody emission](https://www.pbr-book.org/3ed-2018/Light_Sources/Light_Emission)
+- [Physically Based Rendering: Lambertian reflection](https://www.pbr-book.org/3ed-2018/Reflection_Models/Lambertian_Reflection)
 - [NASA SAGE: Sunsets and Atmosphere, including orbital photographs](https://sage.nasa.gov/wp/wp-content/uploads/2015/05/Sunsets_and_Atmosphere_K-5.pdf)
 - [NIST CCCBDB: experimental molecular polarizabilities](https://cccbdb.nist.gov/pollistx.asp)
 - [NASA: Jupiter cloud layers and pressure levels](https://science.nasa.gov/photojournal/jupiter-clouds-in-depth/)

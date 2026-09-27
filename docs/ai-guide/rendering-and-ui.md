@@ -86,13 +86,17 @@ This is a bounded visual approximation, not a spectral radiative-transfer solver
 common gases use molecular masses and approximate cross sections scaled by
 [NIST polarizabilities](https://cccbdb.nist.gov/pollistx.asp); unsupported species
 use air-equivalent optical properties. It omits absorption bands, dust, clouds,
-multiple scattering, refraction, finite stellar discs and mutual-body eclipses.
+multiple scattering, refraction and mutual-body eclipses. Stellar markers sample
+finite discs; diffuse scattering still uses point-source directions.
 Do not infer orange CO2 sunsets or strongly forward-peaked scattering from
 molecules alone. See [NASA's planetary sunset comparison](https://www.nasa.gov/solar-system/nasa-scientist-simulates-sunsets-on-other-worlds/)
 and the [single-scattering formulation](https://ebruneton.github.io/precomputed_atmospheric_scattering/atmosphere/functions.glsl.html).
-Display exposure is artistic; atmospheric scale height and occultation geometry
-are not enlarged to manufacture a glow. Very extended envelopes (H/R > 0.02)
-are outside this thin-shell model. Terrain shading remains a low-cost visual model.
+Display exposure adapts to combined visible stellar irradiance for both bare and
+atmospheric worlds; both use the same linear reflectance and per-star lighting.
+Pressure, composition, temperature, and gravity determine haze, not density labels.
+Very extended envelopes (H/R > 0.02) use a compact equivalent shell preserving
+vertical optical depth instead of being discarded. Its limb geometry is only an
+approximation; see `docs/orbit-atmosphere.md` before extending it.
 
 With Vite running, `tools/orbit-lighting-preview.html` provides an actual-canvas
 phase comparison for atmospheric and airless bodies. Colour-and-position regression

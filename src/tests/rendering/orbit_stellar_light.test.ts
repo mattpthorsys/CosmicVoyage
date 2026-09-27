@@ -27,6 +27,15 @@ describe('physical orbit starlight', () => {
     expect(getOrbitViewExposure([sun, { ...sun, id: 'B', primary: false }])).toBeCloseTo(single / 2, 10);
     expect(getOrbitViewExposure([{ ...sun, irradianceWm2: 0 }])).toBeLessThan(Infinity);
   });
+
+  it('continues exposure adaptation below the old outer-system brightness floor', () => {
+    const exposure = getOrbitViewExposure([sun]);
+    for (const fluxFraction of [1e-4, 1e-8, 1e-12]) {
+      const source = { ...sun, irradianceWm2: sun.irradianceWm2 * fluxFraction };
+      expect((getOrbitViewExposure([source]) * fluxFraction) / exposure).toBeCloseTo(1, 10);
+    }
+    expect(Number.isFinite(getOrbitViewExposure([]))).toBe(true);
+  });
   it('preserves absolute irradiance and treats zero output as darkness', () => {
     expect(getOrbitStellarIrradiance(sun)).toEqual({ r: 1, g: 1, b: 1 });
     expect(getOrbitStellarIrradiance({ ...sun, irradianceWm2: sun.irradianceWm2 / 4 })).toEqual({

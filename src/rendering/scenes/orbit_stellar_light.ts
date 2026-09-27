@@ -12,9 +12,10 @@ export function getOrbitViewExposure(sources: readonly OrbitStellarSource[]): nu
     const rgb = getOrbitStellarIrradiance(source);
     return total + rgb.r * 0.2126 + rgb.g * 0.7152 + rgb.b * 0.0722;
   }, 0);
-  // The floor keeps extremely faint systems dark while ordinary outer-system
-  // planets remain legible after the observer has adapted to local starlight.
-  return Math.PI / Math.max(0.0005, visibleFlux);
+  // This is an adapted instrument view: distance must not change material colour
+  // or legibility. Zero incident light still produces zero reflected radiance.
+  if (!Number.isFinite(visibleFlux) || visibleFlux <= 0) return 1;
+  return Math.PI / Math.max(1e-300, visibleFlux);
 }
 
 /** Samples Planck spectra at the Rayleigh model's RGB wavelengths, relative to sunlight at Earth. */

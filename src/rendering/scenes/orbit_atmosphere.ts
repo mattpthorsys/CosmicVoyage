@@ -39,7 +39,7 @@ export function createBodyOrbitAtmosphere(
   body: Pick<Planet, 'type' | 'effectiveAtmosphere' | 'effectiveSurfaceTemp' | 'gravity' | 'diameter'>
 ): OrbitAtmosphere | null {
   const air = body.effectiveAtmosphere;
-  if (!air || air.density === 'None') return null;
+  if (!air) return null;
   // Giant textures already depict clouds, not a surface beneath the deep gas
   // envelope. These representative cloud-top pressures are rendering defaults,
   // not predictions of cloud condensation (see docs/orbit-atmosphere.md).
@@ -79,11 +79,19 @@ export function createOrbitAtmosphere(
   const molarMass = abundance ? mass / abundance : 28.965;
   const scatteringRatio = abundance ? polarizability2 / abundance / 1.68 ** 2 : 1;
   const radiusM = diameterKm * 500;
-  const scaleHeight = (8314.46 * temperatureK) / (molarMass * gravityG * 9.80665 * radiusM);
-  // A thin-shell approximation is not valid for an extended escaping envelope.
-  if (scaleHeight > 0.02) return null;
+  const physicalScaleHeight = (8314.46 * temperatureK) / (molarMass * gravityG * 9.80665 * radiusM);
+  if (!Number.isFinite(physicalScaleHeight) || physicalScaleHeight <= 0) return null;
+  // Extended envelopes need a vertical-structure model. Until then, use an
+  // equivalent compact shell preserving vertical optical depth, rather than
+  // abruptly removing the atmosphere when H/R crosses the geometric limit.
+  const scaleHeight = Math.min(physicalScaleHeight, 0.02);
   // The stored pressure is bar; the reference Rayleigh coefficients use 101325 Pa.
-  const density = (pressureBar / 1.01325) * (288.15 / temperatureK) * radiusM * scatteringRatio;
+  const density =
+    (pressureBar / 1.01325) *
+    (288.15 / temperatureK) *
+    radiusM *
+    scatteringRatio *
+    (physicalScaleHeight / scaleHeight);
   const extinction = { r: 5.8e-6 * density, g: 13.5e-6 * density, b: 33.1e-6 * density };
   // Dense atmospheres can remain optically significant beyond eight scale heights.
   // Stop where the largest tangent optical depth falls below 1e-4 (bounded isothermal model).

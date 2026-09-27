@@ -204,7 +204,7 @@ function createAtmosphericOrbitPlanet(): Planet {
 }
 
 /** Creates featureless orbit planet. */
-function createFeaturelessOrbitPlanet(colour: string = '#B8B8B8'): Planet {
+function createFeaturelessOrbitPlanet(colour: string = '#B8B8B8', pressure = 0): Planet {
   const planet = Object.create(Planet.prototype) as Planet;
   Object.defineProperties(planet, {
     name: { value: 'Featureless Regression' },
@@ -219,7 +219,7 @@ function createFeaturelessOrbitPlanet(colour: string = '#B8B8B8'): Planet {
     orbitalInclination: { value: 0.03 },
     tidallyLocked: { value: false },
     moons: { value: [] },
-    atmosphere: { value: { density: 'None', pressure: 0, composition: {} } },
+    atmosphere: { value: { density: pressure > 0 ? 'Thin' : 'None', pressure, composition: {} } },
     getCurrentTemperature: { value: () => 291 },
   });
   return planet;
@@ -1419,6 +1419,70 @@ describe('SceneRenderer visual regressions', () => {
     expect(sourceAt(0.4125, 0.00465)).toBeUndefined();
   });
 
+  it('keeps bare and tenuous-atmosphere worlds on the same spectral exposure model', () => {
+    const solar: OrbitStellarSource = {
+      id: 'A',
+      primary: true,
+      brightness: 1,
+      colour: '#FFFFFF',
+      irradianceWm2: 1361,
+      temperatureK: 5772,
+    };
+    /** Captures the illuminated centre through the complete orbit renderer. */
+    const centre = (pressure: number, stellarSources: OrbitStellarSource[], material = '#B8B8B8') => {
+      const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
+      const planet = createFeaturelessOrbitPlanet(material, pressure);
+      createSceneRenderer(buffer).drawOrbitInterface({
+        title: '',
+        subtitle: '',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [],
+        mode: 'overview',
+        rotationPhase: 0,
+        illuminationPhase: 0.9124647812994575,
+        stellarSources,
+        landingCursorX: 0,
+        landingCursorY: 0,
+        mapSize: 32,
+        description: [],
+        telemetry: [],
+        footer: [],
+      });
+      return hexToRgb(
+        drawCalls.find((call) => call.char === GLYPHS.BLOCK && call.x === 24 && call.y === 27)!.fg
+      );
+    };
+    const cool = { ...solar, temperatureK: 3000 };
+    const triple = [
+      cool,
+      { ...solar, id: 'B', primary: false, temperatureK: 12000, irradianceWm2: 300, longitudeOffset: 0.3 },
+      { ...solar, id: 'C', primary: false, temperatureK: 6000, irradianceWm2: 400, longitudeOffset: -0.5 },
+    ];
+    for (const sources of [[solar], [cool], triple]) {
+      const bare = centre(0, sources);
+      const tenuous = centre(1e-8, sources);
+      const distantSources = sources.map((source) => ({
+        ...source,
+        irradianceWm2: source.irradianceWm2! * 1e-10,
+      }));
+      const distantBare = centre(0, distantSources);
+      const distantAir = centre(1e-8, distantSources);
+      for (const channel of ['r', 'g', 'b'] as const) {
+        expect(bare[channel]).toBeGreaterThan(20);
+        expect(Math.abs(tenuous[channel] - bare[channel])).toBeLessThanOrEqual(1);
+        expect(Math.abs(distantBare[channel] - bare[channel])).toBeLessThanOrEqual(1);
+        expect(Math.abs(distantAir[channel] - tenuous[channel])).toBeLessThanOrEqual(1);
+      }
+    }
+    const neutral = centre(0, [solar]);
+    const warm = centre(0, [cool]);
+    expect(warm.r / warm.b).toBeGreaterThan(neutral.r / neutral.b);
+    expect(centre(0, [solar], '#CCCCCC').g).toBeGreaterThan(centre(0, [solar], '#444444').g * 2);
+    expect(centre(0, [{ ...solar, irradianceWm2: 0 }])).toEqual({ r: 0, g: 0, b: 0 });
+    expect(centre(1e-8, [{ ...solar, irradianceWm2: 0 }])).toEqual({ r: 0, g: 0, b: 0 });
+  });
+
   it('adapts distant atmospheric worlds without losing stellar spectral differences', () => {
     const solar: OrbitStellarSource = {
       id: 'A',
@@ -1468,7 +1532,7 @@ describe('SceneRenderer visual regressions', () => {
         energy(sources, phase).map((value, i) => value - background[i]);
       const full = scattered([solar]);
       const binary = scattered([solar, { ...solar, id: 'B', primary: false }]);
-      for (const distance of [2, 20]) {
+      for (const distance of [2, 20, 2000]) {
         const distant = scattered([
           {
             ...solar,
@@ -1601,7 +1665,9 @@ describe('SceneRenderer visual regressions', () => {
       mode: 'overview',
       stellarSources: [{ id: 'A', primary: true, brightness: 1, colour: '#FFFACD' }],
       rotationPhase: 0,
-      illuminationPhase: 0.2,
+      // Keep the source close to the camera axis so limb illumination does not
+      // dominate this coverage-only anti-alias regression.
+      illuminationPhase: 0.9124647812994575,
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
@@ -1712,22 +1778,15 @@ describe('SceneRenderer visual regressions', () => {
   it('places ocean glint near the specular star-view alignment', () => {
     const { buffer } = createMockScreenBuffer(80, 40);
     const renderer = createSceneRenderer(buffer) as any;
-    const subsolarLongitude = -0.55;
-    const subsolarLatitude = 0.12;
-    const cosSunLat = Math.cos(subsolarLatitude);
-    const sunVector = {
-      x: cosSunLat * Math.sin(subsolarLongitude),
-      y: Math.sin(subsolarLatitude),
-      z: cosSunLat * Math.cos(subsolarLongitude),
+    const surface = {
+      normal: { x: 0, y: 0, z: 1 },
+      albedo: { r: 30, g: 60, b: 90 },
+      reflectiveColour: { r: 220, g: 235, b: 255 },
+      liquidCoverage: 1,
     };
-    const halfLength = Math.hypot(sunVector.x, sunVector.y, sunVector.z + 1);
-    const specularLongitude = Math.atan2(sunVector.x / halfLength, (sunVector.z + 1) / halfLength);
-    const specularLatitude = Math.asin(sunVector.y / halfLength);
-
-    const specular = renderer.calculateLiquidGlint(specularLongitude, specularLatitude, 0.98);
-    const offAngle = renderer.calculateLiquidGlint(specularLongitude + 1.2, specularLatitude + 0.45, 0.98);
-
-    expect(specular).toBeGreaterThan(0.05);
-    expect(offAngle).toBeLessThan(specular * 0.1);
+    const specular = renderer.getOrbitSurfaceReflectance(surface, { x: 0, y: 0, z: 1 });
+    const offAngle = renderer.getOrbitSurfaceReflectance(surface, { x: 0.8, y: 0, z: 0.6 });
+    expect(specular.r).toBeGreaterThan(offAngle.r * 5);
+    expect(specular.b).toBeGreaterThan(offAngle.b * 5);
   });
 });

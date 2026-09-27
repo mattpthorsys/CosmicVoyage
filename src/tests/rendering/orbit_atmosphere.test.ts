@@ -39,10 +39,44 @@ describe('orbital molecular scattering', () => {
     expect(
       createBodyOrbitAtmosphere({
         ...body,
-        effectiveAtmosphere: { ...body.effectiveAtmosphere, density: 'None' },
+        effectiveAtmosphere: { ...body.effectiveAtmosphere, density: 'None', pressure: 0 },
       })
     ).toBeNull();
     expect(body.effectiveAtmosphere.pressure).toBe(90);
+  });
+
+  it('uses physical gas properties consistently regardless of atmosphere density labels', () => {
+    const body = {
+      type: 'Rock',
+      effectiveAtmosphere: { density: 'Dense', pressure: 1, composition: { Nitrogen: 78, Oxygen: 22 } },
+      effectiveSurfaceTemp: 288.15,
+      gravity: 1,
+      diameter: 12742,
+    };
+    const reference = createBodyOrbitAtmosphere(body);
+    expect(reference).not.toBeNull();
+    for (const density of ['Thin', 'Trace', 'Earth-like', 'None']) {
+      expect(
+        createBodyOrbitAtmosphere({ ...body, effectiveAtmosphere: { ...body.effectiveAtmosphere, density } })
+      ).toEqual(reference);
+    }
+  });
+
+  it('retains hydrogen haze across the shell-height limit and conserves its vertical optical depth', () => {
+    const cool = createOrbitAtmosphere(1, 300, 1, 12742, { Hydrogen: 100 })!;
+    const warm = createOrbitAtmosphere(1, 320, 1, 12742, { Hydrogen: 100 })!;
+    expect(cool).not.toBeNull();
+    expect(warm).not.toBeNull();
+    expect(cool.scaleHeight).toBeLessThan(0.02);
+    expect(warm.scaleHeight).toBe(0.02);
+    for (const channel of ['r', 'g', 'b'] as const) {
+      expect(warm.extinction[channel] * warm.scaleHeight).toBeCloseTo(
+        cool.extinction[channel] * cool.scaleHeight,
+        10
+      );
+    }
+    const scattering = sampleOrbitAtmosphere(1.01, 0, { x: 0, y: 0, z: 1 }, warm);
+    expect(scattering.b).toBeGreaterThan(0);
   });
   it('captures subpixel contact light at different limb angles without changing the display grid', () => {
     for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 6) {

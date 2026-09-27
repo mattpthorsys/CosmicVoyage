@@ -100,8 +100,6 @@ interface OrbitProjectionCell {
 }
 
 interface OrbitGlobeTransform {
-  lights?: OrbitLight[];
-  orbitPhase: number;
   cosPhase: number;
   sinPhase: number;
   cosTilt: number;
@@ -110,7 +108,6 @@ interface OrbitGlobeTransform {
 
 interface OrbitLight {
   direction: OrbitVector;
-  weight: number;
   irradiance: RgbColour;
 }
 
@@ -1708,15 +1705,9 @@ export class SceneRenderer {
     const lights = model.stellarSources.map((source) => {
       return {
         direction: orbitSunDirection(orbitPhase - (source.longitudeOffset ?? 0)),
-        weight: source.relativeFlux ?? (source.primary ? 1 : 0),
         irradiance: getOrbitStellarIrradiance(source),
       };
     });
-    const totalFlux = lights.reduce((sum, light) => sum + light.weight, 0);
-    if (totalFlux > 0) {
-      for (const light of lights) light.weight /= totalFlux;
-    }
-    globeTransform.lights = lights.filter((light) => light.weight > 0);
     const cachedSurface = this.getCachedSolidSurfaceData(planet);
     const solidMap =
       planet.type === 'GasGiant' || planet.type === 'IceGiant' ? null : (cachedSurface?.heightmap ?? null);
@@ -1748,9 +1739,14 @@ export class SceneRenderer {
       if (!surface && !atmosphere) continue;
       // Atmospheric transfer includes the surface's subpixel coverage already.
       // Applying the separate silhouette mask again would darken the limb twice.
-      let finalColour = atmosphereSampler
-        ? this.composeOrbitAtmosphere(surface, cell, detailRadius, atmosphereSampler, lights, exposure)
-        : this.shadeOrbitGlobeSurface(planet, surface!, globeTransform);
+      let finalColour = this.composeOrbitRadiance(
+        surface,
+        cell,
+        detailRadius,
+        atmosphereSampler,
+        lights,
+        exposure
+      );
       if (!atmosphere && cell.coverage < 1)
         finalColour = interpolateColour(background, finalColour, cell.coverage);
       if (cell.coverage === 0 && finalColour.r < 1 && finalColour.g < 1 && finalColour.b < 1) continue;
@@ -1879,47 +1875,12 @@ export class SceneRenderer {
     };
   }
 
-  /** Retains the existing material shading for bodies outside the clear-atmosphere model. */
-  private shadeOrbitGlobeSurface(
-    planet: Planet,
-    surface: OrbitSurfaceSample,
-    globeTransform: OrbitGlobeTransform
-  ): RgbColour {
-    const { normal, albedo, liquidCoverage, reflectiveColour } = surface;
-    const { z } = normal;
-    const illuminationLongitude = Math.atan2(normal.x, z) + globeTransform.orbitPhase;
-    const viewLatitude = Math.asin(Math.max(-1, Math.min(1, normal.y)));
-    const incidentLight = globeTransform.lights?.reduce(
-      (sum, light) => sum + Math.max(0, orbitSolarIncidence(normal, light.direction)) * light.weight,
-      0
-    );
-    const light = this.calculateGlobeLighting(planet, illuminationLongitude, viewLatitude, z, incidentLight);
-    let brightness = light.brightness;
-    if (liquidCoverage > 0) {
-      const liquidBrightness = this.calculateLiquidGlobeBrightness(
-        light.brightness,
-        illuminationLongitude,
-        viewLatitude,
-        z
-      );
-      brightness += (liquidBrightness - light.brightness) * liquidCoverage;
-    }
-    const baseColour = adjustBrightness(albedo, brightness);
-    return liquidCoverage > 0 && reflectiveColour
-      ? interpolateColour(
-          baseColour,
-          reflectiveColour,
-          this.calculateLiquidGlint(illuminationLongitude, viewLatitude, z) * light.glyph * liquidCoverage
-        )
-      : baseColour;
-  }
-
-  /** Combines attenuated reflected light and scattering in the same linear radiance units. */
-  private composeOrbitAtmosphere(
+  /** Applies the same per-star radiance and exposure to bare terrain, clouds, and atmospheric gas. */
+  private composeOrbitRadiance(
     surface: OrbitSurfaceSample | null,
     cell: OrbitProjectionCell,
     radius: number,
-    sampler: OrbitAtmosphereSampler,
+    sampler: OrbitAtmosphereSampler | null,
     lights: OrbitLight[],
     exposure: number
   ): RgbColour {
@@ -1928,11 +1889,19 @@ export class SceneRenderer {
     // stellar marker needs disc integration at this raster's angular resolution.
     for (const light of lights) {
       if (light.irradiance.r + light.irradiance.g + light.irradiance.b <= 0) continue;
-      const value = sampler.samplePixel(cell.dx / radius, -cell.dy / radius, 1 / radius, light.direction);
       const reflectance = this.getOrbitSurfaceReflectance(surface, light.direction);
-      radiance.r += (reflectance.r * value.surface.r + value.scattering.r) * light.irradiance.r;
-      radiance.g += (reflectance.g * value.surface.g + value.scattering.g) * light.irradiance.g;
-      radiance.b += (reflectance.b * value.surface.b + value.scattering.b) * light.irradiance.b;
+      if (sampler) {
+        const value = sampler.samplePixel(cell.dx / radius, -cell.dy / radius, 1 / radius, light.direction);
+        radiance.r += (reflectance.r * value.surface.r + value.scattering.r) * light.irradiance.r;
+        radiance.g += (reflectance.g * value.surface.g + value.scattering.g) * light.irradiance.g;
+        radiance.b += (reflectance.b * value.surface.b + value.scattering.b) * light.irradiance.b;
+      } else if (surface) {
+        // The zero-pressure limit of the atmospheric model is Lambertian reflection.
+        const diffuse = Math.max(0, orbitSolarIncidence(surface.normal, light.direction)) / Math.PI;
+        radiance.r += reflectance.r * diffuse * light.irradiance.r;
+        radiance.g += reflectance.g * diffuse * light.irradiance.g;
+        radiance.b += reflectance.b * diffuse * light.irradiance.b;
+      }
     }
     // One exposure follows combined stellar irradiance and retains colour ratios.
     return toneMapOrbitRadiance(radiance, exposure);
@@ -1985,7 +1954,6 @@ export class SceneRenderer {
     const phase = Number.isFinite(orbitPhase) ? orbitPhase : 0;
     const tilt = Number.isFinite(axialTilt) ? axialTilt : 0;
     return {
-      orbitPhase: phase,
       cosPhase: Math.cos(phase),
       sinPhase: Math.sin(phase),
       cosTilt: Math.cos(tilt),
@@ -2100,62 +2068,6 @@ export class SceneRenderer {
     const boost = Math.max(1.08, Math.min(1.62, 1.22 + brightness * 0.24));
     const brightened = adjustBrightness(base, boost);
     return rgbToHex(brightened.r, brightened.g, brightened.b);
-  }
-
-  /** Calculates globe lighting. */
-  private calculateGlobeLighting(
-    planet: Planet,
-    longitude: number,
-    latitude: number,
-    viewNormalZ: number,
-    incidentLight?: number
-  ): { brightness: number; glyph: number } {
-    const incidence =
-      incidentLight ??
-      orbitSolarIncidence(
-        {
-          x: Math.cos(latitude) * Math.sin(longitude),
-          y: Math.sin(latitude),
-          z: Math.cos(latitude) * Math.cos(longitude),
-        },
-        orbitSunDirection(0)
-      );
-    const mu0 = Math.max(0, incidence);
-    const terminator = Math.max(0, Math.min(1, mu0 / 0.14));
-    const dayMask = terminator * terminator * (3 - 2 * terminator);
-    const nightMask = 1 - dayMask;
-    const mu = Math.max(0.03, viewNormalZ);
-    const isGiant = planet.type === 'GasGiant' || planet.type === 'IceGiant';
-    const atmosphere = planet.effectiveAtmosphere;
-    const pressure = atmosphere?.pressure ?? 0;
-    const density = atmosphere?.density ?? 'None';
-    const hasDenseAir =
-      pressure >= 0.75 || density === 'Dense' || density === 'Thick' || density === 'Superdense';
-    const isAirlessRegolith =
-      planet.type === 'Lunar' ||
-      planet.type === 'DwarfIce' ||
-      planet.type === 'Chthonian' ||
-      density === 'None' ||
-      density === 'Trace';
-
-    if (isGiant) {
-      const day = Math.pow(mu0, 0.62);
-      const limb = 0.55 + 0.45 * Math.pow(mu, 0.7);
-      const twilight = (1 - nightMask) * 0.05 * (1 - mu);
-      const brightness = Math.max(0.09, Math.min(1.18, 0.09 + day * limb * 1.02 + twilight));
-      return { brightness, glyph: Math.max(0.04, Math.min(1, day * (0.72 + 0.28 * mu))) };
-    }
-
-    if (isAirlessRegolith) {
-      const litFace = dayMask * (0.88 + 0.12 * Math.pow(mu, 0.35));
-      const brightness = Math.max(0.06, Math.min(1.08, 0.06 + litFace * 1.02));
-      return { brightness, glyph: Math.max(0.03, Math.min(1, litFace)) };
-    }
-
-    const day = Math.pow(mu0, hasDenseAir ? 0.52 : 0.78);
-    const limb = hasDenseAir ? 0.78 + 0.22 * mu : 0.66 + 0.34 * mu;
-    const brightness = Math.max(0.07, Math.min(1.16, 0.07 + day * limb * 0.99));
-    return { brightness, glyph: Math.max(0.07, Math.min(1, day * (0.84 + 0.16 * mu))) };
   }
 
   /** Smoothly interpolates a value between two thresholds. */
@@ -2276,49 +2188,6 @@ export class SceneRenderer {
       );
     this.giantPaletteCache.set(planet, palette);
     return palette;
-  }
-
-  /** Calculates liquid globe brightness. */
-  private calculateLiquidGlobeBrightness(
-    baseBrightness: number,
-    longitude: number,
-    latitude: number,
-    viewNormalZ: number
-  ): number {
-    return Math.max(
-      0.05,
-      Math.min(1.32, baseBrightness + this.calculateLiquidGlint(longitude, latitude, viewNormalZ) * 0.22)
-    );
-  }
-
-  /** Calculates liquid glint. */
-  private calculateLiquidGlint(longitude: number, latitude: number, viewNormalZ: number): number {
-    const cosLat = Math.cos(latitude);
-    const surfaceNormal = {
-      x: cosLat * Math.sin(longitude),
-      y: Math.sin(latitude),
-      z: cosLat * Math.cos(longitude),
-    };
-    const sunVector = this.getGlobeSunVector(0);
-    const incidence =
-      surfaceNormal.x * sunVector.x + surfaceNormal.y * sunVector.y + surfaceNormal.z * sunVector.z;
-    const sunVisible = Math.max(0, incidence);
-    const viewVisible = Math.max(0, viewNormalZ);
-    const reflected = {
-      x: 2 * incidence * surfaceNormal.x - sunVector.x,
-      y: 2 * incidence * surfaceNormal.y - sunVector.y,
-      z: 2 * incidence * surfaceNormal.z - sunVector.z,
-    };
-    const reflectedLength = Math.hypot(reflected.x, reflected.y, reflected.z);
-    if (reflectedLength <= 0) return 0;
-    const specularAlignment = Math.max(0, reflected.z / reflectedLength);
-    const limbFade = Math.min(1, viewVisible / 0.28);
-    return Math.pow(specularAlignment, 70) * Math.pow(sunVisible, 0.9) * limbFade;
-  }
-
-  /** Returns the shared light direction used by globe shading and star projection. */
-  private getGlobeSunVector(illuminationPhaseRadians: number): { x: number; y: number; z: number } {
-    return orbitSunDirection(illuminationPhaseRadians);
   }
 
   /** Converts projected latitude to a wrapped Mercator texture coordinate. */
