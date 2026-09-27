@@ -300,6 +300,15 @@ export const SPECTRAL_TYPES: Record<string, SpectralTypeInfo> = {
   L: L_TYPE,
   T: T_TYPE,
   Y: Y_TYPE,
+  // Compact remnant display/physics profile, not a main-sequence spectral class.
+  NS: {
+    temp: 100000,
+    colour: '#AFC8FF',
+    char: GLYPHS.STAR_BRIGHT,
+    brightness: 0.5,
+    mass: 1.4 * SOLAR_MASS_KG,
+    radius: 12000,
+  },
   ...generateBrownDwarfSubTypes(
     {
       temp: 2400,

@@ -9,7 +9,7 @@ import { STATUS_MESSAGES } from '../constants/messages';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from './event_manager';
-import { SystemDataGenerator } from '../generation/system_data_generator';
+import { isNavigablePhenomenon, SystemDataGenerator } from '../generation/system_data_generator';
 import { findSystemPlanetByPath, LocationSaveData } from './save_game';
 
 // Define GameState type here or import from a shared types file
@@ -131,13 +131,11 @@ export class GameStateManager {
       return null;
     }
 
-    const basicProps =
-      this.systemDataGenerator.getRoguePlanetSystemProperties(location.worldX, location.worldY) ??
-      this.systemDataGenerator.getSystemProperties(
-        location.worldX,
-        location.worldY,
-        location.systemSlot ?? 0
-      );
+    const basicProps = this.systemDataGenerator.getNavigableSystemProperties(
+      location.worldX,
+      location.worldY,
+      location.systemSlot ?? 0
+    );
     if (!basicProps.exists) {
       throw new Error(`Saved system no longer exists at ${location.worldX},${location.worldY}.`);
     }
@@ -413,17 +411,19 @@ export class GameStateManager {
 
   // --- Private Helper Methods for State Transitions ---
 
-  /** Checks if a star system or explorable rogue planetary-mass object exists at the player's current world coordinates. */
+  /** Checks if a navigable stellar or deep-space object occupies the player's cell. */
   private _canEnterSystemAtCurrentLocation(): boolean {
     return (
       this.systemDataGenerator.getSystemMapProperties(
         this.player.position.worldX,
         this.player.position.worldY
       ).exists ||
-      this.systemDataGenerator.getRoguePlanetSystemProperties(
-        this.player.position.worldX,
-        this.player.position.worldY
-      ) !== null
+      isNavigablePhenomenon(
+        this.systemDataGenerator.getDeepSpacePhenomenonProperties(
+          this.player.position.worldX,
+          this.player.position.worldY
+        )
+      )
     );
   }
 
@@ -432,12 +432,10 @@ export class GameStateManager {
     logger.info(
       `[GameStateManager] Creating system at <span class="math-inline">\{this\.player\.position\.worldX\},</span>{this.player.position.worldY}...`
     );
-    const basicProps =
-      this.systemDataGenerator.getRoguePlanetSystemProperties(
-        this.player.position.worldX,
-        this.player.position.worldY
-      ) ??
-      this.systemDataGenerator.getSystemProperties(this.player.position.worldX, this.player.position.worldY);
+    const basicProps = this.systemDataGenerator.getNavigableSystemProperties(
+      this.player.position.worldX,
+      this.player.position.worldY
+    );
     const system = new SolarSystem(
       basicProps,
       this.player.position.worldX,
@@ -616,9 +614,7 @@ export class GameStateManager {
    */
   peekAtSystem(worldX: number, worldY: number): SolarSystem | null {
     logger.debug(`[GameStateManager] Peeking at system at: ${worldX}, ${worldY}`);
-    const basicProps =
-      this.systemDataGenerator.getRoguePlanetSystemProperties(worldX, worldY) ??
-      this.systemDataGenerator.getSystemProperties(worldX, worldY);
+    const basicProps = this.systemDataGenerator.getNavigableSystemProperties(worldX, worldY);
 
     if (!basicProps.exists) {
       return null;

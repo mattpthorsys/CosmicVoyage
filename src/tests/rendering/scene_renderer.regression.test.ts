@@ -434,6 +434,26 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it('draws a compact neutron-star marker in the local frame', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(80, 40);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+    const seed = new PRNG(CONFIG.SEED);
+    const generator = new SystemDataGenerator(seed);
+    const props = generator.getNeutronStarSystemProperties(-72, -73);
+    expect(props).not.toBeNull();
+    const system = new SolarSystem(props!, -72, -73, seed);
+    player.position.systemX = -0.2 * AU_IN_METERS;
+    player.position.systemY = 0;
+
+    renderer.drawSolarSystem(player, system, AU_IN_METERS / 15);
+
+    expect(drawCalls).toEqual(
+      expect.arrayContaining([expect.objectContaining({ char: '*', x: 43, y: 20, fg: '#AFC8FF' })])
+    );
+    expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
+  });
+
   it('centres a depot orbit on its moving host rather than the system origin', () => {
     const { buffer } = createMockScreenBuffer(120, 60);
     const context = new DrawingContext(buffer);

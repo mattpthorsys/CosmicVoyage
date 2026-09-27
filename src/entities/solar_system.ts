@@ -56,6 +56,7 @@ export class SolarSystem {
   readonly colonyWorld: Planet | null;
   readonly edgeRadius: number; // System boundary radius in meters
   readonly isStarless: boolean;
+  readonly isCompactRemnant: boolean;
   private readonly colonyWorldNames = new Set<string>();
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
@@ -82,6 +83,7 @@ export class SolarSystem {
     };
     this.stars = this.architecture.stars;
     this.isStarless = this.architecture.kind === 'starless' || basicProps.objectKind === 'rogue-planet';
+    this.isCompactRemnant = basicProps.objectKind === 'neutron-star';
     if (!this.isStarless) {
       this.configureStellarOrbits();
       this.updateStarPositions(0);
@@ -110,7 +112,7 @@ export class SolarSystem {
     // Generate planets and their moons
     if (this.isStarless) {
       this.generateRoguePlanetaryMassObject();
-    } else {
+    } else if (!this.isCompactRemnant) {
       this.generatePlanets(); // Uses meter-based distances now
     }
 
@@ -187,7 +189,10 @@ export class SolarSystem {
     // Ensure a minimum size even if no objects generated far out
     this.edgeRadius = this.isStarless
       ? Math.max(0.08 * AU_IN_METERS, maxOrbit_m * CONFIG.SYSTEM_EDGE_RADIUS_FACTOR)
-      : Math.max(5 * AU_IN_METERS, maxOrbit_m * CONFIG.SYSTEM_EDGE_RADIUS_FACTOR); // Min edge 5 AU
+      : Math.max(
+          this.isCompactRemnant ? AU_IN_METERS : 5 * AU_IN_METERS,
+          maxOrbit_m * CONFIG.SYSTEM_EDGE_RADIUS_FACTOR
+        );
     logger.debug(
       `[System:${this.name}] System edge radius calculated: ${this.edgeRadius.toExponential(2)}m (Factor: ${
         CONFIG.SYSTEM_EDGE_RADIUS_FACTOR

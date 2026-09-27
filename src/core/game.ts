@@ -24,6 +24,7 @@ import { AstrometricOverlay } from '../rendering/astrometric_overlay';
 import {
   DeepSpacePhenomenonProperties,
   InterstellarMediumKind,
+  isNavigablePhenomenon,
   SystemDataGenerator,
 } from '../generation/system_data_generator';
 import { StellarBody } from '../entities/stellar_body';
@@ -2874,7 +2875,7 @@ export class Game {
     const phenomenon = props.exists
       ? null
       : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
-    const isNavigable = props.exists || Boolean(phenomenon?.exists && phenomenon.type === 'rogue-planet');
+    const isNavigable = props.exists || isNavigablePhenomenon(phenomenon);
     if (!isNavigable) {
       this.terminalOverlay.addMessageLines([
         '<h>LONG-RANGE OBSERVATION</h>',
@@ -2893,14 +2894,16 @@ export class Game {
       this.statusMessage = 'Observation contact unresolved.';
       return;
     }
-    const quality = this.getInterstellarObservationQuality(cursor, props.starType, props.objectKind);
+    const observedStarType = phenomenon?.type === 'neutron-star' ? 'NS' : props.starType;
+    const observedKind = phenomenon?.type === 'neutron-star' ? 'neutron-star' : props.objectKind;
+    const quality = this.getInterstellarObservationQuality(cursor, observedStarType, observedKind);
     const lines = this.formatInterstellarObserveReport(
       target,
       worldX,
       worldY,
       quality,
-      props.starType,
-      props.objectKind
+      observedStarType,
+      observedKind
     );
     this.terminalOverlay.addMessageLines(lines);
     this.player.awardCrewExperience('astroscience', quality.confidence >= 60 ? 6 : 3);
@@ -2971,7 +2974,7 @@ export class Game {
   private getInterstellarObservationQuality(
     cursor: TravelObserveCursor,
     starType: string | null,
-    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null
+    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | 'neutron-star' | null
   ): { confidence: number; rangeCells: number; label: string; signature: string; rangeLabel: string } {
     const rangeCells = Math.hypot(cursor.dx, cursor.dy);
     const starInfo = starType ? SPECTRAL_TYPES[starType] : null;
@@ -2983,7 +2986,9 @@ export class Game {
     const sourceStrength =
       objectKind === 'rogue-planet'
         ? 0.18
-        : Math.max(0.12, Math.min(1.35, brightnessSignal * 0.66 + radiusSignal * 0.34));
+        : objectKind === 'neutron-star'
+          ? 0.75 // The periodic radio beacon resolves better than the tiny optical disc.
+          : Math.max(0.12, Math.min(1.35, brightnessSignal * 0.66 + radiusSignal * 0.34));
     const capabilityBonus = getOperationalCapabilities(
       this.player.crew,
       this.player.ship
@@ -3027,19 +3032,21 @@ export class Game {
     worldY: number,
     quality: { confidence: number; rangeCells: number; label: string; signature: string; rangeLabel: string },
     starType: string | null,
-    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null
+    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | 'neutron-star' | null
   ): string[] {
     const classLabel =
-      objectKind === 'rogue-planet'
-        ? 'planetary-mass object'
-        : objectKind === 'brown-dwarf'
-          ? 'substellar infrared source'
-          : 'stellar source';
+      objectKind === 'neutron-star'
+        ? 'compact stellar remnant'
+        : objectKind === 'rogue-planet'
+          ? 'planetary-mass object'
+          : objectKind === 'brown-dwarf'
+            ? 'substellar infrared source'
+            : 'stellar source';
     const identity =
       quality.confidence >= 72
         ? `${target.name} ${starType ?? target.starType}`
         : quality.confidence >= 48
-          ? `${starType ? `${starType.slice(0, 1)}-class ` : ''}${classLabel}`
+          ? `${objectKind === 'neutron-star' ? '' : starType ? `${starType.slice(0, 1)}-class ` : ''}${classLabel}`
           : quality.label;
     const facilityTrace =
       quality.confidence >= 72 && target.starbase
@@ -3242,6 +3249,26 @@ export class Game {
   private _formatStarScanPopup(target: SolarSystem | StellarBody): string[] {
     const lines: string[] = [];
     const system = target instanceof SolarSystem ? target : null;
+    const remnantSystem = system ?? (target.starType === 'NS' ? this.stateManager?.currentSystem : null);
+    if (remnantSystem?.isCompactRemnant && (target === remnantSystem || target === remnantSystem.stars[0])) {
+      const phenomenon = this.systemDataGenerator.getDeepSpacePhenomenonProperties(
+        remnantSystem.starX,
+        remnantSystem.starY
+      );
+      const star = remnantSystem.stars[0];
+      return [
+        '',
+        `<h>--- COMPACT REMNANT SCAN: ${remnantSystem.name} ---</h>`,
+        'Classification: <hl>NEUTRON STAR / PULSAR</hl>',
+        `Pulse timing: <hl>${phenomenon.signal ?? 'unresolved'}</hl>`,
+        `Mass: <hl>~${(star.massKg / SPECTRAL_TYPES.G.mass).toFixed(1)} solar masses</hl>`,
+        `Radius: <hl>~${(star.radiusM / 1000).toFixed(0)} km</hl>`,
+        `Thermal surface: <hl>~${SPECTRAL_TYPES.NS.temp.toLocaleString()} K</hl> (emission mainly ultraviolet / X-ray)`,
+        'No surviving planetary bodies resolved in this local frame.',
+        '<h>--- SCAN COMPLETE ---</h>',
+        '',
+      ];
+    }
     if (system?.isStarless) {
       const primaryBody = system.planets.find((planet) => planet !== null);
       lines.push(``);
@@ -3487,7 +3514,7 @@ export class Game {
         this.player.position.worldX,
         this.player.position.worldY
       );
-    const isNearRoguePlanet = currentPhenomenon?.exists && currentPhenomenon.type === 'rogue-planet';
+    const isNearNavigablePhenomenon = isNavigablePhenomenon(currentPhenomenon);
     const medium = survey.medium;
     const contact = this.toNavigationContact(survey.nearestSystemContact);
     const movementFuelCost =
@@ -3506,7 +3533,7 @@ export class Game {
     }
     baseStatus += ` | Fuel reach: ${fuelReach} cell${fuelReach === 1 ? '' : 's'} / ${formatHyperspaceSpan(fuelReach)}`;
 
-    if (isNearStar || isNearRoguePlanet) {
+    if (isNearStar || isNearNavigablePhenomenon) {
       // Only peek if necessary for status display
       const peekedSystem = this.stateManager.peekAtSystem(
         this.player.position.worldX,
@@ -3514,7 +3541,11 @@ export class Game {
       );
       if (peekedSystem) {
         const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
-        const objectLabel = peekedSystem.isStarless ? 'Free planetary mass' : 'Near';
+        const objectLabel = peekedSystem.isStarless
+          ? 'Free planetary mass'
+          : peekedSystem.isCompactRemnant
+            ? 'Neutron star'
+            : 'Near';
         baseStatus += ` | ${objectLabel} ${peekedSystem.name}${starbaseText}.`;
       } else {
         // Hash indicated star, but peek failed? Log warning.
@@ -3603,9 +3634,11 @@ export class Game {
     ) {
       this.prefetchApproachSurfaces(selectedTarget);
     }
-    const systemKindLabel = system.isStarless
-      ? 'starless rogue planetary-mass object'
-      : `${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}`;
+    const systemKindLabel = system.isCompactRemnant
+      ? 'neutron-star remnant'
+      : system.isStarless
+        ? 'starless rogue planetary-mass object'
+        : `${system.architecture.kind}, ${system.stars.length} star${system.stars.length === 1 ? '' : 's'}`;
     let status = `System: ${system.name} (${systemKindLabel}) | Pos: ${this.player.position.systemX.toExponential(
       1
     )},${this.player.position.systemY.toExponential(1)}m`; // Use meters
@@ -5718,6 +5751,7 @@ export class Game {
   private getTargetClassLabel(target: NavigationTarget): string {
     if (target instanceof Planet) return 'Planet';
     if (target instanceof Starbase) return 'Starbase';
+    if (target.starType === 'NS') return 'Neutron star';
     return `Star ${target.id}`;
   }
 
@@ -6509,6 +6543,9 @@ export class Game {
     if (state === 'hyperspace') {
       const survey = this.getCurrentHyperspaceSurvey();
       const contact = this.toNavigationContact(survey.nearestSystemContact);
+      const localPhenomenon =
+        survey.visibleCells[Math.floor(survey.rows / 2) * survey.cols + Math.floor(survey.cols / 2)]
+          ?.phenomenon;
       const movementFuelCost =
         CONFIG.HYPERSPACE_MOVE_FUEL_COST *
         getEngineFuelUseMultiplier(this.player.ship.engineClass) *
@@ -6531,33 +6568,45 @@ export class Game {
           priority: 'secondary',
         },
       ];
-      telemetry.target = contact
+      telemetry.target = isNavigablePhenomenon(localPhenomenon)
         ? [
             {
               id: 'contact',
               label: 'CONTACT',
               compactLabel: 'TGT',
-              value: `${contact.name} ${contact.starType}`,
-              compactValue: contact.name,
+              value: `${localPhenomenon!.name} ${localPhenomenon!.type === 'neutron-star' ? 'PULSAR' : 'ROGUE'}`,
+              compactValue: localPhenomenon!.name ?? 'LOCAL CONTACT',
               tone: 'signal',
             },
-            {
-              id: 'bearing',
-              label: 'BRG',
-              value: `${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`,
-              priority: 'secondary',
-            },
+            { id: 'bearing', label: 'BRG', value: 'LOCAL 0.0c', priority: 'secondary' },
           ]
-        : [
-            {
-              id: 'contact',
-              label: 'CONTACT',
-              compactLabel: 'TGT',
-              value: 'NO RESOLVED CONTACT',
-              compactValue: 'NO CONTACT',
-              tone: 'muted',
-            },
-          ];
+        : contact
+          ? [
+              {
+                id: 'contact',
+                label: 'CONTACT',
+                compactLabel: 'TGT',
+                value: `${contact.name} ${contact.starType}`,
+                compactValue: contact.name,
+                tone: 'signal',
+              },
+              {
+                id: 'bearing',
+                label: 'BRG',
+                value: `${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`,
+                priority: 'secondary',
+              },
+            ]
+          : [
+              {
+                id: 'contact',
+                label: 'CONTACT',
+                compactLabel: 'TGT',
+                value: 'NO RESOLVED CONTACT',
+                compactValue: 'NO CONTACT',
+                tone: 'muted',
+              },
+            ];
       telemetry.environment = [
         {
           id: 'medium',
@@ -6969,6 +7018,11 @@ export class Game {
   /** Returns command strip target name. */
   private getCommandStripTargetName(): string | undefined {
     if (this.stateManager.state === 'hyperspace') {
+      const phenomenon = this.systemDataGenerator.getDeepSpacePhenomenonProperties(
+        this.player.position.worldX,
+        this.player.position.worldY
+      );
+      if (isNavigablePhenomenon(phenomenon)) return `${phenomenon.name} LOCAL`;
       const contact = this.toNavigationContact(this.getCurrentHyperspaceSurvey().nearestSystemContact);
       return contact
         ? `${contact.name} ${this.formatHyperspaceBearing(contact)} ${contact.rangeCells.toFixed(1)}c`
@@ -6990,9 +7044,7 @@ export class Game {
         this.player.position.worldX,
         this.player.position.worldY
       );
-      const isNavigableContact =
-        currentProps.exists ||
-        Boolean(currentPhenomenon?.exists && currentPhenomenon.type === 'rogue-planet');
+      const isNavigableContact = currentProps.exists || isNavigablePhenomenon(currentPhenomenon);
       const peekedSystem = isNavigableContact
         ? this.stateManager.peekAtSystem(this.player.position.worldX, this.player.position.worldY)
         : null;

@@ -496,6 +496,10 @@ export class SceneRenderer {
       const starColor = starInfo?.colour || '#FFFFFF';
       const starViewX = Math.floor((star.systemX - viewWorldStartX) / viewScale);
       const starViewY = Math.floor((star.systemY - viewWorldStartY) / viewScale);
+      if (system.isCompactRemnant) {
+        this.screenBuffer.drawChar('*', starViewX, starViewY, starColor, CONFIG.DEFAULT_BG_COLOUR);
+        return;
+      }
       const starRadius = starInfo?.radius ? Math.max(0, Math.round(starInfo.radius / viewScale)) : 1;
       this._drawStarInSystem(starViewX, starViewY, starRadius, starColor, star.id);
     });
@@ -800,7 +804,11 @@ export class SceneRenderer {
       '#888888',
       CONFIG.DEFAULT_BG_COLOUR
     );
-    const title = system.isStarless ? ' LOCAL FRAME ' : ' LOCAL SYSTEM ';
+    const title = system.isCompactRemnant
+      ? ' COMPACT REMNANT '
+      : system.isStarless
+        ? ' LOCAL FRAME '
+        : ' LOCAL SYSTEM ';
     this.screenBuffer.drawString(
       title.slice(0, mapWidth),
       mapStartX + 1,

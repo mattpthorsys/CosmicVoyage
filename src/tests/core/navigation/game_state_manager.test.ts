@@ -7,6 +7,10 @@ import { PRNG } from '../../../utils/prng';
 import { GameStateManager } from '../../../core/game_state_manager';
 import { Player } from '../../../core/player';
 import { eventManager, GameEvents } from '../../../core/event_manager';
+import { Game } from '../../../core/game';
+import { CONFIG } from '../../../config';
+import { isNavigablePhenomenon } from '../../../generation/system_data_generator';
+import { createHyperspaceTile } from '../../../rendering/hyperspace_tile_generation';
 
 /** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
@@ -147,6 +151,59 @@ describe('GameStateManager orbital exits', () => {
 });
 
 describe('GameStateManager system entry', () => {
+  it('enters the actual pulsar at -72,-73 and restores its compact local chart', () => {
+    const player = new Player();
+    const seed = new PRNG(CONFIG.SEED);
+    const generator = new SystemDataGenerator(seed);
+    const manager = new GameStateManager(player, seed, generator);
+    player.position.worldX = -72;
+    player.position.worldY = -73;
+    const map = generator.getSystemMapProperties(-72, -73);
+    const phenomenon = generator.getDeepSpacePhenomenonProperties(-72, -73);
+    const game = Object.assign(Object.create(Game.prototype), {
+      player,
+      stateManager: manager,
+      systemDataGenerator: generator,
+    }) as any;
+
+    try {
+      expect(map.exists).toBe(false);
+      expect(phenomenon).toMatchObject({ type: 'neutron-star', name: 'PSR 5259-A' });
+      expect(createHyperspaceTile('#000000', map, phenomenon, -72, -73, 0)).toMatchObject({
+        starChar: '*',
+      });
+      expect(isNavigablePhenomenon(phenomenon)).toBe(true);
+      expect(game.getCurrentAvailableActions()).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'enter-system', enabled: true })])
+      );
+      expect(game.getCommandStripTargetName()).toContain('PSR 5259-A');
+
+      expect(manager.enterSystem(), manager.statusMessage).toBe(true);
+      expect(manager.currentSystem).toMatchObject({
+        name: 'PSR 5259-A',
+        starType: 'NS',
+        isCompactRemnant: true,
+        isStarless: false,
+      });
+      expect(manager.currentSystem!.stars).toHaveLength(1);
+      expect(manager.currentSystem!.stars[0].radiusM).toBe(12000);
+      expect(manager.currentSystem!.planets.every((planet) => planet === null)).toBe(true);
+      expect(game._formatStarScanPopup(manager.currentSystem)).toEqual(
+        expect.arrayContaining([expect.stringContaining('NEUTRON STAR / PULSAR')])
+      );
+
+      expect(manager.restoreLocation({ kind: 'system', worldX: -72, worldY: -73, systemSlot: 0 })?.name).toBe(
+        'PSR 5259-A'
+      );
+      player.position.systemX = manager.currentSystem!.edgeRadius * 0.9;
+      player.position.systemY = 0;
+      expect(manager.leaveSystem()).toBe(true);
+      expect(manager.state).toBe('hyperspace');
+    } finally {
+      manager.destroy();
+    }
+  });
+
   it.each(['O', 'B'])('enters a blue %s-type system using the real system generator', (starType) => {
     const player = new Player();
     const seed = new PRNG(`blue-star-entry-${starType}`);

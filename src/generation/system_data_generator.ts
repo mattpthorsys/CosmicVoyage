@@ -35,7 +35,7 @@ export interface SystemBasicProperties {
   ageGyr: number | null;
   metallicityFeH: number | null;
   architecture: StellarArchitecture | null;
-  objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | null;
+  objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | 'neutron-star' | null;
   systemSlot?: number;
   stationKind?: StationKind | null;
   settlementStage?: SettlementStage;
@@ -75,6 +75,13 @@ export interface DeepSpacePhenomenonProperties {
   char: string | null;
   colour: string | null;
   rarity: 'uncommon' | 'rare' | 'very-rare' | 'exceedingly-rare' | null;
+}
+
+/** Phenomena with a stable local frame that the ship can navigate. */
+export function isNavigablePhenomenon(phenomenon: DeepSpacePhenomenonProperties | null): boolean {
+  return Boolean(
+    phenomenon?.exists && (phenomenon.type === 'rogue-planet' || phenomenon.type === 'neutron-star')
+  );
 }
 
 export type InterstellarMediumKind =
@@ -345,6 +352,37 @@ export class SystemDataGenerator {
       },
       objectKind: 'rogue-planet',
     };
+  }
+
+  /** Returns the local chart for a neutron-star phenomenon, if one occupies this cell. */
+  getNeutronStarSystemProperties(worldX: number, worldY: number): SystemBasicProperties | null {
+    const phenomenon = this.getDeepSpacePhenomenonProperties(worldX, worldY);
+    if (!phenomenon.exists || phenomenon.type !== 'neutron-star' || !phenomenon.name) return null;
+
+    const prng = this.gameSeedPRNG.seedNew(`neutron_system_${worldX},${worldY}`);
+    return {
+      exists: true,
+      starType: 'NS',
+      name: phenomenon.name,
+      hasStarbase: false,
+      ageGyr: Number(prng.random(0.002, 0.12).toFixed(3)),
+      metallicityFeH: null,
+      architecture: null,
+      objectKind: 'neutron-star',
+      galacticContext: this.getGalacticContext(worldX, worldY),
+      galacticPopulation: null,
+    };
+  }
+
+  /** Resolves any system that can be entered at this cell, including local phenomena. */
+  getNavigableSystemProperties(worldX: number, worldY: number, systemSlot = 0): SystemBasicProperties {
+    const system = this.getSystemProperties(worldX, worldY, systemSlot);
+    if (system.exists || systemSlot !== 0) return system;
+    return (
+      this.getRoguePlanetSystemProperties(worldX, worldY) ??
+      this.getNeutronStarSystemProperties(worldX, worldY) ??
+      system
+    );
   }
 
   /** Returns deep space phenomenon properties. */
