@@ -95,9 +95,9 @@ exports[`SceneRenderer visual regressions > draws subtle background stars during
 
 exports[`SceneRenderer visual regressions > keeps atmospheric twilight on the globe raster through dawn, eclipse, and dusk 1`] = `
 {
-  "0": "9f25fd7e34b9d208ec723fabdf08106a1f6efa987bd9bd747020a9113c262f13",
-  "0.16246478129945752": "7b1efee02bcd0176288deff60d0786e52b23a6898e99d0b26a94c391b7f820e3",
-  "0.2": "b6b451b35a62a2a2fa66a57e7a1f5697c626adf0808b410da24eab9cf444b579",
+  "0": "e01c4b05beba09d82ab5fc20419941df71061eb397be619e13982625a4e30d22",
+  "0.16246478129945752": "dd43252d62ea77c682c9114a2bb667face192dc0ceb4f71e4d9f93bbe9c929a1",
+  "0.2": "fbaf44b176854b4c23e2eab5541bfb34635cc87bf97b9069cbf03f0f9a563b8b",
   "0.35": "5b13a2c25414c72a5ca2cb74ae4e0f3f66debb4f337e876484e1cfa60914fa17",
   "0.36": "a1a72ef786d308d22a07f4f1b04d03639f228803ad146f67e98ef27b0b673b95",
   "0.3617394005527416": "c3ceb6858e67a30d589fc2d4c6a2e663f81e56b561f72904fe6b84df47aaffa0",
@@ -106,7 +106,7 @@ exports[`SceneRenderer visual regressions > keeps atmospheric twilight on the gl
   "0.465": "b002545a4bd58c2c37443baca13da7cedaba33fae28a111d46c8f49663603b3d",
   "0.475": "d7b1bc6a64aa1a0179df2461bafa3a19597bc51a62ec91d2024bcc149ed15dcc",
   "0.65": "8c3634f39fc3dc660d5a59185cc8885d90ab483273681ac4044970efc5a68d8d",
-  "0.9124647812994575": "0b104b821c66041a6ef2aaf323109dac250f564afb3e90b4de8f90eb1f40edff",
+  "0.9124647812994575": "3df1e5424d285a91b1c94d2eaede6304522f211f108a151720b8623c9676808a",
 }
 `;
 

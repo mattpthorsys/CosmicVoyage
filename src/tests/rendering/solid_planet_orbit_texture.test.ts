@@ -69,6 +69,24 @@ describe('SolidPlanetOrbitTextureRenderer', () => {
     expect(samples[0].colour.g).toBeGreaterThan(samples[0].colour.r);
   });
 
+  it('retains a two-cell terrain feature at the largest orbital globe size', () => {
+    const renderer = new SolidPlanetOrbitTextureRenderer();
+    const planet = createTexturePlanet();
+    const heightmap = Array.from({ length: 256 }, () =>
+      Array.from({ length: 256 }, (_, x) => (x >= 66 && x < 68 ? 0 : 255))
+    );
+    const palette = createPalette((height) => {
+      const channel = height.toString(16).padStart(2, '0');
+      return `#${channel}${channel}${channel}`;
+    });
+
+    const feature = renderer.sample(planet, heightmap, palette, null, 66 / 256, 0.5, 52, 1);
+    const terrain = renderer.sample(planet, heightmap, palette, null, 62 / 256, 0.5, 52, 1);
+
+    expect(feature.colour.r).toBeLessThan(70);
+    expect(terrain.colour.r).toBeGreaterThan(220);
+  });
+
   it('returns fractional liquid coverage at filtered coastlines', () => {
     const renderer = new SolidPlanetOrbitTextureRenderer();
     const planet = createTexturePlanet();
@@ -87,7 +105,7 @@ describe('SolidPlanetOrbitTextureRenderer', () => {
     };
 
     const water = renderer.sample(planet, heightmap, palette, liquid, 0.25, 0.5, 52, 1);
-    const coast = renderer.sample(planet, heightmap, palette, liquid, 0.5 - 0.5 / 128, 0.5, 52, 1);
+    const coast = renderer.sample(planet, heightmap, palette, liquid, 0.5 - 0.5 / 256, 0.5, 52, 1);
     const land = renderer.sample(planet, heightmap, palette, liquid, 0.75, 0.5, 52, 1);
 
     expect(water.liquidCoverage).toBeGreaterThan(0.99);

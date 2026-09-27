@@ -106,12 +106,14 @@ Gas- and ice-giant weather is deterministic, body-fixed source data. Bake the
 procedural bands, storms, and ribbons once through `GiantAtmosphereRenderer`,
 then rotate by changing texture longitude and apply view lighting separately.
 Solid worlds similarly use `SolidPlanetOrbitTextureRenderer` to area-filter the
-prepared heightmap, liquid, and vegetation colours into a small body-fixed mip
-chain. The globe samples that chain according to its projected footprint and
-limb compression. This prevents fine terrain and hard biome thresholds from
-shimmering as longitude changes while preserving the fixed half-cell display
-grid. Fractional liquid coverage should scale coastal lighting and reflection;
-do not turn it back into a per-pixel binary threshold.
+prepared heightmap, liquid, and vegetation colours into a body-fixed mip chain.
+Its 256x128 base level retains narrow terrain features at the largest globe
+size; the chosen level follows the camera's projected pixel footprint, limb
+compression, and Mercator latitude stretch. This prevents subpixel terrain and
+hard biome thresholds from shimmering as longitude changes while preserving
+the fixed half-cell display grid. Fractional liquid coverage should scale
+coastal lighting and reflection; do not turn it back into a per-pixel binary
+threshold.
 
 Nearby orbital bodies are prepared during the existing predictive surface
 prefetch window and one body texture is built per browser idle callback.

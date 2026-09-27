@@ -1,6 +1,7 @@
 import { Planet } from '../../entities/planet';
 import { getCoastalVegetationColour, SurfaceLiquidOverlay } from '../../entities/planet/surface_liquid';
 import { hexToRgb, RgbColour } from '../colour';
+import { ORBIT_CAMERA_DISTANCE, ORBIT_FOCAL_FACTOR } from './orbit_lighting';
 
 interface SolidOrbitTextureLevel {
   width: number;
@@ -35,10 +36,10 @@ export interface SolidOrbitTextureSample {
   reflectiveColour: RgbColour | null;
 }
 
-// A 128x64 body texture exposes roughly 64 source texels across the visible
-// hemisphere, just above the largest 52-pixel orbital globe.
-const BASE_TEXTURE_WIDTH = 128;
-const BASE_TEXTURE_HEIGHT = 64;
+// Keep enough source detail for the largest 52-pixel globe and its changing
+// projection; the mip chain removes only detail smaller than a display pixel.
+const BASE_TEXTURE_WIDTH = 256;
+const BASE_TEXTURE_HEIGHT = 128;
 const MIN_TEXTURE_WIDTH = 8;
 const MIN_TEXTURE_HEIGHT = 4;
 
@@ -68,7 +69,7 @@ export class SolidPlanetOrbitTextureRenderer {
     viewNormalZ: number
   ): SolidOrbitTextureSample {
     const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid);
-    const lod = this.calculateLod(texture.levels, projectedDiameter, viewNormalZ);
+    const lod = this.calculateLod(texture.levels, v, projectedDiameter, viewNormalZ);
     const lowIndex = Math.floor(lod);
     const highIndex = Math.min(texture.levels.length - 1, lowIndex + 1);
     const mix = lod - lowIndex;
@@ -261,17 +262,24 @@ export class SolidPlanetOrbitTextureRenderer {
     return { width, height, colours, liquidCoverage };
   }
 
-  /** Chooses a stable footprint level from globe size and fixed screen-space limb compression. */
+  /** Estimates the source-texel footprint of one projected globe pixel. */
   private calculateLod(
     levels: readonly SolidOrbitTextureLevel[],
+    v: number,
     projectedDiameter: number,
     viewNormalZ: number
   ): number {
     const base = levels[0];
-    const baseVisibleDiameter = Math.min(base.width / 2, base.height);
-    const centreFootprint = baseVisibleDiameter / Math.max(1, projectedDiameter);
-    const limbFootprint = 1 / Math.max(0.25, viewNormalZ);
-    return Math.max(0, Math.min(levels.length - 1, Math.log2(Math.max(1, centreFootprint * limbFootprint))));
+    // At disc centre the pinhole camera maps one pixel to this many radians.
+    // The old half-hemisphere estimate overfiltered the central globe by ~2x.
+    const radiansPerPixel =
+      (2 * (ORBIT_CAMERA_DISTANCE - 1)) / (ORBIT_FOCAL_FACTOR * Math.max(1, projectedDiameter));
+    const centreFootprint = (base.width * radiansPerPixel) / (2 * Math.PI);
+    // Longitude texels crowd together toward the Mercator poles; perspective
+    // stretches the footprint toward the limb. Both are bounded at the edge.
+    const latitudeStretch = Math.min(4, Math.cosh((0.5 - v) * 2 * Math.PI));
+    const footprint = (centreFootprint * latitudeStretch) / Math.max(1 / ORBIT_CAMERA_DISTANCE, viewNormalZ);
+    return Math.max(0, Math.min(levels.length - 1, Math.log2(Math.max(1, footprint))));
   }
 
   /** Bilinearly samples one body-fixed texture level with wrapped longitude. */
