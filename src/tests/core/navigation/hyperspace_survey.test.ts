@@ -145,11 +145,11 @@ describe('HyperspaceSurveyService', () => {
         if (x === 2 && y === 0) {
           return { exists: true, starType: 'K4V', name: 'Near-2', hasStarbase: false, objectKind: 'stellar' };
         }
-        if (x === 28 && y === 0) {
+        if (x === 8 && y === 0) {
           return {
             exists: true,
             starType: 'T5',
-            name: 'Brown-28',
+            name: 'Brown-8',
             hasStarbase: false,
             objectKind: 'brown-dwarf',
           };
@@ -188,7 +188,7 @@ describe('HyperspaceSurveyService', () => {
     const overlayContacts = service.getOverlayContacts(survey);
 
     expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Near-2');
-    expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Brown-28');
+    expect(overlayContacts.map((contact) => contact.system?.name)).toContain('Brown-8');
     expect(service.getOverlayContacts(survey)).toBe(overlayContacts);
   });
 

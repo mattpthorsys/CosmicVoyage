@@ -19,6 +19,8 @@ import {
 } from '../utils/space_scale';
 import { HyperspaceSurveyContact, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
+import { getStellarDetectionRadii } from '../core/stellar_detection';
+import { getStellarStageLabel } from '../entities/stellar_environment';
 
 interface OverlayContext {
   state: GameState;
@@ -265,14 +267,11 @@ export class AstrometricOverlay {
       const starInfo = SPECTRAL_TYPES[contact.starType] ?? SPECTRAL_TYPES.G;
       const range = Math.sqrt(contact.distSq);
       const isBrownDwarf = contact.objectKind === 'brown-dwarf';
-      const heading =
-        isBrownDwarf || range > CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS
-          ? 'PROBABLE MASS CONTACT'
-          : 'HYPERSPATIAL CONTACT';
+      const heading = isBrownDwarf ? 'PROBABLE MASS CONTACT' : 'HYPERSPATIAL CONTACT';
       const typeLabel =
-        isBrownDwarf && range > CONFIG.HYPERSPACE_NEAR_DETAIL_RADIUS_CELLS
+        isBrownDwarf && range > CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * 0.5
           ? `LOW-LUMINOSITY SOURCE  ${this.getCertaintyLabel(range, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}`
-          : `TYPE ${contact.starType}  ${starInfo.temp.toFixed(0)}K`;
+          : `${getStellarStageLabel(contact.starType).toUpperCase()} ${contact.starType}  ${starInfo.temp.toFixed(0)}K`;
       return {
         state: context.state,
         x,
@@ -305,7 +304,7 @@ export class AstrometricOverlay {
       lines: [
         'DRIFT SOLUTION',
         `GRID ${player.position.worldX},${player.position.worldY}`,
-        `NO RETURNS INSIDE ${formatHyperspaceSpan(detectionRadius)}`,
+        'NO RESOLVED NEARBY RETURNS',
         `MEDIUM ${medium.label.toUpperCase()}`,
         `DUST ${medium.dustExtinction.toFixed(2)}  ION ${medium.electronDensity.toFixed(3)}`,
       ],
@@ -450,10 +449,7 @@ export class AstrometricOverlay {
               : props.objectKind === 'stellar'
                 ? 'stellar'
                 : null;
-          const detectRadius =
-            (objectKind === 'brown-dwarf'
-              ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS
-              : CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS) * sensorRangeMultiplier;
+          const detectRadius = getStellarDetectionRadii(props, sensorRangeMultiplier).overlayRadius;
           if (range <= detectRadius)
             contacts.push({
               kind: 'system',

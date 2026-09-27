@@ -382,6 +382,34 @@ describe('SceneRenderer visual regressions', () => {
     }
   );
 
+  it('rebuilds faint-star cells at detection boundaries when shifting in either direction', () => {
+    const { buffer, stagedFrames } = createMockScreenBuffer(31, 9);
+    const generator = {
+      getSystemMapProperties: (x: number, y: number) => ({
+        exists: x === 9 && y === 0,
+        starType: 'DC',
+        name: 'Cool remnant',
+        hasStarbase: false,
+        objectKind: 'stellar',
+      }),
+      getDeepSpacePhenomenonProperties: () => ({ exists: false }),
+    } as unknown as SystemDataGenerator;
+    const renderer = new SceneRenderer(buffer, new DrawingContext(buffer), new NebulaRenderer(), generator);
+    const player = new Player();
+    for (const worldX of [0, 1, 2, 1, 0, -1]) {
+      player.position.worldX = worldX;
+      player.position.worldY = 0;
+      renderer.drawHyperspace(player);
+      const shifted = stagedFrames.at(-1) as { char: string | null }[];
+      expect(shifted[4 * 31 + 15 + 9 - worldX].char === ' ').toBe(
+        Math.abs(9 - worldX) > CONFIG.MIN_STAR_DETECTION_RADIUS_CELLS
+      );
+      renderer.clearCaches();
+      renderer.drawHyperspace(player);
+      expect(stagedFrames.at(-1)).toEqual(shifted);
+    }
+  });
+
   it('shifts hyperspace frames by one-cell movement without rebuilding the full viewport', () => {
     const { buffer, stagedFrames } = createMockScreenBuffer(7, 5);
     let mapCalls = 0;

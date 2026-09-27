@@ -1,4 +1,14 @@
 import type { OrbitHost, StellarArchitecture } from './stellar_body';
+import { AU_IN_METERS } from '../constants/physics';
+import type { StellarBody } from './stellar_body';
+
+/** Keeps survivors outside both today's photosphere and a white dwarf's former giant envelope. */
+function survivalRadius(star: StellarBody): number {
+  const evolution = star.environment.evolution;
+  return evolution?.stage === 'white-dwarf'
+    ? Math.max(star.radiusM * 3, (2 * AU_IN_METERS * evolution.initialMassSolar) / evolution.massSolar)
+    : star.radiusM * 3;
+}
 
 export interface StableOrbitRange {
   minRadius: number;
@@ -37,18 +47,22 @@ export function getStableOrbitRange(
     if (host.kind === 'circumbinary' || (host.kind === 'circumstellar' && (host.starId ?? 'A') !== a.id)) {
       return null;
     }
-    return { minRadius: a.radiusM * 3, maxRadius: Infinity };
+    return { minRadius: survivalRadius(a), maxRadius: Infinity };
   }
   const inner = architecture.binarySeparation;
   const outer = architecture.outerSeparation;
   if (!(inner > 0) || (c && !(outer > 0))) return null;
   const abMass = a.massKg + b.massKg;
+  const innerEnvelope = Math.max(
+    (inner * b.massKg) / abMass + survivalRadius(a),
+    (inner * a.massKg) / abMass + survivalRadius(b)
+  );
   let minRadius: number;
   let maxRadius = Infinity;
   if (host.kind === 'circumstellar') {
     const star = architecture.stars.find((candidate) => candidate.id === (host.starId ?? 'A'));
     if (!star) return null;
-    minRadius = star.radiusM * 3;
+    minRadius = survivalRadius(star);
     if (star.id === 'C' && c) {
       maxRadius = circumstellarLimit(outer, c.massKg, abMass);
     } else {
@@ -61,9 +75,13 @@ export function getStableOrbitRange(
       }
     }
   } else if (host.kind === 'barycentric' && c) {
-    minRadius = circumbinaryLimit(outer, abMass, c.massKg);
+    minRadius = Math.max(
+      circumbinaryLimit(outer, abMass, c.massKg),
+      (outer * c.massKg) / (abMass + c.massKg) + innerEnvelope,
+      (outer * abMass) / (abMass + c.massKg) + survivalRadius(c)
+    );
   } else {
-    minRadius = circumbinaryLimit(inner, a.massKg, b.massKg);
+    minRadius = Math.max(circumbinaryLimit(inner, a.massKg, b.massKg), innerEnvelope);
     if (c) maxRadius = circumstellarLimit(outer, abMass, c.massKg);
   }
   return minRadius < maxRadius ? { minRadius, maxRadius } : null;

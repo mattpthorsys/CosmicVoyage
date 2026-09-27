@@ -10,7 +10,11 @@ import { PerlinNoise } from './perlin';
 import {
   estimateEvolutionaryLuminosityFactor,
   estimateMainSequenceLifetimeGyr,
+  isMainSequenceStar,
+  StellarEvolutionState,
 } from '../entities/stellar_environment';
+import { sampleStellarEvolution } from './stellar_population';
+import { SOLAR_MASS_KG } from '../constants/physics';
 import {
   calculateStellarLuminosityW,
   StellarArchitecture,
@@ -41,6 +45,8 @@ export interface SystemBasicProperties {
   settlementStage?: SettlementStage;
   galacticContext?: GalacticCellContext | null;
   galacticPopulation?: GalacticPopulation | null;
+  stellarEvolution?: StellarEvolutionState;
+  stellarPopulation?: StellarPopulationSample;
 }
 
 export interface SystemMapProperties {
@@ -56,6 +62,8 @@ export interface SystemMapProperties {
   settlementStage?: SettlementStage;
   armName?: string | null;
   clusterName?: string | null;
+  stellarEvolution?: StellarEvolutionState;
+  stellarPopulation?: StellarPopulationSample;
 }
 
 export type DeepSpacePhenomenonType =
@@ -248,16 +256,23 @@ export class SystemDataGenerator {
     const populationPRNG = this.gameSeedPRNG.seedNew(
       `mw${CONFIG.GALAXY_MODEL_VERSION}_population_${worldX},${worldY},${systemSlot}`
     );
-    const population = this.milkyWayModel.sampleStellarPopulation(context, populationPRNG);
+    let population = this.milkyWayModel.sampleStellarPopulation(context, populationPRNG);
     const typePRNG = this.gameSeedPRNG.seedNew(
       `mw${CONFIG.GALAXY_MODEL_VERSION}_star_type_${worldX},${worldY},${systemSlot}`
     );
     result.objectKind = hasBrownDwarf ? 'brown-dwarf' : 'stellar';
-    result.starType = isStartingHubCell
-      ? 'G2V'
-      : hasBrownDwarf
-        ? this.generateBrownDwarfType(typePRNG)
-        : this.generateStarType(typePRNG, population, context);
+    if (isStartingHubCell) {
+      result.starType = 'G2V';
+      population = { population: 'thin-disk', ageGyr: 4.6, metallicityFeH: 0.04 };
+    } else if (hasBrownDwarf) {
+      result.starType = this.generateBrownDwarfType(typePRNG);
+    } else {
+      const sample = sampleStellarEvolution(context, population, typePRNG);
+      result.starType = sample.starType;
+      result.stellarEvolution = sample.evolution;
+      population = sample.population;
+    }
+    result.stellarPopulation = population;
     const nameSeed = `mw${CONFIG.GALAXY_MODEL_VERSION}_star_name_${worldX},${worldY},${systemSlot}`;
     const namePRNG = this.gameSeedPRNG.seedNew(nameSeed);
     result.name = this.generateSystemNameInternal(namePRNG);
@@ -306,9 +321,15 @@ export class SystemDataGenerator {
     const populationPRNG = this.gameSeedPRNG.seedNew(
       `mw${CONFIG.GALAXY_MODEL_VERSION}_population_${worldX},${worldY},${systemSlot}`
     );
-    const population = this.milkyWayModel.sampleStellarPopulation(galacticContext, populationPRNG);
+    const population =
+      mapProps.stellarPopulation ??
+      this.milkyWayModel.sampleStellarPopulation(galacticContext, populationPRNG);
     const isStartingHub = this.isStartingHubCell(worldX, worldY) && systemSlot === 0;
-    result.ageGyr = isStartingHub ? 4.6 : this.limitAgeToMainSequence(population.ageGyr, result.starType);
+    result.ageGyr = isStartingHub
+      ? 4.6
+      : mapProps.stellarPopulation
+        ? population.ageGyr
+        : this.limitAgeToMainSequence(population.ageGyr, result.starType);
     result.metallicityFeH = isStartingHub ? 0.04 : population.metallicityFeH;
     result.galacticPopulation = isStartingHub ? 'thin-disk' : population.population;
     result.architecture = this.generateArchitecture(
@@ -318,7 +339,8 @@ export class SystemDataGenerator {
       result.metallicityFeH,
       worldX,
       worldY,
-      systemSlot
+      systemSlot,
+      mapProps.stellarEvolution
     );
 
     this.cacheSystemProperties(cacheKey, result);
@@ -603,28 +625,6 @@ export class SystemDataGenerator {
     return summaries[kind];
   }
 
-  /** Generates a present-day spectral class conditioned on age and Galactic environment. */
-  private generateStarType(
-    prng: PRNG,
-    population: StellarPopulationSample,
-    context: GalacticCellContext
-  ): string {
-    const youngArmBoost = population.ageGyr < 0.12 ? 1 + context.armInfluence * 7 : 1;
-    const broadStarType = this.weightedChoice(prng, [
-      { item: 'M', weight: 74 },
-      { item: 'K', weight: 12.2 },
-      { item: 'G', weight: 7.4 },
-      { item: 'F', weight: population.ageGyr < 5.5 ? 3.0 : 0.25 },
-      { item: 'A', weight: population.ageGyr < 1.4 ? 0.62 * youngArmBoost : 0 },
-      { item: 'B', weight: population.ageGyr < 0.09 ? 0.075 * youngArmBoost : 0 },
-      { item: 'O', weight: population.ageGyr < 0.007 ? 0.003 * youngArmBoost : 0 },
-    ]);
-    const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
-      (key) => key.startsWith(broadStarType) && key.endsWith('V')
-    );
-    return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : broadStarType;
-  }
-
   /** Generates settlement and station state after applying host and distance eligibility. */
   private generateSettlementDisposition(
     context: GalacticCellContext,
@@ -670,6 +670,7 @@ export class SystemDataGenerator {
 
   /** Scores ordinary stable main-sequence hosts for human settlement placement. */
   private getHostSettlementSuitability(starType: string, ageGyr: number): number {
+    if (!isMainSequenceStar(starType)) return 0;
     const spectralClass = starType.charAt(0);
     const subtype = Number(starType.match(/^[OBAFGKM](\d)/)?.[1] ?? 5);
     if (ageGyr < 1.2) return 0;
@@ -845,7 +846,8 @@ export class SystemDataGenerator {
     metallicityFeH: number,
     worldX: number,
     worldY: number,
-    systemSlot: number
+    systemSlot: number,
+    evolution?: StellarEvolutionState
   ): StellarArchitecture {
     const architecturePRNG = this.gameSeedPRNG.seedNew(
       `mw${CONFIG.GALAXY_MODEL_VERSION}_star_architecture_${worldX},${worldY},${systemSlot}`
@@ -864,14 +866,19 @@ export class SystemDataGenerator {
             : multiplicityRoll < 0.48
               ? 'binary'
               : 'single';
-    const binarySeparation = architecturePRNG.random(0.08, 0.75) * 1.495978707e11;
-    const outerSeparation = architecturePRNG.random(18, 70) * 1.495978707e11;
+    let binarySeparation = architecturePRNG.random(0.08, 0.75) * 1.495978707e11;
+    let outerSeparation = architecturePRNG.random(18, 70) * 1.495978707e11;
     const stars: StellarBody[] = [
-      this.createStarBody('A', systemName, primaryStarType, ageGyr, metallicityFeH, null),
+      this.createStarBody('A', systemName, primaryStarType, ageGyr, metallicityFeH, null, evolution),
     ];
 
     if (kind === 'binary' || kind === 'triple') {
-      const companionType = this.generateCompanionStarType(primaryStarType, ageGyr, architecturePRNG);
+      const companionType = this.generateCompanionStarType(
+        primaryStarType,
+        ageGyr,
+        architecturePRNG,
+        stars[0].massKg
+      );
       stars.push(
         this.createStarBody('B', systemName, companionType, ageGyr, metallicityFeH, {
           center: 'barycenter',
@@ -883,7 +890,12 @@ export class SystemDataGenerator {
     }
 
     if (kind === 'triple') {
-      const companionType = this.generateCompanionStarType(primaryStarType, ageGyr, architecturePRNG);
+      const companionType = this.generateCompanionStarType(
+        primaryStarType,
+        ageGyr,
+        architecturePRNG,
+        stars[0].massKg
+      );
       stars.push(
         this.createStarBody('C', systemName, companionType, ageGyr, metallicityFeH, {
           center: 'barycenter',
@@ -894,6 +906,14 @@ export class SystemDataGenerator {
       );
     }
 
+    // Detached orbits must clear expanded envelopes; white dwarfs retain widened post-giant binaries.
+    if (stars.length > 1) {
+      const envelopeFloor = evolution?.stage === 'white-dwarf' ? 10 * 1.495978707e11 : 0;
+      binarySeparation = Math.max(binarySeparation, 4 * (stars[0].radiusM + stars[1].radiusM), envelopeFloor);
+      outerSeparation = Math.max(outerSeparation, binarySeparation * 20);
+      stars[1].orbit!.radius = binarySeparation;
+      if (stars[2]) stars[2].orbit!.radius = outerSeparation;
+    }
     return {
       kind,
       stars,
@@ -905,7 +925,12 @@ export class SystemDataGenerator {
   }
 
   /** Generates companion star type. */
-  private generateCompanionStarType(primaryStarType: string, ageGyr: number, prng: PRNG): string {
+  private generateCompanionStarType(
+    primaryStarType: string,
+    ageGyr: number,
+    prng: PRNG,
+    primaryMassKg?: number
+  ): string {
     const primaryClass = primaryStarType.charAt(0);
     const coolBias: Record<string, string[]> = {
       O: ['B', 'A', 'F', 'G'],
@@ -920,16 +945,20 @@ export class SystemDataGenerator {
       Y: ['Y', 'T'],
     };
     const broadType = prng.choice(coolBias[primaryClass] ?? ['M', 'K', 'G'])!;
-    const primaryMass = (SPECTRAL_TYPES[primaryStarType] ?? SPECTRAL_TYPES.G).mass;
+    const primaryMass = primaryMassKg ?? (SPECTRAL_TYPES[primaryStarType] ?? SPECTRAL_TYPES.G).mass;
     const availableSubtypes = Object.keys(SPECTRAL_TYPES).filter(
       (key) =>
         key.startsWith(broadType) &&
-        (key.endsWith('V') || /^[LTY]\d$/.test(key)) &&
+        (isMainSequenceStar(key) || /^[LTY]\d$/.test(key)) &&
         SPECTRAL_TYPES[key].mass <= primaryMass &&
         ageGyr <= estimateMainSequenceLifetimeGyr(key) * 0.92
     );
     // Coeval main-sequence companions must still be alive and no more massive than the designated primary.
-    return availableSubtypes.length > 0 ? prng.choice(availableSubtypes)! : primaryStarType;
+    return availableSubtypes.length > 0
+      ? prng.choice(availableSubtypes)!
+      : /^[LTY]/.test(primaryStarType)
+        ? primaryStarType
+        : 'M9V';
   }
 
   /** Creates star body. */
@@ -939,17 +968,26 @@ export class SystemDataGenerator {
     starType: string,
     ageGyr: number,
     metallicityFeH: number,
-    orbit: StellarBody['orbit']
+    orbit: StellarBody['orbit'],
+    evolution?: StellarEvolutionState
   ): StellarBody {
     const starInfo = SPECTRAL_TYPES[starType] ?? SPECTRAL_TYPES.G;
-    const environment = { starType, ageGyr, metallicityFeH };
+    const environment = {
+      starType,
+      ageGyr,
+      metallicityFeH,
+      ...(evolution ? { evolution: { ...evolution } } : {}),
+    };
+    const radiusM = evolution?.radiusM ?? starInfo.radius;
     return {
       id,
       name: `${systemName} ${id}`,
       starType,
-      massKg: starInfo.mass,
-      radiusM: starInfo.radius,
-      luminosityW: calculateStellarLuminosityW(starType, estimateEvolutionaryLuminosityFactor(environment)),
+      massKg: evolution ? evolution.massSolar * SOLAR_MASS_KG : starInfo.mass,
+      radiusM,
+      luminosityW:
+        calculateStellarLuminosityW(starType, estimateEvolutionaryLuminosityFactor(environment)) *
+        (radiusM / starInfo.radius) ** 2,
       systemX: 0,
       systemY: 0,
       orbit,

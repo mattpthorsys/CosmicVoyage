@@ -96,6 +96,18 @@ describe('DrawingContext', () => {
   });
 
   describe('drawCircle', () => {
+    it('clips giant discs to the viewport without losing any visible pixels', () => {
+      drawingContext.drawCircle(-100, 5, 1000, '*', '#FFF', '#000');
+      expect(drawCharSpy).toHaveBeenCalledTimes(mockCols * mockRows);
+      for (let y = 0; y < mockRows; y++) {
+        for (let x = 0; x < mockCols; x++) {
+          expect(drawCharSpy).toHaveBeenCalledWith('*', x, y, '#FFF', '#000');
+        }
+      }
+      drawCharSpy.mockClear();
+      drawingContext.drawCircle(-100, 5, 10, '*', '#FFF');
+      expect(drawCharSpy).not.toHaveBeenCalled();
+    });
     it('should draw characters within the radius', () => {
       drawingContext.drawCircle(5, 5, 1, '*', '#FFF', '#000'); // Center (5,5), radius 1
       // Cells to draw: (5,4), (4,5), (5,5), (6,5), (5,6) for radius 1 (x*x+y*y <= 1*1)

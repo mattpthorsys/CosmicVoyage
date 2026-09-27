@@ -2,7 +2,9 @@ import { RendererFacade } from '../rendering/renderer_facade';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
-import { AU_IN_METERS } from '../constants/physics';
+import { AU_IN_METERS, SOLAR_MASS_KG, SOLAR_RADIUS_M, SOLAR_LUMINOSITY_W } from '../constants/physics';
+import { getStellarStageLabel } from '../entities/stellar_environment';
+import { getStellarDetectionRadii } from './stellar_detection';
 import { ELEMENTS } from '../constants/resources';
 import { SPECTRAL_TYPES } from '../constants/stellar';
 import { STATUS_MESSAGES } from '../constants/messages';
@@ -2875,7 +2877,12 @@ export class Game {
     const phenomenon = props.exists
       ? null
       : this.systemDataGenerator.getDeepSpacePhenomenonProperties(worldX, worldY);
-    const isNavigable = props.exists || isNavigablePhenomenon(phenomenon);
+    const detectionRadius = props.exists
+      ? getStellarDetectionRadii(props).statusRadius
+      : CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS;
+    const isNavigable =
+      (props.exists || isNavigablePhenomenon(phenomenon)) &&
+      Math.hypot(cursor.dx, cursor.dy) <= detectionRadius;
     if (!isNavigable) {
       this.terminalOverlay.addMessageLines([
         '<h>LONG-RANGE OBSERVATION</h>',
@@ -2896,7 +2903,7 @@ export class Game {
     }
     const observedStarType = phenomenon?.type === 'neutron-star' ? 'NS' : props.starType;
     const observedKind = phenomenon?.type === 'neutron-star' ? 'neutron-star' : props.objectKind;
-    const quality = this.getInterstellarObservationQuality(cursor, observedStarType, observedKind);
+    const quality = this.getInterstellarObservationQuality(cursor, observedKind, detectionRadius);
     const lines = this.formatInterstellarObserveReport(
       target,
       worldX,
@@ -2973,30 +2980,24 @@ export class Game {
   /** Returns interstellar observation quality. */
   private getInterstellarObservationQuality(
     cursor: TravelObserveCursor,
-    starType: string | null,
-    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | 'neutron-star' | null
+    objectKind: 'stellar' | 'brown-dwarf' | 'rogue-planet' | 'neutron-star' | null,
+    detectionRadius: number
   ): { confidence: number; rangeCells: number; label: string; signature: string; rangeLabel: string } {
     const rangeCells = Math.hypot(cursor.dx, cursor.dy);
-    const starInfo = starType ? SPECTRAL_TYPES[starType] : null;
-    const solarRadius = SPECTRAL_TYPES.G.radius || 1;
-    const brightnessSignal = Math.sqrt(
-      Math.max(0.02, starInfo?.brightness ?? (objectKind === 'rogue-planet' ? 0.025 : 0.12))
-    );
-    const radiusSignal = Math.sqrt(Math.max(0.05, (starInfo?.radius ?? solarRadius * 0.08) / solarRadius));
+    // Stellar source strength is already represented by its flux-based detection horizon.
     const sourceStrength =
       objectKind === 'rogue-planet'
         ? 0.18
         : objectKind === 'neutron-star'
           ? 0.75 // The periodic radio beacon resolves better than the tiny optical disc.
-          : Math.max(0.12, Math.min(1.35, brightnessSignal * 0.66 + radiusSignal * 0.34));
+          : 1;
     const capabilityBonus = getOperationalCapabilities(
       this.player.crew,
       this.player.ship
     ).scanConfidenceBonus;
-    const referenceRangeCells = rangeCells / CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
     const confidence = Math.max(
       8,
-      Math.min(98, Math.round((104 - referenceRangeCells * 2.55) * sourceStrength + capabilityBonus))
+      Math.min(98, Math.round((98 - (80 * rangeCells) / detectionRadius) * sourceStrength + capabilityBonus))
     );
     const label =
       confidence >= 72
@@ -3141,8 +3142,11 @@ export class Game {
     }
 
     const range = Math.max(0, contact.rangeCells);
-    const referenceRangeCells = range / CONFIG.HYPERSPACE_CELL_LINEAR_SCALE;
-    const confidence = Math.max(12, Math.min(98, Math.round(96 - referenceRangeCells * 2.3)));
+    const horizon = survey.nearestSystemContact?.system
+      ? getStellarDetectionRadii(survey.nearestSystemContact.system, survey.medium.sensorRangeMultiplier)
+          .statusRadius
+      : survey.detectionRadius;
+    const confidence = Math.max(12, Math.min(98, Math.round(98 - (80 * range) / horizon)));
     const rangeLabel =
       confidence > 65
         ? `${range.toFixed(1)} cells / ${formatHyperspaceSpan(range)}`
@@ -3159,7 +3163,7 @@ export class Game {
       `CONTACT: <hl>${classification}</hl>`,
       `BEARING: <hl>${bearing}</hl>  RANGE: <hl>${rangeLabel}</hl>`,
       `CONFIDENCE: <hl>${confidence}%</hl>  FACILITY TRACE: <hl>${contact.hasStarbase && confidence > 45 ? 'possible' : 'none'}</hl>`,
-      range > CONFIG.NORMAL_STAR_DETECTION_RADIUS_CELLS
+      range > horizon * 0.7
         ? 'Reading is smeared by distance and medium scattering.'
         : 'Reading is stable enough for approach decisions.',
     ]);
@@ -3305,21 +3309,19 @@ export class Game {
         `Architecture: <hl>${system.architecture.kind.toUpperCase()}</hl> (${system.stars.length} star${system.stars.length === 1 ? '' : 's'})`
       );
     lines.push(`Spectral Type: <hl>${star.starType}</hl>`); // Use highlight tag
-    lines.push(`Stellar Age: <hl>~${star.environment.ageGyr.toFixed(2)} Gyr</hl>`);
+    lines.push(`Classification: <hl>${getStellarStageLabel(star.starType)}</hl>`);
     lines.push(
-      `Metallicity: <hl>${star.environment.metallicityFeH >= 0 ? '+' : ''}${star.environment.metallicityFeH.toFixed(2)} [Fe/H]</hl>`
+      `Stellar Age: <hl>~${star.environment.ageGyr.toFixed(star.environment.ageGyr < 0.1 ? 3 : 2)} Gyr</hl>`
+    );
+    lines.push(
+      `${star.environment.evolution && star.environment.evolution.stage !== 'main-sequence' ? 'Birth metallicity' : 'Metallicity'}: <hl>${star.environment.metallicityFeH >= 0 ? '+' : ''}${star.environment.metallicityFeH.toFixed(2)} [Fe/H]</hl>`
     );
     if (starInfo) {
       lines.push(`Temperature: <hl>~${starInfo.temp.toLocaleString()} K</hl>`);
-      // Calculate approx luminosity relative to Sol if possible
-      const SUN_TEMP = SPECTRAL_TYPES['G'].temp;
-      const SUN_RADIUS_M = 6.957e8;
-      const starRadius_m = starInfo.radius ?? SUN_RADIUS_M;
-      const relativeLuminosity =
-        Math.pow(starInfo.temp / SUN_TEMP, 4) * Math.pow(starRadius_m / SUN_RADIUS_M, 2);
+      const relativeLuminosity = star.luminosityW / SOLAR_LUMINOSITY_W;
       lines.push(`Luminosity: <hl>~${relativeLuminosity.toExponential(1)}</hl> (Rel. Sol)`);
-      lines.push(`Mass: <hl>~${(starInfo.mass / 1.98847e30).toFixed(2)} Solar Masses</hl>`); // Show solar masses
-      lines.push(`Radius: <hl>~${(starInfo.radius / 6.957e8).toFixed(1)} Solar Radii</hl>`); // Show solar radii
+      lines.push(`Mass: <hl>~${(star.massKg / SOLAR_MASS_KG).toFixed(2)} Solar Masses</hl>`);
+      lines.push(`Radius: <hl>~${(star.radiusM / SOLAR_RADIUS_M).toPrecision(3)} Solar Radii</hl>`);
     } else {
       lines.push(`Temperature: [-W-]Unknown</w>`);
       lines.push(`Luminosity: [-W-]Unknown</w>`);
@@ -3529,7 +3531,7 @@ export class Game {
       if (contact.objectKind === 'brown-dwarf') baseStatus += ' faint';
       if (contact.hasStarbase) baseStatus += ' Starbase';
     } else {
-      baseStatus += ` | Contact: none within ${formatHyperspaceSpan(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS)}`;
+      baseStatus += ' | Contact: no resolved returns';
     }
     baseStatus += ` | Fuel reach: ${fuelReach} cell${fuelReach === 1 ? '' : 's'} / ${formatHyperspaceSpan(fuelReach)}`;
 
@@ -5751,8 +5753,7 @@ export class Game {
   private getTargetClassLabel(target: NavigationTarget): string {
     if (target instanceof Planet) return 'Planet';
     if (target instanceof Starbase) return 'Starbase';
-    if (target.starType === 'NS') return 'Neutron star';
-    return `Star ${target.id}`;
+    return `${getStellarStageLabel(target.starType)} ${target.id}`;
   }
 
   /** Returns target short name. */

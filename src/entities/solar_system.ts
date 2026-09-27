@@ -77,7 +77,10 @@ export class SolarSystem {
       ...blueprint,
       stars: blueprint.stars.map((star) => ({
         ...star,
-        environment: { ...star.environment },
+        environment: {
+          ...star.environment,
+          ...(star.environment.evolution ? { evolution: { ...star.environment.evolution } } : {}),
+        },
         orbit: star.orbit ? { ...star.orbit } : null,
       })),
     };
@@ -803,7 +806,7 @@ export class SolarSystem {
     const nearestStarDistance_m = this.getNearestOtherStarDistance(star);
     if (!Number.isFinite(nearestStarDistance_m) || nearestStarDistance_m < 5 * AU_IN_METERS) return null;
 
-    const starClass = star.starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G';
+    const starClass = this.getSpectralClass(star.starType);
     const minByClassAu: Record<string, number> = {
       O: 0.9,
       B: 0.65,
@@ -816,9 +819,13 @@ export class SolarSystem {
       T: 0.025,
       Y: 0.02,
     };
-    const minOrbit_m = Math.max(star.radiusM * 18, (minByClassAu[starClass] ?? 0.12) * AU_IN_METERS);
     const range = getStableOrbitRange(this.architecture, { kind: 'circumstellar', starId: star.id });
     if (!range) return null;
+    const minOrbit_m = Math.max(
+      range.minRadius,
+      star.radiusM * 18,
+      (minByClassAu[starClass] ?? 0.12) * AU_IN_METERS
+    );
     const maxOrbit_m = range.maxRadius;
     if (maxOrbit_m <= minOrbit_m * 1.7) return null;
     return { minOrbit_m, maxOrbit_m, nearestStarDistance_m };
@@ -1293,6 +1300,8 @@ export class SolarSystem {
       A: 0.58,
       B: 0.22,
       O: 0.08,
+      W: 0.05,
+      D: 0.4,
       L: 0.62,
       T: 0.48,
       Y: 0.32,
@@ -1304,7 +1313,7 @@ export class SolarSystem {
       (starClass === 'M' || starClass === 'L' || starClass === 'T' || starClass === 'Y') && orbitAU < 2
         ? 0.08
         : 0;
-    const hotStarPenalty = ['A', 'B', 'O'].includes(starClass) && effectiveTemp > 420 ? -0.18 : 0;
+    const hotStarPenalty = ['A', 'B', 'O', 'W'].includes(starClass) && effectiveTemp > 420 ? -0.18 : 0;
     const lateSlotPenalty = slotIndex * (starClass === 'M' || starClass === 'K' ? 0.035 : 0.055);
     return this.clamp(
       (baseByClass[starClass] ?? 0.75) +
@@ -1354,6 +1363,8 @@ export class SolarSystem {
       A: 1.45,
       B: 0.7,
       O: 0.25,
+      W: 0.15,
+      D: 1.0,
       L: 0.18,
       T: 0.1,
       Y: 0.05,
@@ -1739,7 +1750,7 @@ export class SolarSystem {
 
   /** Returns spectral class. */
   private getSpectralClass(starType: string = this.starType): string {
-    return (starType.match(/^[OBAFGKMLTY]/)?.[0] ?? 'G') as string;
+    return (starType.match(/^[OBAFGKMLTYDW]/)?.[0] ?? 'G') as string;
   }
 
   /** Selects a value according to the supplied relative weights. */

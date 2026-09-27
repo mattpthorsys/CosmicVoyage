@@ -6,6 +6,42 @@ export interface StellarEnvironment {
   starType: string;
   ageGyr: number;
   metallicityFeH: number;
+  evolution?: StellarEvolutionState;
+}
+
+export type StellarEvolutionStage =
+  | 'main-sequence'
+  | 'subgiant'
+  | 'red-giant'
+  | 'blue-giant'
+  | 'blue-supergiant'
+  | 'red-supergiant'
+  | 'wolf-rayet'
+  | 'white-dwarf';
+
+export interface StellarEvolutionState {
+  stage: StellarEvolutionStage;
+  initialMassSolar: number;
+  mainSequenceLifetimeGyr: number;
+  massSolar: number;
+  radiusM: number;
+}
+
+/** Recognises ordinary hydrogen-burning catalogue entries, excluding luminosity class IV. */
+export function isMainSequenceStar(starType: string): boolean {
+  return /^[OBAFGKM](\dV)?$/.test(starType);
+}
+
+/** Returns a readable evolutionary classification independently of colour. */
+export function getStellarStageLabel(starType: string): string {
+  if (starType === 'NS') return 'Neutron star';
+  if (/^D/.test(starType)) return 'White dwarf';
+  if (starType === 'WN') return 'Wolf-Rayet star';
+  if (/Iab$|Ia$/.test(starType)) return starType.startsWith('M') ? 'Red supergiant' : 'Blue supergiant';
+  if (/III$/.test(starType)) return /^[OB]/.test(starType) ? 'Blue giant' : 'Red giant';
+  if (/IV$/.test(starType)) return 'Subgiant';
+  if (/^[LTY]/.test(starType)) return 'Brown dwarf';
+  return 'Main-sequence star';
 }
 
 const MILKY_WAY_DISK_AGE_GYR = 13.2;
@@ -23,7 +59,10 @@ export function getSpectralClass(starType: string): string {
 /** Estimates main sequence lifetime gyr. */
 export function estimateMainSequenceLifetimeGyr(starType: string): number {
   const massSolar = (SPECTRAL_TYPES[starType]?.mass ?? SPECTRAL_TYPES['G'].mass) / SOLAR_MASS_KG;
-  return clamp(10 * Math.pow(massSolar, -2.5), 0.003, 1000);
+  // Massive-star luminosity flattens relative to M^3.5; extending the low-mass
+  // power law would prematurely remove the youngest O-star population.
+  const lifetime = massSolar > 8 ? 10 * 8 ** -2.5 * (massSolar / 8) ** -1.5 : 10 * massSolar ** -2.5;
+  return clamp(lifetime, 0.003, 1000);
 }
 
 /** Generates stellar age gyr. */
@@ -97,6 +136,8 @@ export function getDefaultStellarEnvironment(parentStarType: string): StellarEnv
 
 /** Estimates evolutionary luminosity factor. */
 export function estimateEvolutionaryLuminosityFactor(environment: StellarEnvironment): number {
+  // Evolved phase radii/temperatures already encode their luminosity, not a dwarf ageing correction.
+  if (!isMainSequenceStar(environment.starType) && !/^[LTY]/.test(environment.starType)) return 1;
   const spectralClass = getSpectralClass(environment.starType);
   const lifetime = estimateMainSequenceLifetimeGyr(environment.starType);
   const fractionalAge = clamp(environment.ageGyr / lifetime, 0, 0.98);
@@ -119,17 +160,21 @@ export function estimateStellarActivity(environment: StellarEnvironment, orbitAu
   const youngBoost =
     environment.ageGyr < 0.1 ? 2.5 : environment.ageGyr < 1 ? 1.6 : environment.ageGyr < 3 ? 1.15 : 0.85;
   const typeBoost =
-    spectralClass === 'O' || spectralClass === 'B'
-      ? 2.2
-      : spectralClass === 'A'
-        ? 1.65
-        : spectralClass === 'M'
-          ? 1.45
-          : spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y'
-            ? 0.55
-            : spectralClass === 'F'
-              ? 1.2
-              : 1.0;
+    spectralClass === 'W'
+      ? 3
+      : spectralClass === 'D'
+        ? Math.max(0.55, Math.min(3, (SPECTRAL_TYPES[environment.starType]?.temp ?? 10000) / 10000))
+        : spectralClass === 'O' || spectralClass === 'B'
+          ? 2.2
+          : spectralClass === 'A'
+            ? 1.65
+            : spectralClass === 'M'
+              ? 1.45
+              : spectralClass === 'L' || spectralClass === 'T' || spectralClass === 'Y'
+                ? 0.55
+                : spectralClass === 'F'
+                  ? 1.2
+                  : 1.0;
   const proximityBoost = orbitAu < 0.35 ? 1.7 : orbitAu < 0.8 ? 1.25 : 1.0;
   return clamp(typeBoost * youngBoost * proximityBoost, 0.45, 5);
 }

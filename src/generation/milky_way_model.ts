@@ -1,5 +1,10 @@
 import { CONFIG } from '../config';
 import { PRNG } from '../utils/prng';
+import {
+  projectedSystemMean,
+  projectedPopulationWeights,
+  projectedYoungFraction,
+} from './galactic_projection';
 
 export type GalacticPopulation = 'thin-disk' | 'thick-disk' | 'bulge' | 'halo';
 export type GalacticClusterKind = 'open' | 'globular';
@@ -262,12 +267,22 @@ export class MilkyWayModel {
     const macro = this.sampleMacro(coordinates.xPc, coordinates.yPc);
     const cluster = this.findCluster(worldX * cellPc, -worldY * cellPc);
     const clusterDensityBoost = cluster ? 1 + cluster.influence * (cluster.kind === 'open' ? 2.2 : 3.5) : 1;
+    const totalPopulation = Math.max(1e-8, macro.thinDisk + macro.thickDisk + macro.bulge + macro.halo);
+    const populationWeights = {
+      'thin-disk': macro.thinDisk / totalPopulation,
+      'thick-disk': macro.thickDisk / totalPopulation,
+      bulge: macro.bulge / totalPopulation,
+      halo: macro.halo / totalPopulation,
+    };
     const expectedResolvedSystems = this.clamp(
-      CONFIG.STAR_DENSITY * macro.relativeStellarDensity * clusterDensityBoost,
+      projectedSystemMean(
+        macro.relativeStellarDensity * clusterDensityBoost,
+        populationWeights,
+        macro.armInfluence
+      ),
       CONFIG.STAR_DENSITY * 0.004,
       3.2
     );
-    const totalPopulation = Math.max(1e-8, macro.thinDisk + macro.thickDisk + macro.bulge + macro.halo);
     return {
       worldX,
       worldY,
@@ -279,12 +294,7 @@ export class MilkyWayModel {
       azimuthRad: macro.azimuthRad,
       relativeStellarDensity: macro.relativeStellarDensity * clusterDensityBoost,
       expectedResolvedSystems,
-      populationWeights: {
-        'thin-disk': macro.thinDisk / totalPopulation,
-        'thick-disk': macro.thickDisk / totalPopulation,
-        bulge: macro.bulge / totalPopulation,
-        halo: macro.halo / totalPopulation,
-      },
+      populationWeights: projectedPopulationWeights(populationWeights, macro.armInfluence),
       armName: macro.armName,
       armInfluence: macro.armInfluence,
       gasDensity: macro.gasDensity,
@@ -297,14 +307,18 @@ export class MilkyWayModel {
 
   /** Samples age and metallicity jointly from the local Galactic population. */
   sampleStellarPopulation(context: GalacticCellContext, prng: PRNG): StellarPopulationSample {
-    const population = this.weightedChoice(prng, context.populationWeights);
+    const population = context.cluster
+      ? context.cluster.kind === 'globular'
+        ? 'halo'
+        : 'thin-disk'
+      : this.weightedChoice(prng, context.populationWeights);
     let ageGyr: number;
 
     if (context.cluster) {
       ageGyr = this.clamp(context.cluster.ageGyr + prng.random(-0.04, 0.04), 0.002, MILKY_WAY_AGE_GYR);
     } else if (population === 'thin-disk') {
       // A continuous history with a modest young-arm enhancement avoids making arms solid ribbons.
-      const youngChance = 0.08 + context.armInfluence * 0.22;
+      const youngChance = projectedYoungFraction(context.armInfluence);
       ageGyr =
         prng.random() < youngChance ? prng.random(0.003, 1.2) : 0.25 + Math.pow(prng.random(), 0.82) * 9.75;
     } else if (population === 'thick-disk') {
@@ -686,7 +700,9 @@ export class MilkyWayModel {
     const identity = Math.floor(this.hashUnit(`${kind}:name:${sectorX},${sectorY}`) * 8999 + 1000);
     const ageGyr =
       kind === 'open'
-        ? 0.015 + this.hashUnit(`${kind}:age:${sectorX},${sectorY}`) * 4.2
+        ? this.hashUnit(`${kind}:young:${sectorX},${sectorY}`) < 0.15 + environment.armInfluence * 0.35
+          ? 0.002 + this.hashUnit(`${kind}:age:${sectorX},${sectorY}`) * 0.078
+          : 0.08 + this.hashUnit(`${kind}:age:${sectorX},${sectorY}`) * 4.12
         : 10.4 + this.hashUnit(`${kind}:age:${sectorX},${sectorY}`) * 2.5;
     const metallicityFeH =
       kind === 'open'

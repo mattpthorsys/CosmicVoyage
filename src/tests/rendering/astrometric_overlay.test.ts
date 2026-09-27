@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Planet } from '../../entities/planet';
 import { Player } from '../../core/player';
 import { AstrometricOverlay } from '../../rendering/astrometric_overlay';
+import { getStellarDetectionRadii } from '../../core/stellar_detection';
 import { CONFIG } from '../../config';
 
 /** Creates planet. */
@@ -114,8 +115,9 @@ describe('AstrometricOverlay starbase markers', () => {
   });
 
   it('limits brown-dwarf overlay contacts to the short-range detection horizon', () => {
-    const nearRange = CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS - 1;
-    const farRange = CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS + 1;
+    const horizon = getStellarDetectionRadii({ starType: 'T4', objectKind: 'brown-dwarf' }).overlayRadius;
+    const nearRange = Math.floor(horizon) - 1;
+    const farRange = Math.ceil(horizon) + 1;
     const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
     Object.defineProperties(overlay, {
       systemDataGenerator: {
@@ -152,7 +154,10 @@ describe('AstrometricOverlay starbase markers', () => {
 
   it('lets interstellar medium reduce hyperspace contact detection range', () => {
     const sensorMultiplier = 0.62;
-    const reducedRange = CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS * sensorMultiplier;
+    const reducedRange = getStellarDetectionRadii(
+      { starType: 'G1V', objectKind: 'stellar' },
+      sensorMultiplier
+    ).overlayRadius;
     const nearRange = Math.floor(reducedRange) - 1;
     const farRange = Math.ceil(reducedRange) + 1;
     const overlay = Object.create(AstrometricOverlay.prototype) as AstrometricOverlay;
@@ -164,7 +169,7 @@ describe('AstrometricOverlay starbase markers', () => {
               return {
                 exists: true,
                 name: 'Clear-Near',
-                starType: 'K2V',
+                starType: 'G1V',
                 objectKind: 'stellar',
                 hasStarbase: false,
               };

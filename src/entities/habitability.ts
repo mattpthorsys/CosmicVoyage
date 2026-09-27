@@ -6,6 +6,7 @@ import {
   estimateMainSequenceLifetimeGyr,
   estimateStellarActivity,
   getSpectralClass,
+  isMainSequenceStar,
 } from './stellar_environment';
 import type { OrbitHost, StellarArchitecture, StellarBody } from './stellar_body';
 import { isOrbitWithinStableRange } from './orbital_stability';
@@ -66,6 +67,14 @@ export function assessStellarHost(
         star.id === (host?.kind === 'circumstellar' ? (host.starId ?? 'A') : architecture.primaryStarId)
     ) ?? architecture.stars[0];
   const spectralClass = getSpectralClass(primary.starType);
+  if (!isMainSequenceStar(primary.starType)) {
+    return {
+      score: 0,
+      eligibleForCompleteTerraforming: false,
+      eligibleForPartialTerraforming: false,
+      reasons: ['host is not in a stable main-sequence phase'],
+    };
+  }
   const subtype = getSpectralSubtype(primary.starType);
   const lifetimeGyr = estimateMainSequenceLifetimeGyr(primary.starType);
   const remainingLifetimeGyr = lifetimeGyr - primary.environment.ageGyr;

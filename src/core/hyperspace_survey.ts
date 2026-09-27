@@ -12,6 +12,7 @@ import {
   LocalHyperspaceSurveyCellProvider,
 } from './hyperspace_survey_cell_provider';
 import { logger } from '../utils/logger';
+import { getStellarDetectionRadii } from './stellar_detection';
 
 export interface HyperspaceSurveyCell {
   worldX: number;
@@ -118,15 +119,28 @@ export class HyperspaceSurveyService {
         const rangeCells = Math.hypot(x - viewCenterX, y - viewCenterY);
         const cell = this.getCell(cellWorldX, cellWorldY, rangeCells);
         visibleCells[y * safeCols + x] = cell;
-        if (x > 0 && x < safeCols - 1 && cell.system.exists && cell.system.hasStarbase) {
+        if (
+          x > 0 &&
+          x < safeCols - 1 &&
+          cell.system.exists &&
+          cell.system.hasStarbase &&
+          rangeCells <= getStellarDetectionRadii(cell.system, medium.sensorRangeMultiplier).statusRadius
+        ) {
           starbaseMarkers.push({ x, y, distanceCells: rangeCells });
         }
       }
     }
 
-    const scanRadius = Math.max(
-      detectionRadius,
-      Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier)
+    const localExpected = this.systemDataGenerator.getGalacticContext?.(
+      worldX,
+      worldY
+    ).expectedResolvedSystems;
+    const localSystemDensity = Math.max(1e-7, localExpected ?? CONFIG.STAR_DENSITY);
+    // Search far enough that a Poisson field has fewer than 0.25% empty-search misses.
+    const statisticalRadius = Math.ceil(Math.sqrt(6 / (Math.PI * localSystemDensity)));
+    const scanRadius = Math.min(
+      Math.ceil(CONFIG.MAX_STAR_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier),
+      statisticalRadius
     );
     this.prefetchSurveyCells(startWorldX, startWorldY, safeCols, safeRows, scanRadius);
     const nearestSystemContact = this.findNearestSystemContact(
@@ -164,7 +178,7 @@ export class HyperspaceSurveyService {
     const contacts: HyperspaceSurveyContact[] = [];
     const scanRadius = Math.max(
       survey.detectionRadius,
-      Math.ceil(CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * survey.medium.sensorRangeMultiplier)
+      Math.ceil(CONFIG.MAX_STAR_OVERLAY_RADIUS_CELLS * survey.medium.sensorRangeMultiplier)
     );
 
     for (let dy = -scanRadius; dy <= scanRadius; dy++) {
@@ -233,16 +247,7 @@ export class HyperspaceSurveyService {
 
   /** Returns contact radii. */
   private getContactRadii(system: SystemMapProperties, sensorRangeMultiplier: number): ContactRadii {
-    return {
-      statusRadius:
-        (system.objectKind === 'brown-dwarf'
-          ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS
-          : CONFIG.NORMAL_STAR_DETECTION_RADIUS_CELLS) * sensorRangeMultiplier,
-      overlayRadius:
-        (system.objectKind === 'brown-dwarf'
-          ? CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS
-          : CONFIG.NORMAL_STAR_OVERLAY_RADIUS_CELLS) * sensorRangeMultiplier,
-    };
+    return getStellarDetectionRadii(system, sensorRangeMultiplier);
   }
 
   /** Returns cell. */
@@ -280,7 +285,8 @@ export class HyperspaceSurveyService {
 
     const centerWorldX = startWorldX + Math.floor(cols / 2);
     const centerWorldY = startWorldY + Math.floor(rows / 2);
-    const prefetchScanRadius = scanRadius + 2;
+    // Warm nearby travel, not the entire luminous-star horizon on every one-cell move.
+    const prefetchScanRadius = Math.min(scanRadius, 32) + 2;
     collectScan: for (let radius = 0; radius <= prefetchScanRadius; radius++) {
       for (let dy = -radius; dy <= radius; dy++) {
         for (let dx = -radius; dx <= radius; dx++) {

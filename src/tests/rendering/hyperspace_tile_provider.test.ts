@@ -48,7 +48,13 @@ describe('HyperspaceTileProvider', () => {
     const distant = provider.getTile(10, 10, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS + 1);
     const near = provider.getTile(10, 10, CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS);
 
-    expect(distant).toEqual({ bg: '#010203', starChar: null, starColor: null });
+    expect(distant).toEqual({
+      bg: '#010203',
+      starChar: null,
+      starColor: null,
+      visibilityRadius: CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS,
+      detailRadius: CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS * 0.5,
+    });
     expect(near.starChar).toBeTruthy();
     expect(near.starColor).toMatch(/^#[0-9A-F]{6}$/);
   });

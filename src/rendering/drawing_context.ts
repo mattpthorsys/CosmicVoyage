@@ -67,8 +67,9 @@ export class DrawingContext {
     cy = Math.floor(cy);
     radius = Math.floor(radius);
 
-    for (let y = -radius; y <= radius; y++) {
-      for (let x = -radius; x <= radius; x++) {
+    // Giant stellar discs may extend far beyond the viewport at close zoom.
+    for (let y = Math.max(-radius, -cy); y <= Math.min(radius, this.screenBuffer.getRows() - 1 - cy); y++) {
+      for (let x = Math.max(-radius, -cx); x <= Math.min(radius, this.screenBuffer.getCols() - 1 - cx); x++) {
         // Use <= for filled circle
         if (x * x + y * y <= radius * radius) {
           this.screenBuffer.drawChar(char, cx + x, cy + y, fg, bg);

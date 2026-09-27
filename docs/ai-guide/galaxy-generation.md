@@ -2,7 +2,7 @@
 
 ## Scope And Coordinate Model
 
-Generation version 6 treats the navigable map as a top-down projection of the
+Generation version 8 treats the navigable map as a top-down projection of the
 Milky Way. It is not a hidden three-dimensional simulation.
 
 - One world cell is one light-year.
@@ -122,10 +122,15 @@ and integrated brightness.
 
 ## Stellar Populations
 
-Generation samples population, age, and metallicity before spectral class.
+Generation samples a Galactic population and chemical scatter, then jointly
+samples birth mass, age and evolutionary phase. The map descriptor carries this
+sample into local generation. Finite-slab projection and source-dependent
+detection are described in [Stellar Population And Detection](../stellar-populations.md).
 The present-day class distribution is dominated by M dwarfs, followed by K and
-G stars. Short-lived O/B/A stars are only possible in appropriately young
-populations and are enhanced near arm gas without becoming common.
+G stars, with a surviving evolved/remnant population. Short-lived O/B/A dwarfs
+are only possible in appropriately young populations and are enhanced near arm
+gas without becoming common. Blue giants and other evolved spectra are distinct
+from hot main-sequence stars; do not classify luminosity class IV as class V.
 
 Multiplicity is generated independently from stable address seeds. Human
 settlements select naturally single architectures; generation must not change

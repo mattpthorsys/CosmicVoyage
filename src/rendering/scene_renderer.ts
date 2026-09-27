@@ -63,12 +63,17 @@ interface VisiblePlanetMarker {
   marker: string;
 }
 
+interface HyperspaceBackgroundCell extends CellState {
+  visibilityRadius?: number;
+  detailRadius?: number;
+}
+
 interface HyperspaceFrameCache {
   cols: number;
   rows: number;
   startWorldX: number;
   startWorldY: number;
-  cells: CellState[];
+  cells: HyperspaceBackgroundCell[];
 }
 
 export interface HyperspaceRenderStats {
@@ -328,8 +333,8 @@ export class SceneRenderer {
     viewCenterX: number,
     viewCenterY: number,
     surveyCells?: readonly HyperspaceSurveyCell[]
-  ): CellState[] {
-    const cells = new Array<CellState>(cols * rows);
+  ): HyperspaceBackgroundCell[] {
+    const cells = new Array<HyperspaceBackgroundCell>(cols * rows);
     for (let viewY = 0; viewY < rows; viewY++) {
       for (let viewX = 0; viewX < cols; viewX++) {
         const surveyCell = surveyCells?.[viewY * cols + viewX];
@@ -346,6 +351,8 @@ export class SceneRenderer {
         } else {
           cells[index] = this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
         }
+        cells[index].visibilityRadius = tile.visibilityRadius;
+        cells[index].detailRadius = tile.detailRadius;
       }
     }
     return cells;
@@ -359,7 +366,7 @@ export class SceneRenderer {
     rows: number,
     viewCenterX: number,
     viewCenterY: number
-  ): CellState[] | null {
+  ): HyperspaceBackgroundCell[] | null {
     const previous = this.hyperspaceFrameCache;
     if (
       !previous ||
@@ -375,7 +382,7 @@ export class SceneRenderer {
     if (deltaX === 0 && deltaY === 0) return previous.cells;
     if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) return null;
 
-    const cells = new Array<CellState>(cols * rows);
+    const cells = new Array<HyperspaceBackgroundCell>(cols * rows);
     for (let viewY = 0; viewY < rows; viewY++) {
       for (let viewX = 0; viewX < cols; viewX++) {
         const sourceX = viewX + deltaX;
@@ -384,8 +391,12 @@ export class SceneRenderer {
         if (sourceX >= 0 && sourceX < cols && sourceY >= 0 && sourceY < rows) {
           const previousRange = Math.hypot(sourceX - viewCenterX, sourceY - viewCenterY);
           const currentRange = Math.hypot(viewX - viewCenterX, viewY - viewCenterY);
-          if (this.getHyperspaceRangeBand(previousRange) === this.getHyperspaceRangeBand(currentRange)) {
-            cells[index] = previous.cells[sourceY * cols + sourceX];
+          const previousCell = previous.cells[sourceY * cols + sourceX];
+          if (
+            this.getHyperspaceRangeBand(previousRange, previousCell) ===
+            this.getHyperspaceRangeBand(currentRange, previousCell)
+          ) {
+            cells[index] = previousCell;
             continue;
           }
         }
@@ -400,17 +411,18 @@ export class SceneRenderer {
         cells[index] = tile.starChar
           ? this.createCell(tile.starChar, tile.starColor, tile.bg, false)
           : this.createCell(' ', CONFIG.DEFAULT_FG_COLOUR, tile.bg, false);
+        cells[index].visibilityRadius = tile.visibilityRadius;
+        cells[index].detailRadius = tile.detailRadius;
       }
     }
     return cells;
   }
 
   /** Returns hyperspace range band. */
-  private getHyperspaceRangeBand(rangeCells: number): number {
-    if (rangeCells <= CONFIG.HYPERSPACE_NEAR_DETAIL_RADIUS_CELLS) return 0;
-    if (rangeCells <= CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS) return 1;
-    if (rangeCells <= CONFIG.BROWN_DWARF_DETECTION_RADIUS_CELLS) return 2;
-    return 3;
+  private getHyperspaceRangeBand(rangeCells: number, cell: HyperspaceBackgroundCell): number {
+    if (rangeCells > (cell.visibilityRadius ?? Infinity)) return 2;
+    if (rangeCells > (cell.detailRadius ?? Infinity)) return 1;
+    return 0;
   }
 
   /** Stages visible hyperspace cells before compositing overlays. */
@@ -500,7 +512,7 @@ export class SceneRenderer {
         this.screenBuffer.drawChar('*', starViewX, starViewY, starColor, CONFIG.DEFAULT_BG_COLOUR);
         return;
       }
-      const starRadius = starInfo?.radius ? Math.max(0, Math.round(starInfo.radius / viewScale)) : 1;
+      const starRadius = Math.max(0, Math.round(star.radiusM / viewScale));
       this._drawStarInSystem(starViewX, starViewY, starRadius, starColor, star.id);
     });
 

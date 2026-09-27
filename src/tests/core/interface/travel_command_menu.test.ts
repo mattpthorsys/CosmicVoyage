@@ -190,7 +190,7 @@ describe('travel command menu', () => {
     expect(game.travelObserveCursor).toBeNull();
   });
 
-  it('makes interstellar observe reports less certain for distant small contacts', () => {
+  it('rejects interstellar targets beyond their source-specific sensor horizon', () => {
     const brightTarget = { name: 'Brightfall', starType: 'G2V', starbase: null };
     const faintTarget = { name: 'Dimfall', starType: 'T8V', starbase: null };
     const game = createTravelHarness('hyperspace', 'NONE');
@@ -221,6 +221,6 @@ describe('travel command menu', () => {
     expect(brightLines).toContain('Brightfall');
     expect(brightLines).toContain('CONFIDENCE: <hl>9');
     expect(faintLines).not.toContain('Dimfall');
-    expect(faintLines).toMatch(/poorly constrained|near background|barely above background/);
+    expect(faintLines).toMatch(/no stable stellar or planetary-mass body at this bearing/);
   });
 });

@@ -193,6 +193,6 @@ export class HyperspaceTileProvider {
 
   /** Returns tile key. */
   private getTileKey(worldX: number, worldY: number, rangeCells: number): string {
-    return `${worldX},${worldY}|${Math.floor(rangeCells)}`;
+    return `${worldX},${worldY}|${rangeCells.toFixed(8)}`;
   }
 }

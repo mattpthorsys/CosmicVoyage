@@ -5,6 +5,7 @@ import { SolarSystem } from '../../entities/solar_system';
 import { CONFIG } from '../../config';
 import { Planet } from '../../entities/planet';
 import { estimateMainSequenceLifetimeGyr } from '../../entities/stellar_environment';
+import { SPECTRAL_TYPES } from '../../constants/stellar';
 
 /** Finds generated system. */
 function findGeneratedSystem(generator: SystemDataGenerator): { x: number; y: number } {
@@ -191,7 +192,7 @@ describe('SystemDataGenerator', () => {
 
     expect(first).toEqual(second);
     expect(first.exists).toBe(true);
-    expect(first.starType).toMatch(/^([OBAFGKM](\dV)?|[LTY]\d?)$/);
+    expect(SPECTRAL_TYPES[first.starType!]).toBeDefined();
     expect(first.architecture).toBeTruthy();
     expect(first.architecture!.stars.length).toBeGreaterThanOrEqual(1);
     expect(first.architecture!.stars.length).toBeLessThanOrEqual(3);
