@@ -3,10 +3,9 @@
 Date: 2026-09-27. Scope: stellar architecture, generated planets/moons,
 habitability, live orbits, navigation/rendering, and save identities.
 
-Status: source audit and implementation complete; verification deliberately
-not run yet, awaiting the user's model switch. The earlier orbital-controller
-refactor was verified separately (446 tests, commit `d6f639a`). Do not treat
-those results as verification of this change.
+Status: source audit and implementation complete. Full verification passed on
+2026-09-27 (459 tests, all 81 test files). The earlier orbital-controller
+refactor was verified separately (446 tests, commit `d6f639a`).
 
 ## Findings Addressed
 
@@ -121,26 +120,30 @@ progress is retained, incompatible local surveys/markets/active contracts are
 retired, and a vessel in local space is moved to hyperspace. Current-generation
 orbital phases remain serializable using the existing star-angle records.
 
-## Verification Handoff
+## Verification Results
 
 New/extended tests cover descriptor isolation, repeatability, total COM,
 inner/outer separations, moving hosts, station periods and outline centres,
 system extents, moon Hill limits, impossible primary fallback regions,
 host-specific stability, coeval companions, local spectral flux, lighting cache
-refresh, moon readouts and generation-six migration. They are written but
-**not yet executed**.
+refresh, moon readouts and generation-six migration.
 
-After the model switch:
+The following completed successfully:
 
-```sh
-npm run test:run -- src/tests/entities/stellar src/tests/entities/planetary/solar_system_orbits.test.ts src/tests/core/navigation src/tests/core/interface/save_game.test.ts src/tests/generation/system_data_generator.test.ts src/tests/rendering/scene_renderer.regression.test.ts
-npm run check
-```
+- Targeted regression suite: 152 tests across 18 files.
+- Focused galaxy-map renderer regression: 12 tests.
+- `npm run check`: function documentation, formatting, lint, app and test
+  type-check, all 459 tests across 81 files, and production build.
+- `git diff --check`.
 
-Review failures rather than blindly accepting new snapshots. The generation
-version intentionally changes seeded worlds; fixed-fixture visual baselines
-should not drift except where an explicitly corrected readout is involved.
-Manually inspect a triple system at wide/local zoom and an orbital view with
-two visible suns. Check depot approaches and save/load in both a triple and a
-single system. Record results here, commit the verified work, then notify the
-user that they can switch back to the higher-capability model.
+The version-seven galaxy-map fingerprint was reviewed and updated to the
+observed 6,208-pixel raster (`3605118430` hash); its focused test and the full
+suite pass. The production build succeeds with Vite's existing warning that
+the main JavaScript chunk exceeds 500 kB.
+
+Manual browser inspection was not performed. Before treating the visual result
+as fully reviewed, open a generated triple at both system zoom levels, inspect
+an orbital view with two visible suns, and exercise depot approaches and
+save/load in single and triple systems. Automated geometry, lighting, renderer,
+and persistence regressions pass; these checks cover interactive presentation
+that the unit harness cannot establish.
