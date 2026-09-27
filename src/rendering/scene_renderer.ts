@@ -30,8 +30,8 @@ import {
   createBodyOrbitAtmosphere,
   OrbitAtmosphere,
   orbitSourceTransmittance,
-  sampleOrbitAtmospherePixelTransfer,
 } from './scenes/orbit_atmosphere';
+import { OrbitAtmosphereSampler } from './scenes/orbit_atmosphere_sampler';
 import {
   getOrbitStellarIrradiance,
   getOrbitViewExposure,
@@ -158,6 +158,7 @@ export class SceneRenderer {
   private hyperspaceTileProvider: HyperspaceTileProvider;
   private hyperspaceFrameCache: HyperspaceFrameCache | null = null;
   private readonly orbitProjectionCache = new Map<string, OrbitProjectionCell[]>();
+  private orbitAtmosphereSampler: OrbitAtmosphereSampler | null = null;
   private readonly orbitLandingMapCache = new WeakMap<Planet, OrbitLandingMapCache>();
   private readonly giantPaletteCache = new WeakMap<Planet, RgbColour[]>();
   private lastHyperspaceRenderStats: HyperspaceRenderStats = {
@@ -192,6 +193,7 @@ export class SceneRenderer {
     this.hyperspaceTileProvider.clearCache();
     this.hyperspaceFrameCache = null;
     this.orbitProjectionCache.clear();
+    this.orbitAtmosphereSampler = null;
   }
 
   /** Prepares expensive body-fixed textures before a planet is selected in orbit. */
@@ -1692,6 +1694,7 @@ export class SceneRenderer {
     const detailRadius = radius / detailScale;
     const background = this.hexToRgbFallback(TEXT_PALETTE.background);
     const atmosphere = createBodyOrbitAtmosphere(planet);
+    const atmosphereSampler = this.getOrbitAtmosphereSampler(atmosphere);
     const outerRadius = atmosphere?.outerRadius ?? 1;
     const projectedOuter =
       (ORBIT_FOCAL_FACTOR * outerRadius) / Math.sqrt(ORBIT_CAMERA_DISTANCE ** 2 - outerRadius ** 2);
@@ -1711,8 +1714,8 @@ export class SceneRenderer {
       if (!surface && !atmosphere) continue;
       // Atmospheric transfer includes the surface's subpixel coverage already.
       // Applying the separate silhouette mask again would darken the limb twice.
-      let finalColour = atmosphere
-        ? this.composeOrbitAtmosphere(surface, cell, detailRadius, atmosphere, lights, exposure)
+      let finalColour = atmosphereSampler
+        ? this.composeOrbitAtmosphere(surface, cell, detailRadius, atmosphereSampler, lights, exposure)
         : this.shadeOrbitGlobeSurface(planet, surface!, globeTransform);
       if (!atmosphere && cell.coverage < 1)
         finalColour = interpolateColour(background, finalColour, cell.coverage);
@@ -1728,6 +1731,16 @@ export class SceneRenderer {
         detailScale
       );
     }
+  }
+
+  /** Retains only the active optical model; changes in pressure, composition or scale invalidate it. */
+  private getOrbitAtmosphereSampler(air: OrbitAtmosphere | null): OrbitAtmosphereSampler | null {
+    if (!air) {
+      this.orbitAtmosphereSampler = null;
+    } else if (!this.orbitAtmosphereSampler?.matches(air)) {
+      this.orbitAtmosphereSampler = new OrbitAtmosphereSampler(air);
+    }
+    return this.orbitAtmosphereSampler;
   }
 
   /** Returns cached projected cells and antialiased coverage for a globe radius. */
@@ -1872,7 +1885,7 @@ export class SceneRenderer {
     surface: OrbitSurfaceSample | null,
     cell: OrbitProjectionCell,
     radius: number,
-    air: OrbitAtmosphere,
+    sampler: OrbitAtmosphereSampler,
     lights: OrbitLight[],
     exposure: number
   ): RgbColour {
@@ -1881,13 +1894,7 @@ export class SceneRenderer {
     // stellar marker needs disc integration at this raster's angular resolution.
     for (const light of lights) {
       if (light.irradiance.r + light.irradiance.g + light.irradiance.b <= 0) continue;
-      const value = sampleOrbitAtmospherePixelTransfer(
-        cell.dx / radius,
-        -cell.dy / radius,
-        1 / radius,
-        light.direction,
-        air
-      );
+      const value = sampler.samplePixel(cell.dx / radius, -cell.dy / radius, 1 / radius, light.direction);
       const reflectance = this.getOrbitSurfaceReflectance(surface, light.direction);
       radiance.r += (reflectance.r * value.surface.r + value.scattering.r) * light.irradiance.r;
       radiance.g += (reflectance.g * value.surface.g + value.scattering.g) * light.irradiance.g;

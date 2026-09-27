@@ -111,9 +111,16 @@ const COLUMN_NODES = [-0.9324695142, -0.6612093865, -0.2386191861, 0.2386191861,
 const COLUMN_WEIGHTS = [0.1713244924, 0.360761573, 0.4679139346, 0.4679139346, 0.360761573, 0.1713244924];
 
 /** Integrates density between signed distances from a ray's tangent point. */
-function densityColumn(impact2: number, start: number, end: number, air: OrbitAtmosphere): number {
+export function integrateOrbitDensityColumn(
+  impact2: number,
+  start: number,
+  end: number,
+  air: OrbitAtmosphere
+): number {
   if (start < 0 && end > 0)
-    return densityColumn(impact2, start, 0, air) + densityColumn(impact2, 0, end, air);
+    return (
+      integrateOrbitDensityColumn(impact2, start, 0, air) + integrateOrbitDensityColumn(impact2, 0, end, air)
+    );
   const midpoint = (start + end) / 2;
   const half = (end - start) / 2;
   let column = 0;
@@ -126,13 +133,19 @@ function densityColumn(impact2: number, start: number, end: number, air: OrbitAt
 }
 
 /** Integrates exponential molecular density along a sun ray, stopping at the shell boundary. */
-function solarColumn(x: number, y: number, z: number, sun: OrbitVector, air: OrbitAtmosphere): number {
+export function orbitSolarDensityColumn(
+  x: number,
+  y: number,
+  z: number,
+  sun: OrbitVector,
+  air: OrbitAtmosphere
+): number {
   const r2 = x * x + y * y + z * z;
   const along = x * sun.x + y * sun.y + z * sun.z;
   if (along < 0 && r2 - along * along < 1) return Infinity;
   const impact2 = Math.max(0, r2 - along * along);
   const end = Math.sqrt(Math.max(0, air.outerRadius ** 2 - impact2));
-  return densityColumn(impact2, along, end, air);
+  return integrateOrbitDensityColumn(impact2, along, end, air);
 }
 
 /** Attenuates a point-like host star along the same ray used to project it behind the limb. */
@@ -144,7 +157,7 @@ export function orbitSourceTransmittance(x: number, y: number, air: OrbitAtmosph
   if (impact2 <= 1) return { r: 0, g: 0, b: 0 };
   if (impact2 >= air.outerRadius ** 2) return { r: 1, g: 1, b: 1 };
   const halfChord = Math.sqrt(air.outerRadius ** 2 - impact2);
-  const column = densityColumn(impact2, -halfChord, halfChord, air);
+  const column = integrateOrbitDensityColumn(impact2, -halfChord, halfChord, air);
   return {
     r: Math.exp(-air.extinction.r * column),
     g: Math.exp(-air.extinction.g * column),
@@ -185,7 +198,7 @@ export function sampleOrbitAtmosphereTransfer(
     const py = vy * t;
     const pz = ORBIT_CAMERA_DISTANCE + vz * t;
     const densityStep = Math.exp(-Math.max(0, Math.hypot(px, py, pz) - 1) / air.scaleHeight) * step;
-    const column = solarColumn(px, py, pz, sun, air) + viewColumn;
+    const column = orbitSolarDensityColumn(px, py, pz, sun, air) + viewColumn;
     // Integrate extinction within each view segment analytically. Midpoint-only
     // attenuation wrongly suppresses the whole segment when optical depth is large.
     result.scattering.r +=
@@ -202,8 +215,8 @@ export function sampleOrbitAtmosphereTransfer(
     if (incidence > 0) {
       // Integrate the complete ground-to-camera path independently of the view
       // marching resolution. Both terms are in radiance / stellar irradiance.
-      const groundColumn = densityColumn(impact2, -halfChord, end + along, air);
-      const column = groundColumn + solarColumn(normal.x, normal.y, normal.z, sun, air);
+      const groundColumn = integrateOrbitDensityColumn(impact2, -halfChord, end + along, air);
+      const column = groundColumn + orbitSolarDensityColumn(normal.x, normal.y, normal.z, sun, air);
       const diffuse = incidence / Math.PI;
       result.surface = {
         r: diffuse * Math.exp(-air.extinction.r * column),
@@ -233,16 +246,37 @@ export function sampleOrbitAtmospherePixelTransfer(
   sun: OrbitVector,
   air: OrbitAtmosphere
 ): OrbitAtmosphereTransfer {
-  const distance = Math.hypot(x, y);
-  const half = size / 2;
-  // Interior pixels need one ray. A footprint touching the limb needs area
-  // integration even if its centre is over solid terrain.
-  if (distance + Math.SQRT2 * half < 1) return sampleOrbitAtmosphereTransfer(x, y, sun, air);
   const result: OrbitAtmosphereTransfer = {
     scattering: { r: 0, g: 0, b: 0 },
     surface: { r: 0, g: 0, b: 0 },
   };
-  if (distance - Math.SQRT2 * half >= air.projectedLayers[air.projectedLayers.length - 1]) return result;
+  forEachOrbitAtmospherePixelRay(x, y, size, air, (rayX, rayY, area) => {
+    const sample = sampleOrbitAtmosphereTransfer(rayX, rayY, sun, air);
+    result.scattering.r += sample.scattering.r * area;
+    result.scattering.g += sample.scattering.g * area;
+    result.scattering.b += sample.scattering.b * area;
+    result.surface.r += sample.surface.r * area;
+    result.surface.g += sample.surface.g * area;
+    result.surface.b += sample.surface.b * area;
+  });
+  return result;
+}
+
+/** Shares the exact limb quadrature between the reference integrator and prepared rendering rays. */
+export function forEachOrbitAtmospherePixelRay(
+  x: number,
+  y: number,
+  size: number,
+  air: OrbitAtmosphere,
+  visit: (rayX: number, rayY: number, area: number) => void
+): void {
+  const distance = Math.hypot(x, y);
+  const half = size / 2;
+  if (distance + Math.SQRT2 * half < 1) {
+    visit(x, y, 1);
+    return;
+  }
+  if (distance - Math.SQRT2 * half >= air.projectedLayers[air.projectedLayers.length - 1]) return;
   const angle = Math.atan2(y, x);
   const angularRadius = Math.asin(Math.min(1, (Math.SQRT2 * half) / distance));
   const angleStep = (angularRadius * 2) / 4;
@@ -266,20 +300,13 @@ export function sampleOrbitAtmospherePixelTransfer(
       for (let j = 0; j < count; j++) {
         const fraction = count === 1 ? 0.5 : 0.5 + (j === 0 ? -1 : 1) / (2 * Math.sqrt(3));
         const radius = low + (end - low) * fraction;
-        const sample = sampleOrbitAtmosphereTransfer(radius * cosine, radius * sine, sun, air);
         const area = (radius * (end - low) * angleStep) / (count * size * size);
-        result.scattering.r += sample.scattering.r * area;
-        result.scattering.g += sample.scattering.g * area;
-        result.scattering.b += sample.scattering.b * area;
-        result.surface.r += sample.surface.r * area;
-        result.surface.g += sample.surface.g * area;
-        result.surface.b += sample.surface.b * area;
+        visit(radius * cosine, radius * sine, area);
       }
       low = end;
       if (low >= high) break;
     }
   }
-  return result;
 }
 
 /** Returns area-averaged molecular scattering alone for optical diagnostics. */

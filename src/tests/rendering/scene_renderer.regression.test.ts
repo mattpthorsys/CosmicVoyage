@@ -15,7 +15,12 @@ import { CONFIG } from '../../config';
 import { AU_IN_METERS, GLYPHS } from '../../constants';
 import { TEXT_PALETTE } from '../../rendering/text_palette';
 import { hexToRgb } from '../../rendering/colour';
-import { createOrbitAtmosphere } from '../../rendering/scenes/orbit_atmosphere';
+import {
+  createOrbitAtmosphere,
+  sampleOrbitAtmospherePixelTransfer,
+} from '../../rendering/scenes/orbit_atmosphere';
+import type { OrbitAtmosphere } from '../../rendering/scenes/orbit_atmosphere';
+import type { OrbitAtmosphereSampler } from '../../rendering/scenes/orbit_atmosphere_sampler';
 import {
   ORBIT_CAMERA_DISTANCE,
   orbitSunDirection,
@@ -1062,9 +1067,24 @@ describe('SceneRenderer visual regressions', () => {
 
   it('keeps atmospheric twilight on the globe raster through dawn, eclipse, and dusk', () => {
     /** Renders at phase. */
-    const renderAtPhase = (illuminationPhase: number, atmospheric = true): DrawCall[] => {
+    const renderAtPhase = (
+      illuminationPhase: number,
+      atmospheric = true,
+      referenceAtmosphere = false
+    ): DrawCall[] => {
       const { buffer, drawCalls } = createMockScreenBuffer(132, 58);
       const renderer = createSceneRenderer(buffer);
+      if (referenceAtmosphere) {
+        const withReferenceSampler = renderer as unknown as {
+          getOrbitAtmosphereSampler: (
+            air: OrbitAtmosphere | null
+          ) => Pick<OrbitAtmosphereSampler, 'samplePixel'> | null;
+        };
+        withReferenceSampler.getOrbitAtmosphereSampler = (air) =>
+          air
+            ? { samplePixel: (x, y, size, sun) => sampleOrbitAtmospherePixelTransfer(x, y, size, sun, air) }
+            : null;
+      }
       const planet = atmospheric ? createAtmosphericOrbitPlanet() : createOrbitPlanet();
       renderer.drawOrbitInterface({
         title: 'Orbital Operations',
@@ -1092,6 +1112,7 @@ describe('SceneRenderer visual regressions', () => {
         (call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.x < 40
       );
     const signatures: Record<string, string> = {};
+    const phasePointTwoDifference = { compared: 0, changedPixels: 0, maxChannelDelta: 0 };
     const initialSun = orbitSunDirection(0);
     const fullPhase = (1 + Math.atan2(initialSun.x, initialSun.z) / (2 * Math.PI)) % 1;
     const midOccultation = 0.5 + Math.atan2(initialSun.x, initialSun.z) / (2 * Math.PI);
@@ -1116,6 +1137,28 @@ describe('SceneRenderer visual regressions', () => {
     ]) {
       const atmospheric = globePixels(phase);
       const airless = globePixels(phase, false);
+      if (phase === 0.2) {
+        const reference = renderAtPhase(phase, true, true).filter(
+          (call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.scaleY === 0.5 && call.x < 40
+        );
+        expect(reference.map(({ x, y }) => [x, y])).toEqual(atmospheric.map(({ x, y }) => [x, y]));
+        for (const [index, pixel] of atmospheric.entries()) {
+          const expected = hexToRgb(reference[index].fg);
+          const actual = hexToRgb(pixel.fg);
+          const maximum = Math.max(
+            Math.abs(expected.r - actual.r),
+            Math.abs(expected.g - actual.g),
+            Math.abs(expected.b - actual.b)
+          );
+          if (maximum > 0) phasePointTwoDifference.changedPixels++;
+          phasePointTwoDifference.maxChannelDelta = Math.max(
+            phasePointTwoDifference.maxChannelDelta,
+            maximum
+          );
+          phasePointTwoDifference.compared++;
+        }
+        expect(phasePointTwoDifference.maxChannelDelta).toBeLessThanOrEqual(1);
+      }
       expect(atmospheric.length).toBeGreaterThan(200);
       const positions = new Set(atmospheric.map((call) => `${call.x},${call.y}`));
       expect(airless.every((call) => positions.has(`${call.x},${call.y}`))).toBe(true);
@@ -1166,6 +1209,7 @@ describe('SceneRenderer visual regressions', () => {
         expect(oppositeWarmth).toBeLessThan(total * 0.01);
       }
     }
+    expect(phasePointTwoDifference.changedPixels / phasePointTwoDifference.compared).toBeLessThan(0.001);
     const night = globePixels(0.4125);
     const day = globePixels(0);
     expect(Math.max(...night.map((call) => hexLuma(call.fg)))).toBeLessThan(

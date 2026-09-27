@@ -6,7 +6,7 @@ same pinhole camera (currently three planet radii from the centre).
 
 ## Inputs and calculation
 
-- `Game.getOrbitStellarSources` supplies each star's bolometric irradiance
+- `createOrbitStellarSources` supplies each star's bolometric irradiance
   `L / (4 pi d^2)`, effective temperature `(L / (4 pi R^2 sigma))^(1/4)`,
   and apparent angular radius `asin(R / d)`. Companions contribute independently.
 - `orbit_stellar_light.ts` samples a Planck spectrum at 680, 550, and 440 nm,
@@ -65,6 +65,82 @@ radiometry. Airless bodies and envelopes outside the model retain the existing
 material shading path.
 Legacy UI fixtures without physical source data default to a solar spectrum and
 Earth-level irradiation scaled by their relative flux.
+
+## Prepared rendering path
+
+`orbit_atmosphere.ts` retains direct density integration and atmospheric transfer
+as the reference. `orbit_atmosphere_sampler.ts` prepares the optical model used
+by the globe renderer. Both paths use the same 32 view steps and the same polar
+limb footprints; display resolution and the atmospheric layers are unchanged.
+
+For each pixel ray, the prepared path retains sample positions, densities and
+camera-path attenuation. These depend on the spherical atmosphere and camera,
+so they can be shared by all stellar sources and reused while the planet texture
+rotates. The renderer holds one active sampler. Changes to optical parameters
+replace it, resizing clears its pixel rays, and `clearCaches()` releases it.
+Matching uses physical values, not a planet name or a mutable object identity.
+
+A 1024-by-256 Float64 density-column table replaces the nested sunlight-path
+quadrature. Its coordinates follow distance to the top boundary and distance
+from the ground tangent, concentrating resolution near grazing rays. This uses
+the [Bruneton transmittance mapping](https://ebruneton.github.io/precomputed_atmospheric_scattering/atmosphere/functions.glsl.html).
+Planet shadow intersections are evaluated before lookup, so interpolation does
+not smear light through the opaque globe. Out-of-domain points use the direct
+integral. Stellar marker transmission remains directly integrated.
+
+View segments stop only when all RGB view transmissions fall below `1e-14`.
+The remaining single-scattered radiance per unit incident light is bounded by
+`3 / (8 pi)` times that transmission; the independently integrated ground path
+is still evaluated. The table introduces interpolation error, unlike caching
+alone. New comparisons require less than half of one 8-bit display-channel
+level against the reference over representative phases, pressures, wavelengths,
+pixel sizes, one/three stars and exposure adaptation. These limits must pass
+before treating the optimization as verified.
+
+The cache holds at most 32,768 prepared rays and 16,384 pixel entries. Numerical
+buffers occupy at most 58 MiB including the column table; bounded JavaScript
+object overhead is additional. Beyond that budget, uncached rays are evaluated
+normally without eviction churn. Changing bodies cannot accumulate one cache
+per visited planet.
+
+### Performance and verification
+
+The initial CPU profile identified atmospheric transfer and its nested density
+integrals as the dominant work. Its reference dense-CO2 fixture at a 48-sample
+globe radius averaged 84.64 ms with one star and 272.61 ms with three. Those
+measurements include CPU-profiling overhead and exclude texture sampling and
+final drawing.
+
+In the uninstrumented repeatable harness, warm dense-CO2 frames at the same
+radius averaged 84.77 ms in the reference and 19.99 ms prepared with one star
+(4.2x faster), and 275.06 ms versus 62.42 ms with three stars (4.4x faster).
+Prepared-table construction took about 24 ms. The prepared one-star first frame
+was 98.88 ms, versus 86.87 ms reference, before including that setup cost; with
+three stars it was 150.21 ms versus 279.07 ms. Thus, one-star scenes pay a short
+initial cost before benefiting from reuse. These are optics-only, machine-
+specific timings, not whole-frame renderer measurements.
+
+For the largest benchmark case the lookup table and prepared-ray buffers retained
+53.8 MB of numeric storage (about 51.3 MiB), with additional JavaScript object
+overhead. The hard numeric-storage ceiling is 58 MiB. There is one active
+sampler, and changing bodies replaces rather than accumulates these caches.
+
+Run the repeatable optics harness in both modes under the same conditions:
+
+```sh
+node scripts/profile_orbit_atmosphere.cjs
+node scripts/profile_orbit_atmosphere.cjs --optimized
+npm run test:run -- src/tests/rendering/orbit_atmosphere.test.ts src/tests/rendering/orbit_atmosphere_sampler.test.ts src/tests/rendering/orbit_stellar_light.test.ts src/tests/rendering/scene_renderer.regression.test.ts
+npm run check
+```
+
+The harness uses identical changing star directions and pixel grids for both
+modes. Its checksum prevents unused work; checksums are not an accuracy metric.
+The raster regression also compares the prepared renderer to the direct path at
+phase 0.2: one of 1,922 globe pixels changes by at most one RGB level, and the
+test limits changed pixels to below 0.1%. All other captured phase fingerprints
+remain unchanged. `tools/orbit-lighting-preview.html` remains useful for manual
+inspection through dawn, dusk and full daylight when changing the model.
 
 ## Limits and extension points
 
