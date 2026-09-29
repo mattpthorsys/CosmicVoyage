@@ -32,6 +32,7 @@ import {
 } from './habitability';
 import { reserveColonyWorldName } from './colony_naming';
 import { getStableOrbitRange } from './orbital_stability';
+import { canAddSatellite, sufficientlySeparated } from './satellite_physics';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -642,7 +643,7 @@ export class SolarSystem {
         lastOrbitDistance * Math.pow(orbitScaleBase, 1 + this.systemPRNG.random(-0.2, 0.2)) +
         this.systemPRNG.random(0.01 * AU_IN_METERS, 0.1 * AU_IN_METERS);
       currentOrbitDistance = Math.max(lastOrbitDistance + MIN_PLANET_SEPARATION_M, currentOrbitDistance);
-      currentOrbitDistance = Math.min(MIN_OUTER_ORBIT_M, currentOrbitDistance);
+      if (currentOrbitDistance > MIN_OUTER_ORBIT_M) break;
 
       logger.debug(
         `[System:${this.name}] Slot ${i + 1}: Calculated potential orbit distance ${currentOrbitDistance.toExponential(
@@ -660,7 +661,7 @@ export class SolarSystem {
           this.starbase.orbitDistance +
           MIN_PLANET_SEPARATION_M * 0.6 * (currentOrbitDistance > this.starbase.orbitDistance ? 1 : -1);
         currentOrbitDistance = Math.max(lastOrbitDistance + MIN_PLANET_SEPARATION_M, currentOrbitDistance);
-        currentOrbitDistance = Math.min(MIN_OUTER_ORBIT_M, currentOrbitDistance);
+        if (currentOrbitDistance > MIN_OUTER_ORBIT_M) break;
         logger.debug(
           `[System:${this.name}] Slot ${i + 1}: Adjusted orbit from ${oldOrbit.toExponential(
             2
@@ -715,8 +716,12 @@ export class SolarSystem {
           orbitCenter.x,
           orbitCenter.y,
           totalFlux,
-          tidalRotation
+          { ...tidalRotation, orbitHostMassKg: this.getOrbitHostMassKg(orbitHost) }
         );
+        if (!this.canAddPlanet(planet)) {
+          lastOrbitDistance = currentOrbitDistance;
+          continue;
+        }
         this.planets[i] = planet;
         planetsGenerated++;
 
@@ -777,11 +782,13 @@ export class SolarSystem {
         orbitCenter.x,
         orbitCenter.y,
         totalFlux,
-        tidalRotation
+        { ...tidalRotation, orbitHostMassKg: this.getOrbitHostMassKg(orbitHost) }
       );
-      this.planets[0] = planet;
-      planetsGenerated = 1;
-      this.generateMoonsForPlanet(planet, planetName, parentStar, parentStar.starType, totalFlux);
+      if (this.canAddPlanet(planet)) {
+        this.planets[0] = planet;
+        planetsGenerated = 1;
+        this.generateMoonsForPlanet(planet, planetName, parentStar, parentStar.starType, totalFlux);
+      }
       logger.info(`[System:${this.name}] Added fallback planetary body for exploration pacing.`);
     }
 
@@ -867,10 +874,7 @@ export class SolarSystem {
         const orbitDistance =
           localIndex === 0
             ? lastOrbit
-            : Math.min(
-                stableZone.maxOrbit_m,
-                lastOrbit * spacing + hostPRNG.random(0.03 * AU_IN_METERS, 0.12 * AU_IN_METERS)
-              );
+            : lastOrbit * spacing + hostPRNG.random(0.03 * AU_IN_METERS, 0.12 * AU_IN_METERS);
         if (orbitDistance > stableZone.maxOrbit_m) break;
 
         const orbitHost: OrbitHost = { kind: 'circumstellar', starId: host.id };
@@ -912,8 +916,12 @@ export class SolarSystem {
           host.systemX,
           host.systemY,
           totalFlux,
-          tidalRotation
+          { ...tidalRotation, orbitHostMassKg: host.massKg }
         );
+        if (!this.canAddPlanet(planet)) {
+          lastOrbit = orbitDistance;
+          continue;
+        }
         this.planets[slot] = planet;
         this.generateMoonsForPlanet(planet, planetName, host, host.starType, totalFlux);
         generated++;
@@ -1087,6 +1095,8 @@ export class SolarSystem {
         innerOrbit_m,
         outerStableOrbit_m
       );
+      lastMoonOrbit_m = moonOrbit_m;
+      if (!canAddSatellite(parent, moonCharacteristics, moonOrbit_m)) continue;
       const moon = new Planet(
         `${planetName}.${j + 1}`,
         moonType,
@@ -1123,12 +1133,10 @@ export class SolarSystem {
     );
     const parentDiameterLimit =
       parent.diameter * (parent.type === 'GasGiant' || parent.type === 'IceGiant' ? 0.08 : 0.22);
-    const maxDiameter = Math.max(
-      420,
+    const maxDiameter =
       Math.min(moonType === 'Frozen' ? 5200 : 3800, parentDiameterLimit) *
-        Math.max(0.45, 1 - moonIndex * 0.055)
-    );
-    const diameter = prng.random(moonType === 'Frozen' ? 520 : 420, maxDiameter);
+      Math.max(0.45, 1 - moonIndex * 0.055);
+    const diameter = prng.random(Math.min(moonType === 'Frozen' ? 520 : 420, maxDiameter * 0.6), maxDiameter);
     const density = moonType === 'Frozen' ? prng.random(1.15, 2.25) : prng.random(2.35, 3.7);
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
@@ -1144,7 +1152,7 @@ export class SolarSystem {
     };
     const axialTilt = tidallyLocked ? prng.random(0, Math.PI / 60) : generateAxialTiltRad(prng, false, 0.08);
     const rotationPeriodHours = tidallyLocked
-      ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass) / 3600
+      ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass + mass) / 3600
       : generateRotationPeriodHours(prng, moonType, diameter, density, moonOrbit_m, false);
     const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, moonType, atmosphere, {
       diameterKm: diameter,
@@ -1268,6 +1276,18 @@ export class SolarSystem {
       return innerPairMass > 0 ? innerPairMass : this.stars.reduce((sum, star) => sum + star.massKg, 0);
     }
     return this.stars.reduce((sum, star) => sum + star.massKg, 0);
+  }
+
+  /** Rejects stellar-mass companions masquerading as planets and crowded same-host orbits. */
+  private canAddPlanet(planet: Planet): boolean {
+    const hostMass = this.getOrbitHostMassKg(planet.orbitHost);
+    if (hostMass <= 0 || planet.mass >= hostMass * 0.05) return false;
+    return this.planets.every(
+      (other) =>
+        !other ||
+        getHostLabel(other.orbitHost) !== getHostLabel(planet.orbitHost) ||
+        sufficientlySeparated(other, planet, hostMass)
+    );
   }
 
   /** Calculates stellar flux at the supplied distance from the selected host. */
@@ -1520,6 +1540,9 @@ export class SolarSystem {
         continue;
       }
 
+      lastMoonOrbit_m = moonOrbit_m;
+      if (!canAddSatellite(planet, moonCharacteristics, moonOrbit_m)) continue;
+
       try {
         const moon = new Planet(
           moonName,
@@ -1646,14 +1669,6 @@ export class SolarSystem {
     innerOrbit_m: number,
     outerStableOrbit_m: number
   ): PlanetCharacteristics {
-    const characteristics = generatePlanetCharacteristics(
-      moonType,
-      moonOrbit_m,
-      prng,
-      parentStarType,
-      environment,
-      totalFlux
-    );
     const isGiantParent = parent.type === 'GasGiant' || parent.type === 'IceGiant';
     const orbitFraction = this.clamp(
       (moonOrbit_m - innerOrbit_m) / Math.max(outerStableOrbit_m - innerOrbit_m, 1),
@@ -1668,19 +1683,14 @@ export class SolarSystem {
     const indexFalloff = Math.max(0.35, 1 - moonIndex * 0.045);
     const minDiameter =
       moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce' ? 450 : 350;
-    const maxDiameter = Math.max(
-      minDiameter + 50,
-      Math.min(baseMax, parentDiameterLimit) * indexFalloff * capturedSizeFactor
-    );
-    const diameter = prng.random(minDiameter, maxDiameter);
+    const maxDiameter = Math.min(baseMax, parentDiameterLimit) * indexFalloff * capturedSizeFactor;
+    const diameter = prng.random(Math.min(minDiameter, maxDiameter * 0.6), maxDiameter);
     const density =
       moonType === 'Frozen' || moonType === 'Cryovolcanic' || moonType === 'DwarfIce'
         ? prng.random(moonType === 'DwarfIce' ? 0.9 : 1.2, moonType === 'Cryovolcanic' ? 2.8 : 2.4)
         : prng.random(2.4, 3.6);
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
-    const gravity = calculateGravity(diameter, density);
-    const escapeVelocity = Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m);
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
     const tidallyLocked = isGiantParent
       ? isRegularGiantMoon || orbitFraction < 0.78
@@ -1696,40 +1706,29 @@ export class SolarSystem {
         ? prng.random(Math.PI / 36, Math.PI / 2.5)
         : prng.random(0, Math.PI / 18);
     const rotationPeriodHours = tidallyLocked
-      ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass) / 3600
+      ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass + mass) / 3600
       : generateRotationPeriodHours(prng, moonType, diameter, density, moonOrbit_m, false);
-    const tidalTemperatureBoost = isGiantParent
-      ? Math.round(tidalHeat * prng.random(20, 95))
-      : Math.round(tidalHeat * prng.random(8, 35));
-    const boostedAverageTemp = characteristics.surfaceTemp + tidalTemperatureBoost;
-    const temperatureProfile = createTemperatureProfileFromAverage(
-      boostedAverageTemp,
+    // A moon's circumplanetary orbit is not its distance from the illuminating stars.
+    // Generate climate, resources and volatiles once, after its actual physical state is known.
+    const characteristics = generatePlanetCharacteristics(
       moonType,
-      characteristics.atmosphere,
+      parent.orbitDistance,
+      prng,
+      parentStarType,
+      environment,
+      totalFlux,
       {
-        diameterKm: diameter,
-        densityGcm3: density,
-        ageGyr: environment.ageGyr,
+        physicalBase: { diameter, density },
         axialTiltRad: axialTilt,
+        orbitalInclinationRad: orbitalInclination,
         tidallyLocked,
+        rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
         tidalHeatingFactor: tidalHeat,
       }
     );
     return {
       ...characteristics,
-      diameter,
-      density,
-      mass,
-      gravity,
-      escapeVelocity,
-      surfaceTemp: temperatureProfile.average,
-      surfaceTempMin: temperatureProfile.min,
-      surfaceTempMax: temperatureProfile.max,
       magneticFieldStrength: characteristics.magneticFieldStrength * (isRegularGiantMoon ? 0.35 : 0.18),
-      axialTilt,
-      tidallyLocked,
-      rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
-      orbitalInclination,
     };
   }
 
@@ -1907,7 +1906,7 @@ export class SolarSystem {
         planet.systemY = 0;
       } else {
         const hostMassKg = this.getOrbitHostMassKg(planet.orbitHost ?? { kind: 'barycentric' });
-        const planetPeriod_s = this.calculateKeplerPeriodSeconds(planet_r, hostMassKg);
+        const planetPeriod_s = this.calculateKeplerPeriodSeconds(planet_r, hostMassKg + planet.mass);
         if (!Number.isFinite(planetPeriod_s) || planetPeriod_s <= 0) {
           logger.warn(`[System:${this.name}] Invalid orbital period for ${planet.name}. Skipping.`);
           return;
@@ -1942,7 +1941,7 @@ export class SolarSystem {
 
           // Calculate moon's orbital period around the PLANET (seconds)
           const numerator = 4 * Math.PI ** 2 * Math.pow(moon_r_rel, 3);
-          const denominator = G * planet.mass;
+          const denominator = G * (planet.mass + moon.mass);
           if (denominator <= 0) {
             logger.warn(
               `[System:${this.name}] Invalid denominator for moon period calc for ${moon.name}. Skipping.`

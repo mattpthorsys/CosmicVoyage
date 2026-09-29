@@ -37,6 +37,11 @@ export interface PlanetCharacteristics {
 export interface PlanetGenerationOptions {
   tidallyLocked?: boolean;
   rotationPeriodHours?: number;
+  physicalBase?: { diameter: number; density: number };
+  axialTiltRad?: number;
+  orbitalInclinationRad?: number;
+  tidalHeatingFactor?: number;
+  orbitHostMassKg?: number;
 }
 
 /** Generates axial tilt rad. */
@@ -70,7 +75,7 @@ export function generatePlanetCharacteristics(
   );
 
   // 1. Generate Base Physical Properties
-  const { diameter, density } = generatePhysicalBase(planetPRNG, planetType);
+  const { diameter, density } = options.physicalBase ?? generatePhysicalBase(planetPRNG, planetType);
   const radius_m = (diameter * 1000) / 2; // Radius in meters
   const density_kg_m3 = density * 1000; // Density in kg/m^3
 
@@ -98,8 +103,8 @@ export function generatePlanetCharacteristics(
   );
 
   const tidallyLocked = options.tidallyLocked ?? false;
-  const axialTilt = generateAxialTiltRad(planetPRNG, tidallyLocked);
-  const orbitalInclination = planetPRNG.random(0, Math.PI / 18);
+  const axialTilt = options.axialTiltRad ?? generateAxialTiltRad(planetPRNG, tidallyLocked);
+  const orbitalInclination = options.orbitalInclinationRad ?? planetPRNG.random(0, Math.PI / 18);
 
   // 5. Calculate Final Surface Temperature (uses atmosphere and physical state)
   const temperatureProfile = calculateTemperatureProfile(
@@ -115,7 +120,7 @@ export function generatePlanetCharacteristics(
       ageGyr: environment.ageGyr,
       axialTiltRad: axialTilt,
       tidallyLocked,
-      tidalHeatingFactor: 0,
+      tidalHeatingFactor: options.tidalHeatingFactor ?? 0,
     }
   );
   const surfaceTemp = temperatureProfile.average;
@@ -178,7 +183,12 @@ export function generatePlanetCharacteristics(
   logger.debug(`[CharGen:${planetType}] Magnetic Field Generated: ${magneticFieldStrength.toFixed(1)} µT`);
 
   const rotationPeriodHours =
-    options.rotationPeriodHours ??
+    (tidallyLocked && options.orbitHostMassKg
+      ? (2 *
+          Math.PI *
+          Math.sqrt(orbitDistance ** 3 / (GRAVITATIONAL_CONSTANT_G * (options.orbitHostMassKg + mass_kg)))) /
+        3600
+      : options.rotationPeriodHours) ??
     generateRotationPeriodHours(planetPRNG, planetType, diameter, density, orbitDistance, tidallyLocked);
 
   logger.info(

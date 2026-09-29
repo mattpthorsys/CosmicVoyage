@@ -102,17 +102,19 @@ describe('SolarSystem orbital velocities', () => {
     const system = findSystem((candidate) => candidate.planets.some(Boolean) && candidate.stars.length > 0);
     const planet = system.planets.find(Boolean) as Planet;
     const hostMass =
-      planet.orbitHost.kind === 'circumbinary'
-        ? system.stars
-            .filter((star) => star.id === 'A' || star.id === 'B')
-            .reduce((sum, star) => sum + star.massKg, 0)
-        : system.stars.reduce((sum, star) => sum + star.massKg, 0);
+      planet.orbitHost.kind === 'circumstellar'
+        ? system.stars.find((star) => star.id === planet.orbitHost.starId)!.massKg
+        : planet.orbitHost.kind === 'circumbinary'
+          ? system.stars
+              .filter((star) => star.id === 'A' || star.id === 'B')
+              .reduce((sum, star) => sum + star.massKg, 0)
+          : system.stars.reduce((sum, star) => sum + star.massKg, 0);
 
     const oldAngle = planet.orbitAngle;
     system.updateOrbits(1);
 
     expect(positiveAngularDelta(oldAngle, planet.orbitAngle)).toBeCloseTo(
-      expectedDelta(1, planet.orbitDistance, hostMass),
+      expectedDelta(1, planet.orbitDistance, hostMass + planet.mass),
       8
     );
   });
@@ -128,7 +130,7 @@ describe('SolarSystem orbital velocities', () => {
     system.updateOrbits(1);
 
     expect(positiveAngularDelta(oldAngle, moon.orbitAngle)).toBeCloseTo(
-      expectedDelta(1, moon.orbitDistance, parent.mass),
+      expectedDelta(1, moon.orbitDistance, parent.mass + moon.mass),
       8
     );
   });
@@ -141,7 +143,7 @@ describe('SolarSystem orbital velocities', () => {
       (planet) => planet && planet.moons.some((moon) => moon.tidallyLocked)
     )!;
     const moon = parent.moons.find((candidate) => candidate.tidallyLocked)!;
-    const orbitalPeriodHours = keplerPeriodSeconds(moon.orbitDistance, parent.mass) / 3600;
+    const orbitalPeriodHours = keplerPeriodSeconds(moon.orbitDistance, parent.mass + moon.mass) / 3600;
 
     expect(moon.rotationPeriodHours).toBeCloseTo(orbitalPeriodHours, 0);
     expect(moon.getRotationPeriodLabel()).not.toBe('unknown');
