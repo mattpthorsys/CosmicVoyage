@@ -7,7 +7,11 @@ import {
   StellarArchitecture,
   StellarBody,
 } from '../../../entities/stellar_body';
-import { getStableOrbitRange, isOrbitWithinStableRange } from '../../../entities/orbital_stability';
+import {
+  getConservativeSatelliteHillRadius,
+  getStableOrbitRange,
+  isOrbitWithinStableRange,
+} from '../../../entities/orbital_stability';
 import { PRNG } from '../../../utils/prng';
 import { CONFIG } from '../../../config';
 
@@ -198,6 +202,41 @@ describe('multi-star physical and generation contracts', () => {
     expect(outerEccentric.minRadius).toBeGreaterThan(outerCircular.minRadius);
   });
 
+  it('bounds moons by the binary components and the tertiary at closest approach', () => {
+    const architecture = triple();
+    const mass = 1.898e27;
+    const radius = 1 * AU_IN_METERS;
+    const abMass = architecture.stars[0].massKg + architecture.stars[1].massKg;
+    const nominal = radius * Math.cbrt(mass / (3 * abMass));
+    const circular = getConservativeSatelliteHillRadius(architecture, { kind: 'circumbinary' }, radius, mass);
+    expect(circular).toBeGreaterThan(0);
+    expect(circular).toBeLessThan(nominal);
+
+    architecture.stars[1].orbit!.eccentricity = 0.32;
+    architecture.stars[2].orbit!.eccentricity = 0.22;
+    const eccentric = getConservativeSatelliteHillRadius(
+      architecture,
+      { kind: 'circumbinary' },
+      radius,
+      mass
+    );
+    expect(eccentric).toBeLessThan(circular);
+    for (const [host, distance, hostMass] of [
+      [{ kind: 'circumstellar', starId: 'A' } as const, 0.04 * AU_IN_METERS, architecture.stars[0].massKg],
+      [{ kind: 'circumstellar', starId: 'C' } as const, 2 * AU_IN_METERS, architecture.stars[2].massKg],
+      [
+        { kind: 'barycentric' } as const,
+        150 * AU_IN_METERS,
+        architecture.stars.reduce((sum, star) => sum + star.massKg, 0),
+      ],
+    ] as const) {
+      const bound = getConservativeSatelliteHillRadius(architecture, host, distance, mass);
+      expect(bound).toBeGreaterThan(0);
+      expect(bound).toBeLessThan(distance * Math.cbrt(mass / (3 * hostMass)));
+    }
+    expect(getConservativeSatelliteHillRadius(architecture, { kind: 'circumbinary' }, 0, mass)).toBe(0);
+  });
+
   it('uses the AB host for depot motion, periods and stable orbital placement', () => {
     const value = system(triple(), 'depot-hierarchy', true);
     const depot = value.starbase!;
@@ -239,12 +278,17 @@ describe('multi-star physical and generation contracts', () => {
         expect(isOrbitWithinStableRange(value.architecture, planet.orbitHost, planet.orbitDistance)).toBe(
           true
         );
-        if (planet.orbitHost.kind !== 'circumbinary') continue;
-        const hostMass = value.stars[0].massKg + value.stars[1].massKg;
-        const hillRadius = planet.orbitDistance * Math.cbrt(planet.mass / (3 * hostMass));
+        const hillRadius = getConservativeSatelliteHillRadius(
+          value.architecture,
+          planet.orbitHost,
+          planet.orbitDistance,
+          planet.mass
+        );
         const fraction = ['GasGiant', 'IceGiant'].includes(planet.type) ? 0.42 : 0.32;
         for (const moon of planet.moons) {
           expect(moon.orbitDistance).toBeLessThanOrEqual(hillRadius * fraction);
+          expect(moon.orbitHost).toEqual(planet.orbitHost);
+          expect(moon.orbitalInclination).toBeLessThanOrEqual(Math.PI / 18);
           expect(moon.mass).toBeLessThan(planet.mass);
           expect(moon.atmosphere.pressure).toBeGreaterThanOrEqual(0);
           expect(

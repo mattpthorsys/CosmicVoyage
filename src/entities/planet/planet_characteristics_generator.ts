@@ -97,7 +97,7 @@ export function generatePlanetCharacteristics(
 
   const tidallyLocked = options.tidallyLocked ?? false;
   const axialTilt = options.axialTiltRad ?? generateAxialTiltRad(planetPRNG, tidallyLocked);
-  const orbitalInclination = options.orbitalInclinationRad ?? planetPRNG.random(0, Math.PI / 18);
+  const orbitalInclination = options.orbitalInclinationRad ?? planetPRNG.random(0, Math.PI / 60);
 
   /** Evaluates climate using the same illumination and physical state as gas retention. */
   const temperatureFor = (atmosphere: Atmosphere) =>

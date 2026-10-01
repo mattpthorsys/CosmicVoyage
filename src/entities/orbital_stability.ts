@@ -107,3 +107,76 @@ export function isOrbitWithinStableRange(
   const range = getStableOrbitRange(architecture, host);
   return Boolean(range && Number.isFinite(radius) && radius >= range.minRadius && radius <= range.maxRadius);
 }
+
+/** Maximum tidal strength from two stars sharing a barycentre, at either conjunction. */
+function binaryTidalStrength(distance: number, separation: number, massA: number, massB: number): number {
+  const total = massA + massB;
+  const aRadius = (separation * massB) / total;
+  const bRadius = (separation * massA) / total;
+  if (distance <= Math.max(aRadius, bRadius)) return Infinity;
+  return Math.max(
+    massA / (distance - aRadius) ** 3 + massB / (distance + bRadius) ** 3,
+    massA / (distance + aRadius) ** 3 + massB / (distance - bRadius) ** 3
+  );
+}
+
+/** Conservative moon Hill radius across stellar conjunctions in the circular planet model. */
+export function getConservativeSatelliteHillRadius(
+  architecture: StellarArchitecture,
+  host: OrbitHost,
+  orbitRadius: number,
+  planetMass: number
+): number {
+  const a = architecture.stars.find((star) => star.id === 'A');
+  const b = architecture.stars.find((star) => star.id === 'B');
+  const c = architecture.stars.find((star) => star.id === 'C');
+  if (!a || !(orbitRadius > 0) || !(planetMass > 0) || !Number.isFinite(orbitRadius + planetMass)) {
+    return 0;
+  }
+  if (!b) return orbitRadius * Math.cbrt(planetMass / (3 * a.massKg));
+  if (host.kind === 'circumstellar' && host.starId === 'C' && !c) return 0;
+
+  const abMass = a.massKg + b.massKg;
+  const innerApo = architecture.binarySeparation * (1 + (b.orbit?.eccentricity ?? 0));
+  const outerPeri = c ? architecture.outerSeparation * (1 - (c.orbit?.eccentricity ?? 0)) : Infinity;
+  const aExcursion = (innerApo * b.massKg) / abMass;
+  const bExcursion = (innerApo * a.massKg) / abMass;
+  let tidalStrength: number;
+
+  if (host.kind === 'circumstellar' && host.starId === 'C' && c) {
+    tidalStrength =
+      c.massKg / orbitRadius ** 3 +
+      binaryTidalStrength(outerPeri - orbitRadius, innerApo, a.massKg, b.massKg);
+  } else if (host.kind === 'circumstellar') {
+    const central = host.starId === 'B' ? b : a;
+    const companion = host.starId === 'B' ? a : b;
+    const excursion = host.starId === 'B' ? bExcursion : aExcursion;
+    const innerPeri = architecture.binarySeparation * (1 - (b.orbit?.eccentricity ?? 0));
+    if (orbitRadius >= innerPeri || (c && orbitRadius >= outerPeri - excursion)) return 0;
+    tidalStrength = central.massKg / orbitRadius ** 3 + companion.massKg / (innerPeri - orbitRadius) ** 3;
+    if (c) tidalStrength += c.massKg / (outerPeri - excursion - orbitRadius) ** 3;
+  } else if (host.kind === 'circumbinary' || !c) {
+    tidalStrength = binaryTidalStrength(orbitRadius, innerApo, a.massKg, b.massKg);
+    if (c) {
+      if (orbitRadius >= outerPeri) return 0;
+      tidalStrength += c.massKg / (outerPeri - orbitRadius) ** 3;
+    }
+  } else {
+    // A circumbarycentric planet may pass either the AB pair or C at conjunction.
+    const outerApo = architecture.outerSeparation * (1 + (c.orbit?.eccentricity ?? 0));
+    const abExcursion = (outerApo * c.massKg) / (abMass + c.massKg);
+    const cExcursion = (outerApo * abMass) / (abMass + c.massKg);
+    if (orbitRadius <= abExcursion + Math.max(aExcursion, bExcursion) || orbitRadius <= cExcursion) {
+      return 0;
+    }
+    tidalStrength = Math.max(
+      binaryTidalStrength(orbitRadius - abExcursion, innerApo, a.massKg, b.massKg) +
+        c.massKg / (orbitRadius + cExcursion) ** 3,
+      binaryTidalStrength(orbitRadius + abExcursion, innerApo, a.massKg, b.massKg) +
+        c.massKg / (orbitRadius - cExcursion) ** 3
+    );
+  }
+  return Number.isFinite(tidalStrength) && tidalStrength > 0
+    ? Math.cbrt(planetMass / (3 * tidalStrength))
+    : 0;
+}

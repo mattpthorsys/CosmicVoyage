@@ -31,7 +31,7 @@ import {
   TerraformingStage,
 } from './habitability';
 import { reserveColonyWorldName } from './colony_naming';
-import { getStableOrbitRange } from './orbital_stability';
+import { getConservativeSatelliteHillRadius, getStableOrbitRange } from './orbital_stability';
 import { canAddSatellite, sufficientlySeparated } from './satellite_physics';
 import { generateAtmosphere } from './planet/atmosphere_generator';
 import { calculateAtmosphereIrradiationAt, type AtmosphereIrradiation } from './planet/stellar_irradiation';
@@ -1259,7 +1259,7 @@ export class SolarSystem {
       tidallyLocked,
       rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
       orbitalInclination:
-        orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 2.8),
+        orbitFraction < 0.55 ? prng.random(0, Math.PI / 140) : prng.random(Math.PI / 36, Math.PI / 18),
     };
   }
 
@@ -1565,8 +1565,12 @@ export class SolarSystem {
     const moonPRNG = planet.systemPRNG.seedNew('moons');
     const effectiveTemp = Math.max(this.getEffectiveTemperature(totalFlux), planet.surfaceTemp);
     const parentRadius_m = (planet.diameter * 1000) / 2;
-    const hostMass = this.getOrbitHostMassKg(planet.orbitHost) || SOLAR_MASS_KG;
-    const hillRadius_m = planet.orbitDistance * Math.pow(planet.mass / (3 * hostMass), 1 / 3);
+    const hillRadius_m = getConservativeSatelliteHillRadius(
+      this.architecture,
+      planet.orbitHost,
+      planet.orbitDistance,
+      planet.mass
+    );
     const outerStableOrbit_m =
       hillRadius_m * (planet.type === 'GasGiant' || planet.type === 'IceGiant' ? 0.42 : 0.32);
     const innerOrbit_m =
@@ -1638,7 +1642,7 @@ export class SolarSystem {
           parentStarType,
           moonCharacteristics,
           parentStar.environment,
-          { kind: 'circumstellar', starId: parentStar.id },
+          planet.orbitHost,
           planet.systemX,
           planet.systemY,
           totalFlux
@@ -1788,7 +1792,7 @@ export class SolarSystem {
     const orbitalInclination = isRegularGiantMoon
       ? prng.random(0, Math.PI / 180)
       : isGiantParent
-        ? prng.random(Math.PI / 36, Math.PI / 2.5)
+        ? prng.random(Math.PI / 36, Math.PI / 18)
         : prng.random(0, Math.PI / 18);
     const rotationPeriodHours = tidallyLocked
       ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass + mass) / 3600
