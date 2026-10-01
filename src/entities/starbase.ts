@@ -48,6 +48,7 @@ export class Starbase {
   orbitDistance: number; // Made mutable (removed readonly)
   orbitAngle: number; // Made mutable (removed readonly)
   orbitHost: OrbitHost = { kind: 'barycentric' };
+  coorbitalAngleOffset: number | null = null;
   systemX: number; // Made mutable (removed readonly)
   systemY: number; // Made mutable (removed readonly)
 

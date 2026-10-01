@@ -8,6 +8,7 @@ import {
   StellarBody,
 } from '../../../entities/stellar_body';
 import {
+  findUncrowdedStationOrbit,
   getConservativeSatelliteHillRadius,
   getStableOrbitRange,
   isOrbitWithinStableRange,
@@ -246,6 +247,13 @@ describe('multi-star physical and generation contracts', () => {
     const scaledSeconds = (365.25 * 86400) / (4 * 3600);
     expect(depot.orbitHost).toEqual({ kind: 'circumbinary' });
     expect(isOrbitWithinStableRange(value.architecture, depot.orbitHost, depot.orbitDistance)).toBe(true);
+    for (const planet of value.planets) {
+      if (!planet || planet.orbitHost.kind !== 'circumbinary') continue;
+      const hill = planet.orbitDistance * Math.cbrt(planet.mass / (3 * abMass));
+      expect(Math.abs(depot.orbitDistance - planet.orbitDistance)).toBeGreaterThanOrEqual(
+        Math.max(0.01 * AU_IN_METERS, 5 * hill)
+      );
+    }
     value.updateOrbits(1);
     expect(depot.orbitAngle).toBeCloseTo(
       (oldAngle + (2 * Math.PI * scaledSeconds) / period) % (2 * Math.PI),
@@ -256,6 +264,30 @@ describe('multi-star physical and generation contracts', () => {
       depot.orbitDistance / AU_IN_METERS,
       10
     );
+  });
+
+  it('chooses the nearest clear depot radius or reports a fully occupied zone', () => {
+    const hostMass = SOLAR_MASS_KG;
+    const earthMass = 5.97e24;
+    const radius = AU_IN_METERS;
+    const clearance = 5 * radius * Math.cbrt(earthMass / (3 * hostMass));
+    const broad = { minRadius: 0.8 * radius, maxRadius: 1.2 * radius };
+    const orbit = findUncrowdedStationOrbit(
+      radius,
+      broad,
+      [{ orbitDistance: radius, mass: earthMass }],
+      hostMass
+    );
+    expect(orbit).not.toBeNull();
+    expect(Math.abs(orbit! - radius)).toBeGreaterThan(clearance);
+    expect(
+      findUncrowdedStationOrbit(
+        radius,
+        { minRadius: radius - clearance / 2, maxRadius: radius + clearance / 2 },
+        [{ orbitDistance: radius, mass: earthMass }],
+        hostMass
+      )
+    ).toBeNull();
   });
 
   it('does not fabricate a primary fallback beyond the supported generation region', () => {

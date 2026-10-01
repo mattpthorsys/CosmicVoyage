@@ -31,7 +31,11 @@ import {
   TerraformingStage,
 } from './habitability';
 import { reserveColonyWorldName } from './colony_naming';
-import { getConservativeSatelliteHillRadius, getStableOrbitRange } from './orbital_stability';
+import {
+  findUncrowdedStationOrbit,
+  getConservativeSatelliteHillRadius,
+  getStableOrbitRange,
+} from './orbital_stability';
 import { canAddSatellite, sufficientlySeparated } from './satellite_physics';
 import { generateAtmosphere } from './planet/atmosphere_generator';
 import { calculateAtmosphereIrradiationAt, type AtmosphereIrradiation } from './planet/stellar_irradiation';
@@ -136,7 +140,7 @@ export class SolarSystem {
     const stationKind = basicProps.stationKind ?? (basicProps.hasStarbase ? 'starbase' : null);
     const canCreateMajorStarbase =
       stationKind !== 'starbase' || this.colonyWorld?.terraforming?.stage === 'complete';
-    this.starbase =
+    let station: Starbase | null =
       stationKind && !this.isStarless && canCreateMajorStarbase
         ? new Starbase(
             `x${encodeAddressNumber(this.starX)}:y${encodeAddressNumber(this.starY)}:s${this.systemSlot}`,
@@ -144,36 +148,55 @@ export class SolarSystem {
             this.name,
             stationKind,
             stationKind === 'starbase' ? (this.colonyWorld?.name ?? null) : null,
-            stationKind === 'starbase' && this.colonyWorld
-              ? this.colonyWorld.orbitDistance * 1.035
-              : undefined
+            stationKind === 'starbase' && this.colonyWorld ? this.colonyWorld.orbitDistance : undefined
           )
         : null;
-    this.stations = this.starbase ? Object.freeze([this.starbase]) : Object.freeze([]);
-
-    if (this.starbase) {
+    if (station) {
       let host = this.colonyWorld?.orbitHost ?? this.getDefaultPlanetOrbitHost();
       let range = getStableOrbitRange(this.architecture, host);
       if (!range) {
         host = { kind: 'barycentric' };
         range = getStableOrbitRange(this.architecture, host);
       }
-      this.starbase.orbitHost = { ...host };
-      if (range) {
-        const margin = Math.min(range.minRadius * 0.05, (range.maxRadius - range.minRadius) * 0.05);
-        this.starbase.orbitDistance = this.clamp(
-          this.starbase.orbitDistance,
-          range.minRadius + margin,
-          range.maxRadius - margin
+      station.orbitHost = { ...host };
+      const hostMass = this.getOrbitHostMassKg(host);
+      const colony = this.colonyWorld;
+      if (
+        station.kind === 'starbase' &&
+        colony &&
+        this.architecture.kind === 'single' &&
+        colony.mass / (hostMass + colony.mass) < 0.03852
+      ) {
+        // The circular restricted-three-body L4/L5 points stay 60 degrees from a light colony.
+        station.coorbitalAngleOffset = station.orbitAngle < Math.PI ? Math.PI / 3 : -Math.PI / 3;
+        station.orbitDistance = colony.orbitDistance;
+        station.orbitAngle = (colony.orbitAngle + station.coorbitalAngleOffset + 2 * Math.PI) % (2 * Math.PI);
+      } else if (range) {
+        const sameHostPlanets = this.planets.filter((planet): planet is Planet =>
+          Boolean(planet && getHostLabel(planet.orbitHost) === getHostLabel(host))
+        );
+        const radius = findUncrowdedStationOrbit(station.orbitDistance, range, sameHostPlanets, hostMass);
+        if (radius === null) {
+          logger.warn(`[System:${this.name}] No clear stable orbit for ${station.kind}.`);
+          station = null;
+        } else {
+          station.orbitDistance = radius;
+        }
+      } else {
+        logger.warn(`[System:${this.name}] No stable host orbit for ${station.kind}.`);
+        station = null;
+      }
+      if (station) {
+        const center = this.getOrbitCenter(host);
+        station.systemX = center.x + Math.cos(station.orbitAngle) * station.orbitDistance;
+        station.systemY = center.y + Math.sin(station.orbitAngle) * station.orbitDistance;
+        logger.info(
+          `[System:${this.name}] ${station.kind} generated at orbit distance ${station.orbitDistance.toExponential(2)}m.`
         );
       }
-      const center = this.getOrbitCenter(host);
-      this.starbase.systemX = center.x + Math.cos(this.starbase.orbitAngle) * this.starbase.orbitDistance;
-      this.starbase.systemY = center.y + Math.sin(this.starbase.orbitAngle) * this.starbase.orbitDistance;
-      logger.info(
-        `[System:${this.name}] ${this.starbase.kind} generated at orbit distance ${this.starbase.orbitDistance.toExponential(2)}m.`
-      );
     }
+    this.starbase = station;
+    this.stations = station ? Object.freeze([station]) : Object.freeze([]);
 
     // Calculate edge radius based on furthest object (planet or starbase)
     let maxOrbit_m = 0;
@@ -2079,17 +2102,22 @@ export class SolarSystem {
         logger.warn(`[System:${this.name}] Invalid orbit distance for starbase. Skipping.`);
         return;
       }
-      const sbPeriod_s = this.calculateKeplerPeriodSeconds(
-        sb_r,
-        this.getOrbitHostMassKg(this.starbase.orbitHost)
-      );
-      if (!Number.isFinite(sbPeriod_s) || sbPeriod_s <= 0) {
-        logger.warn(`[System:${this.name}] Invalid orbital period for starbase. Skipping.`);
-        return;
+      if (this.starbase.coorbitalAngleOffset !== null && this.colonyWorld) {
+        this.starbase.orbitAngle =
+          (this.colonyWorld.orbitAngle + this.starbase.coorbitalAngleOffset + 2 * Math.PI) % (2 * Math.PI);
+      } else {
+        const sbPeriod_s = this.calculateKeplerPeriodSeconds(
+          sb_r,
+          this.getOrbitHostMassKg(this.starbase.orbitHost)
+        );
+        if (!Number.isFinite(sbPeriod_s) || sbPeriod_s <= 0) {
+          logger.warn(`[System:${this.name}] Invalid orbital period for starbase. Skipping.`);
+          return;
+        }
+        const sb_deltaAngle = (2 * Math.PI * scaledDeltaTime) / sbPeriod_s;
+        this.starbase.orbitAngle = (this.starbase.orbitAngle + sb_deltaAngle) % (Math.PI * 2);
+        if (!Number.isFinite(this.starbase.orbitAngle)) this.starbase.orbitAngle = 0;
       }
-      const sb_deltaAngle = (2 * Math.PI * scaledDeltaTime) / sbPeriod_s;
-      this.starbase.orbitAngle = (this.starbase.orbitAngle + sb_deltaAngle) % (Math.PI * 2);
-      if (!Number.isFinite(this.starbase.orbitAngle)) this.starbase.orbitAngle = 0;
       const center = this.getOrbitCenter(this.starbase.orbitHost);
       this.starbase.systemX = center.x + Math.cos(this.starbase.orbitAngle) * sb_r;
       this.starbase.systemY = center.y + Math.sin(this.starbase.orbitAngle) * sb_r;

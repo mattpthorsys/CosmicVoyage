@@ -108,6 +108,43 @@ export function isOrbitWithinStableRange(
   return Boolean(range && Number.isFinite(radius) && radius >= range.minRadius && radius <= range.maxRadius);
 }
 
+/** Finds the nearest circular station orbit outside the encounter zones of same-host planets. */
+export function findUncrowdedStationOrbit(
+  preferredRadius: number,
+  range: StableOrbitRange,
+  planets: readonly { orbitDistance: number; mass: number }[],
+  hostMass: number
+): number | null {
+  if (!(hostMass > 0) || !(range.minRadius < range.maxRadius) || !Number.isFinite(preferredRadius))
+    return null;
+  const margin = Math.min(range.minRadius * 0.05, (range.maxRadius - range.minRadius) * 0.05);
+  const lower = range.minRadius + margin;
+  const upper = range.maxRadius - margin;
+  if (!(lower <= upper)) return null;
+  const preferred = Math.max(lower, Math.min(preferredRadius, upper));
+  const candidates = [preferred, lower];
+  if (Number.isFinite(upper)) candidates.push(upper);
+  const excluded = planets
+    .filter((planet) => planet.orbitDistance > 0 && planet.mass > 0)
+    .map((planet) => {
+      const hillRadius = planet.orbitDistance * Math.cbrt(planet.mass / (3 * hostMass));
+      const clearance = Math.max(0.01 * AU_IN_METERS, 5 * hillRadius);
+      const epsilon = 1e-8 * Math.max(AU_IN_METERS, planet.orbitDistance);
+      candidates.push(planet.orbitDistance - clearance - epsilon, planet.orbitDistance + clearance + epsilon);
+      return { min: planet.orbitDistance - clearance, max: planet.orbitDistance + clearance };
+    });
+  return (
+    candidates
+      .filter(
+        (radius) =>
+          radius >= lower &&
+          radius <= upper &&
+          excluded.every((zone) => radius < zone.min || radius > zone.max)
+      )
+      .sort((left, right) => Math.abs(left - preferred) - Math.abs(right - preferred))[0] ?? null
+  );
+}
+
 /** Maximum tidal strength from two stars sharing a barycentre, at either conjunction. */
 function binaryTidalStrength(distance: number, separation: number, massA: number, massB: number): number {
   const total = massA + massB;

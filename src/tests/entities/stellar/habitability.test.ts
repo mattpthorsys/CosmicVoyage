@@ -117,6 +117,21 @@ describe('habitability and human settlement', () => {
     expect(system.colonyWorld?.catalogueName).not.toBe(system.colonyWorld?.name);
     expect(system.starbase?.kind).toBe('starbase');
     expect(system.starbase?.colonyWorldName).toBe(system.colonyWorld?.name);
+    const station = system.starbase!;
+    const colony = system.colonyWorld!;
+    expect(station.orbitHost).toEqual(colony.orbitHost);
+    expect(station.orbitDistance).toBe(colony.orbitDistance);
+    expect(Math.abs(station.coorbitalAngleOffset!)).toBeCloseTo(Math.PI / 3, 12);
+    for (const elapsed of [1, 100, 1000]) {
+      system.updateOrbits(elapsed);
+      expect(station.orbitAngle).toBeCloseTo(
+        (colony.orbitAngle + station.coorbitalAngleOffset! + 2 * Math.PI) % (2 * Math.PI),
+        12
+      );
+      expect(
+        Math.hypot(station.systemX - colony.systemX, station.systemY - colony.systemY) / AU_IN_METERS
+      ).toBeCloseTo(colony.orbitDistance / AU_IN_METERS, 10);
+    }
     expect(orbitAu).toBeGreaterThanOrEqual(zone.innerAu);
     expect(orbitAu).toBeLessThanOrEqual(zone.outerAu);
     for (const planet of system.planets) {
