@@ -3,6 +3,12 @@ import { PRNG } from '../../../utils/prng';
 import { calculateGravity, generatePhysicalBase } from '../../../entities/planet/physical_generator';
 
 describe('planet physical generation', () => {
+  it('does not impose an artificial gravity floor on small icy satellites', () => {
+    expect(calculateGravity(100, 1)).toBeLessThan(0.01);
+    expect(calculateGravity(200, 1)).toBeCloseTo(2 * calculateGravity(100, 1), 10);
+    expect(calculateGravity(0, 1)).toBe(0);
+    expect(calculateGravity(NaN, 1)).toBe(0);
+  });
   const solidExpectations: Record<
     string,
     { diameter: [number, number]; density: [number, number]; gravity: [number, number] }

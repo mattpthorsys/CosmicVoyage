@@ -179,6 +179,12 @@ describe('multi-star physical and generation contracts', () => {
         const fraction = ['GasGiant', 'IceGiant'].includes(planet.type) ? 0.42 : 0.32;
         for (const moon of planet.moons) {
           expect(moon.orbitDistance).toBeLessThanOrEqual(hillRadius * fraction);
+          expect(moon.mass).toBeLessThan(planet.mass);
+          expect(moon.atmosphere.pressure).toBeGreaterThanOrEqual(0);
+          expect(
+            Object.values(moon.atmosphere.composition).reduce((sum, percent) => sum + percent, 0)
+          ).toBeCloseTo(100, 8);
+          if (moon.atmosphere.density === 'None') expect(moon.atmosphere.pressure).toBe(0);
           moonCount++;
         }
       }

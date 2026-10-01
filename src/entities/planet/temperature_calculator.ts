@@ -6,6 +6,7 @@ import { PLANET_TYPES } from '../../constants/planetary';
 import { SPECTRAL_TYPES } from '../../constants/stellar';
 import { logger } from '../../utils/logger';
 import { StellarEnvironment, estimateEvolutionaryLuminosityFactor } from '../stellar_environment';
+import { greenhouseTemperatureFactor } from './atmosphere_physics';
 
 // --- Physical Constants ---
 const STEFAN_BOLTZMANN_SIGMA = 5.670374419e-8; // W m^-2 K^-4
@@ -175,53 +176,7 @@ export function calculateTemperatureProfile(
   logger.debug(`${logPrefix} Equilibrium Temp (no greenhouse): ${equilibriumTemp_K.toFixed(1)}K`);
 
   // --- 5. Apply Greenhouse Effect ---
-  let greenhouseFactor = 1.0;
-  let greenhouseDesc = 'None';
-  if (atmosphere && atmosphere.density && atmosphere.density !== 'None') {
-    const pressureFactor = Math.max(0, atmosphere.pressure); // Use pressure >= 0
-    if (atmosphere.density === 'Thin') {
-      greenhouseFactor = 1.0 + (pressureFactor / 0.5) * 0.05; // Reduced base effect
-      greenhouseDesc = 'Slight';
-    } else if (atmosphere.density === 'Trace') {
-      greenhouseFactor = 1.0 + Math.min(0.03, pressureFactor * 0.12);
-      greenhouseDesc = 'Trace';
-    } else if (atmosphere.density === 'Earth-like') {
-      greenhouseFactor = 1.05 + (pressureFactor / 1.0) * 0.15; // Reduced base effect
-      greenhouseDesc = 'Moderate';
-    } else if (atmosphere.density === 'Thick') {
-      greenhouseFactor = 1.1 + (pressureFactor / 2.0) * 0.3; // Reduced base effect, adjusted scaling
-      greenhouseDesc = 'Significant';
-    } else if (atmosphere.density === 'Superdense') {
-      greenhouseFactor = 1.2 + Math.log10(pressureFactor + 1) * 0.55;
-      greenhouseDesc = 'Extreme';
-    }
-
-    // Bonus for specific gases
-    if (atmosphere.composition) {
-      const co2 = atmosphere.composition['Carbon Dioxide'] || 0;
-      const methane = atmosphere.composition['Methane'] || 0;
-      const waterVapor = atmosphere.composition['Water Vapor'] || 0;
-      let gasBonus = 1.0;
-      // Apply bonus multiplicatively based on percentages
-      gasBonus *= 1 + (co2 / 100) * 0.5; // CO2 effect (max +50%)
-      gasBonus *= 1 + (methane / 100) * 1.0; // Methane effect (max +100%)
-      gasBonus *= 1 + (waterVapor / 100) * 0.8; // Water vapor effect (max +80%)
-
-      greenhouseFactor *= gasBonus;
-      logger.debug(
-        `${logPrefix} Greenhouse Gas Bonus: ${gasBonus.toFixed(2)} (CO2=${co2}%, CH4=${methane}%, H2O=${waterVapor}%)`
-      );
-    } else {
-      logger.warn(`${logPrefix} Atmosphere composition data missing for greenhouse gas bonus calculation.`);
-    }
-    // Clamp the final factor
-    greenhouseFactor = Math.max(1.0, Math.min(greenhouseFactor, 3.5)); // Allow slightly higher max factor
-  } else {
-    logger.debug(`${logPrefix} No significant atmosphere density for greenhouse effect.`);
-  }
-  logger.debug(
-    `${logPrefix} Greenhouse Details: Density=${atmosphere?.density ?? 'N/A'}, Pressure=${atmosphere?.pressure?.toFixed(3) ?? 'N/A'} -> Factor=${greenhouseFactor.toFixed(2)} (${greenhouseDesc})`
-  );
+  const greenhouseFactor = greenhouseTemperatureFactor(atmosphere);
 
   const radiativeSurfaceTemp_K = equilibriumTemp_K * greenhouseFactor;
   const internalHeat_K = calculateInternalHeatContribution(
@@ -296,9 +251,12 @@ function calculateTemperatureRange(
     calculateInternalHeatContribution(planetType, options.diameterKm, options.densityGcm3, options.ageGyr) *
     0.35;
   const tidalFloor = calculateTidalHeatContribution(planetType, options.tidalHeatingFactor ?? 0) * 0.4;
-  const min = Math.max(
-    2,
-    Math.round(Math.max(geothermalFloor + tidalFloor, averageTemp_K * (1 - variationFraction)))
+  // A supplied mean (notably a rogue world's cooling prior) is authoritative.
+  // Estimated heat floors cannot put the minimum above it; heat fluxes add as T^4.
+  const heatFloor = (geothermalFloor ** 4 + tidalFloor ** 4) ** 0.25;
+  const min = Math.min(
+    averageTemp_K,
+    Math.max(2, Math.round(Math.max(heatFloor, averageTemp_K * (1 - variationFraction))))
   );
   const max = Math.max(min, Math.round(averageTemp_K * (1 + variationFraction * 1.15)));
   return { average: averageTemp_K, min, max };

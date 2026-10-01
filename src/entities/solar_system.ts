@@ -33,6 +33,8 @@ import {
 import { reserveColonyWorldName } from './colony_naming';
 import { getStableOrbitRange } from './orbital_stability';
 import { canAddSatellite, sufficientlySeparated } from './satellite_physics';
+import { generateAtmosphere } from './planet/atmosphere_generator';
+import { calculateAtmosphereIrradiationAt, type AtmosphereIrradiation } from './planet/stellar_irradiation';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -113,6 +115,13 @@ export class SolarSystem {
 
     this.planets = new Array(CONFIG.MAX_PLANETS_PER_SYSTEM).fill(null);
 
+    // A catalogue-designated settlement constrains system generation. Reserve
+    // its viable orbit first, so later planets cannot crowd out the starting hub.
+    const reservedColony =
+      !this.isCompactRemnant && this.architecture.kind === 'single' && this.settlementStage !== 'none'
+        ? this.ensureTerraformingWorld(this.settlementStage)
+        : null;
+
     // Generate planets and their moons
     if (this.isStarless) {
       this.generateRoguePlanetaryMassObject();
@@ -122,7 +131,8 @@ export class SolarSystem {
 
     const settlementStage = this.settlementStage;
     this.colonyWorld =
-      !this.isStarless && settlementStage !== 'none' ? this.ensureTerraformingWorld(settlementStage) : null;
+      reservedColony ??
+      (!this.isStarless && settlementStage !== 'none' ? this.ensureTerraformingWorld(settlementStage) : null);
     const stationKind = basicProps.stationKind ?? (basicProps.hasStarbase ? 'starbase' : null);
     const canCreateMajorStarbase =
       stationKind !== 'starbase' || this.colonyWorld?.terraforming?.stage === 'complete';
@@ -280,8 +290,16 @@ export class SolarSystem {
         orbitCenter.x,
         orbitCenter.y,
         totalFlux,
-        tidalRotation
+        {
+          ...tidalRotation,
+          orbitHostMassKg: parentStar.massKg,
+          atmosphereIrradiation: this.calculateAtmosphereIrradiationAt(
+            orbitCenter.x + Math.cos(angle) * orbitDistance,
+            orbitCenter.y + Math.sin(angle) * orbitDistance
+          ),
+        }
       );
+      if (!this.canAddPlanet(planet, targetSlot)) continue;
       const assessment = assessPlanetHabitability(planet, this.architecture);
       if (!best || assessment.score > best.assessment.score) best = { planet, assessment };
       const viable =
@@ -307,6 +325,7 @@ export class SolarSystem {
         orbitCenter,
         parentStar
       );
+      if (!this.canAddPlanet(constrained.planet, targetSlot)) return null;
       this.planets[targetSlot] = constrained.planet;
       return constrained;
     }
@@ -335,27 +354,25 @@ export class SolarSystem {
       parentStar.environment.ageGyr,
       prng.seedNew('tidal_lock')
     );
-    const generated = generatePlanetCharacteristics(
+    const diameter = prng.randomInt(10800, 14500);
+    const density = prng.random(4.75, 5.85);
+    const characteristics = generatePlanetCharacteristics(
       'Rock',
       orbitDistance,
       prng.seedNew('natural_characteristics'),
       parentStar.starType,
       parentStar.environment,
       totalFlux,
-      tidalRotation
+      {
+        ...tidalRotation,
+        physicalBase: { diameter, density },
+        orbitHostMassKg: parentStar.massKg,
+        atmosphereIrradiation: this.calculateAtmosphereIrradiationAt(
+          orbitCenter.x + Math.cos(angle) * orbitDistance,
+          orbitCenter.y + Math.sin(angle) * orbitDistance
+        ),
+      }
     );
-    const diameter = prng.randomInt(10800, 14500);
-    const density = prng.random(4.75, 5.85);
-    const radiusM = (diameter * 1000) / 2;
-    const mass = (4 / 3) * Math.PI * radiusM ** 3 * density * 1000;
-    const characteristics: PlanetCharacteristics = {
-      ...generated,
-      diameter,
-      density,
-      gravity: calculateGravity(diameter, density),
-      mass,
-      escapeVelocity: Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radiusM),
-    };
     const planet = new Planet(
       `${this.name} ${this.getRomanNumeral(targetSlot + 1)}`,
       'Rock',
@@ -635,8 +652,9 @@ export class SolarSystem {
     const reservedLocalSlots = Math.min(3, localHosts.length * 2);
     const primarySlotLimit = Math.max(1, CONFIG.MAX_PLANETS_PER_SYSTEM - reservedLocalSlots);
 
-    let planetsGenerated = 0;
+    let planetsGenerated = this.planets.filter(Boolean).length;
     for (let i = 0; hasPrimaryRegion && i < primarySlotLimit; i++) {
+      if (this.planets[i]) continue;
       logger.debug(`[System:${this.name}] Considering planet slot ${i + 1}...`);
 
       let currentOrbitDistance =
@@ -716,7 +734,14 @@ export class SolarSystem {
           orbitCenter.x,
           orbitCenter.y,
           totalFlux,
-          { ...tidalRotation, orbitHostMassKg: this.getOrbitHostMassKg(orbitHost) }
+          {
+            ...tidalRotation,
+            orbitHostMassKg: this.getOrbitHostMassKg(orbitHost),
+            atmosphereIrradiation: this.calculateAtmosphereIrradiationAt(
+              orbitCenter.x + Math.cos(angle) * currentOrbitDistance,
+              orbitCenter.y + Math.sin(angle) * currentOrbitDistance
+            ),
+          }
         );
         if (!this.canAddPlanet(planet)) {
           lastOrbitDistance = currentOrbitDistance;
@@ -782,7 +807,14 @@ export class SolarSystem {
         orbitCenter.x,
         orbitCenter.y,
         totalFlux,
-        { ...tidalRotation, orbitHostMassKg: this.getOrbitHostMassKg(orbitHost) }
+        {
+          ...tidalRotation,
+          orbitHostMassKg: this.getOrbitHostMassKg(orbitHost),
+          atmosphereIrradiation: this.calculateAtmosphereIrradiationAt(
+            orbitCenter.x + Math.cos(angle) * fallbackOrbit,
+            orbitCenter.y + Math.sin(angle) * fallbackOrbit
+          ),
+        }
       );
       if (this.canAddPlanet(planet)) {
         this.planets[0] = planet;
@@ -916,7 +948,11 @@ export class SolarSystem {
           host.systemX,
           host.systemY,
           totalFlux,
-          { ...tidalRotation, orbitHostMassKg: host.massKg }
+          {
+            ...tidalRotation,
+            orbitHostMassKg: host.massKg,
+            atmosphereIrradiation: this.calculateAtmosphereIrradiationAt(x, y),
+          }
         );
         if (!this.canAddPlanet(planet)) {
           lastOrbit = orbitDistance;
@@ -984,24 +1020,16 @@ export class SolarSystem {
         : planetType === 'IceGiant'
           ? prng.randomInt(14, 70)
           : prng.randomInt(8, 45);
-    const atmosphere: PlanetCharacteristics['atmosphere'] =
-      planetType === 'GasGiant'
-        ? {
-            density: 'Superdense',
-            pressure: prng.random(200, 1500),
-            composition: { Hydrogen: 0.82, Helium: 0.16, Methane: 0.02 },
-          }
-        : planetType === 'IceGiant'
-          ? {
-              density: 'Superdense',
-              pressure: prng.random(80, 700),
-              composition: { Hydrogen: 0.52, Helium: 0.18, Methane: 0.18, Ammonia: 0.12 },
-            }
-          : {
-              density: 'Trace',
-              pressure: prng.random(0.001, 0.08),
-              composition: { Nitrogen: 0.35, Methane: 0.28, 'Carbon Dioxide': 0.22, Argon: 0.15 },
-            };
+    const atmosphere = generateAtmosphere(
+      prng,
+      planetType,
+      calculateGravity(physical.diameter, physical.density),
+      escapeVelocity,
+      'ROGUE',
+      0,
+      { ...this.stellarEnvironment, starType: 'ROGUE' },
+      { totalFluxWm2: 0, temperatureK: surfaceTemp }
+    );
     const axialTilt = generateAxialTiltRad(prng, false);
     const temperatureProfile = createTemperatureProfileFromAverage(surfaceTemp, planetType, atmosphere, {
       diameterKm: physical.diameter,
@@ -1141,15 +1169,21 @@ export class SolarSystem {
     const radius_m = (diameter * 1000) / 2;
     const mass = (4 / 3) * Math.PI * Math.pow(radius_m, 3) * density * 1000;
     const tidalHeat = this.getMoonTidalHeatingFactor(parent, moonOrbit_m);
+    const internalTemperature = moonType === 'Frozen' ? prng.random(9, 34) : prng.random(12, 52);
     const surfaceTemp = Math.round(
-      (moonType === 'Frozen' ? prng.random(9, 34) : prng.random(12, 52)) + tidalHeat * prng.random(12, 95)
+      (internalTemperature ** 4 + (tidalHeat * prng.random(12, 95)) ** 4) ** 0.25
     );
     const tidallyLocked = orbitFraction < 0.82 || tidalHeat > 0.12;
-    const atmosphere: PlanetCharacteristics['atmosphere'] = {
-      density: surfaceTemp > 35 && diameter > 2400 ? 'Trace' : 'None',
-      pressure: surfaceTemp > 35 ? prng.random(0.001, 0.03) : 0,
-      composition: { Nitrogen: 0.45, Methane: 0.35, Argon: 0.2 },
-    };
+    const atmosphere = generateAtmosphere(
+      prng,
+      moonType,
+      calculateGravity(diameter, density),
+      Math.sqrt((2 * GRAVITATIONAL_CONSTANT_G * mass) / radius_m),
+      'ROGUE',
+      0,
+      { ...this.stellarEnvironment, starType: 'ROGUE' },
+      { totalFluxWm2: 0, temperatureK: surfaceTemp }
+    );
     const axialTilt = tidallyLocked ? prng.random(0, Math.PI / 60) : generateAxialTiltRad(prng, false, 0.08);
     const rotationPeriodHours = tidallyLocked
       ? this.calculateKeplerPeriodSeconds(moonOrbit_m, parent.mass + mass) / 3600
@@ -1279,11 +1313,12 @@ export class SolarSystem {
   }
 
   /** Rejects stellar-mass companions masquerading as planets and crowded same-host orbits. */
-  private canAddPlanet(planet: Planet): boolean {
+  private canAddPlanet(planet: Planet, replacedSlot = -1): boolean {
     const hostMass = this.getOrbitHostMassKg(planet.orbitHost);
     if (hostMass <= 0 || planet.mass >= hostMass * 0.05) return false;
     return this.planets.every(
-      (other) =>
+      (other, slot) =>
+        slot === replacedSlot ||
         !other ||
         getHostLabel(other.orbitHost) !== getHostLabel(planet.orbitHost) ||
         sufficientlySeparated(other, planet, hostMass)
@@ -1301,6 +1336,11 @@ export class SolarSystem {
       flux += star.luminosityW / (4 * Math.PI * distanceSq);
     }
     return Number.isFinite(flux) && flux > 0 ? flux : 1361;
+  }
+
+  /** Sums each star's own spectral/age exposure; the primary does not stand in for its companions. */
+  private calculateAtmosphereIrradiationAt(x: number, y: number): AtmosphereIrradiation {
+    return calculateAtmosphereIrradiationAt(this.stars, x, y);
   }
 
   /** Returns planet formation chance. */
@@ -1724,6 +1764,7 @@ export class SolarSystem {
         tidallyLocked,
         rotationPeriodHours: Math.round(rotationPeriodHours * 10) / 10,
         tidalHeatingFactor: tidalHeat,
+        atmosphereIrradiation: this.calculateAtmosphereIrradiationAt(parent.systemX, parent.systemY),
       }
     );
     return {

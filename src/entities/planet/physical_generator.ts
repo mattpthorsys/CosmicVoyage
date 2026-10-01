@@ -2,10 +2,7 @@
 
 import { PRNG } from '../../utils/prng';
 import { logger } from '../../utils/logger';
-
-// Constants for Gravity Calculation (moved here)
-const EARTH_DENSITY_GRAMS_PER_CM3 = 5.51;
-const EARTH_DIAMETER_KM = 12742;
+import { GRAVITATIONAL_CONSTANT_G, STANDARD_GRAVITY_M_S2 } from '../../constants/physics';
 
 /**
  * Generates base physical properties: diameter and density.
@@ -216,15 +213,11 @@ function getSolidPlanetProfile(planetType: string): {
 
 /** Calculates surface gravity relative to Earth (1 G) */
 export function calculateGravity(diameter: number, density: number): number {
-  // g_planet / g_earth = (density_planet * diameter_planet) / (density_earth * diameter_earth)
-  const relativeDensity = density / EARTH_DENSITY_GRAMS_PER_CM3;
-  const relativeDiameter = diameter / EARTH_DIAMETER_KM;
-  const gravity = relativeDensity * relativeDiameter; // Relative to Earth G
-
-  // Clamp gravity to a reasonable range (e.g., 0.01g to 10g?)
-  const clampedGravity = Math.max(0.01, Math.min(10.0, gravity));
-  logger.debug(
-    `[PhysGen] Gravity Calculation: RelDensity=<span class="math-inline">\{relativeDensity\.toFixed\(3\)\}, RelDiameter\=</span>{relativeDiameter.toFixed(3)} -> RawGravity=<span class="math-inline">\{gravity\.toFixed\(3\)\}g \-\> ClampedGravity\=</span>{clampedGravity.toFixed(3)}g`
+  if (!Number.isFinite(diameter + density) || diameter <= 0 || density <= 0) return 0;
+  // GM/R^2 = 4*pi*G*rho*R/3. Do not clamp away small-moon gravity:
+  // atmosphere pressure and escape calculations must describe the same mass.
+  return (
+    (4 * Math.PI * GRAVITATIONAL_CONSTANT_G * (density * 1000) * (diameter * 500)) /
+    (3 * STANDARD_GRAVITY_M_S2)
   );
-  return clampedGravity;
 }

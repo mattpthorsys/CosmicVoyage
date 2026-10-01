@@ -5,7 +5,10 @@ import { MineralRichness } from '../../constants/resources';
 import { generatePhysicalBase, calculateGravity } from './physical_generator';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet';
-import { generateAtmosphere } from './atmosphere_generator';
+import { generateAtmosphereInventory } from './atmosphere_generator';
+import { AIRLESS } from './atmosphere_physics';
+import { resolveAtmosphereClimate } from './atmosphere_climate';
+import type { AtmosphereIrradiation } from './stellar_irradiation';
 import { calculateTemperatureProfile } from './temperature_calculator';
 import { generateHydrosphere, generateLithosphere } from './surface_descriptor';
 import { calculateElementAbundance, determineMineralRichness, getBaseMinerals } from './resource_generator';
@@ -42,6 +45,7 @@ export interface PlanetGenerationOptions {
   orbitalInclinationRad?: number;
   tidalHeatingFactor?: number;
   orbitHostMassKg?: number;
+  atmosphereIrradiation?: AtmosphereIrradiation;
 }
 
 /** Generates axial tilt rad. */
@@ -91,37 +95,46 @@ export function generatePlanetCharacteristics(
     `[CharGen:${planetType}] Calculated Mass: ${mass_kg.toExponential(3)} kg, Escape Velocity: ${escapeVelocity.toFixed(0)} m/s`
   );
 
-  // 4. Generate Atmosphere (NOW pass escape velocity)
-  const atmosphere = generateAtmosphere(
+  const tidallyLocked = options.tidallyLocked ?? false;
+  const axialTilt = options.axialTiltRad ?? generateAxialTiltRad(planetPRNG, tidallyLocked);
+  const orbitalInclination = options.orbitalInclinationRad ?? planetPRNG.random(0, Math.PI / 18);
+
+  /** Evaluates climate using the same illumination and physical state as gas retention. */
+  const temperatureFor = (atmosphere: Atmosphere) =>
+    calculateTemperatureProfile(
+      planetType,
+      orbitDistance,
+      parentStarType,
+      atmosphere,
+      environment,
+      totalFlux_W_m2,
+      {
+        diameterKm: diameter,
+        densityGcm3: density,
+        ageGyr: environment.ageGyr,
+        axialTiltRad: axialTilt,
+        tidallyLocked,
+        tidalHeatingFactor: options.tidalHeatingFactor ?? 0,
+      }
+    );
+  const inventory = generateAtmosphereInventory(
     planetPRNG,
     planetType,
     gravity,
     escapeVelocity,
     parentStarType,
     orbitDistance,
-    environment
-  );
-
-  const tidallyLocked = options.tidallyLocked ?? false;
-  const axialTilt = options.axialTiltRad ?? generateAxialTiltRad(planetPRNG, tidallyLocked);
-  const orbitalInclination = options.orbitalInclinationRad ?? planetPRNG.random(0, Math.PI / 18);
-
-  // 5. Calculate Final Surface Temperature (uses atmosphere and physical state)
-  const temperatureProfile = calculateTemperatureProfile(
-    planetType,
-    orbitDistance,
-    parentStarType,
-    atmosphere,
     environment,
-    totalFlux_W_m2,
     {
-      diameterKm: diameter,
-      densityGcm3: density,
-      ageGyr: environment.ageGyr,
-      axialTiltRad: axialTilt,
-      tidallyLocked,
-      tidalHeatingFactor: options.tidalHeatingFactor ?? 0,
+      totalFluxWm2: totalFlux_W_m2,
+      temperatureK: temperatureFor(AIRLESS).average,
+      irradiation: options.atmosphereIrradiation,
     }
+  );
+  const { atmosphere, temperature: temperatureProfile } = resolveAtmosphereClimate(
+    inventory,
+    planetType,
+    temperatureFor
   );
   const surfaceTemp = temperatureProfile.average;
 

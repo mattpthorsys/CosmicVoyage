@@ -127,9 +127,25 @@ export function generateMilkyWayMetallicityFeH(ageGyr: number, starType: string,
 
 /** Returns default stellar environment. */
 export function getDefaultStellarEnvironment(parentStarType: string): StellarEnvironment {
+  const stage = getStellarStageLabel(parentStarType);
+  const evolvedMassiveOrGiant = [
+    'Subgiant',
+    'Red giant',
+    'Blue giant',
+    'Red supergiant',
+    'Blue supergiant',
+    'Wolf-Rayet star',
+  ].includes(stage);
   return {
     starType: parentStarType,
-    ageGyr: parentStarType.startsWith('G') ? 4.6 : 5.0,
+    ageGyr: isMainSequenceStar(parentStarType)
+      ? Math.min(
+          parentStarType.startsWith('G') ? 4.6 : 5,
+          estimateMainSequenceLifetimeGyr(parentStarType) * 0.5
+        )
+      : evolvedMassiveOrGiant
+        ? Math.min(13.2, estimateMainSequenceLifetimeGyr(parentStarType) * 1.1)
+        : 5,
     metallicityFeH: 0,
   };
 }

@@ -17,6 +17,7 @@ import {
 import { SolarSystem } from '../../../entities/solar_system';
 import { SystemDataGenerator, SystemMapProperties } from '../../../generation/system_data_generator';
 import { PRNG } from '../../../utils/prng';
+import { sufficientlySeparated } from '../../../entities/satellite_physics';
 
 /** Creates a single-star architecture for isolated host and HZ tests. */
 function createSingleStarArchitecture(starType: string, ageGyr: number): StellarArchitecture {
@@ -118,6 +119,10 @@ describe('habitability and human settlement', () => {
     expect(system.starbase?.colonyWorldName).toBe(system.colonyWorld?.name);
     expect(orbitAu).toBeGreaterThanOrEqual(zone.innerAu);
     expect(orbitAu).toBeLessThanOrEqual(zone.outerAu);
+    for (const planet of system.planets) {
+      if (!planet || planet === system.colonyWorld) continue;
+      expect(sufficientlySeparated(planet, system.colonyWorld!, system.stars[0].massKg)).toBe(true);
+    }
   });
 
   it('places a Solar analogue conservative HZ near one AU', () => {

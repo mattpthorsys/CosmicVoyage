@@ -10,6 +10,7 @@ import {
 } from './stellar_environment';
 import type { OrbitHost, StellarArchitecture, StellarBody } from './stellar_body';
 import { isOrbitWithinStableRange } from './orbital_stability';
+import { atmosphereDensity } from './planet/atmosphere_physics';
 
 export type TerraformingStage = 'partial' | 'complete';
 
@@ -309,7 +310,7 @@ export function createTerraformingProfile(
   return {
     stage,
     atmosphere: {
-      density: pressure > 0.65 ? 'Earth-like' : 'Thin',
+      density: atmosphereDensity(Number(pressure.toFixed(3))),
       pressure: Number(pressure.toFixed(3)),
       composition: {
         Nitrogen: Number((95 - oxygen).toFixed(2)),

@@ -6,3 +6,4 @@ export const EARTH_RADIUS_KM = 6371;
 export const SOLAR_RADIUS_M = 6.957e8;
 export const SOLAR_LUMINOSITY_W = 3.828e26;
 export const BOLTZMANN_CONSTANT_K = 1.380649e-23;
+export const STANDARD_GRAVITY_M_S2 = 9.80665;
