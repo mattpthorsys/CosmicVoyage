@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ScreenBuffer } from '../../rendering/screen_buffer';
 import { GLYPHS } from '../../constants';
+import { CONFIG } from '../../config';
 
 /** Creates buffer. */
 function createBuffer(
@@ -9,6 +10,7 @@ function createBuffer(
 ): {
   buffer: ScreenBuffer;
   ctx: {
+    font: string;
     clearRect: ReturnType<typeof vi.fn>;
     fillRect: ReturnType<typeof vi.fn>;
     fillText: ReturnType<typeof vi.fn>;
@@ -76,6 +78,30 @@ describe('ScreenBuffer rendering', () => {
     expect(buffer.getLastRenderStats().cellsDrawn).toBe(1);
     expect(ctx.fillText).toHaveBeenCalledOnce();
     expect(ctx.fillText).toHaveBeenCalledWith('#', 8, 0);
+  });
+
+  it('renders adjacent font faces separately and treats a font change as a dirty cell', () => {
+    const { buffer, ctx } = createBuffer(3, 1);
+    const fonts: string[] = [];
+    ctx.fillText.mockImplementation(() => fonts.push(ctx.font));
+
+    buffer.clear(true);
+    buffer.drawChar('E', 0, 0, '#00FFFF', '#000000');
+    buffer.drawString('sc', 1, 0, '#00FFFF', '#000000', 'thin');
+    buffer.renderFull();
+
+    expect(ctx.fillText.mock.calls.map(([text]) => text)).toEqual(['E', 'sc']);
+    expect(fonts).toEqual([`8px ${CONFIG.FONT_FAMILY}`, `7.2px ${CONFIG.THIN_FONT_FAMILY}`]);
+
+    ctx.fillText.mockClear();
+    fonts.length = 0;
+    buffer.clear(false);
+    buffer.drawString('Esc', 0, 0, '#00FFFF', '#000000', 'thin');
+    buffer.renderDiff();
+
+    expect(buffer.getLastRenderStats().cellsDrawn).toBe(1);
+    expect(ctx.fillText).toHaveBeenCalledWith('E', 0, 0);
+    expect(fonts).toEqual([`7.2px ${CONFIG.THIN_FONT_FAMILY}`]);
   });
 
   it('can stage a complete precomputed frame', () => {

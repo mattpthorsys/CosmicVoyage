@@ -31,6 +31,7 @@ export type TextDashboardTone = TextTone;
 export interface TextDashboardSegment {
   text: string;
   tone?: TextDashboardTone;
+  font?: 'thick' | 'thin';
 }
 
 export interface TextDashboardLine {

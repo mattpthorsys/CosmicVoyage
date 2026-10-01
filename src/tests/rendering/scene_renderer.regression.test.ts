@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { SceneRenderer } from '../../rendering/scene_renderer';
 import { DrawingContext } from '../../rendering/drawing_context';
-import { ScreenBuffer } from '../../rendering/screen_buffer';
+import { CellFont, ScreenBuffer } from '../../rendering/screen_buffer';
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { Player } from '../../core/player';
 import type { OrbitStellarSource } from '../../core/orbit_ui';
@@ -39,6 +39,7 @@ type DrawCall = {
   bg: string | null | undefined;
   scaleX?: number;
   scaleY?: number;
+  font?: CellFont;
 };
 
 /** Creates mock screen buffer. */
@@ -53,9 +54,18 @@ function createMockScreenBuffer(
     stageCells: vi.fn((cells: readonly unknown[]) => {
       stagedFrames.push(cells.slice());
     }),
-    drawChar: vi.fn((char: string | null, x: number, y: number, fg?: string | null, bg?: string | null) => {
-      drawCalls.push({ char, x, y, fg, bg });
-    }),
+    drawChar: vi.fn(
+      (
+        char: string | null,
+        x: number,
+        y: number,
+        fg?: string | null,
+        bg?: string | null,
+        font?: CellFont
+      ) => {
+        drawCalls.push({ char, x, y, fg, bg, font });
+      }
+    ),
     drawScaledChar: vi.fn(
       (
         char: string | null,
@@ -70,11 +80,13 @@ function createMockScreenBuffer(
       }
     ),
     occludeScaledGlyphs: vi.fn(),
-    drawString: vi.fn((text: string, x: number, y: number, fg?: string | null, bg?: string | null) => {
-      for (let index = 0; index < text.length; index++) {
-        drawCalls.push({ char: text[index], x: x + index, y, fg, bg });
+    drawString: vi.fn(
+      (text: string, x: number, y: number, fg?: string | null, bg?: string | null, font?: CellFont) => {
+        for (let index = 0; index < text.length; index++) {
+          drawCalls.push({ char: text[index], x: x + index, y, fg, bg, font });
+        }
       }
-    }),
+    ),
     getCols: vi.fn(() => cols),
     getRows: vi.fn(() => rows),
     getDefaultFgColor: vi.fn(() => CONFIG.DEFAULT_FG_COLOUR),
@@ -318,6 +330,17 @@ function renderTextRows(drawCalls: DrawCall[]): string[] {
       for (let x = 0; x <= maxX; x++) line += row.get(x) ?? ' ';
       return line.trimEnd();
     });
+}
+
+/** Returns the face of each character in a contiguous text draw. */
+function fontsForText(drawCalls: DrawCall[], text: string): CellFont[] {
+  for (let start = 0; start <= drawCalls.length - text.length; start++) {
+    const cells = drawCalls.slice(start, start + text.length);
+    if (cells.map((cell) => cell.char).join('') !== text) continue;
+    if (!cells.every((cell, index) => cell.y === cells[0].y && cell.x === cells[0].x + index)) continue;
+    return cells.map((cell) => cell.font ?? 'thick');
+  }
+  throw new Error(`Text not drawn: ${text}`);
 }
 
 /** Calculates approximate luminance for a hexadecimal colour. */
@@ -846,6 +869,13 @@ describe('SceneRenderer visual regressions', () => {
 
     expect(drawCalls.some((call) => call.char === 'C')).toBe(true);
     expect(drawCalls.some((call) => call.char === '█')).toBe(true);
+    expect(fontsForText(drawCalls, ' TRADE DEPOT - BUY ')).toEqual(Array(19).fill('thick'));
+    expect(fontsForText(drawCalls, 'Water Ice')).toEqual(Array(9).fill('thin'));
+    expect(fontsForText(drawCalls, 'Fuel 500/500')).toEqual(Array(12).fill('thin'));
+    expect(fontsForText(drawCalls, 'Enter use')).toEqual([
+      ...Array(5).fill('thick'),
+      ...Array(4).fill('thin'),
+    ]);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
@@ -1007,6 +1037,12 @@ describe('SceneRenderer visual regressions', () => {
     expect(text).toContain('DATA LINE 18');
     expect(text).not.toContain('DATA LINE 00');
     expect(text).toContain('ESC return');
+    expect(fontsForText(drawCalls, ' PLANETARY DOSSIER ')).toEqual(Array(19).fill('thick'));
+    expect(fontsForText(drawCalls, 'DATA LINE 18')).toEqual(Array(12).fill('thin'));
+    expect(fontsForText(drawCalls, 'ESC return to orbit')).toEqual([
+      ...Array(3).fill('thick'),
+      ...Array(16).fill('thin'),
+    ]);
     expect(drawCalls.some((call) => call.char === '█')).toBe(true);
     expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
   });
@@ -1143,6 +1179,15 @@ describe('SceneRenderer visual regressions', () => {
     expect(orbitText).toContain('SCAN SUMMARY');
     expect(orbitText).toContain('[D] PLANETARY DOSSIER');
     expect(orbitText).not.toContain('Diameter 11,000 km');
+    expect(fontsForText(drawCalls, ' ORBITAL OPERATIONS ')).toEqual(Array(20).fill('thick'));
+    expect(fontsForText(drawCalls, 'Regression Orbit I local space')).toEqual(Array(30).fill('thin'));
+    expect(fontsForText(drawCalls, 'star A')).toEqual(Array(6).fill('thin'));
+    expect(fontsForText(drawCalls, 'X 12  Y 18')).toEqual(Array(10).fill('thin'));
+    expect(fontsForText(drawCalls, 'Enter/Space confirms')).toEqual([
+      ...Array(5).fill('thick'),
+      ...Array(6).fill('thick'),
+      ...Array(9).fill('thin'),
+    ]);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 

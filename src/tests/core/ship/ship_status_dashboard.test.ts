@@ -43,5 +43,9 @@ describe('ship status dashboard layout', () => {
     expect(text).not.toContain('╭');
     expect(Math.max(...lineLengths)).toBeLessThanOrEqual(92);
     expect(tones).toEqual(expect.arrayContaining(['cyan', 'green', 'amber', 'bright']));
+    const segments = dashboard.flatMap((line) => line.segments);
+    expect(segments.find((segment) => segment.text.includes('SURVEY SUPERSTRUCTURE'))?.font).toBe('thick');
+    expect(segments.find((segment) => segment.text.includes('BRIDGE'))?.font).toBe('thick');
+    expect(segments.find((segment) => segment.text.includes('COMMAND'))?.font).toBe('thin');
   });
 });

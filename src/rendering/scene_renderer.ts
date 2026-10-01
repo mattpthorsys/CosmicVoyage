@@ -51,6 +51,7 @@ import {
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
+import { drawShortcutText } from './shortcut_text';
 import { HyperspaceTileProvider } from './hyperspace_tile_provider';
 import { PlayerViewSnapshot } from './scene_view_model';
 import { GiantAtmosphereRenderer, GiantAtmosphereSample } from './scenes/giant_atmosphere_renderer';
@@ -1269,7 +1270,8 @@ export class SceneRenderer {
       panelX + 3,
       panelY + 3,
       TEXT_PALETTE.text,
-      CONFIG.DEFAULT_BG_COLOUR
+      CONFIG.DEFAULT_BG_COLOUR,
+      'thin'
     );
     this.screenBuffer.drawString(
       '-'.repeat(Math.max(1, panelWidth - 6)),
@@ -1308,7 +1310,8 @@ export class SceneRenderer {
         panelX + 4,
         panelY + panelHeight - 5,
         TEXT_PALETTE.amber,
-        CONFIG.DEFAULT_BG_COLOUR
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thin'
       );
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
       if (blink)
@@ -1321,13 +1324,12 @@ export class SceneRenderer {
         );
     }
     renderModel.footer.forEach((line, index) => {
-      this.screenBuffer.drawString(
-        line.slice(0, panelWidth - 8),
-        panelX + 4,
-        panelY + panelHeight - 3 + index,
-        index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.cyan,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
+      const text = line.slice(0, panelWidth - 8);
+      const x = panelX + 4;
+      const y = panelY + panelHeight - 3 + index;
+      const fg = index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.cyan;
+      if (index === 0) this.screenBuffer.drawString(text, x, y, fg, CONFIG.DEFAULT_BG_COLOUR, 'thin');
+      else drawShortcutText(this.screenBuffer, text, x, y, fg, CONFIG.DEFAULT_BG_COLOUR);
     });
     this.screenBuffer.drawChar(
       player.render.char,
@@ -1385,7 +1387,8 @@ export class SceneRenderer {
         panelX + 3,
         panelY + 2,
         TEXT_PALETTE.green,
-        CONFIG.DEFAULT_BG_COLOUR
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thin'
       );
     }
 
@@ -1401,7 +1404,8 @@ export class SceneRenderer {
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
-      this.screenBuffer.drawString(
+      drawShortcutText(
+        this.screenBuffer,
         line.slice(0, panelWidth - 6),
         panelX + 3,
         footerY + index,
@@ -1451,7 +1455,8 @@ export class SceneRenderer {
         panelX + 3,
         panelY + 2,
         TEXT_PALETTE.cyanSoft,
-        CONFIG.DEFAULT_BG_COLOUR
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thin'
       );
     }
 
@@ -1465,7 +1470,8 @@ export class SceneRenderer {
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
-      this.screenBuffer.drawString(
+      drawShortcutText(
+        this.screenBuffer,
         line.slice(0, panelWidth - 6),
         panelX + 3,
         footerY + index,
@@ -1486,7 +1492,8 @@ export class SceneRenderer {
         cursorX,
         y,
         this.getTextToneColour(segment.tone ?? 'normal'),
-        CONFIG.DEFAULT_BG_COLOUR
+        CONFIG.DEFAULT_BG_COLOUR,
+        segment.font ?? 'thin'
       );
       cursorX += text.length;
     }
@@ -1559,7 +1566,8 @@ export class SceneRenderer {
       panelX + 3,
       panelY + 3,
       TEXT_PALETTE.text,
-      CONFIG.DEFAULT_BG_COLOUR
+      CONFIG.DEFAULT_BG_COLOUR,
+      'thin'
     );
     this.screenBuffer.drawString(
       '-'.repeat(Math.max(1, panelWidth - 6)),
@@ -1692,7 +1700,8 @@ export class SceneRenderer {
         panelX + 4,
         panelY + panelHeight - 5,
         TEXT_PALETTE.amber,
-        CONFIG.DEFAULT_BG_COLOUR
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thin'
       );
       const blink = Math.floor(performance.now() / 450) % 2 === 0;
       if (blink)
@@ -1705,13 +1714,13 @@ export class SceneRenderer {
         );
     }
     model.footer.forEach((line, index) => {
-      this.screenBuffer.drawString(
-        line.slice(0, panelWidth - 8),
-        panelX + 4,
-        panelY + panelHeight - 3 + index,
-        index === 0 ? TEXT_PALETTE.cyan : TEXT_PALETTE.amber,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
+      const text = line.slice(0, panelWidth - 8);
+      const x = panelX + 4;
+      const y = panelY + panelHeight - 3 + index;
+      const fg = index === 0 ? TEXT_PALETTE.cyan : TEXT_PALETTE.amber;
+      if (model.mode === 'landing' && index === 1)
+        this.screenBuffer.drawString(text, x, y, fg, CONFIG.DEFAULT_BG_COLOUR, 'thin');
+      else drawShortcutText(this.screenBuffer, text, x, y, fg, CONFIG.DEFAULT_BG_COLOUR);
     });
   }
 
@@ -2198,14 +2207,16 @@ export class SceneRenderer {
       x,
       y,
       TEXT_PALETTE.cyan,
-      CONFIG.DEFAULT_BG_COLOUR
+      CONFIG.DEFAULT_BG_COLOUR,
+      'thin'
     );
     this.screenBuffer.drawString(
       modeText.slice(0, width),
       x,
       y + 1,
       model.mode === 'landing' ? TEXT_PALETTE.amber : TEXT_PALETTE.green,
-      CONFIG.DEFAULT_BG_COLOUR
+      CONFIG.DEFAULT_BG_COLOUR,
+      'thin'
     );
   }
 
@@ -2225,31 +2236,38 @@ export class SceneRenderer {
       /~?\d[\d,]*(?:\.\d+)?(?:-\d[\d,]*(?:\.\d+)?)?\s?(?:g\/cm3|m\^3|AU|bar|deg|hours?|mins?|minutes?|secs?|seconds?|km|Cr|K|g|s|%)/g;
     let cursorX = x;
     let lastIndex = 0;
+    /** The dossier prompt is the only summary line with a keyboard shortcut. */
+    const drawPlain = (text: string, atX: number): void => {
+      if (line.startsWith('[D]'))
+        drawShortcutText(this.screenBuffer, text, atX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR);
+      else this.screenBuffer.drawString(text, atX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR, 'thin');
+    };
     let match: RegExpExecArray | null;
     while ((match = measurePattern.exec(line)) !== null && cursorX < x + width) {
       const plain = line.slice(lastIndex, match.index);
       if (plain) {
         const clippedPlain = plain.slice(0, x + width - cursorX);
-        this.screenBuffer.drawString(clippedPlain, cursorX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR);
+        drawPlain(clippedPlain, cursorX);
         cursorX += clippedPlain.length;
       }
 
       const measurement = match[0].slice(0, x + width - cursorX);
       if (measurement) {
-        this.screenBuffer.drawString(measurement, cursorX, y, TEXT_PALETTE.amber, CONFIG.DEFAULT_BG_COLOUR);
+        this.screenBuffer.drawString(
+          measurement,
+          cursorX,
+          y,
+          TEXT_PALETTE.amber,
+          CONFIG.DEFAULT_BG_COLOUR,
+          'thin'
+        );
         cursorX += measurement.length;
       }
       lastIndex = match.index + match[0].length;
     }
 
     if (cursorX < x + width && lastIndex < line.length) {
-      this.screenBuffer.drawString(
-        line.slice(lastIndex, lastIndex + x + width - cursorX),
-        cursorX,
-        y,
-        baseColour,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
+      drawPlain(line.slice(lastIndex, lastIndex + x + width - cursorX), cursorX);
     }
   }
 
@@ -2581,7 +2599,8 @@ export class SceneRenderer {
         x,
         y,
         TEXT_PALETTE.textDim,
-        CONFIG.DEFAULT_BG_COLOUR
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thin'
       );
       return;
     }
@@ -2603,7 +2622,14 @@ export class SceneRenderer {
         const width = model.widths[index] ?? 12;
         const cellTone = row.cellTones?.[index] ?? rowTone;
         const cellFg = selected ? fg : this.getTextToneColour(cellTone);
-        this.screenBuffer.drawString(cell.padEnd(width).slice(0, width), cursorX, y + rowIndex, cellFg, bg);
+        this.screenBuffer.drawString(
+          cell.padEnd(width).slice(0, width),
+          cursorX,
+          y + rowIndex,
+          cellFg,
+          bg,
+          'thin'
+        );
         cursorX += width + 1;
       });
     });
@@ -2628,14 +2654,16 @@ export class SceneRenderer {
           x,
           detailY,
           detailColour,
-          CONFIG.DEFAULT_BG_COLOUR
+          CONFIG.DEFAULT_BG_COLOUR,
+          'thin'
         );
         this.screenBuffer.drawString(
           line.slice(0, detailWidth),
           x + 3,
           detailY,
           detailColour,
-          CONFIG.DEFAULT_BG_COLOUR
+          CONFIG.DEFAULT_BG_COLOUR,
+          'thin'
         );
       });
     }

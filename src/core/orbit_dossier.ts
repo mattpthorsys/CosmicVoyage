@@ -76,7 +76,9 @@ export function buildOrbitDossierLines(
   const heading = (index: number, title: string): void => {
     if (lines.length) lines.push({ segments: [{ text: '' }] });
     const text = ` ${String(index).padStart(2, '0')}  ${title} `;
-    lines.push({ segments: [{ text: text + '─'.repeat(Math.max(0, width - text.length)), tone: 'cyan' }] });
+    lines.push({
+      segments: [{ text: text + '─'.repeat(Math.max(0, width - text.length)), tone: 'cyan', font: 'thick' }],
+    });
   };
   /** Splits a labelled statistic into aligned continuation rows. */
   const field = (label: string, value: string, tone: TextTone = 'bright'): void => {

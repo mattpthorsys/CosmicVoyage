@@ -57,13 +57,13 @@ function buildShipDiagram(
   // Main left-hand dashboard. Add, remove, or reorder rows here to change
   // the visual layout of the ship diagram.
   return box(SHIP_BOX_WIDTH, 'SURVEY SUPERSTRUCTURE', [
-    textLine(center('BRIDGE', SHIP_BOX_WIDTH - 4), 'cyan'),
+    textLine(center('BRIDGE', SHIP_BOX_WIDTH - 4), 'cyan', 'thick'),
     textLine('  COMMAND      flight control / watch routing', 'bright'),
     textLine('  NAV          astrometric fix and approach plot', 'green'),
     textLine('  COMMS        receiver bank / signal parser', 'cyan'),
     textLine('  SENSORS      mast feed and survey aperture', 'muted'),
     spacer(),
-    textLine(center('HARDPOINT BUS', SHIP_BOX_WIDTH - 4), 'cyan'),
+    textLine(center('HARDPOINT BUS', SHIP_BOX_WIDTH - 4), 'cyan', 'thick'),
     joinLines(
       textLine(
         `  SHIELD ${context.ship.shieldClass || '-'}`,
@@ -78,7 +78,7 @@ function buildShipDiagram(
       textLine(`LASER ${context.ship.laserClass || '-'}`, context.ship.laserClass > 0 ? 'amber' : 'muted')
     ),
     spacer(),
-    textLine(center('DRIVE TRUNK', SHIP_BOX_WIDTH - 4), 'cyan'),
+    textLine(center('DRIVE TRUNK', SHIP_BOX_WIDTH - 4), 'cyan', 'thick'),
     textLine(`  ENGINE       class ${context.ship.engineClass}`, 'green'),
     textLine(`  EFFICIENCY   ${bar(context.stats.driveEfficiencyPercent, 125, 30)}`, 'green'),
     textLine(
@@ -87,7 +87,7 @@ function buildShipDiagram(
     ),
     textLine(`  BURN RATE    x${fuelUseMultiplier.toFixed(2)} interstellar`, 'cyan'),
     spacer(),
-    textLine(center('PAYLOAD SPINE', SHIP_BOX_WIDTH - 4), 'cyan'),
+    textLine(center('PAYLOAD SPINE', SHIP_BOX_WIDTH - 4), 'cyan', 'thick'),
     textLine(
       `  MISSILE BAY  ${String(context.ship.missileCount).padStart(2, '0')}/${String(context.stats.missileCapacity).padStart(2, '0')} nuclear stores`,
       'amber'
@@ -164,7 +164,11 @@ function box(width: number, title: string, body: TextDashboardLine[]): TextDashb
   const leftRule = Math.max(1, Math.floor((innerWidth - titleText.length) / 2));
   const rightRule = Math.max(1, innerWidth - titleText.length - leftRule);
   return [
-    textLine(`┌${'─'.repeat(leftRule)}${titleText}${'─'.repeat(rightRule)}┐`.slice(0, width), 'cyan'),
+    textLine(
+      `┌${'─'.repeat(leftRule)}${titleText}${'─'.repeat(rightRule)}┐`.slice(0, width),
+      'cyan',
+      'thick'
+    ),
     ...body.map((line) => framedLine(line, innerWidth)),
     textLine(`└${'─'.repeat(innerWidth)}┘`, 'cyan'),
   ];
@@ -198,8 +202,12 @@ function clipLine(line: TextDashboardLine, maxLength: number): TextDashboardLine
 }
 
 /** Creates a dashboard line containing one styled text segment. */
-function textLine(text: string, tone: TextDashboardTone = 'normal'): TextDashboardLine {
-  return { segments: [{ text, tone }] };
+function textLine(
+  text: string,
+  tone: TextDashboardTone = 'normal',
+  font: 'thin' | 'thick' = 'thin'
+): TextDashboardLine {
+  return { segments: [{ text, tone, font }] };
 }
 
 /** Creates an empty dashboard spacer line. */

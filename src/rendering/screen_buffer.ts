@@ -2,12 +2,15 @@ import { CONFIG } from '../config';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 
+export type CellFont = 'thick' | 'thin';
+
 /** Represents the state of a single character cell on the screen buffer. */
 export interface CellState {
   char: string | null; // Character to display (' ' or null for empty)
   fg: string | null; // Hex colour string or null for default
   bg: string | null; // Hex colour string or null for transparent/default
   isTransparentBg: boolean; // Flag if background should be transparent
+  font?: CellFont; // Omitted for the default thick face.
 }
 
 export interface RenderStats {
@@ -240,7 +243,8 @@ export class ScreenBuffer {
     x: number,
     y: number,
     fgColor: string | null = this.defaultFgColor,
-    bgColor: string | null = this.defaultBgColor // Use buffer's default BG
+    bgColor: string | null = this.defaultBgColor, // Use buffer's default BG
+    font: CellFont = 'thick'
   ): void {
     x = Math.floor(x);
     y = Math.floor(y);
@@ -268,7 +272,8 @@ export class ScreenBuffer {
       char || ' ',
       fgColor || this.defaultFgColor,
       finalBgColor,
-      isTransparentUpdate
+      isTransparentUpdate,
+      font
     );
   }
 
@@ -278,11 +283,12 @@ export class ScreenBuffer {
     x: number,
     y: number,
     fgColor: string | null = this.defaultFgColor,
-    bgColor: string | null = this.defaultBgColor // Default to buffer's background
+    bgColor: string | null = this.defaultBgColor, // Default to buffer's background
+    font: CellFont = 'thick'
   ): void {
     // logger.debug(`[ScreenBuffer.drawString] Drawing "${text}" at [${x},${y}]`); // Can be noisy
     for (let i = 0; i < text.length; i++) {
-      this.drawChar(text[i], x + i, y, fgColor, bgColor);
+      this.drawChar(text[i], x + i, y, fgColor, bgColor, font);
     }
   }
 
@@ -463,7 +469,8 @@ export class ScreenBuffer {
         oldState.char === newState.char &&
         oldState.fg === newState.fg &&
         oldState.bg === newState.bg &&
-        oldState.isTransparentBg === newState.isTransparentBg
+        oldState.isTransparentBg === newState.isTransparentBg &&
+        (oldState.font ?? 'thick') === (newState.font ?? 'thick')
       ) {
         // State unchanged, just reset newBuffer cell for next frame's draw ops
         this.newBuffer[i] = this.defaultCellState;
@@ -581,11 +588,19 @@ export class ScreenBuffer {
   }
 
   /** Returns a shared immutable cell state to avoid allocating identical cells every frame. */
-  private getCellState(char: string, fg: string, bg: string, isTransparentBg: boolean): Readonly<CellState> {
-    const key = `${char}\u0000${fg}\u0000${bg}\u0000${isTransparentBg ? '1' : '0'}`;
+  private getCellState(
+    char: string,
+    fg: string,
+    bg: string,
+    isTransparentBg: boolean,
+    font: CellFont
+  ): Readonly<CellState> {
+    const key = `${char}\u0000${fg}\u0000${bg}\u0000${isTransparentBg ? '1' : '0'}\u0000${font}`;
     const cached = this.cellStateCache.get(key);
     if (cached) return cached;
-    const state = Object.freeze({ char, fg, bg, isTransparentBg });
+    const state = Object.freeze(
+      font === 'thin' ? { char, fg, bg, isTransparentBg, font } : { char, fg, bg, isTransparentBg }
+    );
     this.cellStateCache.set(key, state);
     return state;
   }
@@ -602,20 +617,24 @@ export class ScreenBuffer {
           continue;
         }
         const fg = state.fg || this.defaultFgColor;
+        const font = state.font ?? 'thick';
         const startX = x;
         let text = '';
         while (x < this.cols) {
           const next = buffer[y * this.cols + x];
           if ((next.fg || this.defaultFgColor) !== fg) break;
+          if ((next.font ?? 'thick') !== font) break;
           const char = next.char || ' ';
           text += char;
           if (char !== ' ') glyphsDrawn++;
           x++;
         }
         this.ctx.fillStyle = fg;
+        this.ctx.font = this.getCanvasFont(font);
         this.ctx.fillText(text.trimEnd(), startX * this.charWidthPx, y * this.charHeightPx);
       }
     }
+    this.ctx.font = this.getCanvasFont('thick');
     return glyphsDrawn;
   }
 
@@ -633,6 +652,7 @@ export class ScreenBuffer {
       const y = Math.floor(startIndex / this.cols);
       const startX = startIndex % this.cols;
       const fg = startState.fg || this.defaultFgColor;
+      const font = startState.font ?? 'thick';
       let previousIndex = startIndex - 1;
       let text = '';
       while (cursor < indices.length) {
@@ -641,7 +661,8 @@ export class ScreenBuffer {
         if (
           Math.floor(index / this.cols) !== y ||
           index !== previousIndex + 1 ||
-          (state.fg || this.defaultFgColor) !== fg
+          (state.fg || this.defaultFgColor) !== fg ||
+          (state.font ?? 'thick') !== font
         ) {
           break;
         }
@@ -652,9 +673,18 @@ export class ScreenBuffer {
         cursor++;
       }
       this.ctx.fillStyle = fg;
+      this.ctx.font = this.getCanvasFont(font);
       this.ctx.fillText(text.trimEnd(), startX * this.charWidthPx, y * this.charHeightPx);
     }
+    this.ctx.font = this.getCanvasFont('thick');
     return glyphsDrawn;
+  }
+
+  /** Resolves the two fixed-pitch terminal faces at their intended relative sizes. */
+  private getCanvasFont(font: CellFont): string {
+    return font === 'thin'
+      ? `${this.charHeightPx * 0.9}px ${CONFIG.THIN_FONT_FAMILY}`
+      : `${this.charHeightPx}px ${CONFIG.FONT_FAMILY}`;
   }
 
   /** Clears contiguous transparent dirty cells before their replacement glyphs are drawn. */

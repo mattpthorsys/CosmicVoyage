@@ -24,6 +24,7 @@ import { OrbitScreenModel } from '../core/orbit_ui';
 import { HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TextModalTableModel } from '../core/text_ui';
 import { TEXT_PALETTE } from './text_palette';
+import { getShortcutFontMask } from './shortcut_text';
 import { createPlayerViewSnapshot, SceneViewModel } from './scene_view_model';
 import { GalaxyMapRenderer } from './galaxy_map_renderer';
 import type { GalaxyMapModel } from '../core/galaxy_map';
@@ -513,6 +514,11 @@ export class RendererFacade {
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
         const line = lines[lineIndex];
         const isCloseLine = line === '← Close →'; // Check if it's the special close line
+        const isHeading = /^[A-Z][A-Z /]+$/.test(line);
+        const fontMask = getShortcutFontMask(line, true);
+        if (line.startsWith('CURRENT MODE:')) {
+          for (let index = 0; index < 'CURRENT MODE:'.length; index++) fontMask[index] = true;
+        }
 
         // Calculate starting X for centering the close line
         const textStartX = isCloseLine
@@ -538,7 +544,8 @@ export class RendererFacade {
               drawX,
               drawY,
               isCloseLine ? TEXT_PALETTE.amber : TEXT_PALETTE.text, // Text colour
-              TEXT_PALETTE.panelBackground // Background *behind* the text
+              TEXT_PALETTE.panelBackground, // Background *behind* the text
+              isCloseLine || isHeading || fontMask[charIndex] ? 'thick' : 'thin'
             );
           }
           charactersDrawn++;
