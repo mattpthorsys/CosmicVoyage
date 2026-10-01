@@ -51,6 +51,7 @@ export class ScreenBuffer {
   private screenBuffer: CellState[] = []; // Represents what's currently drawn on the canvas
   private newBuffer: CellState[] = []; // Represents the desired state for the next frame
   private scaledGlyphs: ScaledGlyphState[] = [];
+  private scaledOcclusionRects: { x: number; y: number; width: number; height: number }[] = [];
   private readonly scaledGlyphPool: ScaledGlyphState[] = [];
   private hadScaledGlyphsLastFrame = false;
   private readonly cellStateCache = new Map<string, Readonly<CellState>>();
@@ -208,6 +209,7 @@ export class ScreenBuffer {
       this.hadScaledGlyphsLastFrame = false;
     }
     this.scaledGlyphs.length = 0;
+    this.scaledOcclusionRects.length = 0;
 
     // Reset the staging buffer every frame. Only reset the rendered-state buffer
     // when the physical canvas is also cleared, otherwise diff rendering loses its baseline.
@@ -320,6 +322,11 @@ export class ScreenBuffer {
     glyph.scaleY = scaleY;
     if (!this.scaledGlyphPool[poolIndex]) this.scaledGlyphPool.push(glyph);
     this.scaledGlyphs.push(glyph);
+  }
+
+  /** Hides high-resolution glyphs below an opaque text modal for the current frame. */
+  occludeScaledGlyphs(x: number, y: number, width: number, height: number): void {
+    if (width > 0 && height > 0) this.scaledOcclusionRects.push({ x, y, width, height });
   }
 
   /** Replaces the staged drawing buffer with a complete precomputed frame. */
@@ -687,7 +694,17 @@ export class ScreenBuffer {
   /** Renders scaled glyphs. */
   private renderScaledGlyphs(): void {
     const startedAt = performance.now();
-    const glyphs = this.scaledGlyphs;
+    const glyphs = this.scaledOcclusionRects.length
+      ? this.scaledGlyphs.filter((glyph) =>
+          this.scaledOcclusionRects.every(
+            (rect) =>
+              glyph.x + glyph.scaleX <= rect.x ||
+              glyph.x >= rect.x + rect.width ||
+              glyph.y + glyph.scaleY <= rect.y ||
+              glyph.y >= rect.y + rect.height
+          )
+        )
+      : this.scaledGlyphs;
     this.lastScaledGlyphs = glyphs.length;
     this.lastScaledPixels = 0;
     this.hadScaledGlyphsLastFrame = glyphs.length > 0;
@@ -698,6 +715,7 @@ export class ScreenBuffer {
       return;
     }
     if (glyphs.length === 0) {
+      this.scaledGlyphs.length = 0;
       this.lastScaledDurationMs = performance.now() - startedAt;
       return;
     }

@@ -1362,6 +1362,7 @@ export class SceneRenderer {
     const tableX = panelX + 4;
     const tableY = panelY + 5;
 
+    this.screenBuffer.occludeScaledGlyphs(panelX, panelY, panelWidth, panelHeight);
     this.drawingContext.drawBox(
       panelX,
       panelY,
@@ -1427,6 +1428,7 @@ export class SceneRenderer {
     const contentX = panelX + 4;
     const contentY = panelY + 5;
 
+    this.screenBuffer.occludeScaledGlyphs(panelX, panelY, panelWidth, panelHeight);
     this.drawingContext.drawBox(
       panelX,
       panelY,

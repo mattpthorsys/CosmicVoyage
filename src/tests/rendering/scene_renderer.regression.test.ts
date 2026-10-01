@@ -69,6 +69,7 @@ function createMockScreenBuffer(
         drawCalls.push({ char, x, y, fg, bg, scaleX, scaleY });
       }
     ),
+    occludeScaledGlyphs: vi.fn(),
     drawString: vi.fn((text: string, x: number, y: number, fg?: string | null, bg?: string | null) => {
       for (let index = 0; index < text.length; index++) {
         drawCalls.push({ char: text[index], x: x + index, y, fg, bg });
@@ -1007,6 +1008,7 @@ describe('SceneRenderer visual regressions', () => {
     expect(text).not.toContain('DATA LINE 00');
     expect(text).toContain('ESC return');
     expect(drawCalls.some((call) => call.char === '█')).toBe(true);
+    expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
   });
 
   it('renders ordinary modal table cells with row and cell tones', () => {

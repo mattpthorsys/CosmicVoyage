@@ -116,6 +116,27 @@ describe('ScreenBuffer rendering', () => {
     expect(ctx.fillText).not.toHaveBeenCalledWith(GLYPHS.BLOCK, 0, 0);
   });
 
+  it('keeps scaled glyphs outside an opaque modal but not above its text', () => {
+    const { buffer, ctx } = createBuffer(3, 1);
+    buffer.clear(true);
+    buffer.drawScaledChar('A', 0, 0, '#00FFFF', null, 0.5, 0.5);
+    buffer.drawScaledChar('B', 1, 0, '#00FFFF', null, 0.5, 0.5);
+    buffer.occludeScaledGlyphs(1, 0, 1, 1);
+    buffer.drawChar('M', 1, 0, '#FFFFFF', '#000000');
+    buffer.renderFull();
+
+    expect(ctx.fillText).toHaveBeenCalledWith('A', 0, 0);
+    expect(ctx.fillText).toHaveBeenCalledWith('M', 8, 0);
+    expect(ctx.fillText).not.toHaveBeenCalledWith('B', 0, 0);
+    expect(buffer.getLastRenderStats().scaledGlyphs).toBe(1);
+
+    ctx.fillText.mockClear();
+    buffer.clear(false);
+    buffer.drawScaledChar('B', 1, 0, '#00FFFF', null, 0.5, 0.5);
+    buffer.renderDiff();
+    expect(ctx.fillText).toHaveBeenCalledWith('B', 0, 0);
+  });
+
   it('batches adjacent same-colour glyphs into one canvas text call', () => {
     const { buffer, ctx } = createBuffer(5, 1);
 
@@ -217,6 +238,24 @@ describe('ScreenBuffer rendering', () => {
     expect(raster.putImageData).toHaveBeenCalledOnce();
     expect(layer.drawImage).toHaveBeenCalledOnce();
     expect(layer.imageSmoothingEnabled).toBe(false);
+
+    buffer.clear(false);
+    buffer.drawChar('@', 1, 0, '#00FFFF', '#000000');
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0, 0, '#204060', '#204060', 0.5, 0.5);
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0.5, 0, '#406080', '#406080', 0.5, 0.5);
+    buffer.occludeScaledGlyphs(0, 0, 0.5, 1);
+    buffer.renderDiff();
+    const maskedImage = raster.putImageData.mock.calls.at(-1)![0];
+    expect(maskedImage.data[3]).toBe(0);
+    expect(maskedImage.data[7]).toBe(255);
+    expect(buffer.getLastRenderStats().scaledPixels).toBe(1);
+
+    buffer.clear(false);
+    buffer.drawChar('@', 1, 0, '#00FFFF', '#000000');
+    buffer.drawScaledChar(GLYPHS.BLOCK, 0, 0, '#204060', '#204060', 0.5, 0.5);
+    buffer.renderDiff();
+    const restoredImage = raster.putImageData.mock.calls.at(-1)![0];
+    expect(restoredImage.data[3]).toBe(255);
   });
 
   it('clears transparent cells when a previous glyph is removed', () => {
