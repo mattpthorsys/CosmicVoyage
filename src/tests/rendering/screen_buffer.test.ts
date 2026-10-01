@@ -91,7 +91,7 @@ describe('ScreenBuffer rendering', () => {
     buffer.renderFull();
 
     expect(ctx.fillText.mock.calls.map(([text]) => text)).toEqual(['E', 'sc']);
-    expect(fonts).toEqual([`8px ${CONFIG.FONT_FAMILY}`, `7.2px ${CONFIG.THIN_FONT_FAMILY}`]);
+    expect(fonts).toEqual([`8px ${CONFIG.FONT_FAMILY}`, `8px ${CONFIG.THIN_FONT_FAMILY}`]);
 
     ctx.fillText.mockClear();
     fonts.length = 0;
@@ -101,7 +101,7 @@ describe('ScreenBuffer rendering', () => {
 
     expect(buffer.getLastRenderStats().cellsDrawn).toBe(1);
     expect(ctx.fillText).toHaveBeenCalledWith('E', 0, 0);
-    expect(fonts).toEqual([`7.2px ${CONFIG.THIN_FONT_FAMILY}`]);
+    expect(fonts).toEqual([`8px ${CONFIG.THIN_FONT_FAMILY}`]);
   });
 
   it('can stage a complete precomputed frame', () => {

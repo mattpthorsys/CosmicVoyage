@@ -680,10 +680,10 @@ export class ScreenBuffer {
     return glyphsDrawn;
   }
 
-  /** Resolves the two fixed-pitch terminal faces at their intended relative sizes. */
+  /** Both faces share the grid's cell advance only when rendered at the same size. */
   private getCanvasFont(font: CellFont): string {
     return font === 'thin'
-      ? `${this.charHeightPx * 0.9}px ${CONFIG.THIN_FONT_FAMILY}`
+      ? `${this.charHeightPx}px ${CONFIG.THIN_FONT_FAMILY}`
       : `${this.charHeightPx}px ${CONFIG.FONT_FAMILY}`;
   }
 
