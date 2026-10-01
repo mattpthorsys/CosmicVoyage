@@ -4,6 +4,7 @@ import type { StellarBody } from '../../entities/stellar_body';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../../utils/space_scale';
 import type { InputManager } from '../input_manager';
 import { createOrbitStellarSources } from '../orbit_stellar_sources';
+import { OrbitDossier } from '../orbit_dossier';
 import {
   createOrbitScreenModel,
   getOrbitReferenceLabel,
@@ -12,9 +13,13 @@ import {
   OrbitScreenModel,
 } from '../orbit_ui';
 import { clampIndex } from '../text_ui';
+import type { TextModalTableModel } from '../text_ui';
 
 export interface OrbitInteractionContext {
   parentPlanet: Planet;
+  stars: readonly StellarBody[];
+  viewportCols: number;
+  viewportRows: number;
   /** Checks the live location before a surface worker's result may change the interface. */
   isActive: () => boolean;
   survey: (body: Planet) => void;
@@ -32,6 +37,7 @@ export class OrbitModeController {
   landingY = Math.floor(CONFIG.PLANET_MAP_BASE_SIZE / 2);
   alert = '';
   elapsedSeconds = 0;
+  readonly dossier = new OrbitDossier();
   private screenCache: { signature: string; model: OrbitScreenModel } | null = null;
 
   /** Resets orbital interaction on entry. */
@@ -42,6 +48,7 @@ export class OrbitModeController {
     this.landingY = Math.floor(mapSize / 2);
     this.alert = '';
     this.elapsedSeconds = 0;
+    this.dossier.close();
     this.invalidateScreen();
   }
 
@@ -90,6 +97,40 @@ export class OrbitModeController {
     const bodies = this.getBodies(parentPlanet);
     const selectedBody = this.getSelectedBody(parentPlanet);
     const mapSize = getPlanetMapSize(selectedBody);
+    if (this.dossier.isOpen) {
+      if (input.wasActionJustPressed('QUIT') || input.wasActionJustPressed('ORBIT_DOSSIER')) {
+        this.dossier.close();
+        context.invalidate();
+      } else {
+        const direction =
+          input.wasActionJustPressed('MOVE_UP') || input.wasActionJustPressed('PAGE_UP')
+            ? -1
+            : input.wasActionJustPressed('MOVE_DOWN') || input.wasActionJustPressed('PAGE_DOWN')
+              ? 1
+              : 0;
+        if (direction) {
+          const model = this.createDossier(
+            parentPlanet,
+            context.stars,
+            context.viewportCols,
+            context.viewportRows
+          );
+          const page = input.wasActionJustPressed('PAGE_UP') || input.wasActionJustPressed('PAGE_DOWN');
+          this.dossier.scroll(
+            direction * (page ? model.visibleRowCount : 1),
+            model.dashboard!.length,
+            context.viewportRows
+          );
+          context.invalidate();
+        }
+      }
+      return true;
+    }
+    if (input.wasActionJustPressed('ORBIT_DOSSIER')) {
+      this.dossier.open();
+      context.invalidate();
+      return true;
+    }
     if (this.mode === 'overview') {
       if (input.wasActionJustPressed('MOVE_LEFT')) {
         this.selectBody(-1, bodies.length, context);
@@ -162,6 +203,17 @@ export class OrbitModeController {
       return true;
     }
     return false;
+  }
+
+  /** Builds the frozen statistics modal for the selected primary or moon. */
+  createDossier(
+    parent: Planet,
+    stars: readonly StellarBody[],
+    cols: number,
+    rows: number
+  ): TextModalTableModel {
+    const body = this.getSelectedBody(parent);
+    return this.dossier.createModel(body, parent, createOrbitStellarSources(stars, body), cols, rows);
   }
 
   /** Changes the local target and publishes its survey, preparation, and redraw effects. */

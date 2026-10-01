@@ -21,6 +21,9 @@ function createContext(parentPlanet: Planet) {
   const location = { active: true };
   const context = {
     parentPlanet,
+    stars: [],
+    viewportCols: 110,
+    viewportRows: 40,
     isActive: () => location.active,
     survey: vi.fn(),
     prefetch: vi.fn(),
@@ -60,14 +63,14 @@ describe('orbital interaction controller', () => {
     const first = orbit.createScreen(parent, [star], '', TIME_SCALE);
     star.systemX *= 2;
     const moved = orbit.createScreen(parent, [star], '', TIME_SCALE);
-    expect(moved.description).toBe(first.description);
+    expect(moved.summary).toBe(first.summary);
     expect(moved.stellarSources[0].irradianceWm2).toBeCloseTo(first.stellarSources[0].irradianceWm2! / 4, 8);
     expect(moved.stellarSources[0].angularRadius).toBeLessThan(first.stellarSources[0].angularRadius!);
     expect(orbit.createScreen(parent, [], '', TIME_SCALE).stellarSources).toEqual([]);
     const sameNameDifferentBody = createBody(parent.name);
     const changed = orbit.createScreen(sameNameDifferentBody, [], '', TIME_SCALE);
     expect(changed.selectedBody).toBe(sameNameDifferentBody);
-    expect(changed.description).not.toBe(first.description);
+    expect(changed.summary).not.toBe(first.summary);
   });
 
   it('cycles planet and moons, surveys the selection, prepares neighbours, and redraws', () => {
@@ -103,6 +106,35 @@ describe('orbital interaction controller', () => {
     orbit.handleInput(input(['ENTER_SYSTEM']), context);
     expect(context.land).toHaveBeenCalledWith(parent, CONFIG.PLANET_MAP_BASE_SIZE - 1, 0);
     expect(context.leave).not.toHaveBeenCalled();
+  });
+
+  it('opens the dossier with D, pages and scrolls without moving the landing cursor, then closes with Escape', () => {
+    const parent = createBody('Dossier');
+    const orbit = new OrbitModeController();
+    const { context } = createContext(parent);
+    context.viewportRows = 22;
+    orbit.handleInput(input(['PRIMARY_ACTION']), context);
+    const oldX = orbit.landingX;
+    const oldY = orbit.landingY;
+    expect(orbit.handleInput(input(['ORBIT_DOSSIER']), context)).toBe(true);
+    expect(orbit.dossier.isOpen).toBe(true);
+    orbit.handleInput(input(['PAGE_DOWN']), context);
+    const afterPage = orbit.dossier.viewOffset;
+    expect(afterPage).toBeGreaterThan(0);
+    orbit.handleInput(input(['MOVE_DOWN']), context);
+    expect(orbit.dossier.viewOffset).toBe(afterPage + 1);
+    orbit.handleInput(input(['MOVE_UP']), context);
+    expect(orbit.dossier.viewOffset).toBe(afterPage);
+    orbit.handleInput(input(['ENTER_SYSTEM']), context);
+    expect(context.land).not.toHaveBeenCalled();
+    expect(orbit.landingX).toBe(oldX);
+    expect(orbit.landingY).toBe(oldY);
+    orbit.handleInput(input(['QUIT']), context);
+    expect(orbit.dossier.isOpen).toBe(false);
+    expect(orbit.mode).toBe('landing');
+    expect(context.leave).not.toHaveBeenCalled();
+    orbit.reset();
+    expect(orbit.dossier.isOpen).toBe(false);
   });
 
   it('cancels landing before leaving orbit and refuses giant surface landings', () => {
@@ -170,7 +202,7 @@ describe('orbital interaction controller', () => {
     const first = orbit.createScreen(parent, [], '', TIME_SCALE);
     orbit.update(parent, 40);
     const animated = orbit.createScreen(parent, [], '', TIME_SCALE);
-    expect(animated.description).toBe(first.description);
+    expect(animated.summary).toBe(first.summary);
     expect(animated.illuminationPhase).toBeCloseTo(40 * 0.06);
     expect(orbit.getRotationPhase({ rotationPeriodHours: 24 }, TIME_SCALE)).toBeCloseTo(
       (40 * TIME_SCALE) / 86400
@@ -179,7 +211,7 @@ describe('orbital interaction controller', () => {
     orbit.handleInput(input(['PRIMARY_ACTION']), context);
     expect(orbit.createScreen(parent, [], '', TIME_SCALE).mode).toBe('landing');
     orbit.invalidateScreen();
-    expect(orbit.createScreen(parent, [], '', TIME_SCALE).description).not.toBe(animated.description);
+    expect(orbit.createScreen(parent, [], '', TIME_SCALE).summary).not.toBe(animated.summary);
     orbit.reset(0, 96);
     expect(orbit.elapsedSeconds).toBe(0);
     expect(orbit.landingX).toBe(48);
@@ -203,6 +235,7 @@ describe('orbital interaction controller', () => {
       stateManager,
       _orbitModeState: new OrbitModeController(),
       inputManager: input(['QUIT']),
+      renderer: { getGridCols: () => 110, getGridRows: () => 40 },
       forceFullRender: false,
       statusMessage: '',
     }) as {
@@ -216,5 +249,52 @@ describe('orbital interaction controller', () => {
     expect(stateManager.statusMessage).toBe('');
     expect(game.forceFullRender).toBe(true);
     expect(game._handleOrbitInput()).toBe(false);
+  });
+
+  it('pauses orbital updates and clock time while the dossier is open', () => {
+    const orbit = new OrbitModeController();
+    orbit.dossier.open();
+    const dispatch = vi.fn(() => '');
+    const game = Object.assign(Object.create(Game.prototype), {
+      stateManager: { state: 'orbit', currentPlanet: createBody('Paused') },
+      _orbitModeState: orbit,
+      gameClockElapsedSeconds: 100,
+      popupState: 'inactive',
+      captureCurrentPlanetMutations: vi.fn(),
+      terminalOverlay: { update: vi.fn() },
+      astrometricOverlay: { update: vi.fn() },
+      renderer: {
+        getCanvas: () => ({ width: 100, height: 40 }),
+        getCharWidthPx: () => 1,
+        getCharHeightPx: () => 1,
+      },
+      getCurrentViewScale: () => 1,
+      _modeDispatcher: { dispatch },
+      _publishStatusUpdate: vi.fn(),
+    }) as { _update: (delta: number) => void; gameClockElapsedSeconds: number };
+    game._update(1);
+    expect(game.gameClockElapsedSeconds).toBe(100);
+    expect(dispatch).not.toHaveBeenCalled();
+    orbit.dossier.close();
+    game._update(1);
+    expect(game.gameClockElapsedSeconds).toBeGreaterThan(100);
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the orbital render signature fixed while reading the dossier', () => {
+    const orbit = new OrbitModeController();
+    orbit.dossier.open();
+    const body = createBody('Static view');
+    const game = Object.assign(Object.create(Game.prototype), {
+      stateManager: { state: 'orbit' },
+      _orbitModeState: orbit,
+      getSelectedOrbitBody: () => body,
+    }) as { getMainRenderSignature: (now: number) => string };
+    const initial = game.getMainRenderSignature(0);
+    expect(initial).toBe(game.getMainRenderSignature(5000));
+    orbit.dossier.viewOffset = 1;
+    expect(game.getMainRenderSignature(0)).not.toBe(initial);
+    orbit.dossier.close();
+    expect(game.getMainRenderSignature(0)).not.toBe(game.getMainRenderSignature(5000));
   });
 });

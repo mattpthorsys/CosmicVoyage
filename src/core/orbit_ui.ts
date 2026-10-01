@@ -1,10 +1,7 @@
 import { CONFIG } from '../config';
-import { AU_IN_METERS } from '../constants/physics';
-import { ELEMENTS } from '../constants/resources';
 import { describePlanetType, Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
-import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
-import { hasDiscoveryLevel } from './discovery';
+import { formatDistanceAu } from '../utils/space_scale';
 
 export type OrbitInteractionMode = 'overview' | 'landing';
 
@@ -44,8 +41,7 @@ export interface OrbitScreenModel {
   landingCursorX: number;
   landingCursorY: number;
   mapSize: number;
-  description: string[];
-  telemetry: string[];
+  summary: string[];
   footer: string[];
   alert?: string;
 }
@@ -72,35 +68,10 @@ export function createOrbitScreenModel(args: {
 }): OrbitScreenModel {
   const selected = args.selectedBody;
   const mapSize = getPlanetMapSize(selected);
-  const topElements = Object.entries(selected.elementAbundance)
-    .filter(([, abundance]) => abundance > 0.1)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 4)
-    .map(([key, abundance]) =>
-      hasDiscoveryLevel(selected.discovery.level, 'sampled')
-        ? `${ELEMENTS[key]?.name || key} ${abundance.toFixed(1)}%`
-        : ELEMENTS[key]?.name || key
-    );
-
   const atmosphere = selected.effectiveAtmosphere;
-  const pressure = atmosphere.pressure < 0.001 ? '~0' : atmosphere.pressure.toFixed(3);
   const orbitText = selected.orbitDistance <= 0 ? 'none' : formatDistanceAu(selected.orbitDistance);
-  const signalText = selected.orbitDistance <= 0 ? 'none' : formatLightTimeFromMeters(selected.orbitDistance);
   const hostLabel = getOrbitReferenceLabel(selected, args.parentPlanet);
   const classText = describePlanetType(selected.type);
-  const temperatureRange = `${selected.effectiveSurfaceTempMin}-${selected.effectiveSurfaceTempMax}K`;
-  const description = [
-    `Profile: ${selected.name} is a ${classText}. Gravity ${selected.gravity.toFixed(2)}g. Temperature ${selected.effectiveSurfaceTemp}K average, range ${temperatureRange}.`,
-    selected.orbitDistance <= 0
-      ? 'Orbit: none. Free planetary-mass object in interstellar space.'
-      : `Orbit: ${orbitText} about ${hostLabel}. Light time across orbital radius ${signalText}.`,
-    `Atmosphere: ${atmosphere.density.toLowerCase()}, ${pressure} bar. Hydrosphere: ${selected.effectiveHydrosphere.toLowerCase()}. Lithosphere: ${selected.lithosphere.toLowerCase()}.`,
-    selected.type === 'GasGiant' || selected.type === 'IceGiant'
-      ? `Resources: atmospheric signatures ${topElements.join(', ') || 'trace signatures only'}. Surface landing is hazardous; orbital survey recommended.`
-      : selected.scanned
-        ? `Minerals: scan ${selected.mineralRichness}. Primary resource ${selected.primaryResource || 'N/A'}. Deposits ${topElements.join(', ') || 'none significant'}.`
-        : `Minerals: scan pending. Potential richness ${selected.mineralRichness}. Orbital survey can select a safe landing zone.`,
-  ];
 
   const bodies = [args.parentPlanet, ...args.parentPlanet.moons].map((planet, index) => ({
     label: index === 0 ? 'Primary' : `Moon ${index}`,
@@ -121,24 +92,22 @@ export function createOrbitScreenModel(args: {
     landingCursorX: ((Math.floor(args.landingCursorX) % mapSize) + mapSize) % mapSize,
     landingCursorY: Math.max(0, Math.min(mapSize - 1, Math.floor(args.landingCursorY))),
     mapSize,
-    description,
-    telemetry: [
-      `Body ${selected.name}`,
-      `Class ${classText} | Diameter ${selected.diameter.toLocaleString()} km | Density ${selected.density.toFixed(2)} g/cm3`,
-      selected.orbitDistance <= 0
-        ? 'Orbit none | Light time none'
-        : `Orbit ${(selected.orbitDistance / AU_IN_METERS).toFixed(3)} AU | Host ${hostLabel} | Radius light time ${signalText}`,
-      `Tilt ${((selected.axialTilt * 180) / Math.PI).toFixed(1)} deg | Rot ${selected.getRotationPeriodLabel()} | ${selected.tidallyLocked ? 'Locked' : 'Free rotation'}`,
-      `Incl ${((selected.orbitalInclination * 180) / Math.PI).toFixed(1)} deg`,
-      `Temp now ${selected.getCurrentTemperature()}K | Avg ${selected.surfaceTemp}K | Range ${selected.surfaceTempMin}-${selected.surfaceTempMax}K`,
-      `Moons ${selected.moons.length}`,
+    summary: [
+      classText.toUpperCase(),
+      selected.orbitDistance <= 0 ? 'Free-floating world' : `${orbitText} / ${hostLabel}`,
+      `${selected.gravity.toFixed(2)} g  |  ${selected.effectiveSurfaceTemp} K mean`,
+      `${atmosphere.density} atmosphere  |  ${selected.moons.length} moon${selected.moons.length === 1 ? '' : 's'}`,
+      selected.scanned ? 'Orbital survey complete' : 'Orbital survey pending',
+      '',
+      '[D] PLANETARY DOSSIER',
     ],
-    footer: [
+    footer:
       args.mode === 'landing'
-        ? 'Landing site: arrows move cursor, Enter/Space confirms, Esc cancels.'
-        : 'Left/Right select body, Enter/Space chooses landing site, Esc/Backspace breaks orbit.',
-      `Site X ${Math.floor(args.landingCursorX)}  Y ${Math.floor(args.landingCursorY)}  Map ${mapSize}x${mapSize}`,
-    ],
+        ? [
+            'Arrows site  Enter land  D dossier  Esc back',
+            `Site X ${Math.floor(args.landingCursorX)}  Y ${Math.floor(args.landingCursorY)}  Map ${mapSize}x${mapSize}`,
+          ]
+        : ['Left/Right body  D dossier  Enter land  Esc leave'],
     alert: args.alert,
   };
 }

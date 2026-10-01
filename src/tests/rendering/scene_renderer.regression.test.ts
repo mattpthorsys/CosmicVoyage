@@ -985,6 +985,30 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.some((call) => call.char === '[' && call.fg === TEXT_PALETTE.amber)).toBe(true);
   });
 
+  it('shows only the scrolled dossier page and a scroll indicator', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(76, 24);
+    const renderer = createSceneRenderer(buffer);
+    renderer.drawTextModalTable({
+      title: 'PLANETARY DOSSIER',
+      subtitle: 'Regression World',
+      columns: [],
+      widths: [],
+      rows: [],
+      selectedIndex: 0,
+      viewOffset: 18,
+      visibleRowCount: 12,
+      dashboard: Array.from({ length: 36 }, (_, index) => ({
+        segments: [{ text: `DATA LINE ${String(index).padStart(2, '0')}`, tone: 'green' as const }],
+      })),
+      footer: ['UP/DN scroll  PGUP/DN page', 'ESC return to orbit'],
+    });
+    const text = renderTextRows(drawCalls).join('\n');
+    expect(text).toContain('DATA LINE 18');
+    expect(text).not.toContain('DATA LINE 00');
+    expect(text).toContain('ESC return');
+    expect(drawCalls.some((call) => call.char === '█')).toBe(true);
+  });
+
   it('renders ordinary modal table cells with row and cell tones', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(100, 34);
     const renderer = createSceneRenderer(buffer);
@@ -1104,15 +1128,7 @@ describe('SceneRenderer visual regressions', () => {
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
-      description: [
-        'Regression Orbit I is a stable rocky test body with a restrained scan summary.',
-        'Landing map and orbital sphere should remain visually framed.',
-      ],
-      telemetry: [
-        'Body Regression Orbit I',
-        'Class Rock | Diameter 11,000 km | Density 5.10 g/cm3',
-        'Tilt 13.2 deg | Incl 1.7 deg | Free rotation',
-      ],
+      summary: ['ROCKY TERRESTRIAL WORLD', '1.00 AU / star A', '[D] PLANETARY DOSSIER'],
       footer: [
         'Landing site: arrows move cursor, Enter/Space confirms, Esc cancels.',
         'Site X 12  Y 18  Map 32x32',
@@ -1121,7 +1137,39 @@ describe('SceneRenderer visual regressions', () => {
 
     expect(drawCalls.some((call) => call.char === '+')).toBe(true);
     expect(drawCalls.some((call) => call.char === GLYPHS.BLOCK)).toBe(true);
+    const orbitText = renderTextRows(drawCalls).join('\n');
+    expect(orbitText).toContain('SCAN SUMMARY');
+    expect(orbitText).toContain('[D] PLANETARY DOSSIER');
+    expect(orbitText).not.toContain('Diameter 11,000 km');
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
+  });
+
+  it('keeps the scan and landing map separate on a narrow orbital viewport', () => {
+    const planet = createOrbitPlanet();
+    for (const mode of ['overview', 'landing'] as const) {
+      const { buffer, drawCalls } = createMockScreenBuffer(80, 42);
+      const renderer = createSceneRenderer(buffer);
+      renderer.drawOrbitInterface({
+        title: 'Orbital Operations',
+        subtitle: 'Regression Orbit I local space',
+        parentPlanet: planet,
+        selectedBody: planet,
+        bodies: [{ label: 'Primary', planet, selected: true }],
+        mode,
+        stellarSources: [],
+        rotationPhase: 0,
+        illuminationPhase: 0,
+        landingCursorX: 0,
+        landingCursorY: 0,
+        mapSize: 32,
+        summary: ['ROCKY WORLD', '1.00 AU / star A', '[D] PLANETARY DOSSIER'],
+        footer: ['D dossier  Enter land  Esc leave'],
+      });
+      const text = renderTextRows(drawCalls).join('\n');
+      expect(text).toContain('ORBITAL VIEW');
+      expect(text.includes('SCAN SUMMARY')).toBe(mode === 'overview');
+      expect(text.includes('LANDING MAP')).toBe(mode === 'landing');
+    }
   });
 
   it('shows stellar sources as a clipped distant light source in orbital view', () => {
@@ -1145,8 +1193,7 @@ describe('SceneRenderer visual regressions', () => {
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
-      description: ['Regression limb marker.'],
-      telemetry: ['Body Regression Orbit I'],
+      summary: ['Regression limb marker.'],
       footer: ['Esc closes orbit.'],
     });
 
@@ -1179,8 +1226,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 12,
         landingCursorY: 18,
         mapSize: 32,
-        description: ['Regression horizon marker.'],
-        telemetry: ['Body Regression Orbit I'],
+        summary: ['Regression horizon marker.'],
         footer: ['Esc closes orbit.'],
       });
       return drawCalls;
@@ -1216,8 +1262,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 12,
         landingCursorY: 18,
         mapSize: 32,
-        description: ['Regression occultation marker.'],
-        telemetry: ['Body Regression Orbit I'],
+        summary: ['Regression occultation marker.'],
         footer: ['Esc closes orbit.'],
       });
       return phaseDrawCalls;
@@ -1236,8 +1281,7 @@ describe('SceneRenderer visual regressions', () => {
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
-      description: ['Regression occultation marker.'],
-      telemetry: ['Body Regression Orbit I'],
+      summary: ['Regression occultation marker.'],
       footer: ['Esc closes orbit.'],
     });
 
@@ -1273,8 +1317,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 0,
         landingCursorY: 0,
         mapSize: 32,
-        description: [],
-        telemetry: [],
+        summary: [],
         footer: [],
       });
       return hexLuma(
@@ -1319,8 +1362,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 12,
         landingCursorY: 18,
         mapSize: 32,
-        description: ['Regression atmospheric horizon.'],
-        telemetry: ['Body Regression Orbit I'],
+        summary: ['Regression atmospheric horizon.'],
         footer: ['Esc closes orbit.'],
       });
       return drawCalls;
@@ -1466,8 +1508,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 0,
         landingCursorY: 0,
         mapSize: 32,
-        description: [],
-        telemetry: [],
+        summary: [],
         footer: [],
       });
       return drawCalls.find((call) => call.char === GLYPHS.STELLAR_SOURCE);
@@ -1508,8 +1549,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 0,
         landingCursorY: 0,
         mapSize: 32,
-        description: [],
-        telemetry: [],
+        summary: [],
         footer: [],
       });
       return hexToRgb(
@@ -1574,8 +1614,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 0,
         landingCursorY: 0,
         mapSize: 32,
-        description: [],
-        telemetry: [],
+        summary: [],
         footer: [],
       });
       const result = [0, 0, 0];
@@ -1653,8 +1692,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 0,
         landingCursorY: 0,
         mapSize: 32,
-        description: [],
-        telemetry: [],
+        summary: [],
         footer: [],
       });
       return drawCalls.filter((call) => call.char === GLYPHS.BLOCK && call.scaleX === 0.5 && call.x < 40);
@@ -1686,8 +1724,7 @@ describe('SceneRenderer visual regressions', () => {
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
-      description: ['Regression solid globe.'],
-      telemetry: ['Body Regression Orbit I'],
+      summary: ['Regression solid globe.'],
       footer: ['Esc closes orbit.'],
     });
 
@@ -1734,8 +1771,7 @@ describe('SceneRenderer visual regressions', () => {
       landingCursorX: 12,
       landingCursorY: 18,
       mapSize: 32,
-      description: ['Featureless globe edge regression.'],
-      telemetry: ['Body Featureless Regression'],
+      summary: ['Featureless globe edge regression.'],
       footer: ['Esc closes orbit.'],
     });
 
@@ -1789,8 +1825,7 @@ describe('SceneRenderer visual regressions', () => {
         landingCursorX: 12,
         landingCursorY: 18,
         mapSize: 32,
-        description: ['Regression moving hemisphere.'],
-        telemetry: ['Body Regression Orbit I'],
+        summary: ['Regression moving hemisphere.'],
         footer: ['Esc closes orbit.'],
       });
       return drawCalls

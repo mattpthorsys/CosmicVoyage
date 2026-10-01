@@ -63,6 +63,16 @@ describe('available actions', () => {
     expect(actions.find((action) => action.id === 'land-dock')?.label).toBe('Dock');
   });
 
+  it('offers a clickable planetary dossier command while in orbit', () => {
+    const actions = createAvailableActions({ ...baseContext(), state: 'orbit' });
+    expect(actions.find((item) => item.id === 'orbit-dossier')).toMatchObject({
+      label: 'Dossier',
+      key: CONFIG.KEY_BINDINGS.ORBIT_DOSSIER,
+      action: 'ORBIT_DOSSIER',
+      enabled: true,
+    });
+  });
+
   it('offers mining only after a rich scanned planet has an unmined tile', () => {
     const planet = Object.create(Planet.prototype) as Planet;
     Object.defineProperties(planet, {

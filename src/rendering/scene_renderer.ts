@@ -41,6 +41,7 @@ import {
 } from './scenes/orbit_stellar_light';
 import { toneMapOrbitRadiance } from './scenes/orbit_tone_map';
 import {
+  getDashboardVisibleRows,
   TextDashboardLine,
   TextMenuSection,
   TextModalTableModel,
@@ -1418,7 +1419,7 @@ export class SceneRenderer {
       54,
       Math.min(104, Math.max(...model.dashboard!.map((line) => this.getDashboardLineLength(line)), 54))
     );
-    const visibleRows = Math.min(model.dashboard!.length, Math.max(1, rows - 10 - footerRows));
+    const visibleRows = getDashboardVisibleRows(model.dashboard!.length, rows, footerRows);
     const panelWidth = Math.min(cols - 4, contentWidth + 8);
     const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 8);
     const panelX = Math.floor((cols - panelWidth) / 2);
@@ -1452,9 +1453,13 @@ export class SceneRenderer {
       );
     }
 
-    model.dashboard!.slice(0, visibleRows).forEach((line, index) => {
+    const offset = Math.max(0, Math.min(model.viewOffset, model.dashboard!.length - visibleRows));
+    model.dashboard!.slice(offset, offset + visibleRows).forEach((line, index) => {
       this.drawDashboardLine(line, contentX, contentY + index, panelWidth - 8);
     });
+    if (model.dashboard!.length > visibleRows) {
+      this.drawTextScrollbar(panelX + panelWidth - 3, contentY, visibleRows, model.dashboard!.length, offset);
+    }
 
     const footerY = panelY + panelHeight - Math.max(2, footerRows + 1);
     (model.footer ?? []).forEach((line, index) => {
@@ -1621,58 +1626,63 @@ export class SceneRenderer {
     const mapHeight = Math.max(10, Math.min(20, contentHeight - 4));
     const mapX = panelX + panelWidth - mapWidth - 6;
     const mapY = contentTop;
-    this.drawingContext.drawBox(
-      mapX - 1,
-      mapY,
-      mapWidth + 2,
-      mapHeight + 4,
-      model.mode === 'landing' ? TEXT_PALETTE.cyanActive : TEXT_PALETTE.cyanDeep,
-      CONFIG.DEFAULT_BG_COLOUR,
-      ' '
-    );
-    this.screenBuffer.drawString(
-      ' LANDING MAP ',
-      mapX + 1,
-      mapY,
-      model.mode === 'landing' ? TEXT_PALETTE.textBright : TEXT_PALETTE.green,
-      CONFIG.DEFAULT_BG_COLOUR
-    );
-    this.drawOrbitLandingMap(model, mapX, mapY + 2, mapWidth, mapHeight);
-
     const descX = panelX + leftColumnWidth + 8;
     const descY = contentTop;
-    const descWidth = Math.max(30, mapX - descX - 3);
-    const descHeight = Math.max(10, contentBottom - descY + 1);
-    this.drawingContext.drawBox(
-      descX - 1,
-      descY,
-      descWidth + 2,
-      descHeight,
-      TEXT_PALETTE.cyanDeep,
-      CONFIG.DEFAULT_BG_COLOUR,
-      ' '
-    );
-    this.screenBuffer.drawString(
-      ' SCAN SUMMARY ',
-      descX + 1,
-      descY,
-      TEXT_PALETTE.textBright,
-      CONFIG.DEFAULT_BG_COLOUR
-    );
-    const lines = [
-      ...this.formatOrbitSummaryLines(model.telemetry, descWidth - 2),
-      '',
-      ...this.formatOrbitSummaryLines(model.description, descWidth - 2),
-    ];
-    lines.slice(0, descHeight - 3).forEach((line, index) => {
-      this.drawOrbitSummaryLine(
-        line.slice(0, descWidth - 2),
-        descX + 1,
-        descY + 2 + index,
-        descWidth - 2,
-        index < 3 ? TEXT_PALETTE.text : TEXT_PALETTE.green
+    const showBothPanels = mapX - descX - 3 >= 30;
+    if (showBothPanels || model.mode === 'landing') {
+      this.drawingContext.drawBox(
+        mapX - 1,
+        mapY,
+        mapWidth + 2,
+        mapHeight + 4,
+        model.mode === 'landing' ? TEXT_PALETTE.cyanActive : TEXT_PALETTE.cyanDeep,
+        CONFIG.DEFAULT_BG_COLOUR,
+        ' '
       );
-    });
+      this.screenBuffer.drawString(
+        ' LANDING MAP ',
+        mapX + 1,
+        mapY,
+        model.mode === 'landing' ? TEXT_PALETTE.textBright : TEXT_PALETTE.green,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+      this.drawOrbitLandingMap(model, mapX, mapY + 2, mapWidth, mapHeight);
+    }
+
+    if (showBothPanels || model.mode === 'overview') {
+      const descWidth = showBothPanels ? mapX - descX - 3 : panelX + panelWidth - descX - 5;
+      const descHeight = Math.max(10, contentBottom - descY + 1);
+      this.drawingContext.drawBox(
+        descX - 1,
+        descY,
+        descWidth + 2,
+        descHeight,
+        TEXT_PALETTE.cyanDeep,
+        CONFIG.DEFAULT_BG_COLOUR,
+        ' '
+      );
+      this.screenBuffer.drawString(
+        ' SCAN SUMMARY ',
+        descX + 1,
+        descY,
+        TEXT_PALETTE.textBright,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+      const lines = this.formatOrbitSummaryLines(model.summary, descWidth - 2);
+      lines.slice(0, descHeight - 3).forEach((line, index) => {
+        this.drawOrbitSummaryLine(
+          line.slice(0, descWidth - 2),
+          descX + 1,
+          descY + 2 + index,
+          descWidth - 2,
+          index === 0
+            ? TEXT_PALETTE.cyanActive
+            : line.includes('DOSSIER')
+              ? TEXT_PALETTE.amber
+              : TEXT_PALETTE.text
+        );
+      });
+    }
 
     if (model.alert) {
       this.screenBuffer.drawString(

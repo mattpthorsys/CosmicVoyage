@@ -4,7 +4,8 @@ import { Planet } from '../../../entities/planet';
 import { PlanetCharacteristics } from '../../../entities/planet/planet_characteristics_generator';
 import { PRNG } from '../../../utils/prng';
 import { createOrbitScreenModel, getOrbitReferenceLabel } from '../../../core/orbit_ui';
-import { formatDistanceAu, formatLightTimeFromMeters } from '../../../utils/space_scale';
+import { OrbitDossier, buildOrbitDossierLines } from '../../../core/orbit_dossier';
+import { formatDistanceAu } from '../../../utils/space_scale';
 
 /** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
@@ -63,10 +64,10 @@ describe('Orbit UI formatting', () => {
         rotationPhase: 0,
         illuminationPhase: 0,
       });
-      expect(model.description[1]).toBe(
-        `Orbit: ${formatDistanceAu(body.orbitDistance)} about ${getOrbitReferenceLabel(body, parent)}. Light time across orbital radius ${formatLightTimeFromMeters(body.orbitDistance)}.`
+      expect(model.summary[1]).toBe(
+        `${formatDistanceAu(body.orbitDistance)} / ${getOrbitReferenceLabel(body, parent)}`
       );
-      expect(model.description[1]).not.toContain('system primary');
+      expect(model.summary.join('\n')).not.toContain('system primary');
     }
   });
 
@@ -93,11 +94,76 @@ describe('Orbit UI formatting', () => {
       illuminationPhase: 0,
     });
 
-    expect(model.description[0]).toContain('ice giant');
-    expect(model.description[1]).toBe('Orbit: none. Free planetary-mass object in interstellar space.');
-    expect(model.telemetry).toContain('Orbit none | Light time none');
-    expect(model.telemetry).toContain('Tilt 5.7 deg | Rot 17.2 hours | Free rotation');
-    expect(model.telemetry.join('\n')).not.toContain('IceGiant');
-    expect(model.telemetry.join('\n')).not.toContain('0.000 AU');
+    expect(model.summary[0]).toBe('ICE GIANT');
+    expect(model.summary[1]).toBe('Free-floating world');
+    expect(model.summary).toContain('[D] PLANETARY DOSSIER');
+    expect(model.summary.join('\n')).not.toContain('0.000 AU');
+  });
+
+  it('formats a sectioned dossier within narrow and wide viewport widths without leaking unsurveyed resources', () => {
+    const body = new Planet(
+      'C-I',
+      'IceGiant',
+      AU_IN_METERS,
+      0,
+      new PRNG('dossier-content'),
+      'G',
+      createCharacteristics()
+    );
+    const source = { id: 'A', primary: true, brightness: 1, colour: '#fff', irradianceWm2: 1361 };
+    for (const width of [30, 68]) {
+      body.scanned = false;
+      const pending = buildOrbitDossierLines(body, body, [source], width);
+      const pendingText = pending
+        .map((line) => line.segments.map((segment) => segment.text).join(''))
+        .join('\n');
+      expect(pendingText).toContain('ORBIT AND SPIN');
+      expect(pendingText).toContain('Stellar flux');
+      expect(pendingText).toContain('Orbital survey');
+      expect(pendingText).toContain('required');
+      expect(pendingText).not.toContain('Hydrogen 52.0%');
+      expect(
+        pending.every((line) => line.segments.reduce((sum, segment) => sum + segment.text.length, 0) <= width)
+      ).toBe(true);
+      body.scanned = true;
+      const surveyed = buildOrbitDossierLines(body, body, [source], width);
+      const surveyedText = surveyed
+        .map((line) => line.segments.map((segment) => segment.text).join(''))
+        .join('\n');
+      expect(surveyedText).toContain('ATMOSPHERE AND SURFACE');
+      expect(surveyedText).toContain('Hydrogen');
+      expect(surveyedText).toContain('RESOURCE SURVEY');
+      expect(
+        surveyed.every(
+          (line) => line.segments.reduce((sum, segment) => sum + segment.text.length, 0) <= width
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('bounds dossier scrolling to the content and available viewport', () => {
+    const body = new Planet(
+      'Rogue',
+      'Frozen',
+      0,
+      0,
+      new PRNG('dossier-scroll'),
+      'ROGUE',
+      createCharacteristics()
+    );
+    const dossier = new OrbitDossier();
+    dossier.open();
+    const small = dossier.createModel(body, body, [], 48, 22);
+    expect(small.dashboard!.length).toBeGreaterThan(small.visibleRowCount);
+    dossier.scroll(1000, small.dashboard!.length, 22);
+    expect(dossier.viewOffset).toBe(small.dashboard!.length - small.visibleRowCount);
+    dossier.scroll(-1000, small.dashboard!.length, 22);
+    expect(dossier.viewOffset).toBe(0);
+    dossier.scroll(20, small.dashboard!.length, 22);
+    const large = dossier.createModel(body, body, [], 120, 80);
+    expect(large.viewOffset).toBe(0);
+    dossier.close();
+    expect(dossier.isOpen).toBe(false);
+    expect(dossier.viewOffset).toBe(0);
   });
 });

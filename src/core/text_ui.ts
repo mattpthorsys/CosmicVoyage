@@ -49,6 +49,11 @@ export interface SelectionViewport {
   viewOffset: number;
 }
 
+/** Reserves the dashboard modal's frame, heading, and footer rows. */
+export function getDashboardVisibleRows(lineCount: number, viewportRows: number, footerRows: number): number {
+  return Math.min(lineCount, Math.max(1, viewportRows - 10 - footerRows));
+}
+
 /** Clamps index. */
 export function clampIndex(index: number, length: number): number {
   if (length <= 0) return 0;

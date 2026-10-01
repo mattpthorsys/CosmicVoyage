@@ -75,6 +75,7 @@ export const CONFIG = {
     CYCLE_TARGET: 'Tab',
     TARGET_MENU: 'n',
     SHIP_MENU: 'o',
+    ORBIT_DOSSIER: 'd',
     HELP: '?',
     TOGGLE_PROFILER: 'F3',
     GAME_MENU: 'F10',

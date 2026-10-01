@@ -224,6 +224,17 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       );
       actions.push(
         action(
+          'orbit-dossier',
+          'Dossier',
+          CONFIG.KEY_BINDINGS.ORBIT_DOSSIER,
+          'ORBIT_DOSSIER',
+          'utility',
+          8,
+          true
+        )
+      );
+      actions.push(
+        action(
           'landing-site',
           'Landing Site',
           CONFIG.KEY_BINDINGS.ENTER_SYSTEM,

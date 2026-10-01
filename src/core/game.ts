@@ -962,6 +962,7 @@ export class Game {
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
     this.forceFullRender = true; // Always force redraw on state change
     this.orbitModeState.invalidateScreen();
+    if (newState !== 'orbit') this.orbitModeState.dossier.close();
     this.lastHyperspaceUpdateSignature = '';
     this.lastHyperspaceUpdateStatus = '';
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
@@ -1043,6 +1044,7 @@ export class Game {
     if (!data?.action) return;
     if (
       this.popupState !== 'inactive' ||
+      (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) ||
       this.targetMenuOpen ||
       this.shipMenuOpen ||
       this.roverCargoOpen ||
@@ -1411,6 +1413,9 @@ export class Game {
       return false;
     return this.orbitModeState.handleInput(this.inputManager, {
       parentPlanet,
+      stars: this.stateManager.currentSystem?.stars ?? [],
+      viewportCols: this.renderer.getGridCols(),
+      viewportRows: this.renderer.getGridRows(),
       isActive: () =>
         this.stateManager.state === 'orbit' && this.stateManager.currentOrbitReferencePlanet === parentPlanet,
       survey: (body) => {
@@ -2163,6 +2168,12 @@ export class Game {
         return;
       case 'OPEN_SHIP_MENU':
         this.openShipMenu();
+        return;
+      case 'ORBIT_DOSSIER':
+        if (this.stateManager.state === 'orbit' && !this.orbitModeState.dossier.isOpen) {
+          this.orbitModeState.dossier.open();
+          this.forceFullRender = true;
+        }
         return;
       case 'TARGET_MENU':
         this.openTargetMenu();
@@ -3366,7 +3377,7 @@ export class Game {
   /** Updates. */
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
-    let blockGameUpdates = false;
+    let blockGameUpdates = this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen;
     if (!this.isGameClockPaused()) {
       this.gameClockElapsedSeconds += deltaTime * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
     }
@@ -6069,6 +6080,16 @@ export class Game {
                   model: this.createCurrentOrbitScreen(),
                 })
               );
+              if (this.orbitModeState.dossier.isOpen && this.stateManager.currentOrbitReferencePlanet) {
+                this.renderer.drawTextModalTable(
+                  this.orbitModeState.createDossier(
+                    this.stateManager.currentOrbitReferencePlanet,
+                    this.stateManager.currentSystem?.stars ?? [],
+                    this.renderer.getGridCols(),
+                    this.renderer.getGridRows()
+                  )
+                );
+              }
             } else {
               this._renderError('Orbit data missing for render!');
             }
@@ -6228,7 +6249,12 @@ export class Game {
 
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
-    return this.shipMenuOpen || this.targetMenuOpen || this.galaxyMapOpen;
+    return (
+      this.shipMenuOpen ||
+      this.targetMenuOpen ||
+      this.galaxyMapOpen ||
+      (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen)
+    );
   }
 
   /** Returns whether travel date time hud visible. */
@@ -6270,6 +6296,7 @@ export class Game {
   private isGameClockPaused(): boolean {
     return (
       this.stateManager.state === 'starbase' ||
+      (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) ||
       this.popupState !== 'inactive' ||
       this.targetMenuOpen ||
       this.galaxyMapOpen ||
@@ -6347,7 +6374,9 @@ export class Game {
           this.orbitModeState.landingX,
           this.orbitModeState.landingY,
           this.orbitModeState.alert,
-          Math.floor(now / Game.ORBIT_RENDER_INTERVAL_MS),
+          this.orbitModeState.dossier.isOpen
+            ? `dossier:${this.orbitModeState.dossier.viewOffset}`
+            : Math.floor(now / Game.ORBIT_RENDER_INTERVAL_MS),
         ].join('|');
       case 'planet':
         return [
