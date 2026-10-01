@@ -500,27 +500,33 @@ export class SolarSystem {
     const primary = this.stars.find((star) => star.id === 'A');
     const secondary = this.stars.find((star) => star.id === 'B');
     if (!primary || !secondary) return;
+    const innerEccentricity = secondary.orbit?.eccentricity ?? 0;
 
     const separation = Math.max(
       0.05 * AU_IN_METERS,
-      3 * (primary.radiusM + secondary.radiusM),
+      (3 * (primary.radiusM + secondary.radiusM)) / (1 - innerEccentricity),
       this.architecture.binarySeparation
     );
     this.architecture.binarySeparation = separation;
     const totalMass = primary.massKg + secondary.massKg;
     const baseAngle = secondary.orbit?.angle ?? 0;
+    const innerPeriapsis = secondary.orbit?.argumentOfPeriapsis ?? 0;
     const periodSeconds = this.calculateKeplerPeriodSeconds(separation, totalMass);
     primary.orbit = {
       center: this.stars.length > 2 ? 'ab-barycenter' : 'barycenter',
       radius: separation * (secondary.massKg / totalMass),
-      angle: baseAngle + Math.PI,
+      angle: baseAngle,
       periodSeconds,
+      eccentricity: innerEccentricity,
+      argumentOfPeriapsis: innerPeriapsis + Math.PI,
     };
     secondary.orbit = {
       center: this.stars.length > 2 ? 'ab-barycenter' : 'barycenter',
       radius: separation * (primary.massKg / totalMass),
       angle: baseAngle,
       periodSeconds,
+      eccentricity: innerEccentricity,
+      argumentOfPeriapsis: innerPeriapsis,
     };
 
     const tertiary = this.stars.find((star) => star.id === 'C');
@@ -533,6 +539,8 @@ export class SolarSystem {
         radius: outerSeparation * (totalMass / outerTotalMass),
         angle: tertiary.orbit?.angle ?? baseAngle + Math.PI / 2,
         periodSeconds: this.calculateKeplerPeriodSeconds(outerSeparation, outerTotalMass),
+        eccentricity: tertiary.orbit?.eccentricity ?? 0,
+        argumentOfPeriapsis: tertiary.orbit?.argumentOfPeriapsis ?? 0,
       };
     }
   }
@@ -550,8 +558,30 @@ export class SolarSystem {
         star.orbit.angle =
           (star.orbit.angle + (2 * Math.PI * scaledDeltaTime) / star.orbit.periodSeconds) % (Math.PI * 2);
       }
-      star.systemX = Math.cos(star.orbit.angle) * star.orbit.radius;
-      star.systemY = Math.sin(star.orbit.angle) * star.orbit.radius;
+      const e = star.orbit.eccentricity ?? 0;
+      if (e <= 0) {
+        const longitude = star.orbit.angle + (star.orbit.argumentOfPeriapsis ?? 0);
+        star.systemX = Math.cos(longitude) * star.orbit.radius;
+        star.systemY = Math.sin(longitude) * star.orbit.radius;
+      } else {
+        // Both AB components share mean anomaly; opposite periapses keep their
+        // relative separation and centre of mass correct at every true anomaly.
+        const meanAnomaly = star.orbit.angle;
+        let eccentricAnomaly = meanAnomaly;
+        for (let iteration = 0; iteration < 8; iteration++) {
+          eccentricAnomaly -=
+            (eccentricAnomaly - e * Math.sin(eccentricAnomaly) - meanAnomaly) /
+            (1 - e * Math.cos(eccentricAnomaly));
+        }
+        const radius = star.orbit.radius * (1 - e * Math.cos(eccentricAnomaly));
+        const trueAnomaly = Math.atan2(
+          Math.sqrt(1 - e * e) * Math.sin(eccentricAnomaly),
+          Math.cos(eccentricAnomaly) - e
+        );
+        const longitude = trueAnomaly + (star.orbit.argumentOfPeriapsis ?? 0);
+        star.systemX = Math.cos(longitude) * radius;
+        star.systemY = Math.sin(longitude) * radius;
+      }
     }
     // Jacobi hierarchy: C and the AB centre orbit their common barycentre.
     // A/B's stored radii and angles are relative to that moving AB centre.
@@ -872,14 +902,24 @@ export class SolarSystem {
 
   /** Returns nearest other star distance. */
   private getNearestOtherStarDistance(star: StellarBody): number {
-    let nearest = Number.POSITIVE_INFINITY;
-    for (const other of this.stars) {
-      if (other.id === star.id) continue;
-      const dx = star.systemX - other.systemX;
-      const dy = star.systemY - other.systemY;
-      nearest = Math.min(nearest, Math.hypot(dx, dy));
-    }
-    return nearest;
+    const innerCompanion = this.stars.find((other) => other.id !== star.id && other.id !== 'C');
+    const innerPeriapsis =
+      this.architecture.binarySeparation *
+      (1 - (this.stars.find((other) => other.id === 'B')?.orbit?.eccentricity ?? 0));
+    const outerPeriapsis =
+      this.architecture.outerSeparation *
+      (1 - (this.stars.find((other) => other.id === 'C')?.orbit?.eccentricity ?? 0));
+    const innerExcursion = Math.max(
+      ...this.stars
+        .filter((other) => other.id !== 'C')
+        .map((other) => (other.orbit?.radius ?? 0) * (1 + (other.orbit?.eccentricity ?? 0)))
+    );
+    if (star.id === 'C') return outerPeriapsis - innerExcursion;
+    const outerCompanion = this.stars.find((other) => other.id === 'C');
+    const outerApproach = outerCompanion
+      ? outerPeriapsis - (star.orbit?.radius ?? 0) * (1 + (star.orbit?.eccentricity ?? 0))
+      : Number.POSITIVE_INFINITY;
+    return Math.min(innerCompanion ? innerPeriapsis : Number.POSITIVE_INFINITY, outerApproach);
   }
 
   /** Generates planets around individual stars, including A in a wide multiple system. */
@@ -1279,11 +1319,16 @@ export class SolarSystem {
   /** Bounds host motion over all circular phases, not just the system's initial snapshot. */
   private getOrbitCenterExtent(host: OrbitHost): number {
     const tertiary = this.stars.find((star) => star.id === 'C');
-    const abExtent = tertiary ? this.architecture.outerSeparation - (tertiary.orbit?.radius ?? 0) : 0;
+    const abExtent = tertiary
+      ? (this.architecture.outerSeparation - (tertiary.orbit?.radius ?? 0)) *
+        (1 + (tertiary.orbit?.eccentricity ?? 0))
+      : 0;
     if (host.kind === 'circumbinary') return abExtent;
     if (host.kind !== 'circumstellar') return 0;
     const star = this.stars.find((candidate) => candidate.id === (host.starId ?? 'A'));
-    return (star?.orbit?.radius ?? 0) + (star?.id === 'C' ? 0 : abExtent);
+    return (
+      (star?.orbit?.radius ?? 0) * (1 + (star?.orbit?.eccentricity ?? 0)) + (star?.id === 'C' ? 0 : abExtent)
+    );
   }
 
   /** Returns planet environment star. */

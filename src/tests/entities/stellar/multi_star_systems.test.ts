@@ -132,6 +132,72 @@ describe('multi-star physical and generation contracts', () => {
     expect(value.planets.some((planet) => planet?.orbitHost.kind === 'circumbinary')).toBe(true);
   });
 
+  it('keeps eccentric AB and C motions bound to their barycentres at periapsis and apoapsis', () => {
+    const architecture = triple();
+    architecture.stars[1].orbit!.angle = 0;
+    architecture.stars[1].orbit!.eccentricity = 0.32;
+    architecture.stars[1].orbit!.argumentOfPeriapsis = 0.7;
+    architecture.stars[2].orbit!.angle = 0;
+    architecture.stars[2].orbit!.eccentricity = 0.22;
+    architecture.stars[2].orbit!.argumentOfPeriapsis = 1.4;
+    const value = system(architecture, 'eccentric-triple-phases');
+    const [a, b, c] = value.stars;
+    const totalMass = a.massKg + b.massKg + c.massKg;
+
+    for (const [meanAnomaly, innerFactor, outerFactor] of [
+      [0, 0.68, 0.78],
+      [Math.PI, 1.32, 1.22],
+    ]) {
+      a.orbit!.angle = meanAnomaly;
+      b.orbit!.angle = meanAnomaly;
+      c.orbit!.angle = meanAnomaly;
+      value.updateOrbits(0);
+      const abCentre = value.getOrbitCenter({ kind: 'circumbinary' });
+      expect(Math.hypot(a.systemX - b.systemX, a.systemY - b.systemY)).toBeCloseTo(
+        value.architecture.binarySeparation * innerFactor,
+        -1
+      );
+      expect(Math.hypot(c.systemX - abCentre.x, c.systemY - abCentre.y)).toBeCloseTo(
+        value.architecture.outerSeparation * outerFactor,
+        -1
+      );
+      expect(
+        value.stars.reduce((sum, item) => sum + item.massKg * item.systemX, 0) / (totalMass * AU_IN_METERS)
+      ).toBeCloseTo(0, 10);
+      expect(
+        value.stars.reduce((sum, item) => sum + item.massKg * item.systemY, 0) / (totalMass * AU_IN_METERS)
+      ).toBeCloseTo(0, 10);
+    }
+
+    const oldAnomaly = b.orbit!.angle;
+    value.updateOrbits(1);
+    const scaledSeconds = (365.25 * 86400) / (4 * 3600);
+    expect(b.orbit!.angle - oldAnomaly).toBeCloseTo(
+      (2 * Math.PI * scaledSeconds) / b.orbit!.periodSeconds,
+      10
+    );
+  });
+
+  it('tightens eccentric binary and triple planet zones using closest approaches', () => {
+    const circular = triple();
+    const eccentric = triple();
+    eccentric.stars[1].orbit!.eccentricity = 0.32;
+    eccentric.stars[2].orbit!.eccentricity = 0.22;
+    for (const host of [
+      { kind: 'circumstellar', starId: 'A' } as const,
+      { kind: 'circumstellar', starId: 'C' } as const,
+      { kind: 'circumbinary' } as const,
+    ]) {
+      const baseline = getStableOrbitRange(circular, host)!;
+      const tighter = getStableOrbitRange(eccentric, host)!;
+      expect(tighter.maxRadius).toBeLessThan(baseline.maxRadius);
+      if (host.kind === 'circumbinary') expect(tighter.minRadius).toBeGreaterThan(baseline.minRadius);
+    }
+    const outerCircular = getStableOrbitRange(circular, { kind: 'barycentric' })!;
+    const outerEccentric = getStableOrbitRange(eccentric, { kind: 'barycentric' })!;
+    expect(outerEccentric.minRadius).toBeGreaterThan(outerCircular.minRadius);
+  });
+
   it('uses the AB host for depot motion, periods and stable orbital placement', () => {
     const value = system(triple(), 'depot-hierarchy', true);
     const depot = value.starbase!;

@@ -15,23 +15,30 @@ export interface StableOrbitRange {
   maxRadius: number;
 }
 
-/** Circular, prograde S-type limit with a 10% generation margin inside the empirical boundary. */
-function circumstellarLimit(separation: number, hostMass: number, perturberMass: number): number {
+/** Prograde S-type limit with a 10% margin inside the Holman-Wiegert boundary. */
+function circumstellarLimit(separation: number, hostMass: number, perturberMass: number, e: number): number {
   const mu = perturberMass / (hostMass + perturberMass);
-  // Holman-Wiegert (1999), e=0. Outside its fitted mass ratios, also limit by the Hill sphere.
-  const fitted = (0.464 - 0.38 * Math.max(0.1, Math.min(0.9, mu))) * separation;
-  const hill = separation * Math.cbrt(hostMass / (3 * perturberMass)) * 0.4;
+  // Outside the fit's 0.1-0.9 mass-ratio interval, also limit by the periapse Hill sphere.
+  const fittedMu = Math.max(0.1, Math.min(0.9, mu));
+  const fitted =
+    (0.464 - 0.38 * fittedMu - 0.631 * e + 0.586 * fittedMu * e + 0.15 * e * e - 0.198 * fittedMu * e * e) *
+    separation;
+  const hill = separation * (1 - e) * Math.cbrt(hostMass / (3 * perturberMass)) * 0.4;
   return Math.min(fitted * 0.9, hill);
 }
 
-/** Circular, prograde P-type limit with a 10% margin outside the empirical boundary. */
-function circumbinaryLimit(separation: number, massA: number, massB: number): number {
+/** Prograde P-type limit with a 10% margin outside the Holman-Wiegert boundary. */
+function circumbinaryLimit(separation: number, massA: number, massB: number, e: number): number {
   const mu = Math.max(0.1, Math.min(massA, massB) / (massA + massB));
-  return separation * (1.6 + 4.12 * mu - 5.09 * mu * mu) * 1.1;
+  return (
+    separation *
+    (1.6 + 5.1 * e - 2.22 * e * e + 4.12 * mu - 4.27 * mu * e - 5.09 * mu * mu + 4.61 * mu * mu * e * e) *
+    1.1
+  );
 }
 
 /**
- * Shared screening limits for the game's circular coplanar hierarchy, in metres.
+ * Shared screening limits for the game's coplanar stellar hierarchy, in metres.
  * Triple limits intersect inner/outer binary approximations; they are not an N-body stability proof.
  * A null range means no supported orbit, never permission to invent a fallback planet.
  */
@@ -51,11 +58,15 @@ export function getStableOrbitRange(
   }
   const inner = architecture.binarySeparation;
   const outer = architecture.outerSeparation;
-  if (!(inner > 0) || (c && !(outer > 0))) return null;
+  const innerE = b.orbit?.eccentricity ?? 0;
+  const outerE = c?.orbit?.eccentricity ?? 0;
+  if (!(inner > 0) || (c && !(outer > 0)) || innerE < 0 || innerE >= 1 || outerE < 0 || outerE >= 1) {
+    return null;
+  }
   const abMass = a.massKg + b.massKg;
   const innerEnvelope = Math.max(
-    (inner * b.massKg) / abMass + survivalRadius(a),
-    (inner * a.massKg) / abMass + survivalRadius(b)
+    (inner * (1 + innerE) * b.massKg) / abMass + survivalRadius(a),
+    (inner * (1 + innerE) * a.massKg) / abMass + survivalRadius(b)
   );
   let minRadius: number;
   let maxRadius = Infinity;
@@ -64,25 +75,25 @@ export function getStableOrbitRange(
     if (!star) return null;
     minRadius = survivalRadius(star);
     if (star.id === 'C' && c) {
-      maxRadius = circumstellarLimit(outer, c.massKg, abMass);
+      maxRadius = circumstellarLimit(outer, c.massKg, abMass, outerE);
     } else {
       const companion = star.id === 'A' ? b : a;
-      maxRadius = circumstellarLimit(inner, star.massKg, companion.massKg);
+      maxRadius = circumstellarLimit(inner, star.massKg, companion.massKg, innerE);
       if (c) {
         // The whole local orbit must fit inside the outer pair's inner stable region.
-        const hostExcursion = (inner * companion.massKg) / abMass;
-        maxRadius = Math.min(maxRadius, circumstellarLimit(outer, abMass, c.massKg) - hostExcursion);
+        const hostExcursion = (inner * (1 + innerE) * companion.massKg) / abMass;
+        maxRadius = Math.min(maxRadius, circumstellarLimit(outer, abMass, c.massKg, outerE) - hostExcursion);
       }
     }
   } else if (host.kind === 'barycentric' && c) {
     minRadius = Math.max(
-      circumbinaryLimit(outer, abMass, c.massKg),
-      (outer * c.massKg) / (abMass + c.massKg) + innerEnvelope,
-      (outer * abMass) / (abMass + c.massKg) + survivalRadius(c)
+      circumbinaryLimit(outer, abMass, c.massKg, outerE),
+      (outer * (1 + outerE) * c.massKg) / (abMass + c.massKg) + innerEnvelope,
+      (outer * (1 + outerE) * abMass) / (abMass + c.massKg) + survivalRadius(c)
     );
   } else {
-    minRadius = Math.max(circumbinaryLimit(inner, a.massKg, b.massKg), innerEnvelope);
-    if (c) maxRadius = circumstellarLimit(outer, abMass, c.massKg);
+    minRadius = Math.max(circumbinaryLimit(inner, a.massKg, b.massKg, innerE), innerEnvelope);
+    if (c) maxRadius = circumstellarLimit(outer, abMass, c.massKg, outerE);
   }
   return minRadius < maxRadius ? { minRadius, maxRadius } : null;
 }

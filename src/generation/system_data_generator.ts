@@ -908,8 +908,21 @@ export class SystemDataGenerator {
 
     // Detached orbits must clear expanded envelopes; white dwarfs retain widened post-giant binaries.
     if (stars.length > 1) {
+      const binaryEccentricity =
+        Math.pow(architecturePRNG.random(), 1.5) * (binarySeparation < 0.12 * 1.495978707e11 ? 0.08 : 0.35);
+      stars[1].orbit!.eccentricity = binaryEccentricity;
+      stars[1].orbit!.argumentOfPeriapsis = architecturePRNG.random(0, Math.PI * 2);
+      const outerEccentricity = stars[2] ? Math.pow(architecturePRNG.random(), 1.5) * 0.25 : 0;
+      if (stars[2]) {
+        stars[2].orbit!.eccentricity = outerEccentricity;
+        stars[2].orbit!.argumentOfPeriapsis = architecturePRNG.random(0, Math.PI * 2);
+      }
       const envelopeFloor = evolution?.stage === 'white-dwarf' ? 10 * 1.495978707e11 : 0;
-      binarySeparation = Math.max(binarySeparation, 4 * (stars[0].radiusM + stars[1].radiusM), envelopeFloor);
+      binarySeparation = Math.max(
+        binarySeparation,
+        (4 * (stars[0].radiusM + stars[1].radiusM)) / (1 - binaryEccentricity),
+        envelopeFloor / (1 - binaryEccentricity)
+      );
       outerSeparation = Math.max(outerSeparation, binarySeparation * 20);
       stars[1].orbit!.radius = binarySeparation;
       if (stars[2]) stars[2].orbit!.radius = outerSeparation;

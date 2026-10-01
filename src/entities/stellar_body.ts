@@ -10,9 +10,11 @@ export type PlanetOrbitKind = 'circumbinary' | 'circumstellar' | 'barycentric';
 
 export interface StellarOrbit {
   center: StellarOrbitCenter;
-  radius: number;
-  angle: number;
+  radius: number; // Barycentric semimajor axis in metres.
+  angle: number; // Mean anomaly, radians.
   periodSeconds: number;
+  eccentricity?: number;
+  argumentOfPeriapsis?: number;
 }
 
 export interface StellarBody {
