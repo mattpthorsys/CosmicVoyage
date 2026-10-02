@@ -13,6 +13,26 @@ function keyEvent(key: string, code: string): KeyboardEvent {
 }
 
 describe('InputManager', () => {
+  it('detects unbound fresh keys, ignores held repeats, and clears frame and session state', () => {
+    const input = new InputManager() as any;
+    input.isListening = true;
+    input._handleKeyDown(keyEvent('F9', 'F9'));
+    expect(input.wasAnyKeyJustPressed()).toBe(true);
+    expect(input.justPressedActions.size).toBe(0);
+    input.update();
+    expect(input.wasAnyKeyJustPressed()).toBe(false);
+    input._handleKeyDown(keyEvent('F9', 'F9'));
+    expect(input.wasAnyKeyJustPressed()).toBe(false);
+    input._handleKeyUp(keyEvent('F9', 'F9'));
+    input._handleKeyDown(keyEvent('F9', 'F9'));
+    expect(input.wasAnyKeyJustPressed()).toBe(true);
+    input.clearState();
+    expect(input.wasAnyKeyJustPressed()).toBe(false);
+    input._handleKeyDown(keyEvent('Escape', 'Escape'));
+    expect(input.wasAnyKeyJustPressed()).toBe(true);
+    expect(input.wasActionJustPressed('QUIT')).toBe(true);
+  });
+
   it('maps numpad diagonals by physical code when NumLock is off', () => {
     const input = new InputManager() as any;
     input.isListening = true;

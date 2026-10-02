@@ -14,6 +14,7 @@ export class InputManager {
   private activeActions: Set<string> = new Set();
   // Set of actions that became active *this frame* (cleared each update)
   public justPressedActions: Set<string> = new Set();
+  private keyJustPressed = false;
   private isListening: boolean = false;
   // Memoized mapping from key codes to action names for faster lookups
   private keyToActionMap: Map<string, string> = new Map();
@@ -95,6 +96,7 @@ export class InputManager {
     this.keysPressed.clear();
     this.activeActions.clear();
     this.justPressedActions.clear();
+    this.keyJustPressed = false;
   }
 
   /**
@@ -106,6 +108,7 @@ export class InputManager {
   update(): void {
     // Clear the 'just pressed' actions at the beginning of each frame update
     this.justPressedActions.clear();
+    this.keyJustPressed = false;
   }
 
   /**
@@ -127,6 +130,11 @@ export class InputManager {
     return this.justPressedActions.has(action);
   }
 
+  /** Detects a fresh physical key press, including keys without an action binding. */
+  wasAnyKeyJustPressed(): boolean {
+    return this.keyJustPressed;
+  }
+
   // --- Private Event Handlers ---
 
   /** Handles keydown events. Arrow function for correct 'this'. */
@@ -143,6 +151,7 @@ export class InputManager {
       return;
     }
     this.keysPressed.add(key);
+    this.keyJustPressed = true;
     logger.debug(`[InputManager] Keydown registered: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`);
 
     // --- Handle Modifiers Directly ---

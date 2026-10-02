@@ -147,6 +147,29 @@ Every active action should be discoverable in one of:
 - help reference;
 - contextual terminal message.
 
+### Reusable Terminal Reveal
+
+`src/core/terminal_text_reveal.ts` provides a presentation-only `TerminalTextReveal`
+timer and a pure `revealTerminalLines` helper. Keep one timer in the owning
+controller, call `start()` when opening, and advance it with real frame seconds
+even if the simulation is paused. Its default duration is 1.5 seconds; a different
+positive duration can be supplied to the constructor. Request a redraw only while
+`update()` reports a change.
+
+For dashboard modals, pass `dashboardReveal: reveal.progress` alongside the full
+`dashboard` content. `SceneRenderer` reveals only the visible page and draws the
+writing cursor. It measures the original text for layout, preserving the frame,
+scrollbar, fonts, and colours throughout the effect. Omit `dashboardReveal` for
+instant display. Other text surfaces can use `revealTerminalLines` directly with
+their styled lines, progress, and available column width; its cursor coordinates
+are relative to those lines.
+
+Use `InputManager.wasAnyKeyJustPressed()` to complete an active reveal, including
+unbound keys. Consume that key before handling normal modal controls so skipping
+does not also scroll, close, or trigger another instrument. Held keys and repeats
+must not skip it. Call `complete()` on close and do not restart on every scroll.
+The planetary dossier is the reference integration.
+
 ## Overlays
 
 Terminal overlay:

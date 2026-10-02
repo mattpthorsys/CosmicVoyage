@@ -6,6 +6,7 @@ import { CellFont, ScreenBuffer } from '../../rendering/screen_buffer';
 import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { Player } from '../../core/player';
 import type { OrbitStellarSource } from '../../core/orbit_ui';
+import type { TextModalTableModel } from '../../core/text_ui';
 import { Planet } from '../../entities/planet';
 import { Starbase } from '../../entities/starbase';
 import { SolarSystem } from '../../entities/solar_system';
@@ -1045,6 +1046,72 @@ describe('SceneRenderer visual regressions', () => {
     ]);
     expect(drawCalls.some((call) => call.char === '█')).toBe(true);
     expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [48, 20],
+    [76, 24],
+    [120, 42],
+  ])('writes dashboard text with a cursor and stable frame in a %sx%s viewport', (cols, rows) => {
+    const model: TextModalTableModel = {
+      title: 'READOUT',
+      subtitle: 'World',
+      columns: [],
+      widths: [],
+      rows: [],
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 2,
+      dashboard: [
+        {
+          segments: [
+            { text: 'NAV ', tone: 'cyan', font: 'thick' },
+            { text: 'READY', tone: 'green' },
+          ],
+        },
+        { segments: [{ text: 'FLUX 1361', tone: 'amber' }] },
+      ],
+      footer: ['ESC return to orbit'],
+    };
+    const frames = [0, 0.3, 1].map((dashboardReveal) => {
+      const { buffer, drawCalls } = createMockScreenBuffer(cols, rows);
+      createSceneRenderer(buffer).drawTextModalTable({ ...model, dashboardReveal });
+      expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
+      expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < rows)).toBe(
+        true
+      );
+      return drawCalls;
+    });
+    for (const frame of frames) {
+      const text = renderTextRows(frame).join('\n');
+      expect(text).toContain('READOUT');
+      expect(text).toContain('ESC return to orbit');
+      expect(frame.find((call) => call.char === '┌')).toMatchObject(
+        frames[0].find((call) => call.char === '┌')!
+      );
+    }
+    const startCursor = frames[0].find(
+      (call) => call.char === CONFIG.TRM_CURSOR_CHAR && call.fg === TEXT_PALETTE.greenBright
+    )!;
+    const writingCursor = frames[1].find(
+      (call) => call.char === CONFIG.TRM_CURSOR_CHAR && call.fg === TEXT_PALETTE.greenBright
+    )!;
+    expect(startCursor).toBeDefined();
+    expect(writingCursor).toMatchObject({ x: startCursor.x + 6, y: startCursor.y });
+    const partial = renderTextRows(frames[1]).join('\n');
+    expect(partial).toContain('NAV RE');
+    expect(partial).not.toContain('READY');
+    expect(partial).not.toContain('FLUX 1361');
+    const complete = renderTextRows(frames[2]).join('\n');
+    expect(complete).toContain('NAV READY');
+    expect(complete).toContain('FLUX 1361');
+    expect(
+      frames[2].some((call) => call.char === CONFIG.TRM_CURSOR_CHAR && call.fg === TEXT_PALETTE.greenBright)
+    ).toBe(false);
+    expect(fontsForText(frames[2], 'NAV READY')).toEqual([
+      ...Array(4).fill('thick'),
+      ...Array(5).fill('thin'),
+    ]);
   });
 
   it('renders ordinary modal table cells with row and cell tones', () => {

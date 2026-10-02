@@ -90,7 +90,7 @@ export class OrbitModeController {
 
   /** Handles orbital selection and landing keys, returning whether input was consumed. */
   handleInput(
-    input: Pick<InputManager, 'wasActionJustPressed' | 'isActionActive'>,
+    input: Pick<InputManager, 'wasActionJustPressed' | 'isActionActive' | 'wasAnyKeyJustPressed'>,
     context: OrbitInteractionContext
   ): boolean {
     const { parentPlanet } = context;
@@ -98,6 +98,11 @@ export class OrbitModeController {
     const selectedBody = this.getSelectedBody(parentPlanet);
     const mapSize = getPlanetMapSize(selectedBody);
     if (this.dossier.isOpen) {
+      if (this.dossier.reveal.isActive && input.wasAnyKeyJustPressed()) {
+        this.dossier.reveal.complete();
+        context.invalidate();
+        return true;
+      }
       if (input.wasActionJustPressed('QUIT') || input.wasActionJustPressed('ORBIT_DOSSIER')) {
         this.dossier.close();
         context.invalidate();

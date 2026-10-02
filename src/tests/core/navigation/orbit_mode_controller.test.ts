@@ -39,6 +39,7 @@ function input(pressed: string[] = [], held: string[] = []) {
   return {
     wasActionJustPressed: (action: string) => pressed.includes(action),
     isActionActive: (action: string) => held.includes(action),
+    wasAnyKeyJustPressed: () => pressed.length > 0,
   };
 }
 
@@ -118,6 +119,7 @@ describe('orbital interaction controller', () => {
     const oldY = orbit.landingY;
     expect(orbit.handleInput(input(['ORBIT_DOSSIER']), context)).toBe(true);
     expect(orbit.dossier.isOpen).toBe(true);
+    orbit.dossier.reveal.update(1.5);
     orbit.handleInput(input(['PAGE_DOWN']), context);
     const afterPage = orbit.dossier.viewOffset;
     expect(afterPage).toBeGreaterThan(0);
@@ -135,6 +137,59 @@ describe('orbital interaction controller', () => {
     expect(context.leave).not.toHaveBeenCalled();
     orbit.reset();
     expect(orbit.dossier.isOpen).toBe(false);
+  });
+
+  it.each(['QUIT', 'ORBIT_DOSSIER', 'PAGE_DOWN', 'GALAXY_MAP', 'ENTER_SYSTEM', 'UNBOUND'])(
+    'consumes %s to finish writing without closing, scrolling, or landing',
+    (key) => {
+      const parent = createBody('Fast terminal');
+      const orbit = new OrbitModeController();
+      const { context } = createContext(parent);
+      orbit.handleInput(input(['ORBIT_DOSSIER']), context);
+      expect(orbit.dossier.reveal.progress).toBe(0);
+      expect(orbit.createDossier(parent, [], 110, 40).dashboardReveal).toBe(0);
+      orbit.handleInput(input([], ['MOVE_DOWN']), context);
+      expect(orbit.dossier.reveal.progress).toBe(0);
+      context.invalidate.mockClear();
+      orbit.handleInput(input([key]), context);
+      expect(orbit.dossier.isOpen).toBe(true);
+      expect(orbit.dossier.reveal.progress).toBe(1);
+      expect(orbit.dossier.viewOffset).toBe(0);
+      expect(context.land).not.toHaveBeenCalled();
+      expect(context.leave).not.toHaveBeenCalled();
+      expect(context.invalidate).toHaveBeenCalledOnce();
+      orbit.handleInput(input(['QUIT']), context);
+      expect(orbit.dossier.isOpen).toBe(false);
+      orbit.handleInput(input(['ORBIT_DOSSIER']), context);
+      expect(orbit.dossier.reveal.progress).toBe(0);
+      orbit.reset();
+      expect(orbit.dossier.reveal.isActive).toBe(false);
+    }
+  );
+
+  it('gives the dossier priority over other global instrument shortcuts', () => {
+    const parent = createBody('Modal priority');
+    const orbit = new OrbitModeController();
+    orbit.dossier.open();
+    const galaxy = vi.fn(() => true);
+    const game = Object.assign(Object.create(Game.prototype), {
+      stateManager: { state: 'orbit', currentPlanet: parent, currentOrbitReferencePlanet: parent },
+      _orbitModeState: orbit,
+      inputManager: input(['GALAXY_MAP']),
+      renderer: { getGridCols: () => 110, getGridRows: () => 40 },
+      _handleJettisonConfirmationInput: () => false,
+      _handleSurfaceExtractionSelectorInput: () => false,
+      _handleQuantitySelectorInput: () => false,
+      _handlePopupInput: () => false,
+      _handleGalaxyMapInput: galaxy,
+      _publishStatusUpdate: vi.fn(),
+      forceFullRender: false,
+    }) as { _processInput: () => void; forceFullRender: boolean };
+    game._processInput();
+    expect(orbit.dossier.reveal.progress).toBe(1);
+    expect(orbit.dossier.isOpen).toBe(true);
+    expect(galaxy).not.toHaveBeenCalled();
+    expect(game.forceFullRender).toBe(true);
   });
 
   it('cancels landing before leaving orbit and refuses giant surface landings', () => {
@@ -271,8 +326,26 @@ describe('orbital interaction controller', () => {
       getCurrentViewScale: () => 1,
       _modeDispatcher: { dispatch },
       _publishStatusUpdate: vi.fn(),
-    }) as { _update: (delta: number) => void; gameClockElapsedSeconds: number };
-    game._update(1);
+      forceFullRender: false,
+      currentVisualDeltaSeconds: 0.75,
+    }) as {
+      _update: (delta: number) => void;
+      gameClockElapsedSeconds: number;
+      forceFullRender: boolean;
+    };
+    game._update(0.1);
+    expect(orbit.dossier.reveal.progress).toBe(0.5);
+    expect(orbit.elapsedSeconds).toBe(0);
+    expect(game.forceFullRender).toBe(true);
+    expect(game.gameClockElapsedSeconds).toBe(100);
+    expect(dispatch).not.toHaveBeenCalled();
+    game.forceFullRender = false;
+    game._update(0.1);
+    expect(orbit.dossier.reveal.progress).toBe(1);
+    expect(game.forceFullRender).toBe(true);
+    game.forceFullRender = false;
+    game._update(0.1);
+    expect(game.forceFullRender).toBe(false);
     expect(game.gameClockElapsedSeconds).toBe(100);
     expect(dispatch).not.toHaveBeenCalled();
     orbit.dossier.close();

@@ -4,6 +4,7 @@ import { isBreathableTerraformingProfile } from '../entities/habitability';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { formatDiscoveryLevel, hasDiscoveryLevel } from './discovery';
 import { getOrbitReferenceLabel, type OrbitStellarSource } from './orbit_ui';
+import { TerminalTextReveal } from './terminal_text_reveal';
 import {
   getDashboardVisibleRows,
   type TextDashboardLine,
@@ -18,17 +19,20 @@ const FOOTER = ['UP/DN scroll  PGUP/DN page', 'ESC return to orbit'];
 export class OrbitDossier {
   isOpen = false;
   viewOffset = 0;
+  readonly reveal = new TerminalTextReveal();
 
   /** Opens at the first line for the currently selected body. */
   open(): void {
     this.isOpen = true;
     this.viewOffset = 0;
+    this.reveal.start();
   }
 
   /** Restores normal orbital controls. */
   close(): void {
     this.isOpen = false;
     this.viewOffset = 0;
+    this.reveal.complete();
   }
 
   /** Moves by lines or one viewport, without allowing an empty final page. */
@@ -60,6 +64,7 @@ export class OrbitDossier {
       viewOffset: this.viewOffset,
       visibleRowCount: visible,
       dashboard,
+      dashboardReveal: this.reveal.progress,
     };
   }
 }

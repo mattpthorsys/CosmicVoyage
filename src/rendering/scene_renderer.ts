@@ -52,6 +52,7 @@ import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scal
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TEXT_PALETTE } from './text_palette';
 import { drawShortcutText } from './shortcut_text';
+import { revealTerminalLines } from '../core/terminal_text_reveal';
 import { HyperspaceTileProvider } from './hyperspace_tile_provider';
 import { PlayerViewSnapshot } from './scene_view_model';
 import { GiantAtmosphereRenderer, GiantAtmosphereSample } from './scenes/giant_atmosphere_renderer';
@@ -1461,9 +1462,24 @@ export class SceneRenderer {
     }
 
     const offset = Math.max(0, Math.min(model.viewOffset, model.dashboard!.length - visibleRows));
-    model.dashboard!.slice(offset, offset + visibleRows).forEach((line, index) => {
+    const frame = revealTerminalLines(
+      model.dashboard!.slice(offset, offset + visibleRows),
+      model.dashboardReveal ?? 1,
+      panelWidth - 8
+    );
+    frame.lines.forEach((line, index) => {
       this.drawDashboardLine(line, contentX, contentY + index, panelWidth - 8);
     });
+    if (frame.cursor) {
+      this.screenBuffer.drawChar(
+        CONFIG.TRM_CURSOR_CHAR,
+        contentX + frame.cursor.column,
+        contentY + frame.cursor.row,
+        TEXT_PALETTE.greenBright,
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thick'
+      );
+    }
     if (model.dashboard!.length > visibleRows) {
       this.drawTextScrollbar(panelX + panelWidth - 3, contentY, visibleRows, model.dashboard!.length, offset);
     }

@@ -2639,6 +2639,12 @@ export class Game {
     if (this._handlePopupInput()) {
       return; // Input consumed by popup
     }
+    // The dossier owns all keys, including shortcuts for other instruments.
+    if (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) {
+      this._handleOrbitInput();
+      this._publishStatusUpdate();
+      return;
+    }
     if (this._handleGalaxyMapInput()) {
       this._publishStatusUpdate();
       return;
@@ -3378,6 +3384,12 @@ export class Game {
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
     let blockGameUpdates = this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen;
+    if (
+      blockGameUpdates &&
+      this.orbitModeState.dossier.reveal.update(this.currentVisualDeltaSeconds || deltaTime)
+    ) {
+      this.forceFullRender = true;
+    }
     if (!this.isGameClockPaused()) {
       this.gameClockElapsedSeconds += deltaTime * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
     }
