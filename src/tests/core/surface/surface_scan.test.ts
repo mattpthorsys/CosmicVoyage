@@ -14,6 +14,10 @@ function createSurfaceScanHarness(): any {
     type: 'Rock',
     gravity: 0.91,
     atmosphere: { density: 'Thin', pressure: 0.4, composition: { Nitrogen: 80 } },
+    /** Mirrors the natural-environment fallback used by Planet. */
+    get effectiveAtmosphere() {
+      return this.atmosphere;
+    },
     discovery: {
       level: 'surveyed',
       confidence: 100,
@@ -46,6 +50,22 @@ function createSurfaceScanHarness(): any {
 }
 
 describe('surface scan cursor', () => {
+  it('uses managed air rather than the original atmosphere in surface readouts', () => {
+    const game = createSurfaceScanHarness();
+    const planet = game.stateManager.currentPlanet;
+    planet.atmosphere = { density: 'None', pressure: 0, composition: { None: 100 } };
+    Object.defineProperty(planet, 'effectiveAtmosphere', {
+      value: { density: 'Earth-like', pressure: 1, composition: { Oxygen: 21, Nitrogen: 79 } },
+    });
+    game.surfaceScanCursor = { dx: 0, dy: 0 };
+    game.confirmSurfaceCursorScan();
+    expect(game.surfaceNotifications.join('\n')).toContain('Earth-like atmosphere');
+    expect(game.surfaceNotifications.join('\n')).not.toContain('None atmosphere');
+    const description = game.describePlanetSurfaceForDisembark(planet).join('\n');
+    expect(description).toContain('nitrogen-dominated earth-like atmosphere');
+    expect(description).not.toContain('sky is black');
+  });
+
   it('starts a cursor scan instead of scanning the whole planet', () => {
     const game = createSurfaceScanHarness();
 

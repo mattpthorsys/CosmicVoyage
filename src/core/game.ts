@@ -4543,7 +4543,7 @@ export class Game {
         : `Local return: ${elementName}. Altitude ${Math.round(altitude * 100)}%.`
     );
     this.addSurfaceNotification(
-      `Temp ${planet.getCurrentTemperature()} K. Gravity ${planet.gravity.toFixed(2)}g. ${planet.atmosphere.density} atmosphere.`
+      `Temp ${planet.getCurrentTemperature()} K. Gravity ${planet.gravity.toFixed(2)}g. ${planet.effectiveAtmosphere.density} atmosphere.`
     );
     const resolution = this.scanService.resolvePlanet(planet, 'mapped', 100, 'surface-map');
     this.completeMissionsForDiscovery(planet, resolution.current.level);
@@ -4577,11 +4577,15 @@ export class Game {
           : planet.type === 'Lunar'
             ? 'powder-grey regolith, crater rims, and hard black horizons'
             : 'rocky rises, low basins, and exposed mineral seams';
-    const primaryGas = Object.keys(planet.atmosphere.composition)[0] ?? 'thin';
+    const atmosphere = planet.effectiveAtmosphere;
+    const primaryGas =
+      Object.entries(atmosphere.composition)
+        .filter(([, percentage]) => percentage > 0)
+        .sort((left, right) => right[1] - left[1])[0]?.[0] ?? 'mixed';
     const sky =
-      planet.atmosphere.density === 'None'
+      atmosphere.density === 'None'
         ? 'The sky is black and sharp; shadows fall without haze.'
-        : `The ${primaryGas.toLowerCase()} air gives the horizon a thin ${planet.atmosphere.density.toLowerCase()} veil.`;
+        : `The ${primaryGas.toLowerCase()}-dominated ${atmosphere.density.toLowerCase()} atmosphere softens the horizon.`;
     return [
       `${planet.name}: ${terrain}.`,
       sky,
@@ -5544,7 +5548,7 @@ export class Game {
           '006',
           'PLANET',
           formatDiscoveryLevel(planet.discovery.level),
-          `${planet.name} | ${planet.getRotationPeriodLabel()} rotation | ${planet.surfaceTempMin}-${planet.surfaceTempMax} K surface range.`,
+          `${planet.name} | ${planet.getRotationPeriodLabel()} rotation | ${planet.effectiveSurfaceTempMin}-${planet.effectiveSurfaceTempMax} K surface range.`,
           'Current landed body record. Full mineral details require a surface scan.'
         )
       );

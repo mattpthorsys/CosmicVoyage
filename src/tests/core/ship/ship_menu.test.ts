@@ -500,6 +500,24 @@ describe('ship menu', () => {
     expect(log.footer[0]).toContain('PageUp/PageDown');
   });
 
+  it('records the managed temperature range rather than the pre-terraforming climate', () => {
+    const game = createShipMenuHarness('planet');
+    game.shipMenuSection = 'log';
+    game.stateManager.currentPlanet = {
+      name: 'Managed world',
+      surfaceTempMin: 180,
+      surfaceTempMax: 225,
+      effectiveSurfaceTempMin: 255,
+      effectiveSurfaceTempMax: 318,
+      discovery: { level: 'surveyed' },
+      getRotationPeriodLabel: () => '24 hours',
+    };
+    const log = game.createShipMenuModel();
+    const entry = log.rows.find((row: any) => row.cells[1] === 'PLANET').cells[3];
+    expect(entry).toContain('255-318 K surface range');
+    expect(entry).not.toContain('180-225');
+  });
+
   it('keeps ship menu out of the primary dock and orbit action path', () => {
     const game = createShipMenuHarness();
 
