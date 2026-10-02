@@ -9,6 +9,36 @@ import { MineralRichness } from '../../../constants';
 import { PRNG } from '../../../utils/prng';
 
 describe('surface liquid overlays', () => {
+  it('preserves cratered terrain while managed air and oceans replace the natural environment', () => {
+    const natural = { density: 'Trace', pressure: 0.001, composition: { 'Carbon Dioxide': 100 } };
+    const managed = { density: 'Earth-like', pressure: 1, composition: { Nitrogen: 79, Oxygen: 21 } };
+    const request = {
+      planetType: 'Rock',
+      mapSeed: 'managed-geological-continuity',
+      prngSeed: 'managed-geological-continuity',
+      atmosphere: natural,
+      terrainAtmosphere: natural,
+      planetAbundance: {},
+      profile: { surfaceTemp: 288, hydrosphere: 'Dry' },
+    };
+    const before = generateSurfaceDataFromRequest(request);
+    const after = generateSurfaceDataFromRequest({
+      ...request,
+      atmosphere: managed,
+      profile: {
+        surfaceTemp: 288,
+        hydrosphere: '63% managed surface water',
+        managedBiosphere: 'complete',
+        managedWaterFraction: 0.63,
+      },
+    });
+    expect(before.heightmap).not.toBeNull();
+    expect(after.heightmap).toEqual(before.heightmap);
+    expect(before.liquidOverlay).toBeNull();
+    expect(after.liquidOverlay?.coverage).toBe(0.63);
+    expect(after.liquidOverlay?.coastalVegetation).not.toBeNull();
+  });
+
   it('creates sea levels from hydrosphere coverage and liquid chemistry', () => {
     const heightmap = Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => x + y));
     const overlay = createSurfaceLiquidOverlay({
@@ -30,7 +60,8 @@ describe('surface liquid overlays', () => {
     const heightmap = Array.from({ length: 10 }, (_, y) => Array.from({ length: 10 }, (_, x) => x + y * 10));
     const overlay = createSurfaceLiquidOverlay({
       planetType: 'Rock',
-      hydrosphere: '63% managed surface water',
+      hydrosphere: 'Managed reservoir inventory',
+      managedWaterFraction: 0.63,
       surfaceTemp: 288,
       atmosphere: { density: 'Earth-like', pressure: 1, composition: { Nitrogen: 78, Oxygen: 21 } },
       heightmap,
@@ -43,6 +74,43 @@ describe('surface liquid overlays', () => {
     expect(getCoastalVegetationColour(overlay!.seaLevel + 1, overlay)).toBe('#315A38');
     expect(getCoastalVegetationColour(overlay!.seaLevel, overlay)).toBeNull();
     expect(getCoastalVegetationColour(overlay!.seaLevel + 17, overlay)).toBeNull();
+  });
+
+  it.each([
+    [260, 1],
+    [288, 0.001],
+    [400, 1],
+  ])('does not paint liquid managed oceans at %s K and %s bar', (surfaceTemp, pressure) => {
+    const overlay = createSurfaceLiquidOverlay({
+      planetType: 'Rock',
+      hydrosphere: '63% managed surface water',
+      managedWaterFraction: 0.63,
+      surfaceTemp,
+      atmosphere: { density: 'Earth-like', pressure, composition: { Nitrogen: 79, Oxygen: 21 } },
+      heightmap: [
+        [1, 2],
+        [3, 4],
+      ],
+      managedBiosphere: 'complete',
+    });
+    expect(overlay).toBeNull();
+  });
+
+  it('keeps a protected partial biosphere from painting global coastal vegetation', () => {
+    const overlay = createSurfaceLiquidOverlay({
+      planetType: 'Rock',
+      hydrosphere: '31% managed surface water',
+      managedWaterFraction: 0.31,
+      surfaceTemp: 288,
+      atmosphere: { density: 'Earth-like', pressure: 0.6, composition: { Nitrogen: 88, Oxygen: 12 } },
+      heightmap: [
+        [1, 2],
+        [3, 4],
+      ],
+      managedBiosphere: 'partial',
+    });
+    expect(overlay?.kind).toBe('water');
+    expect(overlay?.coastalVegetation).toBeNull();
   });
 
   it('masks mineral deposits below visible liquid surfaces', () => {

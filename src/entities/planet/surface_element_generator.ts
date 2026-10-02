@@ -14,6 +14,7 @@ export interface SurfaceElementGenerationProfile {
   surfaceTemp?: number;
   hydrosphere?: string;
   managedBiosphere?: 'partial' | 'complete';
+  managedWaterFraction?: number;
 }
 
 const VOLATILE_KEYS = new Set(['DEUTERIUM', 'WATER_ICE', 'AMMONIA_ICE', 'METHANE_ICE', 'HYDROGEN', 'HELIUM']);

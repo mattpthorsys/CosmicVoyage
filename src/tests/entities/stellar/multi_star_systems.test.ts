@@ -15,6 +15,8 @@ import {
 } from '../../../entities/orbital_stability';
 import { PRNG } from '../../../utils/prng';
 import { CONFIG } from '../../../config';
+import { getTerraformingStellarDistances } from '../../../entities/terraforming_irradiance';
+import type { OrbitHost } from '../../../entities/stellar_body';
 
 /** Builds unequal coeval stars so mass-weighted geometry cannot pass by symmetry alone. */
 function star(id: StellarBody['id'], starType: string): StellarBody {
@@ -86,6 +88,60 @@ function planetaryProfiles(value: SolarSystem) {
 }
 
 describe('multi-star physical and generation contracts', () => {
+  it.each(['binary', 'triple'] as const)(
+    'encloses actual eccentric %s illumination distances for every planetary host',
+    (kind) => {
+      const architecture = triple();
+      architecture.kind = kind;
+      architecture.stars[1].orbit!.eccentricity = 0.32;
+      architecture.stars[1].orbit!.argumentOfPeriapsis = 0.7;
+      architecture.stars[2].orbit!.eccentricity = 0.22;
+      architecture.stars[2].orbit!.argumentOfPeriapsis = 1.4;
+      if (kind === 'binary') architecture.stars.pop();
+      const value = system(architecture, `climate-bounds-${kind}`);
+      const hosts: OrbitHost[] = [
+        { kind: 'circumstellar', starId: 'A' },
+        { kind: 'circumstellar', starId: 'B' },
+        { kind: 'circumbinary' },
+        { kind: 'barycentric' },
+      ];
+      if (kind === 'triple') hosts.push({ kind: 'circumstellar', starId: 'C' });
+      const screens = hosts.map((host) => {
+        const radiusAu = host.kind === 'circumstellar' ? 0.1 : host.kind === 'circumbinary' ? 1 : 100;
+        return {
+          host,
+          radiusAu,
+          bounds: getTerraformingStellarDistances(value.architecture, host, radiusAu * AU_IN_METERS),
+        };
+      });
+      for (let innerPhase = 0; innerPhase < 8; innerPhase++) {
+        for (let outerPhase = 0; outerPhase < 8; outerPhase++) {
+          value.stars[0].orbit!.angle = (innerPhase * Math.PI) / 4;
+          value.stars[1].orbit!.angle = (innerPhase * Math.PI) / 4;
+          if (kind === 'triple') value.stars[2].orbit!.angle = (outerPhase * Math.PI) / 4;
+          value.updateOrbits(0);
+          for (const { host, radiusAu, bounds } of screens) {
+            expect(bounds.length).toBe(value.stars.length);
+            const centre = value.getOrbitCenter(host);
+            for (let planetPhase = 0; planetPhase < 12; planetPhase++) {
+              const angle = (planetPhase * Math.PI) / 6;
+              const x = centre.x / AU_IN_METERS + Math.cos(angle) * radiusAu;
+              const y = centre.y / AU_IN_METERS + Math.sin(angle) * radiusAu;
+              for (const bound of bounds) {
+                const distanceAu = Math.hypot(
+                  x - bound.star.systemX / AU_IN_METERS,
+                  y - bound.star.systemY / AU_IN_METERS
+                );
+                expect(distanceAu).toBeGreaterThanOrEqual(bound.minDistanceM / AU_IN_METERS - 1e-9);
+                expect(distanceAu).toBeLessThanOrEqual(bound.maxDistanceM / AU_IN_METERS + 1e-9);
+              }
+            }
+          }
+        }
+      }
+    }
+  );
+
   it('never mutates cached descriptors or another live system and regenerates repeatably', () => {
     const blueprint = triple();
     const original = structuredClone(blueprint);

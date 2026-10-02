@@ -1,5 +1,6 @@
 import type { Atmosphere } from '../planet';
 import { CONFIG } from '../../config';
+import { saturationPressureBar } from './atmosphere_physics';
 
 export interface SurfaceLiquidOverlay {
   kind: 'water' | 'brine' | 'hycean' | 'acid' | 'methane' | 'nitrogen' | 'ammonia';
@@ -24,13 +25,20 @@ export function createSurfaceLiquidOverlay(args: {
   atmosphere: Atmosphere;
   heightmap: number[][];
   managedBiosphere?: 'partial' | 'complete';
+  managedWaterFraction?: number;
 }): SurfaceLiquidOverlay | null {
-  const coverage = getLiquidCoverage(args.planetType, args.hydrosphere, args.surfaceTemp, args.atmosphere);
+  const coverage = getLiquidCoverage(
+    args.planetType,
+    args.hydrosphere,
+    args.surfaceTemp,
+    args.atmosphere,
+    args.managedWaterFraction
+  );
   if (coverage <= 0 || args.heightmap.length === 0) return null;
   const seaLevel = getSeaLevelForCoverage(args.heightmap, coverage);
   const kind = getLiquidKind(args.planetType, args.hydrosphere, args.surfaceTemp);
   const colours = getLiquidColours(kind);
-  const supportsCoastalVegetation = kind === 'water' && Boolean(args.managedBiosphere);
+  const supportsCoastalVegetation = kind === 'water' && args.managedBiosphere === 'complete';
   const vegetationBand = args.managedBiosphere === 'complete' ? 16 : 10;
   return {
     kind,
@@ -48,6 +56,28 @@ export function createSurfaceLiquidOverlay(args: {
         }
       : null,
   };
+}
+
+/** Screens bulk managed water for freezing and boiling at the surface's total pressure. */
+export function getManagedSurfaceWaterPhase(
+  temperatureK: number,
+  pressureBar: number
+): 'ice' | 'liquid' | 'vapor' {
+  if (
+    !Number.isFinite(temperatureK) ||
+    !Number.isFinite(pressureBar) ||
+    temperatureK <= 0 ||
+    pressureBar <= 0
+  )
+    return 'vapor';
+  if (temperatureK < 273.15) return 'ice';
+  if (
+    pressureBar < 0.0061166 ||
+    temperatureK >= 647.1 ||
+    saturationPressureBar('Water Vapor', temperatureK) > pressureBar
+  )
+    return 'vapor';
+  return 'liquid';
 }
 
 /** Returns whether liquid covered. */
@@ -71,11 +101,16 @@ function getLiquidCoverage(
   planetType: string,
   hydrosphere: string,
   surfaceTemp: number,
-  atmosphere: Atmosphere
+  atmosphere: Atmosphere,
+  managedWaterFraction?: number
 ): number {
   const hydro = hydrosphere.toLowerCase();
   const managedWater = hydro.match(/([0-9]+(?:\.[0-9]+)?)% managed surface water/);
-  if (managedWater) return Math.max(0, Math.min(0.96, Number(managedWater[1]) / 100));
+  if (managedWaterFraction !== undefined || managedWater) {
+    if (getManagedSurfaceWaterPhase(surfaceTemp, atmosphere.pressure) !== 'liquid') return 0;
+    const fraction = managedWaterFraction ?? Number(managedWater![1]) / 100;
+    return Number.isFinite(fraction) ? Math.max(0, Math.min(0.96, fraction)) : 0;
+  }
   if (hydro.includes('desiccated') || hydro.includes('dry') || hydro.includes('no stable surface ocean'))
     return 0;
   if (hydro.includes('global ice shell') || hydro.includes('global ice sheet')) return 0;

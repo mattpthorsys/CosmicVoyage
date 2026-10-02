@@ -23,6 +23,7 @@ export interface SurfaceGenerationRequest {
   mapSeed: string;
   prngSeed: string;
   atmosphere: Atmosphere;
+  terrainAtmosphere?: Atmosphere;
   planetAbundance: Record<string, number>;
   profile?: SurfaceElementGenerationProfile;
 }
@@ -35,7 +36,8 @@ export function generateSurfaceDataFromRequest(request: SurfaceGenerationRequest
     new PRNG(request.prngSeed),
     request.atmosphere,
     request.planetAbundance,
-    request.profile ?? {}
+    request.profile ?? {},
+    request.terrainAtmosphere ?? request.atmosphere
   );
 }
 
@@ -79,7 +81,8 @@ function generateSurfaceDataInternal(
   prng: PRNG,
   atmosphere: Atmosphere,
   planetAbundance: Record<string, number>,
-  profile: SurfaceElementGenerationProfile = {}
+  profile: SurfaceElementGenerationProfile = {},
+  terrainAtmosphere: Atmosphere = atmosphere
 ): SurfaceData {
   logger.info(`[SurfaceGen:${planetType}] Generating surface data...`);
   let heightmap: number[][] | null = null;
@@ -101,7 +104,7 @@ function generateSurfaceDataInternal(
   }
   // --- Handle Solid Planets (Heightmap, Colors, Element Map) ---
   else {
-    heightmap = generateHeightmap(mapSeed, planetType, atmosphere);
+    heightmap = generateHeightmap(mapSeed, planetType, terrainAtmosphere);
 
     if (heightmap) {
       liquidOverlay = createSurfaceLiquidOverlay({
@@ -111,6 +114,7 @@ function generateSurfaceDataInternal(
         atmosphere,
         heightmap,
         managedBiosphere: profile.managedBiosphere,
+        managedWaterFraction: profile.managedWaterFraction,
       });
       materialMap = createSurfaceMaterialMap(planetType, mapSeed, heightmap, profile.surfaceTemp);
 

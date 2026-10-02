@@ -10,7 +10,9 @@ import {
 } from '../../../entities/stellar_body';
 import {
   assessStellarHost,
+  assessPlanetHabitability,
   calculateHabitableZone,
+  createTerraformingProfile,
   isBreathableTerraformingProfile,
   isInsideHabitableFluxZone,
 } from '../../../entities/habitability';
@@ -18,6 +20,29 @@ import { SolarSystem } from '../../../entities/solar_system';
 import { SystemDataGenerator, SystemMapProperties } from '../../../generation/system_data_generator';
 import { PRNG } from '../../../utils/prng';
 import { sufficientlySeparated } from '../../../entities/satellite_physics';
+import { Planet } from '../../../entities/planet';
+import { saturationPressureBar } from '../../../entities/planet/atmosphere_physics';
+import { buildOrbitDossierLines } from '../../../core/orbit_dossier';
+
+/** Builds a terrestrial fixture to isolate suitability from procedural characteristic generation. */
+function createTerrestrialFixture(
+  orbitAu = calculateHabitableZone(createSingleStarArchitecture('G2V', 4.6))!.preferredAu
+): Planet {
+  return Object.assign(Object.create(Planet.prototype), {
+    type: 'Rock',
+    orbitHost: { kind: 'circumstellar', starId: 'A' },
+    orbitDistance: orbitAu * AU_IN_METERS,
+    systemX: orbitAu * AU_IN_METERS,
+    systemY: 0,
+    gravity: 1,
+    escapeVelocity: 11186,
+    surfaceTemp: 288,
+    tidallyLocked: false,
+    axialTilt: 0.41,
+    magneticFieldStrength: 30,
+    hydrosphere: 'Small seas',
+  }) as Planet;
+}
 
 /** Creates a single-star architecture for isolated host and HZ tests. */
 function createSingleStarArchitecture(starType: string, ageGyr: number): StellarArchitecture {
@@ -67,6 +92,210 @@ function scaleReferenceCells(cells: number): number {
 }
 
 describe('habitability and human settlement', () => {
+  it('keeps generated projects physically suitable and honestly reports their managed climate', () => {
+    for (const [starType, ageGyr] of [
+      ['F5V', 1.5],
+      ['G2V', 4.6],
+      ['G8V', 4.8],
+      ['K2V', 5.2],
+      ['K5V', 6],
+      ['M1V', 5],
+    ] as const) {
+      for (const stage of ['partial', 'complete'] as const) {
+        for (let seed = 0; seed < 4; seed++) {
+          const architecture = createSingleStarArchitecture(starType, ageGyr);
+          const system = new SolarSystem(
+            {
+              exists: true,
+              name: `Settlement ${starType} ${stage} ${seed}`,
+              starType,
+              ageGyr,
+              metallicityFeH: 0,
+              architecture,
+              objectKind: 'stellar',
+              hasStarbase: stage === 'complete',
+              stationKind: stage === 'complete' ? 'starbase' : null,
+              settlementStage: stage,
+            },
+            seed,
+            0,
+            new PRNG(`settlement-population-${starType}-${stage}-${seed}`)
+          );
+          const host = assessStellarHost(architecture);
+          const eligible =
+            stage === 'complete' ? host.eligibleForCompleteTerraforming : host.eligibleForPartialTerraforming;
+          if (!eligible) {
+            expect(system.colonyWorld).toBeNull();
+            expect(system.starbase).toBeNull();
+            expect(system.settlementStage).toBe('none');
+            continue;
+          }
+          const colony = system.colonyWorld;
+          expect(colony, system.name).not.toBeNull();
+          const assessment = assessPlanetHabitability(colony!, system.architecture);
+          expect(assessment.stableOrbit).toBe(true);
+          expect(
+            stage === 'complete'
+              ? assessment.viableForCompleteTerraforming
+              : assessment.viableForPartialTerraforming
+          ).toBe(true);
+          const profile = colony!.terraforming!;
+          expect(profile.stage).toBe(stage);
+          expect(isBreathableTerraformingProfile(profile)).toBe(stage === 'complete');
+          expect(profile.climate.minStellarFluxWm2).toBeCloseTo(assessment.minStellarFluxWm2, 8);
+          expect(profile.climate.maxStellarFluxWm2).toBeCloseTo(assessment.maxStellarFluxWm2, 8);
+          expect(system.starbase?.kind ?? null).toBe(stage === 'complete' ? 'starbase' : null);
+          const lines = buildOrbitDossierLines(colony!, colony!, [], 30);
+          expect(
+            lines.every((line) => line.segments.reduce((sum, segment) => sum + segment.text.length, 0) <= 30)
+          ).toBe(true);
+          const dossier = lines
+            .map((line) => line.segments.map((segment) => segment.text.trim()).join(' '))
+            .join(' ')
+            .replace(/\s+/g, ' ');
+          expect(dossier).toContain('Surface air');
+          expect(dossier).toContain('Flux envelope');
+          expect(dossier).toContain('Bond albedo');
+          expect(dossier).toContain('Orbital aid');
+          expect(dossier).toContain(
+            stage === 'complete' ? 'Breathable managed atmosphere' : 'Life support required'
+          );
+        }
+      }
+    }
+  });
+
+  it('makes complete and partial atmospheres normalized, humid, and appropriate for their stage', () => {
+    const assessment = assessPlanetHabitability(
+      createTerrestrialFixture(),
+      createSingleStarArchitecture('G2V', 4.6)
+    );
+    for (const stage of ['complete', 'partial'] as const) {
+      for (let seed = 0; seed < 128; seed++) {
+        const profile = createTerraformingProfile(stage, assessment, new PRNG(`air-${stage}-${seed}`));
+        expect(
+          Object.values(profile.atmosphere.composition).reduce((sum, value) => sum + value, 0)
+        ).toBeCloseTo(100, 10);
+        expect(isBreathableTerraformingProfile(profile)).toBe(stage === 'complete');
+        const waterBar = (profile.atmosphere.pressure * profile.atmosphere.composition['Water Vapor']) / 100;
+        expect(waterBar).toBeLessThanOrEqual(saturationPressureBar('Water Vapor', profile.meanTemperatureK));
+        expect(profile.minTemperatureK).toBeLessThanOrEqual(profile.meanTemperatureK);
+        expect(profile.maxTemperatureK).toBeGreaterThanOrEqual(profile.meanTemperatureK);
+      }
+    }
+  });
+
+  it('rejects unsafe or malformed completed atmospheres even when oxygen alone is adequate', () => {
+    const assessment = assessPlanetHabitability(
+      createTerrestrialFixture(),
+      createSingleStarArchitecture('G2V', 4.6)
+    );
+    const profile = createTerraformingProfile(
+      'complete',
+      assessment,
+      new PRNG('breathability-negative-cases')
+    );
+    const composition = profile.atmosphere.composition;
+    for (const [gas, amount] of [
+      ['Carbon Dioxide', 5],
+      ['Carbon Monoxide', 0.1],
+      ['Ammonia', 0.01],
+      ['Trace', 1],
+    ] as const) {
+      const air = {
+        ...composition,
+        [gas]: (composition[gas] ?? 0) + amount,
+        Nitrogen: composition.Nitrogen - amount,
+      };
+      expect(
+        isBreathableTerraformingProfile({
+          ...profile,
+          atmosphere: { ...profile.atmosphere, composition: air },
+        })
+      ).toBe(false);
+    }
+    for (const air of [
+      { ...composition, Nitrogen: 50 },
+      { ...composition, Oxygen: NaN },
+      { ...composition, Argon: -1 },
+    ])
+      expect(
+        isBreathableTerraformingProfile({
+          ...profile,
+          atmosphere: { ...profile.atmosphere, composition: air },
+        })
+      ).toBe(false);
+    expect(
+      isBreathableTerraformingProfile({ ...profile, atmosphere: { ...profile.atmosphere, pressure: 0.75 } })
+    ).toBe(false);
+  });
+
+  it('reserves complete colonies for temperate terrestrial targets and keeps cold projects cold', () => {
+    const architecture = createSingleStarArchitecture('G2V', 4.6);
+    const outer = assessPlanetHabitability(createTerrestrialFixture(1.55), architecture);
+    expect(outer.viableForCompleteTerraforming).toBe(false);
+    expect(outer.viableForPartialTerraforming).toBe(true);
+    expect(() => createTerraformingProfile('complete', outer, new PRNG('cold-colony'))).toThrow('Unsuitable');
+    const inner = assessPlanetHabitability(createTerrestrialFixture(), architecture);
+    const cold = createTerraformingProfile('partial', outer, new PRNG('climate-comparison'));
+    const warm = createTerraformingProfile('partial', inner, new PRNG('climate-comparison'));
+    expect(cold.meanTemperatureK).toBeLessThan(warm.meanTemperatureK - 30);
+    expect(cold.meanTemperatureK).toBeLessThan(273);
+    for (const type of ['Molten', 'Greenhouse', 'Chthonian', 'Lunar', 'Hycean', 'GasGiant', 'IceGiant']) {
+      const planet = Object.assign(createTerrestrialFixture(), { type });
+      const assessment = assessPlanetHabitability(planet, architecture);
+      expect(assessment.viableForCompleteTerraforming).toBe(false);
+      expect(assessment.viableForPartialTerraforming).toBe(false);
+    }
+    const lowEscape = Object.assign(createTerrestrialFixture(), { escapeVelocity: 4500 });
+    expect(assessPlanetHabitability(lowEscape, architecture).viableForPartialTerraforming).toBe(false);
+    expect(assessStellarHost(createSingleStarArchitecture('G2V', 0.3)).eligibleForPartialTerraforming).toBe(
+      false
+    );
+  });
+
+  it('screens a binary colony over conjunctions rather than approving only a cool starting phase', () => {
+    const architecture = createSingleStarArchitecture('G2V', 4.6);
+    const companion = createSingleStarArchitecture('F5V', 4.6).stars[0];
+    companion.id = 'B';
+    companion.systemX = -5.2 * AU_IN_METERS;
+    architecture.kind = 'binary';
+    architecture.binarySeparation = 5.2 * AU_IN_METERS;
+    architecture.stars.push(companion);
+    const planet = createTerrestrialFixture();
+    expect(isInsideHabitableFluxZone(planet, architecture)).toBe(true);
+    const assessment = assessPlanetHabitability(planet, architecture);
+    expect(assessment.stableOrbit).toBe(true);
+    expect(assessment.insideConservativeHabitableZone).toBe(false);
+    expect(assessment.viableForCompleteTerraforming).toBe(false);
+    companion.systemX *= -1;
+    expect(assessPlanetHabitability(planet, architecture)).toEqual(assessment);
+  });
+
+  it('declines an unsupported settlement designation without throwing or inventing a colony', () => {
+    const seed = new PRNG('unsupported-colony');
+    const generator = new SystemDataGenerator(seed);
+    const properties = generator.getSystemProperties(
+      CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X,
+      CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y
+    );
+    const system = new SolarSystem(
+      {
+        ...properties,
+        architecture: createSingleStarArchitecture('A', 0.2),
+        settlementStage: 'complete',
+        hasStarbase: true,
+        stationKind: 'starbase',
+      },
+      0,
+      0,
+      seed
+    );
+    expect(system.colonyWorld).toBeNull();
+    expect(system.settlementStage).toBe('none');
+    expect(system.starbase).toBeNull();
+  });
+
   it('uses local companion distances instead of pretending a multiple system has one radial HZ', () => {
     const architecture = createSingleStarArchitecture('G2V', 4.6);
     architecture.kind = 'triple';

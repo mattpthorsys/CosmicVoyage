@@ -27,6 +27,7 @@ import {
   calculateHabitableZone,
   createTerraformingProfile,
   HabitableZone,
+  isBreathableTerraformingProfile,
   selectTerraformingCandidate,
   TerraformingStage,
 } from './habitability';
@@ -137,9 +138,11 @@ export class SolarSystem {
     this.colonyWorld =
       reservedColony ??
       (!this.isStarless && settlementStage !== 'none' ? this.ensureTerraformingWorld(settlementStage) : null);
+    this.settlementStage = this.colonyWorld?.terraforming?.stage ?? 'none';
     const stationKind = basicProps.stationKind ?? (basicProps.hasStarbase ? 'starbase' : null);
     const canCreateMajorStarbase =
-      stationKind !== 'starbase' || this.colonyWorld?.terraforming?.stage === 'complete';
+      stationKind !== 'starbase' ||
+      (this.colonyWorld?.terraforming && isBreathableTerraformingProfile(this.colonyWorld.terraforming));
     let station: Starbase | null =
       stationKind && !this.isStarless && canCreateMajorStarbase
         ? new Starbase(
@@ -275,7 +278,6 @@ export class SolarSystem {
     const orbitHost: OrbitHost = { kind: 'circumstellar', starId: 'A' };
     const orbitCenter = this.getOrbitCenter(orbitHost);
     const parentStar = this.getPlanetEnvironmentStar(orbitHost);
-    let best: { planet: Planet; assessment: ReturnType<typeof assessPlanetHabitability> } | null = null;
 
     // Settlement systems are rare, so bounded retries are preferable to storing hand-authored fake physics.
     for (let attempt = 0; attempt < 28; attempt++) {
@@ -324,7 +326,6 @@ export class SolarSystem {
       );
       if (!this.canAddPlanet(planet, targetSlot)) continue;
       const assessment = assessPlanetHabitability(planet, this.architecture);
-      if (!best || assessment.score > best.assessment.score) best = { planet, assessment };
       const viable =
         stage === 'complete'
           ? assessment.viableForCompleteTerraforming
@@ -335,24 +336,17 @@ export class SolarSystem {
       }
     }
 
-    // A partial project can proceed on the best marginal candidate; a major colony may not.
-    if (stage === 'partial' && best && best.assessment.score >= 40) {
-      this.planets[targetSlot] = best.planet;
-      return best;
-    }
-    if (stage === 'complete') {
-      const constrained = this.createConstrainedSettlementPlanet(
-        targetSlot,
-        habitableZone,
-        orbitHost,
-        orbitCenter,
-        parentStar
-      );
-      if (!this.canAddPlanet(constrained.planet, targetSlot)) return null;
-      this.planets[targetSlot] = constrained.planet;
-      return constrained;
-    }
-    return null;
+    const constrained = this.createConstrainedSettlementPlanet(
+      targetSlot,
+      habitableZone,
+      orbitHost,
+      orbitCenter,
+      parentStar,
+      stage
+    );
+    if (!constrained || !this.canAddPlanet(constrained.planet, targetSlot)) return null;
+    this.planets[targetSlot] = constrained.planet;
+    return constrained;
   }
 
   /** Creates a constrained but internally consistent terrestrial draw when rejection sampling misses. */
@@ -361,8 +355,9 @@ export class SolarSystem {
     habitableZone: HabitableZone,
     orbitHost: OrbitHost,
     orbitCenter: { x: number; y: number },
-    parentStar: StellarBody
-  ): { planet: Planet; assessment: ReturnType<typeof assessPlanetHabitability> } {
+    parentStar: StellarBody,
+    stage: TerraformingStage
+  ): { planet: Planet; assessment: ReturnType<typeof assessPlanetHabitability> } | null {
     const prng = this.systemPRNG.seedNew(`constrained_settlement_${targetSlot}`);
     const orbitDistance = habitableZone.preferredAu * AU_IN_METERS;
     const angle = prng.random(0, Math.PI * 2);
@@ -412,9 +407,12 @@ export class SolarSystem {
       tidalRotation
     );
     const assessment = assessPlanetHabitability(planet, this.architecture);
-    if (!assessment.viableForCompleteTerraforming) {
-      throw new Error(`Constrained colony world failed habitability invariant in ${this.name}.`);
-    }
+    if (
+      !(stage === 'complete'
+        ? assessment.viableForCompleteTerraforming
+        : assessment.viableForPartialTerraforming)
+    )
+      return null;
     return { planet, assessment };
   }
 

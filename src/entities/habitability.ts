@@ -10,7 +10,15 @@ import {
 } from './stellar_environment';
 import type { OrbitHost, StellarArchitecture, StellarBody } from './stellar_body';
 import { isOrbitWithinStableRange } from './orbital_stability';
-import { atmosphereDensity } from './planet/atmosphere_physics';
+import { atmosphereDensity, saturationPressureBar } from './planet/atmosphere_physics';
+import { createTemperatureProfileFromAverage } from './planet/temperature_calculator';
+import { getTerraformingStellarDistances } from './terraforming_irradiance';
+import {
+  createTerraformingClimate,
+  EARTH_INSTELLATION_WM2,
+  getTerraformingOrbitalTemperatureOffset,
+  TerraformingClimate,
+} from './terraforming_climate';
 
 export type TerraformingStage = 'partial' | 'complete';
 
@@ -24,6 +32,7 @@ export interface TerraformingProfile {
   readonly biosphereStage: string;
   readonly engineeringSupport: readonly string[];
   readonly habitabilityScore: number;
+  readonly climate: TerraformingClimate;
 }
 
 export interface StellarHostAssessment {
@@ -45,6 +54,11 @@ export interface HabitabilityAssessment {
   readonly viableForPartialTerraforming: boolean;
   readonly stableOrbit: boolean;
   readonly insideConservativeHabitableZone: boolean;
+  readonly minStellarFluxWm2: number;
+  readonly maxStellarFluxWm2: number;
+  readonly tidallyLocked: boolean;
+  readonly axialTiltRad: number;
+  readonly gravity: number;
   readonly reasons: readonly string[];
 }
 
@@ -134,8 +148,10 @@ export function assessStellarHost(
   score = clamp(Math.round(score), 0, 100);
   return {
     score,
-    eligibleForCompleteTerraforming: score >= 62,
-    eligibleForPartialTerraforming: score >= 34,
+    eligibleForCompleteTerraforming:
+      score >= 62 && primary.environment.ageGyr >= 1.2 && remainingLifetimeGyr >= 2.5,
+    eligibleForPartialTerraforming:
+      score >= 34 && primary.environment.ageGyr >= 1.2 && remainingLifetimeGyr >= 2.5,
     reasons,
   };
 }
@@ -157,7 +173,9 @@ export function calculateHabitableZone(architecture: StellarArchitecture): Habit
   return {
     innerAu,
     outerAu,
-    preferredAu: Math.sqrt(innerAu * outerAu),
+    // A breathable temperate colony needs near-Earth instellation; the cold HZ edge
+    // assumes substantial greenhouse warming, often at unbreathable CO2 pressures.
+    preferredAu: clamp(Math.sqrt(totalLuminositySolar), innerAu * 1.02, outerAu * 0.98),
   };
 }
 
@@ -193,15 +211,35 @@ export function assessPlanetHabitability(
 ): HabitabilityAssessment {
   const host = assessStellarHost(architecture, planet.orbitHost);
   const stableOrbit = isOrbitWithinStableRange(architecture, planet.orbitHost, planet.orbitDistance);
-  const insideConservativeHabitableZone = isInsideHabitableFluxZone(planet, architecture);
-  const solid = !['GasGiant', 'IceGiant', 'Hycean', 'DwarfIce', 'Lunar'].includes(planet.type);
+  const distances = getTerraformingStellarDistances(architecture, planet.orbitHost, planet.orbitDistance);
+  let minStellarFluxWm2 = 0;
+  let maxStellarFluxWm2 = 0;
+  let innerFluxRatio = 0;
+  let outerFluxRatio = 0;
+  let calibratedSpectra = distances.length > 0;
+  for (const { star, minDistanceM, maxDistanceM } of distances) {
+    const minFlux = star.luminosityW / (4 * Math.PI * maxDistanceM ** 2);
+    const maxFlux = star.luminosityW / (4 * Math.PI * minDistanceM ** 2);
+    minStellarFluxWm2 += minFlux;
+    maxStellarFluxWm2 += maxFlux;
+    const temperature = SPECTRAL_TYPES[star.starType]?.temp ?? 0;
+    calibratedSpectra &&= temperature >= 2600 && temperature <= 7200;
+    const solarFlux = SOLAR_LUMINOSITY_W / (4 * Math.PI * AU_IN_METERS ** 2);
+    innerFluxRatio += maxFlux / solarFlux / effectiveStellarFlux(temperature - 5780, 'inner');
+    outerFluxRatio += minFlux / solarFlux / effectiveStellarFlux(temperature - 5780, 'outer');
+  }
+  const insideConservativeHabitableZone = calibratedSpectra && innerFluxRatio <= 1 && outerFluxRatio >= 1;
+  const solid = ['Rock', 'Oceanic', 'Frozen', 'CarbonRich'].includes(planet.type);
   const gravityComplete = planet.gravity >= 0.68 && planet.gravity <= 1.38;
   const gravityPartial = planet.gravity >= 0.42 && planet.gravity <= 1.62;
   const escapeSuitable = planet.escapeVelocity >= 6500;
+  const partialEscapeSuitable = planet.escapeVelocity >= 5000;
+  const temperateFlux =
+    minStellarFluxWm2 >= EARTH_INSTELLATION_WM2 * 0.8 && maxStellarFluxWm2 <= EARTH_INSTELLATION_WM2 * 1.15;
   const temperatureDelta = Math.abs(planet.surfaceTemp - 287);
   const reasons = [...host.reasons];
   if (architecture.stars.length > 1)
-    reasons.push('instantaneous multi-star flux; long-term climate not assessed');
+    reasons.push('conservative illumination bounds across all stellar orbital phases');
   let score = host.score * 0.42;
 
   if (solid) score += 18;
@@ -209,7 +247,9 @@ export function assessPlanetHabitability(
   if (stableOrbit) score += 14;
   else reasons.push('orbit falls outside the architecture stability limit');
   if (insideConservativeHabitableZone) score += 16;
-  else reasons.push('position does not meet the calibrated conservative liquid-water flux screen');
+  else reasons.push('orbital illumination leaves the conservative liquid-water flux zone');
+  if (!temperateFlux)
+    reasons.push('breathable temperate climate would require excessive radiative engineering');
   if (gravityComplete) score += 14;
   else if (gravityPartial) score += 6;
   else reasons.push('surface gravity is unsuitable for long-term open settlement');
@@ -218,12 +258,13 @@ export function assessPlanetHabitability(
   score += clamp(10 - temperatureDelta / 18, 0, 10);
   if (planet.tidallyLocked) {
     score -= 7;
-    reasons.push('tidal locking requires active heat redistribution');
+    reasons.push('tidal locking increases day-night climate contrast');
   }
   if (planet.magneticFieldStrength < 5) {
     score -= 4;
     reasons.push('weak magnetic shielding');
   }
+  if (/dry|desiccated|none/i.test(planet.hydrosphere)) reasons.push('dry target requires imported volatiles');
 
   score = clamp(Math.round(score), 0, 100);
   const viableForCompleteTerraforming =
@@ -231,6 +272,7 @@ export function assessPlanetHabitability(
     solid &&
     stableOrbit &&
     insideConservativeHabitableZone &&
+    temperateFlux &&
     gravityComplete &&
     escapeSuitable &&
     score >= 67;
@@ -240,6 +282,7 @@ export function assessPlanetHabitability(
     stableOrbit &&
     insideConservativeHabitableZone &&
     gravityPartial &&
+    partialEscapeSuitable &&
     score >= 46;
 
   return {
@@ -248,6 +291,11 @@ export function assessPlanetHabitability(
     viableForPartialTerraforming,
     stableOrbit,
     insideConservativeHabitableZone,
+    minStellarFluxWm2,
+    maxStellarFluxWm2,
+    tidallyLocked: planet.tidallyLocked,
+    axialTiltRad: planet.axialTilt,
+    gravity: planet.gravity,
     reasons,
   };
 }
@@ -278,67 +326,100 @@ export function createTerraformingProfile(
   assessment: HabitabilityAssessment,
   prng: PRNG
 ): TerraformingProfile {
-  if (stage === 'complete') {
-    const pressure = prng.random(0.88, 1.08);
-    return {
+  const complete = stage === 'complete';
+  if (!(complete ? assessment.viableForCompleteTerraforming : assessment.viableForPartialTerraforming))
+    throw new Error(`Unsuitable target for ${stage} terraforming.`);
+  const pressure = Number((complete ? prng.random(0.96, 1.08) : prng.random(0.38, 0.82)).toFixed(3));
+  const oxygen = complete ? 20.94 : Number(prng.random(5.5, 15.5).toFixed(2));
+  const co2 = Number((complete ? prng.random(0.025, 0.08) : prng.random(0.08, 0.65)).toFixed(3));
+  const { climate, meanTemperatureK } = createTerraformingClimate(
+    {
       stage,
-      atmosphere: {
-        density: 'Earth-like',
-        pressure: Number(pressure.toFixed(3)),
-        composition: {
-          Nitrogen: 78.08,
-          Oxygen: 20.94,
-          Argon: 0.93,
-          'Carbon Dioxide': 0.04,
-          Trace: 0.01,
-        },
-      },
-      meanTemperatureK: Math.round(prng.random(284, 291)),
-      minTemperatureK: Math.round(prng.random(235, 250)),
-      maxTemperatureK: Math.round(prng.random(307, 321)),
-      hydrosphereFraction: Number(prng.random(0.48, 0.78).toFixed(2)),
-      biosphereStage: prng.choice(['mature managed biosphere', 'temperate seeded biosphere'])!,
-      engineeringSupport: assessment.reasons.includes('weak magnetic shielding')
-        ? ['orbital magnetic shield', 'climate-control lattice']
-        : ['climate-control lattice'],
-      habitabilityScore: Math.max(82, assessment.score),
-    };
-  }
-
-  const oxygen = prng.random(5.5, 15.5);
-  const pressure = prng.random(0.38, 0.82);
+      minFluxWm2: assessment.minStellarFluxWm2,
+      maxFluxWm2: assessment.maxStellarFluxWm2,
+      pressureBar: pressure,
+      co2Percent: co2,
+      gravity: assessment.gravity,
+    },
+    prng
+  );
+  const water = Number(
+    (
+      (100 * Math.min(pressure * 0.025, saturationPressureBar('Water Vapor', meanTemperatureK) * 0.5)) /
+      pressure
+    ).toFixed(3)
+  );
+  const argon = complete ? 0.93 : 0.8;
+  const atmosphere: Atmosphere = {
+    density: atmosphereDensity(pressure),
+    pressure,
+    composition: {
+      Nitrogen: 100 - oxygen - argon - co2 - water,
+      Oxygen: oxygen,
+      Argon: argon,
+      'Carbon Dioxide': co2,
+      'Water Vapor': water,
+    },
+  };
+  const range = createTemperatureProfileFromAverage(meanTemperatureK, 'Rock', atmosphere, {
+    tidallyLocked: assessment.tidallyLocked,
+    axialTiltRad: assessment.axialTiltRad,
+  });
+  const engineeringSupport = complete
+    ? ['carbon-cycle management', 'climate monitoring']
+    : ['atmospheric processors', 'sealed settlements'];
+  if (climate.radiativeControlWm2 > 1) engineeringSupport.push('orbital climate reflectors');
+  if (climate.radiativeControlWm2 < -1) engineeringSupport.push('orbital solar shades');
+  if (assessment.reasons.includes('dry target requires imported volatiles'))
+    engineeringSupport.push('imported water and buffer-gas reserves');
+  if (assessment.reasons.includes('weak magnetic shielding'))
+    engineeringSupport.push('atmospheric escape monitoring');
   return {
     stage,
-    atmosphere: {
-      density: atmosphereDensity(Number(pressure.toFixed(3))),
-      pressure: Number(pressure.toFixed(3)),
-      composition: {
-        Nitrogen: Number((95 - oxygen).toFixed(2)),
-        Oxygen: Number(oxygen.toFixed(2)),
-        Argon: 0.8,
-        'Carbon Dioxide': Number(prng.random(0.08, 0.65).toFixed(2)),
-      },
-    },
-    meanTemperatureK: Math.round(prng.random(268, 301)),
-    minTemperatureK: Math.round(prng.random(205, 245)),
-    maxTemperatureK: Math.round(prng.random(310, 344)),
-    hydrosphereFraction: Number(prng.random(0.18, 0.52).toFixed(2)),
-    biosphereStage: 'pioneer ecology in protected regions',
-    engineeringSupport: ['atmospheric processors', 'sealed settlements', 'orbital climate mirrors'],
-    habitabilityScore: Math.max(48, assessment.score),
+    atmosphere,
+    climate,
+    meanTemperatureK,
+    minTemperatureK: Math.max(
+      2,
+      Math.round(range.min + getTerraformingOrbitalTemperatureOffset(climate, climate.minStellarFluxWm2))
+    ),
+    maxTemperatureK: Math.round(
+      range.max + getTerraformingOrbitalTemperatureOffset(climate, climate.maxStellarFluxWm2)
+    ),
+    hydrosphereFraction: Number((complete ? prng.random(0.48, 0.78) : prng.random(0.18, 0.52)).toFixed(2)),
+    biosphereStage: complete
+      ? prng.choice(['mature managed biosphere', 'temperate seeded biosphere'])!
+      : 'pioneer ecology in protected regions',
+    engineeringSupport,
+    habitabilityScore: assessment.score,
   };
 }
 
-/** Returns whether an engineered atmosphere has safe pressure and oxygen partial pressure. */
+/** Screens a managed atmosphere for normoxic inspired air, CO2, and unsupported contaminants. */
 export function isBreathableTerraformingProfile(profile: TerraformingProfile): boolean {
-  const oxygenFraction = (profile.atmosphere.composition.Oxygen ?? 0) / 100;
-  const oxygenPartialPressureKpa = profile.atmosphere.pressure * 100 * oxygenFraction;
+  const { pressure, composition } = profile.atmosphere;
+  const gases = Object.entries(composition);
+  const allowed = new Set(['Nitrogen', 'Oxygen', 'Argon', 'Carbon Dioxide', 'Water Vapor']);
+  if (
+    !Number.isFinite(pressure) ||
+    gases.some(
+      ([gas, percentage]) =>
+        !Number.isFinite(percentage) || percentage < 0 || (percentage > 0 && !allowed.has(gas))
+    )
+  )
+    return false;
+  if (Math.abs(gases.reduce((sum, [, percent]) => sum + percent, 0) - 100) > 1e-6) return false;
+  const dryOxygenFraction = (composition.Oxygen ?? 0) / (100 - (composition['Water Vapor'] ?? 0));
+  // Inspired gas is saturated with water at body temperature (~6.3 kPa).
+  const inspiredOxygenKpa = (pressure * 100 - 6.3) * dryOxygenFraction;
   return (
     profile.stage === 'complete' &&
-    profile.atmosphere.pressure >= 0.75 &&
-    profile.atmosphere.pressure <= 1.25 &&
-    oxygenPartialPressureKpa >= 16 &&
-    oxygenPartialPressureKpa <= 24
+    pressure >= 0.75 &&
+    pressure <= 1.25 &&
+    dryOxygenFraction <= 0.235 &&
+    inspiredOxygenKpa >= 18.5 &&
+    inspiredOxygenKpa <= 22.5 &&
+    (pressure * (composition['Carbon Dioxide'] ?? 0)) / 100 <= 0.004
   );
 }
 

@@ -1,5 +1,6 @@
 import { ELEMENTS } from '../constants/resources';
 import { describePlanetType, type Planet } from '../entities/planet';
+import { isBreathableTerraformingProfile } from '../entities/habitability';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { formatDiscoveryLevel, hasDiscoveryLevel } from './discovery';
 import { getOrbitReferenceLabel, type OrbitStellarSource } from './orbit_ui';
@@ -176,6 +177,26 @@ export function buildOrbitDossierLines(
     heading(7, 'HUMAN ACTIVITY');
     field('Terraforming', body.terraforming.stage);
     field('Biosphere', body.terraforming.biosphereStage);
+    field(
+      'Surface air',
+      isBreathableTerraformingProfile(body.terraforming)
+        ? 'Breathable managed atmosphere'
+        : 'Life support required',
+      'amber'
+    );
+    const climate = body.terraforming.climate;
+    if (climate) {
+      field(
+        'Flux envelope',
+        `${climate.minStellarFluxWm2.toFixed(0)}-${climate.maxStellarFluxWm2.toFixed(0)} W/m2`
+      );
+      field('Bond albedo', climate.bondAlbedo.toFixed(2));
+      field('Greenhouse', `~${climate.greenhouseWarmingK.toFixed(0)} K warming`);
+      field(
+        'Orbital aid',
+        `${climate.radiativeControlWm2 >= 0 ? '+' : ''}${climate.radiativeControlWm2.toFixed(1)} W/m2 global absorbed flux`
+      );
+    }
     field('Support', body.terraforming.engineeringSupport.join(', '));
   }
   return lines;

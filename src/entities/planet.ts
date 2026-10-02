@@ -11,11 +11,11 @@ import {
 } from './planet/planet_characteristics_generator';
 import { StellarEnvironment, getDefaultStellarEnvironment } from './stellar_environment';
 import { OrbitHost } from './stellar_body';
-import type { TerraformingProfile } from './habitability';
+import { isBreathableTerraformingProfile, type TerraformingProfile } from './habitability';
 // Import the generator and data interface
 import { SurfaceData, SurfaceGenerationRequest } from './planet/surface_generator';
 import { getSurfaceGenerationProvider } from './planet/surface_generation_provider';
-import { isLiquidCovered, SurfaceLiquidOverlay } from './planet/surface_liquid';
+import { getManagedSurfaceWaterPhase, isLiquidCovered, SurfaceLiquidOverlay } from './planet/surface_liquid';
 import {
   advanceDiscoveryRecord,
   createDiscoveryRecord,
@@ -118,6 +118,7 @@ export class Planet {
   // Surface Data (Lazy Loaded/Cached)
   private _surfaceData: SurfaceData | null = null; // Holds heightmap, colors, AND element map
   private _surfaceGenerationPromise: Promise<void> | null = null;
+  private _surfaceGenerationRevision = 0;
 
   // Moons (Placeholder)
   public moons: Planet[] = []; //
@@ -149,15 +150,21 @@ export class Planet {
 
   /** Returns the engineered surface-water coverage or the natural hydrosphere description. */
   get effectiveHydrosphere(): string {
-    return this.terraforming
-      ? `${Math.round(this.terraforming.hydrosphereFraction * 100)}% managed surface water`
-      : this.hydrosphere;
+    if (!this.terraforming) return this.hydrosphere;
+    const fraction = Math.round(this.terraforming.hydrosphereFraction * 100);
+    const phase = getManagedSurfaceWaterPhase(this.effectiveSurfaceTemp, this.effectiveAtmosphere.pressure);
+    if (phase === 'ice') return `${fraction}% managed water inventory (surface ice)`;
+    if (phase === 'vapor') return `${fraction}% managed water inventory (surface liquid unstable)`;
+    return `${fraction}% managed surface water`;
   }
 
   /** Applies an engineered environment and optional human name without changing physical identity. */
   applyTerraforming(profile: TerraformingProfile, colonyName?: string): void {
     this.terraforming = profile;
     if (colonyName) this.name = colonyName;
+    this._surfaceGenerationRevision++;
+    this._surfaceData = null;
+    this._surfaceGenerationPromise = null;
   }
 
   /** Restores legacy binary scan state while preserving the layered discovery model. */
@@ -348,22 +355,28 @@ export class Planet {
       return;
     }
 
-    this._surfaceGenerationPromise = provider
+    const revision = this._surfaceGenerationRevision;
+    const pending = provider
       .generateSurfaceDataAsync(this.createSurfaceGenerationRequest())
-      .then((data) => {
+      .then(async (data) => {
+        if (revision !== this._surfaceGenerationRevision) {
+          await this.prepareSurfaceReady();
+          return;
+        }
         this._surfaceData = data;
         this.validateSurfaceData();
         logger.info(`[Planet:${this.name}] Surface data generated asynchronously.`);
       })
       .catch((error) => {
-        this._surfaceData = null;
+        if (revision === this._surfaceGenerationRevision) this._surfaceData = null;
         logger.error(`[Planet:${this.name}] Async surface data generation failed: ${error}`);
         throw error;
       })
       .finally(() => {
-        this._surfaceGenerationPromise = null;
+        if (this._surfaceGenerationPromise === pending) this._surfaceGenerationPromise = null;
       });
-    return this._surfaceGenerationPromise;
+    this._surfaceGenerationPromise = pending;
+    return pending;
   }
 
   /** Prepares surface in background. */
@@ -382,6 +395,7 @@ export class Planet {
       mapSeed: this.mapSeed,
       prngSeed: this.systemPRNG.getInitialSeed(),
       atmosphere: this.effectiveAtmosphere,
+      terrainAtmosphere: this.atmosphere,
       planetAbundance: this.elementAbundance,
       profile: {
         mineralRichness: this.mineralRichness,
@@ -390,6 +404,7 @@ export class Planet {
         surfaceTemp: this.effectiveSurfaceTemp,
         hydrosphere: this.effectiveHydrosphere,
         managedBiosphere: this.terraforming?.stage,
+        managedWaterFraction: this.terraforming?.hydrosphereFraction,
       },
     };
   }
@@ -591,6 +606,9 @@ export class Planet {
         `Terraforming: <hl>${this.terraforming.stage}</hl> | Biosphere: <hl>${this.terraforming.biosphereStage}</hl>`
       );
       infoLines.push(`Support: <hl>${this.terraforming.engineeringSupport.join(', ')}</hl>`);
+      infoLines.push(
+        `Surface air: <hl>${isBreathableTerraformingProfile(this.terraforming) ? 'breathable managed atmosphere' : 'life support required'}</hl>`
+      );
     }
 
     // --- Surface Descriptors ---
