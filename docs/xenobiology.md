@@ -3,12 +3,12 @@
 Cosmic Voyage now has a bounded discovery, observation, sampling and research
 loop. It is an addition to ordinary surface travel, not a separate world mode.
 
-The science log, habitat and individual variation, and analysis/tissue request
-expansion passed automated and browser verification. The latest additions
-highlight contract references, observed matching traits and confirmed suitable
-contacts; verification of these presentation changes awaits the requested
-testing handoff. Automated depots do not issue scientific requests. Long-session
-balance and enjoyment still need personal playtesting.
+The science log, habitat and individual variation, analysis/tissue requests,
+and mission reference highlighting passed automated and browser verification.
+Contracts emphasize their reference organisms, acquired matching traits are
+highlighted, and confirmed feasible contacts receive a field marker. Automated
+depots do not issue scientific requests. Long-session balance and enjoyment
+still need personal playtesting.
 See [the expansion verification handoff](xenobiology-expansion-verification.md)
 for a personal playthrough and the automated/browser checks.
 

@@ -87,6 +87,8 @@ describe('biological mission guidance', () => {
 
   it('requires exact habitat, feasible live condition, handling and an outstanding request for a field marker', () => {
     const f = fixture();
+    f.field.roverX = f.target.x;
+    f.field.roverY = f.target.y;
     f.service.observe(f.species, 2);
     expect(
       createEncounterView(f.field, f.target.id, f.service, f.presentation).actors.find(
@@ -152,6 +154,8 @@ describe('biological mission guidance', () => {
 
   it('preserves reference emphasis through narrow contracts, sensor output and dossier wrapping without state changes', () => {
     const f = fixture();
+    f.field.roverX = f.target.x;
+    f.field.roverY = f.target.y;
     f.service.observe(f.species, 2);
     const before = f.service.createSnapshot();
     const description = formatMissionDetailSegments(f.mission, 'ACTIVE');

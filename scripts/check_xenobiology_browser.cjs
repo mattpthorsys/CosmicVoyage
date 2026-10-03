@@ -424,26 +424,13 @@ async function main() {
     assert.equal(landedMission.player.position.surfaceY, delivery.mission.objectives[0].location.surface.y);
     await load(delivery.save);
     await page.waitForFunction(
-      async () => {
-        const { CONFIG } = await import('/src/config.ts');
-        const { getEncounterLayout } = await import('/src/rendering/surface_encounter_renderer.ts');
+      () => {
         const canvas = document.querySelector('#gameCanvasOrbit');
         const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-        if (!pixels.some((value, index) => index % 4 === 3 && value > 0)) return false;
-        const main = document.querySelector('#gameCanvas');
-        const height = CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE;
-        const width = height * CONFIG.CHAR_ASPECT_RATIO;
-        const field = getEncounterLayout(
-          Math.floor(main.width / width),
-          Math.floor(main.height / height)
-        ).field;
-        const ground = main
-          .getContext('2d')
-          .getImageData(field.x * width, field.y * height, field.width * width, field.height * height).data;
         let lit = 0;
-        for (let index = 0; index < ground.length; index += 4)
-          if (ground[index] + ground[index + 1] + ground[index + 2] > 40) lit++;
-        return lit > (ground.length / 4) * 0.7;
+        for (let index = 0; index < pixels.length; index += 4)
+          if (pixels[index + 3] > 0 && pixels[index] + pixels[index + 1] + pixels[index + 2] > 60) lit++;
+        return lit > 20;
       },
       undefined,
       { timeout: 15000 }

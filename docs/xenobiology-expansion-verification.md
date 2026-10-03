@@ -1,21 +1,24 @@
 # Xenobiology Expansion: Verification Handoff
 
 Implementation is checkpointed in stages. Verification completed 2026-10-03.
-The results below cover the four-step expansion through `c0e87d1`. Subsequent
-mission reference highlighting awaits the testing handoff described at the end.
+The results below include mission reference and confirmed-target highlighting.
 
 ## Verification Results
 
-- Focused xenobiology and rendering coverage: 14 files, 120 tests passed.
+- Focused mission-guidance, xenobiology and rendering coverage: 15 files,
+  178 tests passed.
 - `npm run check`: documentation comments, formatting, lint, app and test
-  typechecks, 108 test files / 716 tests, and production build all passed.
+  typechecks, 109 test files / 725 tests, and production build all passed.
 - Browser walkthrough passed with no console errors. It exercised the paused
-  science log, desktop and narrow captures, live delivery, and analysis/tissue
-  settlement. Captures are in `/tmp/cosmic-xenobiology`.
+  science log, desktop and narrow captures, contract landing, target
+  identification, dossier, live delivery, and analysis/tissue settlement.
+  Captures are in `/tmp/cosmic-xenobiology`.
 - Visual review confirmed the science log layers over the field and that both
-  fonts load at desktop and narrow widths. The Vite build reports its main
-  minified JavaScript chunk at 787.81 kB, above the 500 kB advisory threshold;
-  the build succeeds.
+  fonts load at desktop and narrow widths. The compatible-target marker was
+  absent before identification and present afterward. Matching traits and
+  actionable mission guidance remain legible in the scanner and dossier. The
+  Vite build reports its main minified JavaScript chunk at 795.09 kB, above the
+  500 kB advisory threshold; the build succeeds.
 
 The browser fixture completed live, analysis and tissue contributions and
 verified the alternative contract fees and single settlement. This does not
@@ -72,14 +75,16 @@ is no longer running, start Vite on an available port and update COSMIC_URL.
 COSMIC_URL=http://127.0.0.1:5174/ PLAYWRIGHT_MODULE=/home/mpalmer/.cache/ms-playwright-go/1.57.0/package node scripts/check_xenobiology_browser.cjs
 ```
 
-The script includes desktop/narrow science-log captures, paused time and
-layering assertions, original live delivery, and analysis/tissue settlement
-through real keys. Inspect captures under `/tmp/cosmic-xenobiology`, especially
-`desktop-science-log.png`, `narrow-science-log.png`,
-`science-log-analysis-and-tissue.png` and `research-alternative-contracts.png`.
-Check for clipped text, sprite leakage, overlapping menu/footer text and
-unreadable small contacts. Add size-class and new habitat captures if the
-existing screenshots do not expose them adequately.
+The script includes desktop/narrow science-log and journal captures, paused
+time and layering assertions, target-marker checks before and after
+identification, live delivery, and analysis/tissue settlement through real
+keys. It waits for actual organism raster pixels after restoring the field,
+not stale pixels from the previous view. Inspect captures under
+`/tmp/cosmic-xenobiology`, especially `contract-before-identification.png`,
+`desktop-contract-field.png`, `desktop-contract-dossier.png`,
+`desktop-mission-journal.png`, `narrow-mission-journal.png`,
+`desktop-science-log.png` and `narrow-science-log.png`. Check for clipped text,
+sprite leakage, overlapping menu/footer text and unreadable small contacts.
 
 Fix failures in their actual owner. In particular, preserve unrelated visual
 regressions, atomic refusal/transaction tests and source lifecycle validation.
@@ -91,19 +96,14 @@ must still list zero-value specimens and must not complete acquisition requests.
 Automated success does not establish long-session economy balance or whether
 the expeditions are enjoyable.
 
-## Mission Highlighting: Pending Verification
+## Mission Highlighting: Verified
 
-Implementation adds styled contract reference descriptions, acquired-trait
-highlights, exact habitat/condition checks and confirmed field markers. No
-tests or browser runs for these subsequent changes have been executed yet.
-
-Run `src/tests/core/biological_mission_guidance.test.ts` alongside the existing
-mission journal, biological contract, xenobiology UI, save validation, field
-renderer and scene renderer regression suites, then `npm run check`. Re-run the browser command above and
-inspect `contract-before-identification.png`, `desktop-contract-field.png`,
-`desktop-contract-dossier.png`, `research-live-contract.png`, and desktop/narrow mission journals. The script
-now asserts the terrain marker is absent before identification and present
-after a close observation.
+Contract reference descriptions, acquired-trait highlights, exact
+habitat/condition checks and confirmed field markers passed focused and full
+automated coverage plus the real-font browser walkthrough. The field marker is
+absent before identification and appears beside a confirmed, feasible target
+after observation. A legacy navigation fixture also verified that incomplete
+older biosphere data does not prevent coordinate restoration.
 
 Personally compare a preliminary scan, a confirmed target, a similar unrelated
 organism and a target at the wrong habitat. Check live/tissue/analysis requests,

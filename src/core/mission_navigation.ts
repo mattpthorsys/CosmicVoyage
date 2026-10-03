@@ -45,7 +45,7 @@ export function resolveMissionNavigation(
       const biosphere = biospheres.find((entry) => entry.sites.some((site) => site.id === objective.siteId));
       const site = biosphere?.sites.find((entry) => entry.id === objective.siteId);
       const body = biosphere && bodies.find(({ planet }) => planet.name === biosphere.bodyName);
-      const species = biosphere?.species.find((entry) => entry.id === objective.speciesId);
+      const species = biosphere?.species?.find((entry) => entry.id === objective.speciesId);
       const reference = objective.reference ?? (species && createBiologicalReference(species));
       if (objective.location) return reference ? { ...objective, reference } : objective;
       if (!site || !body) return objective;
