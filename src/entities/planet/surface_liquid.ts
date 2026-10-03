@@ -17,6 +17,25 @@ export interface SurfaceLiquidOverlay {
   } | null;
 }
 
+/** Exposes the source model's numeric liquid inventory without generating a heightmap. */
+export function getSurfaceLiquidProfile(args: {
+  planetType: string;
+  hydrosphere: string;
+  surfaceTemp: number;
+  atmosphere: Atmosphere;
+  managedWaterFraction?: number;
+}): { kind: SurfaceLiquidOverlay['kind']; coverage: number } | null {
+  const coverage = getLiquidCoverage(
+    args.planetType,
+    args.hydrosphere,
+    args.surfaceTemp,
+    args.atmosphere,
+    args.managedWaterFraction
+  );
+  if (coverage <= 0) return null;
+  return { kind: getLiquidKind(args.planetType, args.hydrosphere, args.surfaceTemp), coverage };
+}
+
 /** Creates surface liquid overlay. */
 export function createSurfaceLiquidOverlay(args: {
   planetType: string;
