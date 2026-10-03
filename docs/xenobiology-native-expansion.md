@@ -10,7 +10,11 @@ requested model handoff at verification.
    three to five inherited structural groups with two habitat specialisations
    each. Introduced colony species retain their familiar definitions. Biology
    generation is version 2; existing stored actors and specimens are preserved.
-2. Visual anatomy: pending.
+2. Visual anatomy: implemented, verification pending. Native silhouettes inherit
+   family pigment, limb arrangement, posture and structural ridges, with distinct
+   movement poses and a prepared defensive pose. The existing six-by-four raster
+   footprint and four-colour limit stay fixed. Dossiers show observed external
+   anatomy without revealing ancestry before analysis.
 3. Readable behaviour: pending.
 4. Comparative expeditions: pending.
 

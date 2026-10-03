@@ -432,6 +432,15 @@ export function createBiologicalDossier(
   if (contact?.target.sizeScale !== undefined)
     entry('Individual size', individualSizeLabel(contact.target.sizeScale), 'amber');
   if (level >= 1 && species.bodyForm) entry('External form', species.bodyForm, matchTone('bodyForm', 'cyan'));
+  if (level >= 2 && species.anatomy) {
+    const anatomy = species.anatomy;
+    entry(
+      'Visible anatomy',
+      `${anatomy.appendages ? `${anatomy.appendages} locomotor appendages` : 'no locomotor appendages'} / ${anatomy.profile} profile`,
+      'cyan'
+    );
+    entry('Surface pigment', anatomy.pigment, 'cyan');
+  }
   if (contact)
     entry(
       'Contact',
@@ -466,6 +475,8 @@ export function createBiologicalDossier(
       'cyan'
     );
     entry('Organisation', species.organisation);
+    if (species.anatomy)
+      entry('Body divisions', `${species.anatomy.segments} principal structural divisions`);
     entry('Covering', species.covering);
     entry('Senses', species.senses);
     entry('Length', `${species.sizeM.toFixed(2)} m`, 'amber');

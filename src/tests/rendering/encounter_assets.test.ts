@@ -5,8 +5,56 @@ import { generateBiosphere } from '../../entities/biology/biosphere_generator';
 import { biologyFixture } from '../fixtures/biology';
 import { createEncounter } from '../../systems/surface_encounter_system';
 import type { Planet } from '../../entities/planet';
+import { generateNativeSpecies } from '../../entities/biology/native_biosphere';
+import { PRNG } from '../../utils/prng';
+import { createBiologicalDossier } from '../../core/xenobiology_ui';
+import { XenobiologyService } from '../../core/xenobiology_service';
 
 describe('field visual assets', () => {
+  it('renders inherited native pigments and limbs consistently without changing the stable raster footprint', () => {
+    const environment = biologyFixture({ origin: 'native' });
+    const species = generateNativeSpecies(environment, new PRNG('anatomy'));
+    const before = structuredClone(species);
+    for (let index = 0; index < species.length; index += 2) {
+      const first = createOrganismSprite(species[index]);
+      const relative = createOrganismSprite(species[index + 1]);
+      expect(first.palette).toEqual(relative.palette);
+      expect(first.frames[0]).toEqual(relative.frames[0]);
+      expect(first.palette).toHaveLength(4);
+      for (const frame of [...first.frames, ...(first.displayFrame ? [first.displayFrame] : [])]) {
+        expect(frame).toHaveLength(4);
+        expect(frame.every((row) => row.length === 6 && /^[.1234]+$/.test(row))).toBe(true);
+      }
+    }
+    const mobile = species.find((entry) => entry.anatomy!.appendages > 0)!;
+    const four = {
+      ...mobile,
+      bodyForm: 'walker' as const,
+      anatomy: { ...mobile.anatomy!, appendages: 4, profile: 'low' as const },
+    };
+    const six = { ...four, anatomy: { ...four.anatomy, appendages: 6 } };
+    expect(createOrganismSprite(four).frames[0]).not.toEqual(createOrganismSprite(six).frames[0]);
+    expect(species).toEqual(before);
+  });
+  it('keeps detailed external traits out of preliminary dossiers while making them readable after observation', () => {
+    const species = generateNativeSpecies(biologyFixture({ origin: 'native' }), new PRNG('visible'))[0];
+    const service = new XenobiologyService();
+    service.observe(species, 1);
+    const preliminary = createBiologicalDossier(species, service, 24)
+      .flatMap((line) => line.segments)
+      .map((span) => span.text)
+      .join(' ');
+    expect(preliminary).not.toContain('Surface pigment');
+    expect(preliminary).not.toContain(species.lineage);
+    service.observe(species, 2);
+    const observed = createBiologicalDossier(species, service, 24)
+      .flatMap((line) => line.segments)
+      .map((span) => span.text)
+      .join(' ');
+    expect(observed).toContain('Surface pigment');
+    expect(observed).toContain(species.anatomy!.pigment);
+    expect(observed).not.toContain(species.lineage);
+  });
   it('uses observed external anatomy and distinguishes newly added silhouette families', () => {
     const species = generateBiosphere(biologyFixture())!.species[0];
     const forms = [

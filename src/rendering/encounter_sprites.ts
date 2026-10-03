@@ -1,9 +1,10 @@
-import type { SpeciesDefinition } from '../entities/biology/biology_types';
+import type { OrganismAnatomy, SpeciesDefinition } from '../entities/biology/biology_types';
 import { PRNG } from '../utils/prng';
 
 export interface PixelSprite {
   readonly frames: readonly (readonly string[])[];
   readonly palette: readonly string[];
+  readonly displayFrame?: readonly string[];
 }
 
 const SPRITES = {
@@ -18,6 +19,15 @@ const SPRITES = {
   tripod: ['..22..', '.2332.', '.1..1.', '1.11.1'],
   burrower: ['......', '.2332.', '231132', '.1..1.'],
 } as const;
+
+const FAMILY_PALETTES: Record<OrganismAnatomy['pigment'], readonly string[]> = {
+  green: ['#203a34', '#66a882', '#bfdba2', '#e0d99c'],
+  blue: ['#1c3038', '#6aa9c9', '#b3d8d5', '#f0ecc6'],
+  ochre: ['#382f23', '#c1a864', '#e5d79d', '#eff4d8'],
+  red: ['#3d2731', '#c4778d', '#e9b6a6', '#fbecd0'],
+  violet: ['#2e2b39', '#9b87bf', '#cec3d8', '#eef2cc'],
+  pale: ['#303737', '#aab4ad', '#dbe2ce', '#f4ecc1'],
+};
 
 export const ROVER_SPRITE: PixelSprite = {
   frames: [['1.22.1', '123321', '123321', '1.22.1']],
@@ -37,18 +47,58 @@ export function createOrganismSprite(species: SpeciesDefinition, sizeScale = 1):
         : species.symmetry === 'radial'
           ? SPRITES.radial
           : SPRITES.walker;
-  const colours = sessile
-    ? ['#203a34', '#66a882', '#bfdba2', '#e0d99c']
-    : species.covering.includes('shell')
-      ? ['#302f38', '#aca3bc', '#e1d3c2', '#e9f7ee']
-      : ['#303932', '#b9bb86', '#e0d5a3', '#eef7d8'];
-  const second: string[] = [...pattern];
+  const colours = species.anatomy
+    ? FAMILY_PALETTES[species.anatomy.pigment]
+    : sessile
+      ? ['#203a34', '#66a882', '#bfdba2', '#e0d99c']
+      : species.covering.includes('shell')
+        ? ['#302f38', '#aca3bc', '#e1d3c2', '#e9f7ee']
+        : ['#303932', '#b9bb86', '#e0d5a3', '#eef7d8'];
+  const first = species.anatomy ? anatomicalSilhouette(pattern, species) : [...pattern];
+  const second: string[] = [...first];
   if (!sessile) second[3] = species.bodyForm === 'tripod' ? '.1111.' : '.1..1.';
+  if (species.anatomy && !sessile) {
+    if (!species.anatomy.appendages) second[3] = '.1221.';
+    else if (species.anatomy.appendages >= 6) second[3] = '.1111.';
+    else if (species.anatomy.appendages === 3) second[0] = '...2..';
+  }
   // A small highlight is an observed surface feature, not a disclosure of hidden physiology.
-  const first: string[] = [...pattern];
   first[1] = first[1].replace('3', '4');
   second[1] = second[1].replace('3', '4');
-  return { frames: [first, second].map((frame) => sizeSilhouette(frame, sizeScale)), palette: colours };
+  const display = [...first];
+  if (!sessile) {
+    display[0] = '.4..4.';
+    display[1] = '123321';
+  }
+  return {
+    frames: [first, second].map((frame) => sizeSilhouette(frame, sizeScale)),
+    palette: colours,
+    displayFrame: !sessile ? sizeSilhouette(display, sizeScale) : undefined,
+  };
+}
+
+/** Encodes inherited limb arrangement, posture and structural ridges within the existing tiny footprint. */
+function anatomicalSilhouette(pattern: readonly string[], species: SpeciesDefinition): string[] {
+  const anatomy = species.anatomy!;
+  const frame = [...pattern];
+  if (species.behaviour !== 'sessile') {
+    if (anatomy.appendages === 0) {
+      frame[0] = '......';
+      frame[2] = '123321';
+      frame[3] = '.1111.';
+    } else if (anatomy.appendages === 3) {
+      frame[0] = '..2...';
+      frame[3] = '1....1';
+    } else if (anatomy.appendages >= 6) {
+      frame[2] = '131131';
+      frame[3] = '1.11.1';
+    }
+    if (anatomy.profile === 'raised') frame[2] = anatomy.appendages >= 6 ? '1.11.1' : '.1..1.';
+    if (anatomy.segments >= 3) frame[1] = '.2323.';
+  }
+  if (species.covering.includes('shell') && frame[1][2] !== '.')
+    frame[1] = frame[1].slice(0, 2) + '1' + frame[1].slice(3);
+  return frame;
 }
 
 /** Fits size variation within the stable six-by-four sprite footprint, preserving field spacing. */
