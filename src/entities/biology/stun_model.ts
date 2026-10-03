@@ -12,12 +12,13 @@ export function stunOutcome(
   species: SpeciesDefinition,
   power: StunPower,
   exposure = 0,
-  injury = 0
+  injury = 0,
+  rangeMetres = 0
 ): StunOutcome {
   if (species.susceptibility === 0) return { stunned: 0, dead: 0, active: 1, recoverySeconds: 0 };
   const dose =
     ([0.7, 1.4, 2.5][power] * species.susceptibility * (1 + exposure * 0.22 + injury * 0.3)) /
-    (1 + species.massKg / 60 + species.armour);
+    ((1 + species.massKg / 60 + species.armour) * (1 + Math.pow(rangeMetres / 45, 2)));
   const dead = 0.002 + 0.7 / (1 + Math.exp(-4 * (dose - 2.15)));
   const stunned = (1 - dead) / (1 + Math.exp(-6 * (dose - 0.72)));
   return {
@@ -33,7 +34,9 @@ export function estimateStun(
   species: SpeciesDefinition,
   power: StunPower,
   level: EvidenceLevel,
-  exposure = 0
+  exposure = 0,
+  injury = 0,
+  rangeMetres = 0
 ): { stun: string; mortality: string; recovery: string } {
   if (species.susceptibility === 0 && level >= 2)
     return { stun: 'Not applicable', mortality: '--', recovery: '--' };
@@ -47,7 +50,9 @@ export function estimateStun(
         susceptibility: susceptibility * (1 + direction * uncertainty),
       },
       power,
-      exposure
+      exposure,
+      injury,
+      rangeMetres
     )
   );
   /** Formats the bounds obtained from the same outcome model used when firing. */

@@ -1346,12 +1346,12 @@ export class SceneRenderer {
   drawTextModalTable(model: TextModalTableModel): void {
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
-    if (cols < 42 || rows < 16) return;
-
+    if (cols < 22 || rows < 16) return;
     if (model.dashboard) {
       this.drawTextDashboard(model);
       return;
     }
+    if (cols < 42) return;
 
     const detailRows = this.getTextTableDetailLineCount(model);
     const tableLayout = this.resolveTextTableLayout(model, cols - 12);

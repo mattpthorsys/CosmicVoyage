@@ -12,6 +12,7 @@ You command a small fusion-powered vessel through several scales of space:
 - Planetary system travel with generated stars, binaries/trinaries, planets, moons, starbases, orbital paths, target selection, approach assist, zoom, and bottom command menus.
 - Orbital operations around planets, including a rotating ASCII globe, moon selection, scan summary, landing-map cursor, and coordinate-based landing.
 - Planet surface travel using a terrain vehicle with fuel, cargo, mining, surface scan cursor, map view, icon legend, crew status, and return-to-ship navigation.
+- Xenobiological habitat expeditions with procedural related species, progressive scanning, stun/capture, specimen cargo, stasis upgrades and a shared-demand research exchange. See [the xenobiology guide](docs/xenobiology.md) for controls and an initial expedition.
 - Starbase operations with section menus, scrollable tables, cargo review, buy/sell/refuel services, notices, missions, shipyard, crew hiring, and training.
 - Remote automated depots with minimal stock, fuel, basic repair, and deliberately limited services beyond inhabited space.
 - Ship operations outside starbase/orbit, including cargo, crew, ship status, jettison prompts, and the ship-as-place compartment view.
@@ -62,7 +63,7 @@ Travel command strips:
 
 - Interstellar: Move, Scan, Operations, Observe, with a green Enter System button when available.
 - Planetary: Move, Scan, Operations, Observe, Targets, with a green Orbit/Dock/Leave button when available.
-- Surface: Map, Move, Cargo, Mine, Scan, Icon, with a green Embark button only when parked at the ship.
+- Surface: Map, Move, Cargo, Mine, Scan, Icon, Life, with a green Embark button only when parked at the ship. `B` selects biological habitats in orbit and investigates nearby habitats with a deployed rover.
 
 ## Saving Progress
 

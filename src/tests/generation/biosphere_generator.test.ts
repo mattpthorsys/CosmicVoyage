@@ -13,6 +13,7 @@ describe('bounded biosphere generation', () => {
     for (let i = 0; i < 6; i += 2) {
       expect(first?.species[i].covering).toBe(first?.species[i + 1].covering);
       expect(first?.species[i].symmetry).toBe(first?.species[i + 1].symmetry);
+      expect(first?.species[i].senses).toBe(first?.species[i + 1].senses);
       expect(first?.species[i].role).toBe('primary producer');
     }
   });
@@ -28,6 +29,43 @@ describe('bounded biosphere generation', () => {
     ]) {
       expect(generateBiosphere(biologyFixture(overrides))).toBeNull();
     }
+  });
+
+  it('keeps introduced identities and inherited traits stable across colony environments', () => {
+    const first = generateBiosphere(biologyFixture())!;
+    const other = generateBiosphere(
+      biologyFixture({
+        bodyId: 'another-world',
+        seed: 'different-seed',
+        gravity: 2,
+        pressureBar: 2,
+        temperatureK: 305,
+      })
+    )!;
+    for (let index = 0; index < first.species.length; index++) {
+      const a = first.species[index],
+        b = other.species[index];
+      expect([a.id, a.massKg, a.symmetry, a.senses, a.covering, a.susceptibility, a.baselineSamples]).toEqual(
+        [b.id, b.massKg, b.symmetry, b.senses, b.covering, b.susceptibility, b.baselineSamples]
+      );
+      expect(b.temperatureK).toBe(305);
+    }
+  });
+
+  it('makes historical recognition much more common near human settlement', () => {
+    let near = 0,
+      far = 0;
+    for (let index = 0; index < 100; index++) {
+      const env = biologyFixture({ origin: 'native', seed: `recognition-${index}` });
+      near +=
+        generateBiosphere({ ...env, humanIntensity: 1 })?.species.filter((species) => species.recognised)
+          .length ?? 0;
+      far +=
+        generateBiosphere({ ...env, humanIntensity: 0 })?.species.filter((species) => species.recognised)
+          .length ?? 0;
+    }
+    expect(near).toBeGreaterThan(far * 3);
+    expect(far).toBeGreaterThan(0);
   });
 
   it('limits anaerobic mobile sizes and keeps native occurrence probabilistic', () => {

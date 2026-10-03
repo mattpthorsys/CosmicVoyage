@@ -7678,7 +7678,7 @@ export class Game {
       .prepareSurfaceReady()
       .then(() => {
         if (this.stateManager.currentPlanet === planet) {
-          this.statusMessage = `${planet.name} surface data ready.`;
+          if (!this.activeEncounter) this.statusMessage = `${planet.name} surface data ready.`;
           this.forceFullRender = true;
         }
       })

@@ -66,11 +66,11 @@ export function targetQuotes(
         siteId: field.site.id,
         species,
         kind,
-        quality: 1,
+        quality: Math.max(0.2, 1 - (kind === 'dead' && target.state !== 'dead' ? 1 : target.injury) * 0.35),
         volumeM3: 0.1,
       }).credits
   );
-  return `Cr tissue ${prices[0]} / dead ${prices[1]} / live ${prices[2]} (pristine)`;
+  return `Cr data ${service.quote(species).credits} / tissue ${prices[0]} / dead ${prices[1]} / live ${prices[2]} (est.)`;
 }
 
 /** Builds a detached rendering snapshot, excluding occluded or collected contacts. */
@@ -90,7 +90,7 @@ export function createEncounterView(
   if (target) {
     const species = individualSpecies(field, target);
     const level = service.evidence(species.id)?.level ?? 0;
-    scanner.push(...speciesDescription(species, service).slice(0, 6));
+    scanner.push(...speciesDescription(species, service).slice(0, 3));
     const range = Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5;
     scanner.push(
       `${range.toFixed(0)} m / ${target.state}${target.sampled ? ' / sampled' : ''}`,
@@ -99,7 +99,7 @@ export function createEncounterView(
     if (target.state === 'stunned')
       scanner.push(`Recovery in ${Math.max(0, target.recoveryAt - field.elapsedSeconds).toFixed(0)} s`);
     if (species.susceptibility > 0) {
-      const estimate = estimateStun(species, power, level, target.exposure);
+      const estimate = estimateStun(species, power, level, target.exposure, target.injury, range);
       scanner.push(
         `Stun ${['LOW', 'STANDARD', 'HIGH'][power]}: ${estimate.stun}`,
         `Mortality ${estimate.mortality} / ${estimate.recovery}`
@@ -108,7 +108,7 @@ export function createEncounterView(
     scanner.push(`Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`);
   } else scanner.push('No contact selected', `${visible.length} visible biological contacts`);
   return {
-    title: `FIELD SURVEY / ${field.site.label.toUpperCase()}`,
+    title: `FIELD / ${field.site.label.toUpperCase()}`,
     terrain: [...field.terrain],
     rover: { x: field.roverX, y: field.roverY },
     actors: visible.map((individual) => {
@@ -128,7 +128,7 @@ export function createEncounterView(
     scanner,
     status: [
       `LOCAL ${field.elapsedSeconds.toFixed(0)} s / 5 m per cell`,
-      `Rover integrity ${integrity}% / cargo ${cargo}`,
+      `Integrity ${integrity}% / hold ${cargo} m3`,
     ],
     message,
   };
@@ -197,8 +197,7 @@ export function researchRows(
           `${credits} Cr`,
           service.status(evidence.species),
         ],
-        detail:
-          'Campaign-wide research demand. Submission keeps your evidence; only improved data earns another award.',
+        detail: 'Evidence retained. Improved data only; demand is shared by all ports.',
         disabled: credits <= 0,
       };
     });
@@ -212,7 +211,7 @@ export function researchRows(
         `${service.quote(container.species, container).credits} Cr`,
         service.status(container.species),
       ],
-      detail: `Submit one whole ${container.kind} specimen. Quality ${Math.round(container.quality * 100)}%. Scientific novelty is shared across every station.`,
+      detail: `Whole ${container.kind} specimen / quality ${Math.round(container.quality * 100)}% / campaign-wide demand.`,
       disabled: service.quote(container.species, container).credits <= 0,
     })),
   ];

@@ -1,6 +1,10 @@
 # Xenobiology: First-Version Implementation Plan
 
-Status: planning only. None of the new systems in this document are implemented.
+Status: bounded first version implemented, including the M0-M5 contracts and
+M6's automated integration/graphics verification and documentation. Long-session
+economy balance and enjoyment remain playtest questions. Read the
+[current implementation and player guide](../xenobiology.md) for exact controls,
+equipment envelopes, limitations and verification commands.
 Codebase baseline inspected: 2026-10-03. Recheck source contracts before starting
 each milestone; implementation is authoritative when older notes disagree.
 

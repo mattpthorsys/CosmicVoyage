@@ -1061,6 +1061,7 @@ describe('SceneRenderer visual regressions', () => {
   });
 
   it.each([
+    [30, 45],
     [48, 20],
     [76, 24],
     [120, 42],

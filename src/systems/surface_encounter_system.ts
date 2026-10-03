@@ -197,7 +197,7 @@ export class SurfaceEncounterSystem {
               ...result,
               message: 'Sessile biology has no applicable stun profile; sample or collect instead.',
             };
-          const outcome = stunOutcome(species, command.power, target.exposure, target.injury);
+          const outcome = stunOutcome(species, command.power, target.exposure, target.injury, range * 5);
           const roll = new PRNG(field.seed).seedNew('shot', target.id, field.turn).random();
           target.exposure++;
           target.injury += outcome.dead * 0.3;
@@ -231,7 +231,7 @@ export class SurfaceEncounterSystem {
         const species = individualSpecies(field, individual);
         const distance = Math.hypot(individual.x - field.roverX, individual.y - field.roverY);
         const dangerous = species.behaviour === 'territorial' || species.behaviour === 'ambush';
-        if (dangerous && distance < 4) {
+        if (dangerous && distance < (species.behaviour === 'ambush' ? 2 : 4)) {
           if (!individual.alerted) {
             individual.alerted = true;
             newlyAlerted.add(individual.id);
@@ -242,7 +242,11 @@ export class SurfaceEncounterSystem {
               result.message += ' Organism strikes rover armour.';
           }
         }
-        if (species.behaviour === 'sessile' || (species.respiration === 'anaerobic' && tick % 4 !== 0))
+        if (
+          species.behaviour === 'sessile' ||
+          (species.behaviour === 'ambush' && !individual.alerted) ||
+          (species.respiration === 'anaerobic' && tick % 4 !== 0)
+        )
           continue;
         const prng = new PRNG(field.seed).seedNew(individual.id, 'behaviour', tick);
         let gx = individual.x + prng.randomInt(-1, 1),
@@ -274,6 +278,8 @@ export class SurfaceEncounterSystem {
         const next = route[1];
         if (
           next &&
+          field.terrain[next[1]]?.[next[0]] === '.' &&
+          !(next[0] === 16 && next[1] === 21) &&
           !(next[0] === field.roverX && next[1] === field.roverY) &&
           !field.individuals.some(
             (other) =>

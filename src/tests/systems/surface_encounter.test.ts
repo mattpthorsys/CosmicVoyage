@@ -5,6 +5,8 @@ import { createEncounter, SurfaceEncounterSystem } from '../../systems/surface_e
 import { SpecimenCargoSystem } from '../../systems/specimen_cargo_system';
 import { CargoSystem } from '../../systems/cargo_systems';
 import { stunOutcome } from '../../entities/biology/stun_model';
+import { stasisCompatibility } from '../../systems/specimen_cargo_system';
+import { createDefaultShipModifications, installShipyardUpgrade } from '../../core/ship_modifications';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { validateXenobiology } from '../../entities/biology/biology_validation';
 import { createDefaultCargo } from '../../core/components';
@@ -65,6 +67,24 @@ describe('bounded biological encounters', () => {
     expect(low.dead + low.active + low.stunned).toBeCloseTo(1);
     expect(high.dead).toBeGreaterThan(low.dead);
     expect(stunOutcome(species, 2, 4).dead).toBeGreaterThan(high.dead);
+    expect(stunOutcome(species, 1, 0, 0, 40).stunned).toBeLessThan(stunOutcome(species, 1).stunned);
+  });
+
+  it('keeps moving actors on passable, distinct cells and reserves the return point', () => {
+    const biosphere = generateBiosphere(biologyFixture())!;
+    const field = createEncounter(biosphere, { id: 'routing-test', label: 'Field', x: 0, y: 0 });
+    const system = new SurfaceEncounterSystem(),
+      cargo = createDefaultCargo(1);
+    for (let tick = 0; tick < 60; tick++) {
+      system.act(field, { kind: 'wait' }, cargo, 0);
+      const occupied = new Set<string>();
+      for (const actor of field.individuals) {
+        expect(field.terrain[actor.y][actor.x]).toBe('.');
+        expect(`${actor.x},${actor.y}`).not.toBe('16,21');
+        expect(occupied.has(`${actor.x},${actor.y}`)).toBe(false);
+        occupied.add(`${actor.x},${actor.y}`);
+      }
+    }
   });
   it('issues a warning without dealing damage during the same multi-tick action', () => {
     const { field, target, system, cargo } = fixture();
@@ -82,9 +102,46 @@ describe('bounded biological encounters', () => {
     system.act(field, { kind: 'observe', targetId: target.id }, cargo, 0);
     expect(target.state).toBe('active');
   });
+  it('captures a stunned mobile organism whole and suspends its recovery in cargo', () => {
+    const { field, target, system, cargo } = fixture();
+    field.species[0] = { ...field.species[0], behaviour: 'passive' };
+    expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 1).elapsedSeconds).toBe(0);
+    target.state = 'stunned';
+    target.recoveryAt = 20;
+    expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 1).elapsedSeconds).toBe(5);
+    expect(cargo.specimens![0].kind).toBe('live');
+    system.act(field, { kind: 'wait' }, cargo, 1);
+    system.act(field, { kind: 'wait' }, cargo, 1);
+    expect(target.state).toBe('collected');
+    expect(cargo.specimens).toHaveLength(1);
+  });
+  it('makes a lethal shot irreversible and allows only one intact dead specimen', () => {
+    const { field, target, system, cargo } = fixture();
+    expect(system.act(field, { kind: 'shoot', targetId: target.id }, cargo, 0).elapsedSeconds).toBe(2);
+    expect(target.state).toBe('dead');
+    const before = structuredClone(field);
+    expect(system.act(field, { kind: 'shoot', targetId: target.id }, cargo, 0).elapsedSeconds).toBe(0);
+    expect(field).toEqual(before);
+    system.act(field, { kind: 'collect', targetId: target.id }, cargo, 0);
+    expect(cargo.specimens![0]).toMatchObject({ kind: 'dead', quality: 0.65 });
+    expect(target.state).toBe('collected');
+    expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 0).elapsedSeconds).toBe(0);
+  });
 });
 
 describe('biological cargo and snapshot contracts', () => {
+  it('upgrades stasis using one bay and unlocks a concrete environmental profile', () => {
+    const ship = createDefaultShipModifications();
+    const bays = ship.specialBaysOccupied;
+    const species = { ...fixture().field.species[0], temperatureK: 330, pressureBar: 8 };
+    expect(stasisCompatibility(species, 1)).not.toBeNull();
+    installShipyardUpgrade(ship, 'shipyard:stasis:1');
+    expect(ship.specialBaysOccupied).toBe(bays + 1);
+    installShipyardUpgrade(ship, 'shipyard:stasis:2');
+    expect(ship.specialBaysOccupied).toBe(bays + 1);
+    expect(stasisCompatibility(species, ship.stasisClass!)).toBeNull();
+    expect(stasisCompatibility({ ...species, massKg: 100 }, 2)).toContain('mass');
+  });
   it('shares physical volume with bulk cargo and transfers containers atomically', () => {
     const { field, target, system, cargo } = fixture();
     system.act(field, { kind: 'sample', targetId: target.id }, cargo, 0);

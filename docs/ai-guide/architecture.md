@@ -99,6 +99,10 @@ generate mission outcomes, or mutate player progression.
 - `GalaxyMapController` owns map pan and zoom while `galaxy-map` is the active
   modal; it is not a physical location state.
 - `Player` owns resources, position, ship, cargo, rover, and crew.
+- `XenobiologyService` owns persisted evidence, encounter actors and campaign-wide
+  research demand. `SurfaceEncounterSystem` resolves commands; its controller
+  owns presentation only. `SpecimenCargoSystem` validates indivisible containers
+  in the existing ship/rover holds. See [the module map](../xenobiology.md#implementation-map).
 
 Do not duplicate state in two owners. Transitional aliases in `Game` exist for
 older tests and should be removed as tests migrate to direct component usage.

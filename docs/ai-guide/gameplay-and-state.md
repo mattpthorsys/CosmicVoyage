@@ -151,9 +151,16 @@ domain-state indicators and must remain visible without requiring a scan.
 ## Surface
 
 Surface operation depends on explicit planet surface data, rover deployment,
-fuel, cargo, and nearby deposits. Surface X wraps; latitude-like Y behavior must
-be checked before changing movement because some generators and views treat it
-differently.
+fuel, cargo, and nearby deposits. Surface X wraps; Y clamps at the poles.
+Movement, drawing, mining, scanning, habitat distance and ship bearings share
+this topology. Out-of-range polar terrain is not painted from the other hemisphere.
+
+Biological habitats are nested surface encounters, not another `GameState`.
+`B` selects habitats in orbit or enters a nearby habitat with a deployed rover.
+An active field suspends accelerated world time; successful commands advance
+the persisted local clock and bounded actors. `SurfaceEncounterController`
+owns interaction modes and opens `xenobiology` in `InterfaceModeController`
+for menus/dossiers. See [xenobiology](../xenobiology.md).
 
 Surface generation uses a single worker with a bounded queue. Predictive work
 must go through `SurfacePrefetchService`, which serializes requests so newer

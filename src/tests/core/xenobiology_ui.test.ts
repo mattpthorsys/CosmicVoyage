@@ -38,6 +38,22 @@ describe('xenobiology interface', () => {
       command: { kind: 'move', dx: 0, dy: -1 },
     });
   });
+  it('uses a visible compact operations dashboard and wraps dossier controls on narrow screens', () => {
+    const biosphere = generateBiosphere(biologyFixture())!,
+      field = createEncounter(biosphere, { id: 'site', label: 'Site', x: 1, y: 1 });
+    const controller = new SurfaceEncounterController(),
+      service = new XenobiologyService();
+    controller.input(new Set(['ENTER_SYSTEM']), field);
+    const menu = controller.createModal(field, service, 30, 45, [])!;
+    expect(menu.dashboard?.some((line) => line.segments[0].text === '> OBSERVE')).toBe(true);
+    expect(menu.footer?.every((line) => line.length <= 20)).toBe(true);
+    controller.input(new Set(['QUIT']), field);
+    controller.input(new Set(['TARGET_MENU']), field);
+    const record = controller.createModal(field, service, 30, 45, [])!;
+    expect(record.footer?.join(' ')).toContain('PGUP/DN page');
+    expect(record.footer?.every((line) => line.length <= 20)).toBe(true);
+    expect(field.elapsedSeconds).toBe(0);
+  });
   it('excludes collected actors and provides detached coordinates for rendering', () => {
     const biosphere = generateBiosphere(biologyFixture())!,
       field = createEncounter(biosphere, { id: 'site', label: 'Site', x: 1, y: 1 });

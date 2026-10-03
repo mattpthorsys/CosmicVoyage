@@ -31,6 +31,8 @@ describe('scientific evidence and campaign demand', () => {
     service.observe(species, 2);
     const data = service.submit(species);
     expect(data).toBeGreaterThan(0);
+    expect(service.status(species)).toBe('KNOWN / NOT COLLECTED');
+    expect(species.recognised).toBe(false);
     expect(service.submit(species)).toBe(0);
     const container: SpecimenContainer = {
       id: 'c1',

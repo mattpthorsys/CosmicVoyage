@@ -79,7 +79,7 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
   );
   const temperate = Math.max(0.15, 1 - Math.abs(e.temperatureK - 294) / 65);
   if (e.origin === 'native' && prng.random() > 0.34 * temperate * Math.min(1, e.ageGyr / 2)) return null;
-  const aerobic = e.oxygenBar >= 0.035;
+  const aerobic = e.origin === 'introduced' || e.oxygenBar >= 0.035;
   const species: SpeciesDefinition[] = [];
   for (let index = 0; index < 6; index++) {
     const lineage = Math.floor(index / 2);
@@ -99,13 +99,21 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
     const massKg = Number(
       (producer
         ? individual.random(0.1, 3)
-        : individual.random(0.2, aerobic ? 65 / Math.max(1, e.gravity) : 3)
+        : individual.random(0.2, aerobic ? 65 / (e.origin === 'introduced' ? 1 : Math.max(1, e.gravity)) : 3)
       ).toFixed(2)
     );
     const recognised = e.origin === 'introduced' || individual.random() < 0.08 + e.humanIntensity * 0.84;
     const covering =
       ancestor.choice(['flexible mineral shell', 'silica-reinforced cuticle', 'hydrated organic sheath']) ??
       'hydrated organic sheath';
+    const organisation =
+      ancestor.choice(['segmented multicellular', 'unsegmented multicellular']) ?? 'segmented multicellular';
+    const senses =
+      ancestor.choice([
+        'chemical and vibration sensing',
+        'distributed light receptors',
+        'paired light and chemical receptors',
+      ]) ?? 'chemical sensing';
     species.push({
       id: e.origin === 'introduced' ? `managed-carbon-water:${index}` : `${e.bodyId}/species:${index}`,
       bodyId: e.bodyId,
@@ -116,17 +124,9 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
       lineage: `Clade ${lineage + 1}`,
       origin: e.origin,
       symmetry,
-      organisation: producer
-        ? 'modular colonial'
-        : (ancestor.choice(['segmented multicellular', 'unsegmented multicellular']) ??
-          'segmented multicellular'),
+      organisation: producer ? 'modular colonial' : organisation,
       covering,
-      senses:
-        ancestor.choice([
-          'chemical and vibration sensing',
-          'distributed light receptors',
-          'paired light and chemical receptors',
-        ]) ?? 'chemical sensing',
+      senses,
       metabolism: producer ? (lineage === 2 ? 'mixotroph' : 'autotroph') : 'heterotroph',
       respiration: aerobic ? 'aerobic' : 'anaerobic',
       role: producer

@@ -5,7 +5,7 @@ import {
   type EncounterCommand,
 } from '../../systems/surface_encounter_system';
 import { TerminalTextReveal } from '../terminal_text_reveal';
-import { biologyDashboard, speciesDescription, targetQuotes } from '../xenobiology_ui';
+import { biologyDashboard, speciesDescription } from '../xenobiology_ui';
 import type { XenobiologyService } from '../xenobiology_service';
 import { getDashboardVisibleRows, type TextModalTableModel } from '../text_ui';
 
@@ -164,6 +164,25 @@ export class SurfaceEncounterController {
     const state = this.interaction;
     if (state.kind === 'drive') return;
     const base = { columns: [], widths: [], rows: [], selectedIndex: 0, viewOffset: 0, visibleRowCount: 8 };
+    /** Wraps shortcut descriptions to the shared modal's actual footer width. */
+    const footer = (...lines: string[]): string[] =>
+      biologyDashboard(lines, cols - 10).map((line) => line.segments.map((span) => span.text).join(''));
+    if (state.kind === 'menu' && cols < 42) {
+      const dashboard = biologyDashboard(
+        ACTIONS.map((action, index) => `${index === state.index ? '>' : ' '} ${action.toUpperCase()}`),
+        cols - 12
+      );
+      const shortcuts = footer('UP/DN select', 'ENTER execute / ESC back');
+      const visible = getDashboardVisibleRows(dashboard.length, rows, shortcuts.length);
+      return {
+        ...base,
+        title: 'BIO OPERATIONS',
+        dashboard,
+        visibleRowCount: visible,
+        viewOffset: Math.max(0, state.index - visible + 1),
+        footer: shortcuts,
+      };
+    }
     if (state.kind === 'menu')
       return {
         ...base,
@@ -180,7 +199,7 @@ export class SurfaceEncounterController {
         })),
         selectedIndex: state.index,
         viewOffset: Math.max(0, state.index - 7),
-        footer: ['UP/DN select  ENTER execute  ESC back'],
+        footer: footer('UP/DN select  ENTER execute  ESC back'),
       };
     if (state.kind === 'confirm')
       return {
@@ -194,7 +213,7 @@ export class SurfaceEncounterController {
           ],
           cols - 12
         ),
-        footer: ['ENTER confirm  ESC cancel'],
+        footer: footer('ENTER confirm  ESC cancel'),
       };
     if (state.kind === 'power')
       return {
@@ -208,7 +227,7 @@ export class SurfaceEncounterController {
           ],
           cols - 12
         ),
-        footer: ['LEFT/RIGHT dose  ENTER fire  ESC cancel'],
+        footer: footer('LEFT/RIGHT dose  ENTER fire  ESC cancel'),
       };
     const target = this.target(field);
     const lines =
@@ -224,12 +243,12 @@ export class SurfaceEncounterController {
           ? [
               'BIOLOGICAL DOSSIER',
               ...speciesDescription(individualSpecies(field, target), service),
-              targetQuotes(field, target, service),
-              ...scanner.slice(-3),
+              ...scanner.slice(3),
             ]
           : ['No biological target'];
     const dashboard = biologyDashboard(lines, Math.min(88, cols - 12));
-    const visible = getDashboardVisibleRows(dashboard.length, rows, 2);
+    const shortcuts = footer('UP/DN scroll  PGUP/DN page', 'ESC return to field');
+    const visible = getDashboardVisibleRows(dashboard.length, rows, shortcuts.length);
     state.offset = Math.min(state.offset, Math.max(0, dashboard.length - visible));
     return {
       ...base,
@@ -238,7 +257,7 @@ export class SurfaceEncounterController {
       dashboardReveal: this.reveal.progress,
       viewOffset: state.offset,
       visibleRowCount: visible,
-      footer: ['UP/DN scroll  PGUP/DN page', 'ESC return to field'],
+      footer: shortcuts,
     };
   }
 }

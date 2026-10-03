@@ -14,10 +14,35 @@ export function drawSurfaceEncounter(buffer: ScreenBuffer, model: EncounterViewM
   const drawing = new DrawingContext(buffer);
   drawing.drawBox(0, 0, cols, rows, TEXT_PALETTE.cyanDeep, bg, ' ');
   buffer.drawString(model.title.slice(0, cols - 4), 2, 0, TEXT_PALETTE.cyanSignal, bg);
-  const wide = cols >= 90;
-  const scaleX = wide ? 2 : 1;
-  const fieldWidth = Math.min(32, Math.floor((wide ? cols - 43 : cols - 4) / scaleX));
-  const fieldHeight = Math.min(24, Math.max(3, rows - (wide ? 9 : 19)));
+  const wide = cols >= 72;
+  const fieldWidth = Math.min(32, wide ? cols - 40 : cols - 4);
+  /** Wraps a content block without dropping information at a narrow viewport edge. */
+  const wrap = (text: readonly string[], width: number): string[] =>
+    biologyDashboard(text, width).map((line) => line.segments.map((segment) => segment.text).join(''));
+  const footerWidth = cols - 4;
+  const statuses = wrap(model.status, footerWidth);
+  const messages = wrap([model.message], footerWidth);
+  const shortcuts = wrap(
+    wide
+      ? [
+          'Arrows drive  TAB target  V observe  A analyse  ENTER operations',
+          'D dossier  N species  O cargo  ESC withdraw at entry',
+        ]
+      : [
+          'Arrows drive / TAB target',
+          'V scan / A analyse / ENTER ops',
+          'D dossier / N records / O hold',
+          'ESC withdraw at X16 Y21',
+        ],
+    footerWidth
+  );
+  const footerHeight = statuses.length + messages.length + shortcuts.length + 1;
+  const sensorWidth = wide ? cols - fieldWidth - 7 : cols - 4;
+  const lines = wrap(model.scanner, sensorWidth);
+  const scannerRows = wide
+    ? rows - 4 - footerHeight
+    : Math.min(lines.length + 1, Math.max(4, rows - footerHeight - 9));
+  const fieldHeight = Math.min(24, Math.max(3, rows - footerHeight - 4 - (wide ? 0 : scannerRows + 1)));
   const mapX = 2,
     mapY = 3;
   const left = Math.max(0, Math.min(32 - fieldWidth, model.rover.x - Math.floor(fieldWidth / 2)));
@@ -26,18 +51,12 @@ export function drawSurfaceEncounter(buffer: ScreenBuffer, model: EncounterViewM
   for (let y = 0; y < fieldHeight; y++)
     for (let x = 0; x < fieldWidth; x++) {
       const cell = model.terrain[y + top]?.[x + left];
-      buffer.drawChar(
-        cell === '#' ? '#' : '.',
-        mapX + x * scaleX,
-        mapY + y,
-        cell === '#' ? '#456167' : '#172e2b',
-        bg
-      );
+      buffer.drawChar(cell === '#' ? '#' : '.', mapX + x, mapY + y, cell === '#' ? '#456167' : '#172e2b', bg);
     }
   /** Projects a visible field position into the clipped local camera. */
   const position = (x: number, y: number): [number, number] | null =>
     x >= left && x < left + fieldWidth && y >= top && y < top + fieldHeight
-      ? [mapX + (x - left) * scaleX, mapY + y - top]
+      ? [mapX + x - left, mapY + y - top]
       : null;
   const entry = position(16, 21);
   if (entry) buffer.drawChar('<', entry[0], entry[1], TEXT_PALETTE.cyanSignal, bg);
@@ -59,40 +78,18 @@ export function drawSurfaceEncounter(buffer: ScreenBuffer, model: EncounterViewM
       colour,
       actor.selected ? '#153f43' : bg
     );
-    if (actor.selected && scaleX > 1) buffer.drawChar('<', p[0] + 1, p[1], TEXT_PALETTE.cyanSignal, bg);
   }
   const rover = position(model.rover.x, model.rover.y);
   if (rover) buffer.drawChar('@', rover[0], rover[1], '#c0f9ef', bg);
-  buffer.drawString(`X${model.rover.x} Y${model.rover.y} / ENTRY X16 Y21`, 2, 1, '#70bdad', bg, 'thin');
-  const sensorX = wide ? mapX + fieldWidth * scaleX + 3 : 2;
+  buffer.drawString(`X${model.rover.x} Y${model.rover.y} / ENTRY 16,21`, 2, 1, '#70bdad', bg, 'thin');
+  const sensorX = wide ? mapX + fieldWidth + 3 : 2;
   const sensorY = wide ? 3 : mapY + fieldHeight + 1;
-  const sensorWidth = cols - sensorX - 2;
-  const sensorHeight = wide ? rows - sensorY - 7 : Math.min(8, rows - sensorY - 7);
   buffer.drawString('BIOSENSOR', sensorX, sensorY, TEXT_PALETTE.cyanSignal, bg);
-  const lines = biologyDashboard(model.scanner, sensorWidth);
-  for (let index = 0; index < Math.max(0, sensorHeight - 1) && index < lines.length; index++) {
-    buffer.drawString(
-      lines[index].segments.map((segment) => segment.text).join(''),
-      sensorX,
-      sensorY + 1 + index,
-      '#8bdbb1',
-      bg,
-      'thin'
-    );
+  for (let index = 0; index < Math.max(0, scannerRows - 1) && index < lines.length; index++) {
+    buffer.drawString(lines[index], sensorX, sensorY + 1 + index, '#8bdbb1', bg, 'thin');
   }
-  const footer = rows - 6;
-  model.status.forEach((line, index) =>
-    buffer.drawString(line.slice(0, cols - 4), 2, footer + index, '#7ab9bd', bg, 'thin')
-  );
-  buffer.drawString(model.message.slice(0, cols - 4), 2, rows - 4, '#dfcb80', bg, 'thin');
-  const shortcuts =
-    cols >= 70
-      ? [
-          'Arrows drive  TAB target  V observe  A analyse  ENTER operations',
-          'D dossier  N species  O cargo  ESC withdraw at entry',
-        ]
-      : ['Arrows drive  TAB target  V scan  A analyse', 'ENTER ops  D dossier  N species  O cargo  ESC exit'];
-  shortcuts.forEach((line, index) =>
-    drawShortcutText(buffer, line.slice(0, cols - 4), 2, rows - 3 + index, '#77c6de', bg)
-  );
+  let footer = rows - footerHeight;
+  for (const line of statuses) buffer.drawString(line, 2, footer++, '#7ab9bd', bg, 'thin');
+  for (const line of messages) buffer.drawString(line, 2, footer++, '#dfcb80', bg, 'thin');
+  for (const line of shortcuts) drawShortcutText(buffer, line, 2, footer++, '#77c6de', bg);
 }

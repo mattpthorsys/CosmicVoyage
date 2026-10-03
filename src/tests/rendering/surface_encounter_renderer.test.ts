@@ -38,6 +38,7 @@ describe('field survey graphics contracts', () => {
     [120, 42],
     [76, 36],
     [48, 48],
+    [30, 45],
   ])('keeps contacts, scanner and footer bounded in a %sx%s display', (cols, rows) => {
     const screen = display(cols, rows),
       biosphere = generateBiosphere(biologyFixture())!;

@@ -48,7 +48,10 @@ export class XenobiologyService {
     if (species.baselineSamples + (this.state.demand[species.id]?.samples ?? 0) >= 6)
       return 'WELL SAMPLED / LOW VALUE';
     if (evidence.collected) return 'PREVIOUSLY COLLECTED';
-    return species.recognised ? 'KNOWN / NOT COLLECTED' : 'UNKNOWN TO SCIENCE';
+    // Confirmed submissions update catalogue knowledge, not the immutable pre-voyage baseline or reward cap.
+    const catalogued =
+      species.recognised || evidence.submittedLevel >= 2 || (this.state.demand[species.id]?.samples ?? 0) > 0;
+    return catalogued ? 'KNOWN / NOT COLLECTED' : 'UNKNOWN TO SCIENCE';
   }
 
   /** Calculates bounded cumulative novelty and declining sample value without mutating demand. */

@@ -62,7 +62,9 @@ This directory should be treated as the consolidated operational guide.
 
 ## Feature Planning
 
-The following documents describe proposed work, not current gameplay:
+The bounded first version is implemented. Start with the
+[current xenobiology guide](../xenobiology.md) for controls, ownership, limits and
+verification. The planning documents preserve its design rationale:
 
 - [Xenobiology first-version implementation plan](../plans/xenobiology-first-version.md):
   bounded encounters, procedural biology, scanning, specimen logistics, research
