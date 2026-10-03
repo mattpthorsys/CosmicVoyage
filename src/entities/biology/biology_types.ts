@@ -100,6 +100,8 @@ export interface BiologyOrigin {
   bodyPath: string;
   bodyName: string;
   surface: { x: number; y: number; siteId: string; label: string };
+  /** Evidence actually acquired here, distinct from stronger knowledge of this species elsewhere. */
+  level?: EvidenceLevel;
 }
 
 export interface ResearchDemandRecord {

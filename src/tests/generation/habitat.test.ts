@@ -30,7 +30,7 @@ function surface(): SurfaceData {
 /** Creates a canonical new-profile field with producer patches and a grazing group. */
 function fieldFixture() {
   const terrain = surface();
-  terrain.heightmap![4][3] = 80;
+  terrain.heightmap![4][3] = 89;
   const habitat = classifyHabitat(terrain, 4, 4, true)!;
   const biosphere = generateBiosphere(biologyFixture())!;
   return createEncounter(biosphere, { id: 'habitat-test', x: 4, y: 4, label: 'Water margin', habitat });
@@ -75,7 +75,7 @@ describe('habitat communities', () => {
   });
   it('uses real water proximity, not colour, and refuses submerged cells', () => {
     const terrain = surface();
-    terrain.heightmap![4][3] = 80;
+    terrain.heightmap![4][3] = 89;
     expect(classifyHabitat(terrain, 4, 4, true)?.kind).toBe('moist-margin');
     expect(classifyHabitat(terrain, 3, 4, true)).toBeNull();
     expect(classifyHabitat(terrain, 4, 4, false)?.kind).not.toBe('moist-margin');

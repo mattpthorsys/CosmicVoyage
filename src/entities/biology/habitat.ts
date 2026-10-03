@@ -40,7 +40,7 @@ export function classifyHabitat(
   const elevation = (height - (seaLevel ?? 0)) / 255;
   const kind: HabitatKind =
     waterDistanceCells !== null
-      ? relief >= 0.12
+      ? relief >= 0.045
         ? 'rocky-margin'
         : 'moist-margin'
       : elevation >= 0.32

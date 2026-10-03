@@ -147,6 +147,7 @@ export function validateXenobiology(
         number(origin.worldX, -Number.MAX_SAFE_INTEGER);
         number(origin.worldY, -Number.MAX_SAFE_INTEGER);
         number(origin.systemSlot, 0, 1000, true);
+        if (origin.level !== undefined) number(origin.level, 0, evidence.level as number, true);
         record(origin.surface);
         text(origin.surface.siteId);
         text(origin.surface.label);

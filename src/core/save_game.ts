@@ -17,9 +17,11 @@ import { CONFIG } from '../config';
 import { createXenobiologySnapshot, type XenobiologySnapshot } from '../entities/biology/biology_types';
 import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 
-export const SAVE_GAME_VERSION = 12;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v12';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v12';
+export const SAVE_GAME_VERSION = 13;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v13';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v13';
+const VERSION_TWELVE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v12';
+const VERSION_TWELVE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v12';
 const VERSION_ELEVEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v11';
 const VERSION_ELEVEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v11';
 const VERSION_TEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v10';
@@ -185,7 +187,11 @@ export interface GameSaveV12 extends Omit<GameSaveV11, 'version'> {
   version: 12;
 }
 
-export type GameSave = GameSaveV12;
+export interface GameSaveV13 extends Omit<GameSaveV12, 'version'> {
+  version: 13;
+}
+
+export type GameSave = GameSaveV13;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -229,6 +235,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV10
     | GameSaveV11
     | GameSaveV12
+    | GameSaveV13
   >;
   if (
     record.version !== 1 &&
@@ -242,6 +249,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 9 &&
     record.version !== 10 &&
     record.version !== 11 &&
+    record.version !== 12 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -308,8 +316,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 11:
       save = migrateV11Save(candidate as unknown as GameSaveV11);
       break;
+    case 12:
+      save = { ...(candidate as unknown as GameSaveV12), version: SAVE_GAME_VERSION };
+      break;
     default:
-      save = candidate as unknown as GameSaveV12;
+      save = candidate as unknown as GameSaveV13;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -773,8 +784,8 @@ function validateMissionProgress(save: GameSave): void {
             throw new Error('Invalid mission landing coordinates.');
           assertNonEmptyString(surface.siteId, 'mission landing habitat id');
           assertNonEmptyString(surface.label, 'mission landing habitat label');
-          if (objective.kind === 'specimen' && surface.siteId !== objective.siteId)
-            throw new Error('Mission landing habitat does not match its specimen objective.');
+          if (objective.kind !== 'scan' && surface.siteId !== objective.siteId)
+            throw new Error('Mission landing habitat does not match its biological objective.');
         }
       }
       if (objective.kind === 'scan') {
@@ -787,14 +798,23 @@ function validateMissionProgress(save: GameSave): void {
         assertNonEmptyString(objective.speciesId, 'mission species id');
         assertNonEmptyString(objective.siteId, 'mission habitat id');
         assertFiniteNumber(objective.minimumQuality, 'mission specimen quality');
-        if (objective.requiredKind !== 'live' || objective.minimumQuality < 0 || objective.minimumQuality > 1)
+        if (
+          !['live', 'tissue'].includes(objective.requiredKind) ||
+          objective.minimumQuality < 0 ||
+          objective.minimumQuality > 1
+        )
           throw new Error('Invalid specimen mission objective.');
+      } else if (objective.kind === 'biology-data') {
+        assertNonEmptyString(objective.speciesId, 'mission species id');
+        assertNonEmptyString(objective.siteId, 'mission habitat id');
+        if (objective.requiredEvidenceLevel !== 3)
+          throw new Error('Invalid biological evidence requirement.');
       } else throw new Error('Unsupported mission objective kind.');
     }
     if (new Set(mission.objectives.map((objective) => objective.id)).size !== mission.objectives.length)
       throw new Error('Duplicate mission objective identity.');
     if (
-      mission.objectives.some((objective) => objective.kind === 'specimen') &&
+      mission.objectives.some((objective) => objective.kind !== 'scan') &&
       (mission.type !== 'xenobiology' || mission.objectives.length !== 1 || !mission.originStarbaseId)
     )
       throw new Error('Invalid biological delivery contract.');
@@ -919,6 +939,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_TWELVE_SESSION_SAVE_KEY,
       VERSION_ELEVEN_SESSION_SAVE_KEY,
       VERSION_TEN_SESSION_SAVE_KEY,
       VERSION_NINE_SESSION_SAVE_KEY,
@@ -941,6 +962,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_TWELVE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_ELEVEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_NINE_SESSION_SAVE_KEY);
@@ -959,6 +981,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_TWELVE_MANUAL_SAVE_KEY,
       VERSION_ELEVEN_MANUAL_SAVE_KEY,
       VERSION_TEN_MANUAL_SAVE_KEY,
       VERSION_NINE_MANUAL_SAVE_KEY,
@@ -981,6 +1004,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_TWELVE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_ELEVEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_NINE_MANUAL_SAVE_KEY);

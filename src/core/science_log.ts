@@ -1,6 +1,7 @@
 import type { BiologyOrigin, SpeciesEvidence, SpecimenContainer } from '../entities/biology/biology_types';
 import type { InputManager } from './input_manager';
 import type { MissionJournalReturn } from './mission_journal';
+import type { StarbaseMission } from './mission_board';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { createBiologicalDossier } from './xenobiology_ui';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
@@ -14,7 +15,7 @@ import {
   type TextTone,
 } from './text_ui';
 
-const FILTERS = ['ALL', 'NOVEL', 'UNSUBMITTED', 'ABOARD'] as const;
+const FILTERS = ['ALL', 'NOVEL', 'PENDING', 'ABOARD'] as const;
 
 /** Presents acquired evidence and explicit return coordinates without exposing unvisited biological data. */
 export class ScienceLog {
@@ -119,18 +120,26 @@ export class ScienceLog {
     stasisClass: number,
     cols: number,
     rows: number,
-    canLand: boolean
+    canLand: boolean,
+    missions: readonly StarbaseMission[] = []
   ): TextModalTableModel {
     const entries = this.entries(service, cargo);
     const entry = this.selected(entries);
     const origin = this.origin(entry);
+    // Managed species occur on several planets; use the selected origin's measured environment for handling.
+    const species =
+      entry &&
+      (service.snapshot.fields[origin?.surface.siteId ?? '']?.species.find(
+        (candidate) => candidate.id === entry.species.id
+      ) ??
+        entry.species);
     const width = Math.max(16, Math.min(88, cols - 12));
     const lines: TextDashboardLine[] = [];
     /** Writes one semantic line before wrapping so narrow terminals retain every word. */
     const line = (text: string, tone: TextTone = 'normal', heading = false): void => {
       lines.push({ segments: [{ text, tone, font: heading ? 'thick' : 'thin' }] });
     };
-    if (!entry) {
+    if (!entry || !species) {
       line('NO MATCHING RECORDS', 'cyan', true);
       line(
         'Observe a surface contact to retain its biological record. S changes the record filter.',
@@ -158,18 +167,25 @@ export class ScienceLog {
       );
       const demand = service.snapshot.demand[entry.species.id];
       line(`Physical submissions: ${demand?.samples ?? 0}`, 'muted');
+      for (const mission of missions)
+        if (
+          mission.objectives.some(
+            (objective) => objective.kind !== 'scan' && objective.speciesId === entry.species.id
+          )
+        )
+          line(`Accepted request: ${mission.title} / return to ${mission.originStarbaseName}`, 'green');
       if (entry.level >= 2) {
         line(
-          `Preservation: ${stasisCompatibility(entry.species, stasisClass) ?? 'typical adult compatible'}`,
+          `Preservation: ${stasisCompatibility(species, stasisClass) ?? 'typical individual compatible'}`,
           'amber'
         );
         line('Individual size and available cargo/stasis slots can change capture feasibility.', 'muted');
         for (const kind of ['tissue', 'dead', 'live'] as const) {
-          const value = service.quote(entry.species, {
+          const value = service.quote(species, {
             id: 'estimate',
             sourceId: 'uncollected-estimate',
             siteId: '',
-            species: entry.species,
+            species,
             kind,
             quality: 1,
             volumeM3: 0.1,
@@ -177,7 +193,7 @@ export class ScienceLog {
           line(`Next ${kind} reference: approximately ${value.toLocaleString()} Cr at full quality`, 'amber');
         }
       }
-      lines.push(...createBiologicalDossier(entry.species, service, width));
+      lines.push(...createBiologicalDossier(species, service, width));
     }
     if (this.notice) lines.unshift({ segments: [{ text: this.notice, tone: 'amber' }] });
     const dashboard = wrapDashboardLines(lines, width);
@@ -197,7 +213,7 @@ export class ScienceLog {
     this.viewOffset = Math.min(this.viewOffset, Math.max(0, dashboard.length - visibleRowCount));
     return {
       title: 'SCIENCE LOG',
-      subtitle: `${FILTERS[this.filter]} / ${entries.length} / HELD`,
+      subtitle: `${FILTERS[this.filter]} / ${entries.length}`,
       columns: [],
       widths: [],
       rows: [],

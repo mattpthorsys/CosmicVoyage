@@ -47,12 +47,23 @@ export interface SpecimenMissionObjective {
   targetLabel: string;
   speciesId: string;
   siteId: string;
-  requiredKind: 'live';
+  requiredKind: 'live' | 'tissue';
   minimumQuality: number;
   location?: MissionBodyLocation;
 }
 
-export type MissionObjective = ScanMissionObjective | SpecimenMissionObjective;
+export interface BiologicalDataObjective {
+  id: string;
+  kind: 'biology-data';
+  targetName: string;
+  targetLabel: string;
+  speciesId: string;
+  siteId: string;
+  requiredEvidenceLevel: 3;
+  location?: MissionBodyLocation;
+}
+
+export type MissionObjective = ScanMissionObjective | SpecimenMissionObjective | BiologicalDataObjective;
 
 export interface StarbaseMission {
   id: string;

@@ -3,12 +3,14 @@
 Cosmic Voyage now has a bounded discovery, observation, sampling and research
 loop. It is an addition to ordinary surface travel, not a separate world mode.
 
-The first expansion adds habitat-dependent communities, local grazing-group
-retreat, and one finite live-reference request per inhabited station when a
-real compatible population is available. Automated depots do not issue these
-requests. The expansion's automated and browser verification is pending the
-requested testing/model-switching phase; do not treat these notes as playtest
-evidence.
+The first expansion's automated and browser verification passed. The next
+expansion adds a shipboard science log, ten species in five inherited groups,
+five habitat classes, individual size variation, and finite analysis/tissue
+requests alongside live references. Its verification is pending the requested
+Luna handoff. Automated depots do not issue scientific requests. Long-session
+balance and enjoyment still need personal playtesting.
+See [the expansion verification handoff](xenobiology-expansion-verification.md)
+for a personal playthrough and the deferred automated/browser checks.
 
 ## First Expedition
 
@@ -35,12 +37,15 @@ Prepared land sites are classified from numeric relief and nearby verified
 liquid-water coverage, not their display colour. Water margins support producer
 patches, grazers and detritus consumers; sheltered ground has substrate colonies
 and shelter-associated consumers; exposed ground has sparser producers and
-foragers. These are coarse habitat priors, not a rainfall or ecosystem model.
+foragers. Rocky water margins add attached fans and crevice detritivores;
+elevated exposed substrate adds compact rosettes and small detritus consumers.
+These are coarse habitat priors, not a rainfall or ecosystem model. Elevation
+is relative numeric terrain relief, not a metre-resolution climate calculation.
 Metre-scale moist/open/sheltered patches are a local procedural interpretation
 of the region. They retain its terrain palette and affect placement; outcrops
 still use the existing passability rules.
 
-New profiled fields contain approximately five to eight organisms from three
+New profiled fields contain approximately four to eight organisms from two or three
 relevant taxa rather than the same ten-contact distribution at every site.
 Small aerobic grazers on water margins form loose groups. A nearby member
 sensing the rover can trigger local coordinated withdrawal; after a short
@@ -68,10 +73,11 @@ layout is not regenerated, and captured organisms do not return on reentry.
 | D             | Scrollable dossier for the selected species             |
 | N             | Personal species/evidence record                        |
 | O             | Rover cargo manifest                                    |
+| X             | Shipboard science log and recorded return sites          |
 | Escape        | Close a panel, or withdraw near the entry at X16 Y21    |
 
 The bottom menu includes Observe, Analyse, Stun, Sample, Collect, Shoot,
-Wait, Dossier, Species, Cargo, Missions and Withdraw. Left/Right (or Up/Down) select;
+Wait, Dossier, Species, Cargo, Missions, Science log and Withdraw. Left/Right (or Up/Down) select;
 Enter executes. Buttons also work directly with the mouse or their hotkeys.
 Escape leaves menu selection and restores driving.
 
@@ -80,6 +86,10 @@ four-colour silhouettes distinguish the rover, mobile organisms and sessile
 colonies. A telemetry panel shows rover integrity, fuel, actual crew health,
 cargo percentage/volume and a short evidence-limited contact description.
 On narrow displays the telemetry sits below the terrain instead of beside it.
+Ten constrained external forms include mats, fans, rosettes, walkers, tripods,
+radial creepers and low substrate crawlers. Dossiers and sprites share the
+same anatomy traits. Small individuals use more compact silhouettes while
+all sprites retain a stable six-by-four footprint and at most four colours.
 
 In stun preparation, Left/Right choose low, standard or high dose. The display
 updates incapacitation and mortality estimates before Enter fires. Escape
@@ -116,10 +126,41 @@ in that same manifest. `C` is a shortcut for the selected contact. Large mobile
 organisms must first be stunned; incompatible stasis, a full hold or exhausted
 live slots refuse collection without advancing time or removing the organism.
 
+New individuals have persistent small, typical or large mass scales. This is
+ordinary within-species size variation, not a claimed juvenile/adult life stage.
+Estimated mass, length, stun response, damage, handling and whole-specimen cargo
+volume use that same scale. The rover handles whole organisms up to 80 kg;
+tissue from a larger individual remains collectible. Size never grants a new
+species identity or resets scientific novelty. Older fields keep their original
+individual sizes. Try an unvisited habitat or a new voyage to see new variation.
+
 Containers use ordinary cargo volume, cannot be split into commodity quantities,
 and appear in ship/rover manifests. Disposal requires confirmation and is
 irreversible. Docking transfers whole containers that fit; overflow remains in
 the stowed rover. Ordinary commodity sales do not sell biological containers.
+
+## Science Log
+
+Press `X` from travel, orbit, a deployed field or a safe operations menu. It is
+also available in Ship Operations, the rover action menu and station Research.
+The log pauses time, writes in the shared terminal style and shows only acquired
+evidence. Any key completes an unfinished text reveal before taking action.
+
+- Left/Right or Tab selects a species; Up/Down and Page Up/Page Down scroll.
+- `S` cycles All, Novel, Pending data and Aboard filters.
+- `B` cycles this species' recorded habitats, including separate colony origins.
+- `Enter`, while orbiting the recorded planet or its parent, selects its exact
+  landing site. A later Enter confirms landing; the log never teleports or lands.
+- Escape returns to the parent interface; `X` also closes the log.
+
+Each entry includes hyperspace coordinates/contact slot, body and habitat X/Y,
+personal collection and current cargo counts, submitted evidence, physical
+submission history, accepted requests, typical preservation compatibility and
+remaining approximate full-quality specimen offers. Actual individual size,
+quality, slots and cargo capacity can change collection feasibility.
+Origins record the evidence actually acquired at each site, independently of
+stronger species knowledge from another colony. Earlier observations without
+coordinates can be updated by observing the species again at its habitat.
 
 ## Stasis, Threats And Time
 
@@ -224,6 +265,33 @@ delivery. Sell details identify specimens matching an accepted request, but
 ordinary sales do not fulfil it or pay the contract fee. An accepted target
 stays fixed even if a newly generated board offer would choose another species.
 
+## Analysis And Tissue Requests
+
+Staffed ports can also issue one **Habitat biochemical profile** request and
+one **Habitat tissue reference** request when actual eligible contacts or
+already acquired contributions exist. Each request is finite per station;
+changing tabs or visiting again does not renew its fee.
+
+For a biochemical profile, accept the request, use `J` to inspect/select its
+habitat, then use `A` within 25 m of the correct organism. Detailed physical
+sampling at that same site also establishes the required biochemical evidence.
+Remote preliminary observations or scans at a different colony do not count.
+Qualifying evidence already recorded at that site can count when accepting.
+Return to Research or Missions to deliver the data packet: **450 Cr plus any
+remaining ordinary data value**, with no container or stasis required.
+
+For a tissue reference, approach the requested organism within 7.5 m and use
+`S`. Return the sealed tissue container, with quality at least 60%, to the
+issuer for **550 Cr plus remaining ordinary tissue value**. No stasis is
+required. Delivery removes exactly that one container; the source organism
+remains unless separately collected or killed. A live or dead whole specimen
+does not fulfil a tissue request. Selling/discarding the sample removes READY.
+
+Both use the same scientific ledger as ordinary Research and Sell, so a
+contract cannot reset novelty. Accepted requirements appear in contact
+dossiers, the science log and the mission journal. Ordinary sales do not
+settle acquisition contracts.
+
 ## Implementation Map
 
 - `entities/biology/biosphere_generator.ts`: numeric environment adapter,
@@ -234,8 +302,8 @@ stays fixed even if a newly generated board offer would choose another species.
 - `entities/biology/stun_model.ts`: shared fictional dose-response model and
   uncertainty projection; these probabilities are gameplay priors, not measured
   alien physiology.
-- `systems/surface_encounter_system.ts`: connected 32x24 local terrain, ten
-  persistent individuals, visibility, successful-command time and bounded
+- `systems/surface_encounter_system.ts`: connected 32x24 local terrain, bounded
+  persistent populations, visibility, successful-command time and bounded
   rot-js routing. NPCs cannot occupy the reserved return point.
 - `systems/specimen_cargo_system.ts`: whole-container validation and transfer.
 - `core/xenobiology_service.ts`: evidence, scientific recognition and marginal
@@ -243,11 +311,14 @@ stays fixed even if a newly generated board offer would choose another species.
   when explicitly delivered under a contract.
 - `core/biological_contracts.ts`: real compatible reference offers and atomic
   whole-container delivery across mission, research, cargo and credit owners.
-- `core/mission_board.ts` and `core/mission_progress.ts`: typed scan/specimen
-  objectives, fixed accepted targets, and cargo-derived delivery readiness.
+- `core/mission_board.ts` and `core/mission_progress.ts`: typed scan/specimen/data
+  objectives, fixed accepted targets, site-specific analysis packets and
+  cargo-derived physical delivery readiness.
 - `core/mission_navigation.ts` and `core/mission_journal.ts`: persisted typed
   destinations, safe orbital-family matching and a paused, scrollable terminal
   with contextual landing-site selection.
+- `core/science_log.ts`: paused evidence-filtered dossiers, recorded habitat
+  origins, submission history and contextual return-site selection.
 - `core/modes/surface_encounter_controller.ts`: mutually exclusive driving,
   operations, weapon preparation, confirmation and dossiers. Its modals use the
   existing `InterfaceModeController`'s `xenobiology` owner.
@@ -288,8 +359,8 @@ narrow screenshots plus canvas/font checks. No development shortcuts are added
 to normal gameplay.
 
 Version one deliberately omits ecosystem simulation, exotic solvents,
-reproductive-material commodities, unusual individual variants, articulated
+reproductive-material commodities, rare adaptation variants, articulated
 body construction, personal ground combat and a full phylogeny
-browser. Three small inherited clades and five behavioural archetypes establish
+browser. Five small inherited groups and five behavioural archetypes establish
 the first loop. Long-session economy balance and player enjoyment still need
 playtesting; automated verification cannot establish those.

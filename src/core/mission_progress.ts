@@ -76,6 +76,24 @@ export class MissionProgressService {
     return true;
   }
 
+  /** Records a site-specific field analysis as a durable mission data packet, without paying research. */
+  recordBiologicalEvidence(speciesId: string, siteId: string, level: number): void {
+    for (const mission of Object.values(this.activeMissions)) {
+      const completed = new Set(this.missionObjectiveProgress[mission.id] ?? []);
+      for (const objective of mission.objectives)
+        if (
+          objective.kind === 'biology-data' &&
+          objective.speciesId === speciesId &&
+          objective.siteId === siteId &&
+          level >= objective.requiredEvidenceLevel
+        )
+          completed.add(objective.id);
+      this.missionObjectiveProgress[mission.id] = [...completed];
+      if (mission.objectives.every((objective) => completed.has(objective.id)))
+        this.readyMissionIds.add(mission.id);
+    }
+  }
+
   /** Records discovery against every matching incomplete mission objective. */
   recordDiscovery(
     target: Planet | SolarSystem | StellarBody,
@@ -153,7 +171,7 @@ export class MissionProgressService {
     return Object.values(this.activeMissions).filter((mission) =>
       mission.objectives.some(
         (objective) =>
-          objective.kind === 'specimen' && objective.speciesId === speciesId && objective.siteId === siteId
+          objective.kind !== 'scan' && objective.speciesId === speciesId && objective.siteId === siteId
       )
     );
   }

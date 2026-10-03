@@ -1,10 +1,11 @@
 # Xenobiology: Ambitious Expansion Roadmap
 
-Status: revised exploratory roadmap based on the implemented first version and
-the authorised first expansion. Habitat communities, one group response and one
-live-reference contract now have code and regression cases; expansion runtime
-verification and representative playtesting are pending the requested model
-switch. Later waves remain exploratory, not implementation commitments.
+Status: the first habitat/group/live-reference expansion and mission navigation
+passed automated and browser verification. The next authorised four steps now
+have implementation and regression cases: a science log, expanded habitat and
+anatomy content, ordinary individual size variation, and analysis/tissue
+requests. Verification of this new expansion awaits the requested Luna handoff.
+Later waves remain exploratory, not implementation commitments.
 Codebase baseline inspected: 2026-10-03. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
 view and specimen listings in Sell. See the [implementation plan](xenobiology-first-version.md)
@@ -100,27 +101,30 @@ Preserve established contracts and distinguish them from unfinished extensions:
 | Explicit encounter time and modal pausing | Successful commands advance local time; reading and inactive fields are suspended | Extra behaviour must not silently use accelerated travel or rendering time. |
 | Whole-container transactions and shared occupied volume | Ship and rover specimens share ordinary cargo capacity | New material/carriers must not permit partial organisms, duplicate ownership, or duplicate sales. |
 | Typed commands, bounded actors, and readonly scene models | Implemented with controller/system/renderer separation | Add concrete domain rules rather than more formulas in Game or SceneRenderer. |
-| Versioned snapshots | Schema 12 preserves version-11 fields/specimens and adds habitat/group/objective validation | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
+| Versioned snapshots | Schema 13 preserves previous records and adds discovery origins, individual size and data/tissue objectives | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
 | Evidence-filtered descriptions and handling checks | Implemented; stasis uses class-based temperature/pressure/mass limits and live slots | Typed chemistry/containment capability envelopes are still an extension. |
 | Terrain-integrated field UI and pixel silhouettes | Implemented with cached surface appearance and two-frame sprites | Appearance is not detailed local geology, habitat simulation, or continuous traversal. |
 
 ### Current limits that should guide expansion
 
-- The generator supplies six species in three inherited groups. It uses a
+- The generator supplies ten species in five inherited groups. It uses a
   carbon-water suitability gate and explicit gameplay occurrence priors, not
   measured probabilities for alien life. The inherited groups are not a stored
   phylogenetic tree.
-- New accessible land sites have coarse numeric water-margin, sheltered, or
-  exposed profiles and approximately five to eight contacts from three taxa.
+- New accessible land sites have coarse numeric water-margin, rocky-margin,
+  sheltered, exposed, or elevated profiles and approximately four to eight
+  contacts from two or three taxa.
   Species temperature and pressure still use whole-planet environmental inputs,
   not a local climate model. Preserved legacy fields retain their ten-contact
   pattern. The 32 by 24 field's cells remain 5 m regardless of viewport size.
 - Surface colours come from the prepared regional terrain; local texture is an
   illustrative layer. Habitat suitability must become explicit domain input,
   not something inferred from pixel colour or renderer noise.
-- Individuals have lifecycle, injury, sampling, alert state, and optional local
-  retreat-group membership/timers, but no size variants or inherited individual
-  adaptations yet. Groups are bounded encounter behaviour, not an ecosystem.
+- Individuals have lifecycle, injury, sampling, alert state, optional local
+  retreat-group membership/timers and persistent ordinary mass scales. Those
+  scales affect handling, stun outcomes, silhouette and cargo, not novelty.
+  Inherited individual adaptations and verified life stages remain future work.
+  Groups are bounded encounter behaviour, not an ecosystem.
 - Scientific demand is campaign-wide. Sell and Research use the same award
   ledger for physical specimens; data remains in Research. Neither tab is a
   second buyer capable of renewing novelty.
@@ -283,8 +287,8 @@ symbiont association, or a genuinely informative environmental adaptation.
 Distinguish ordinary within-species variation from a scientifically useful
 variant. Unusual does not automatically mean valuable.
 
-There is no persisted individual-variant model yet. Start with one bounded
-feature, such as body size or life stage, only after habitat/species variety
+Persistent ordinary size variation now exists. A future rare variant should
+add one bounded adaptation or life-stage feature only after habitat/species variety
 works. If size changes, scanner mass, silhouette scale, stun outcomes, handling
 limits, and container volume must all use the same resolved individual traits.
 Retain those traits in specimen provenance rather than regenerating them from
@@ -313,7 +317,7 @@ noticing a variant, without being trained to grind endless low-value contacts.
 ### More coherent histories
 
 The existing paired species share seeded symmetry, covering, senses, and some
-organisation through three ancestor groups. Use this to make visible family
+organisation through five ancestor groups. Use this to make visible family
 resemblances before expanding the model: related contacts should have recognisable
 structural features and coherent handling, not just a common clade label.
 
@@ -552,7 +556,7 @@ fields cannot, while preserving reasonable travel time and recovery options.
 ## 12. Procedural Visual Anatomy
 
 The first visual step already exists: small four-colour pixel silhouettes from
-six patterns, two-frame mobile animation, and a selected-contact portrait when
+ten patterns, compact size variation, two-frame mobile animation, and a selected-contact portrait when
 the telemetry layout has room. They use a separate pixel drawing layer rather
 than replacing the game's terminal typography. Patterns currently distinguish
 broad sessile/mobile, radial, covering, and ambush characteristics; they are not
@@ -587,6 +591,11 @@ must render identically without per-frame generation.
 Build on the initial species table with filters for origin, catalogue status,
 evidence, useful demand, carried material, and pending contracts. The database
 should help plan expeditions, not require completing an encyclopaedia.
+
+The shipboard `X` science log now supplies evidence-filtered dossiers, novelty,
+pending-data and aboard filters, recorded origin coordinates, personal and
+submission history, accepted requests and orbital return-site selection.
+Related-species comparison and inferred relationships remain future work.
 
 Suggested views:
 
@@ -653,9 +662,9 @@ is not permission to generate physically incompatible life while waiting.
 
 ### Recommended next milestone: one coherent expedition
 
-This milestone has been explicitly authorised. Its habitat, group-retreat,
-typed request/delivery, UI, and save code is now present, with verification
-pending. The stages below document scope and acceptance gates rather than
+This milestone has been explicitly authorised and its automated and browser
+verification passed. The next four additions are implemented but await their
+own verification handoff. The stages below document scope and acceptance gates rather than
 claiming tested completion or instructing implementation of later waves.
 
 **Player decision:** choose how to approach a recognisable community and which

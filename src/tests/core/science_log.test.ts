@@ -20,6 +20,14 @@ function origin(siteId = 'habitat'): BiologyOrigin {
 }
 
 describe('science log', () => {
+  it('keeps site evidence separate from stronger species knowledge acquired elsewhere', () => {
+    const service = new XenobiologyService();
+    const species = generateBiosphere(biologyFixture())!.species[0];
+    service.observe(species, 3, origin('analysed-site'));
+    service.observe(species, 1, origin('distant-site'));
+    expect(service.evidence(species.id)?.level).toBe(3);
+    expect(service.evidence(species.id)?.origins?.map((site) => site.level)).toEqual([3, 1]);
+  });
   it('retains bounded independent provenance across repeated observation and save restoration', () => {
     const service = new XenobiologyService();
     const species = generateBiosphere(biologyFixture())!.species[0];

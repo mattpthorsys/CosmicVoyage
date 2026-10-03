@@ -65,9 +65,14 @@ import {
   getMissionLandingBody,
   getMissionLandingLocation,
   getRecordedLandingBody,
+  isMissionSystem,
   resolveMissionNavigation,
 } from './mission_navigation';
-import { createBiologicalContract, deliverBiologicalContract } from './biological_contracts';
+import {
+  createBiologicalContracts,
+  deliverBiologicalContract,
+  biologicalRequirement,
+} from './biological_contracts';
 import { ScanService } from './scan_service';
 import { DiscoveryLevel, formatDiscoveryLevel } from './discovery';
 import {
@@ -152,6 +157,7 @@ import {
   type EncounterField,
   type SpecimenContainer,
   type BiologyOrigin,
+  type BiologySite,
   createXenobiologySnapshot,
 } from '../entities/biology/biology_types';
 import {
@@ -340,10 +346,33 @@ export class Game {
           .filter((field) => field.bodyId === generated.id)
           .map((field) => field.site)
       : [];
+    const recordedSites: BiologySite[] = [];
+    // Keep accepted destinations accessible when a content update chooses a different six-site sample.
+    for (const mission of this.missionProgress.getActiveMissions()) {
+      if (
+        mission.systemName !== system.name ||
+        (mission.systemAddress && !isMissionSystem(mission.systemAddress, system))
+      )
+        continue;
+      for (const objective of mission.objectives) {
+        const location = objective.location;
+        if (location?.bodyPath !== path || !location.surface) continue;
+        recordedSites.push({
+          id: location.surface.siteId,
+          x: location.surface.x,
+          y: location.surface.y,
+          label: location.surface.label,
+        });
+      }
+    }
     const biosphere = generated
       ? {
           ...generated,
-          sites: [...new Map([...generated.sites, ...savedSites].map((site) => [site.id, site])).values()],
+          sites: [
+            ...new Map(
+              [...recordedSites, ...generated.sites, ...savedSites].map((site) => [site.id, site])
+            ).values(),
+          ],
         }
       : null;
     cache.set(planet, { ready, biosphere });
@@ -478,6 +507,11 @@ export class Game {
                 }
               : undefined;
           this.xenobiology.observe(result.evidence.species, result.evidence.level, origin);
+          this.missionProgress.recordBiologicalEvidence(
+            result.evidence.species.id,
+            field.site.id,
+            result.evidence.level
+          );
           if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
         }
         if (rover.integrity === 0) {
@@ -530,7 +564,7 @@ export class Game {
       .getSpecimenRequests(target.speciesId, field.site.id)
       .map(
         (mission) =>
-          `LIVE reference / quality >=75% / ${mission.rewardCredits} Cr + research / deliver to ${mission.originStarbaseName}`
+          `${biologicalRequirement(mission)} / ${mission.rewardCredits} Cr + research / return to ${mission.originStarbaseName}`
       );
   }
 
@@ -3083,7 +3117,8 @@ export class Game {
       this.player.ship.stasisClass ?? 1,
       this.renderer.getGridCols(),
       this.renderer.getGridRows(),
-      !!this.getScienceLandingBody()
+      !!this.getScienceLandingBody(),
+      this.missionProgress.getActiveMissions()
     );
   }
 
@@ -5125,7 +5160,7 @@ export class Game {
           '--',
           target.state === 'dead' ? 'Secure intact remains' : 'Place in stasis',
         ],
-        detail: `${(this.xenobiology.evidence(species.id)?.level ?? 0) >= 2 ? species.name : 'Selected contact'} / estimated ${species.massKg.toFixed(1)} kg: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first. Handling limit 80 kg.`,
+        detail: `${(this.xenobiology.evidence(species.id)?.level ?? 0) >= 2 ? species.name : 'Selected contact'} / estimated ${species.massKg.toFixed(species.massKg < 1 ? 2 : 1)} kg: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first. Handling limit 80 kg.`,
         tone: 'green',
       });
     }
@@ -8530,6 +8565,14 @@ export class Game {
     }
 
     this.missionProgress.accept(mission);
+    for (const evidence of Object.values(this.xenobiology.snapshot.evidence))
+      for (const origin of evidence.origins ?? [])
+        if (origin.level !== undefined)
+          this.missionProgress.recordBiologicalEvidence(
+            evidence.species.id,
+            origin.surface.siteId,
+            origin.level
+          );
     this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objectives[0]?.targetLabel ?? 'Review contract objectives'}.`;
     this.statusMessage = this.starbaseMode.alert;
   }
@@ -8553,15 +8596,16 @@ export class Game {
           this.forceFullRender = true;
       });
     }
-    const contract = createBiologicalContract(
+    const contracts = createBiologicalContracts(
       starbase,
       system.name,
       biospheres,
       this.xenobiology.snapshot.fields,
-      this.ownedSpecimens
+      this.ownedSpecimens,
+      this.xenobiology
     );
     const missions = generateStarbaseMissions(starbase, system);
-    if (contract) missions.push(resolveMissionNavigation(contract, system, biospheres));
+    for (const contract of contracts) missions.push(resolveMissionNavigation(contract, system, biospheres));
     this.missionProgress.resolveNavigation(system, biospheres);
     const combined = new Map(missions.map((mission) => [mission.id, mission]));
     for (const mission of this.missionProgress.getStationMissions(starbase.name, starbase.id))
@@ -8621,11 +8665,11 @@ export class Game {
               id: `contract:${mission.id}`,
               cells: [
                 mission.title,
-                'LIVE delivery',
+                biologicalRequirement(mission),
                 `${mission.rewardCredits} Cr + research`,
                 this.missionProgress.getStatus(mission, this.ownedSpecimens),
               ],
-              detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter delivers one eligible whole live container.`,
+              detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter submits the requested field data or one eligible whole container.`,
             })),
           ...researchRows(this.xenobiology, this.ownedSpecimens),
         ];

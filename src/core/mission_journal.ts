@@ -126,13 +126,22 @@ export class MissionJournal {
         if (location?.surface) {
           line(`Habitat: ${location.surface.label}`);
           line(`Surface: X ${location.surface.x}  Y ${location.surface.y}`, 'green');
-        } else if (objective.kind === 'specimen') {
+        } else if (objective.kind !== 'scan') {
           line('Exact habitat coordinates pending local surface data.', 'muted');
-        } else if (objective.targetType === 'planet' && objective.requiredDiscoveryLevel === 'mapped') {
+        } else if (
+          objective.kind === 'scan' &&
+          objective.targetType === 'planet' &&
+          objective.requiredDiscoveryLevel === 'mapped'
+        ) {
           line('Landing: any accessible surface site.', 'green');
         }
         if (objective.kind === 'specimen')
-          line(`Required: LIVE / quality at least ${Math.round(objective.minimumQuality * 100)}%`, 'green');
+          line(
+            `Required: ${objective.requiredKind.toUpperCase()} / quality at least ${Math.round(objective.minimumQuality * 100)}%`,
+            'green'
+          );
+        else if (objective.kind === 'biology-data')
+          line('Required: detailed biochemical field analysis at this habitat; no capture needed.', 'green');
       }
       line('');
       line('DELIVERY', 'cyan', true);

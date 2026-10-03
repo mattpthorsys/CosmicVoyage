@@ -30,11 +30,13 @@ export class XenobiologyService {
     if (!existing) this.state.evidence[species.id] = { species, level, collected: false, submittedLevel: 0 };
     else existing.level = Math.max(existing.level, level) as EvidenceLevel;
     const evidence = this.state.evidence[species.id];
-    if (origin && !evidence.origins?.some((entry) => entry.surface.siteId === origin.surface.siteId)) {
+    const existingOrigin = evidence.origins?.find((entry) => entry.surface.siteId === origin?.surface.siteId);
+    if (existingOrigin) existingOrigin.level = Math.max(existingOrigin.level ?? 0, level) as EvidenceLevel;
+    else if (origin) {
       // Bound campaign log growth while retaining the earliest discovery and recent return sites.
       const origins = (evidence.origins ??= []);
       if (origins.length >= 32) origins.splice(1, 1);
-      origins.push(structuredClone(origin));
+      origins.push({ ...structuredClone(origin), level });
     }
     return this.state.evidence[species.id];
   }

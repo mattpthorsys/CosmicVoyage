@@ -9,6 +9,7 @@ import {
   SAVE_GAME_VERSION,
 } from '../../../core/save_game';
 import { MissionProgressService } from '../../../core/mission_progress';
+import type { StarbaseMission } from '../../../core/mission_board';
 import { ScanService } from '../../../core/scan_service';
 import { createDiscoveryRecord } from '../../../core/discovery';
 import { CONFIG } from '../../../config';
@@ -151,6 +152,47 @@ describe('save game persistence', () => {
     expect(migrated).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
     expect(session.getItem('cosmic-voyage.session.v11')).toBeNull();
     expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
+  });
+
+  it('migrates version-twelve storage and admits bounded biological data objectives', () => {
+    const legacy = { ...createSave(), version: 12 };
+    const session = new MemoryStorage();
+    session.setItem('cosmic-voyage.session.v12', JSON.stringify(legacy));
+    const migrated = new SaveGameStorage(session, new MemoryStorage()).loadSession()!;
+    expect(migrated).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
+    expect(session.getItem('cosmic-voyage.session.v12')).toBeNull();
+    const mission: StarbaseMission = {
+      id: 'analysis',
+      title: 'Field analysis',
+      type: 'xenobiology',
+      issuer: 'Office',
+      summary: 'Detailed evidence',
+      detail: 'No capture needed.',
+      rewardCredits: 450,
+      risk: 'Low',
+      originStarbaseId: 'port',
+      originStarbaseName: 'Port',
+      systemName: 'Fixture',
+      objectives: [
+        {
+          id: 'analysis',
+          kind: 'biology-data',
+          speciesId: 'species',
+          siteId: 'site',
+          targetName: 'Organism',
+          targetLabel: 'Detailed analysis',
+          requiredEvidenceLevel: 3,
+        },
+      ],
+    };
+    migrated.activeMissions[mission.id] = mission;
+    migrated.acceptedMissionIds.push(mission.id);
+    migrated.missionObjectiveProgress[mission.id] = [];
+    expect(() => parseGameSave(migrated)).not.toThrow();
+    const objective = mission.objectives[0];
+    if (objective.kind !== 'biology-data') throw new Error('Expected biological data.');
+    Object.assign(objective, { requiredEvidenceLevel: 99 });
+    expect(() => parseGameSave(migrated)).toThrow('evidence requirement');
   });
 
   it('validates biological objective identity, kind and quality bounds', () => {

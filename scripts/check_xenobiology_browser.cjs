@@ -171,6 +171,20 @@ async function main() {
     assert(metrics.desktop.spritePixels > 20, 'Field silhouettes absent from the overlay raster.');
     save = await checkpoint();
     assert(Object.keys(save.xenobiology.evidence).length > 0, 'Observation not recorded.');
+    const logTime = save.gameClockElapsedSeconds;
+    await press('x');
+    await page.waitForTimeout(1700);
+    metrics.scienceLog = await capture('desktop-science-log');
+    assert.equal(metrics.scienceLog.spritePixels, 0, 'Field sprites leaked through the science log.');
+    await page.setViewportSize({ width: 480, height: 800 });
+    await capture('narrow-science-log');
+    await press('s');
+    await press('s');
+    await press('s');
+    await press('s');
+    assert.equal((await checkpoint()).gameClockElapsedSeconds, logTime, 'Science log did not pause time.');
+    await press('Escape');
+    await page.setViewportSize({ width: 1400, height: 900 });
     await press('d');
     await page.waitForTimeout(1700);
     assert.notEqual((await capture('desktop-dossier')).centreHash, metrics.desktop.centreHash);
@@ -305,6 +319,7 @@ async function main() {
     const researchPixels = await capture('research-exchange');
     assert.equal(researchPixels.spritePixels, 0, 'Field silhouettes leaked into the station view.');
     const before = (await checkpoint()).player.resources.credits;
+    await press('ArrowDown'); // The science log is the first Research row.
     await press('Enter');
     const paid = (await checkpoint()).player.resources.credits;
     assert(paid > before, 'Research submission did not pay.');
@@ -400,6 +415,7 @@ async function main() {
     for (let index = 0; index < 4; index++) await press('ArrowRight');
     await capture('research-live-contract');
     const deliveryCredits = capturedReference.player.resources.credits;
+    await press('ArrowDown');
     await press('Enter');
     const delivered = await checkpoint();
     assert(
@@ -414,6 +430,101 @@ async function main() {
     const contractAward = delivered.player.resources.credits - deliveryCredits;
     assert(contractAward >= 900, 'Contract fee missing.');
     await capture('research-contract-settled');
+
+    const alternatives = await page.evaluate(async (initial) => {
+      const { createBiologicalContracts } = await import('/src/core/biological_contracts.ts');
+      const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+      const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const prng = new PRNG(initial.save.seed);
+      const generator = new SystemDataGenerator(prng);
+      const system = new SolarSystem(
+        generator.getSystemProperties(initial.save.location.worldX, initial.save.location.worldY),
+        initial.save.location.worldX,
+        initial.save.location.worldY,
+        prng
+      );
+      const research = new XenobiologyService();
+      const offers = createBiologicalContracts(
+        { ...initial.station, kind: 'starbase' },
+        initial.systemName,
+        [initial.biosphere],
+        {},
+        [],
+        research
+      ).filter(
+        (mission) =>
+          mission.objectives[0].kind === 'biology-data' || mission.objectives[0].requiredKind === 'tissue'
+      );
+      if (offers.length !== 2) throw new Error('Missing analysis/tissue requests.');
+      const objective = offers[0].objectives[0];
+      const site = initial.biosphere.sites.find((entry) => entry.id === objective.siteId);
+      const field = createEncounter(initial.biosphere, site);
+      const source = field.individuals.find((actor) => actor.speciesId === objective.speciesId);
+      if (!source || offers[1].objectives[0].speciesId !== source.speciesId)
+        throw new Error('Representative alternative requests must share an obtainable producer.');
+      // Keep one real generated organism next to the rover to isolate interface/delivery from travel.
+      field.individuals = [source];
+      source.x = source.homeX = 16;
+      source.y = source.homeY = 20;
+      field.terrain[20] = field.terrain[20].slice(0, 16) + '.' + field.terrain[20].slice(17);
+      const save = structuredClone(initial.save);
+      save.location.kind = 'planet';
+      save.player.position.surfaceX = site.x;
+      save.player.position.surfaceY = site.y;
+      save.player.terrainVehicle.deployed = true;
+      research.snapshot.fields[site.id] = field;
+      research.snapshot.activeSiteId = site.id;
+      save.xenobiology = research.createSnapshot();
+      const progress = new MissionProgressService();
+      for (const mission of offers)
+        progress.accept(resolveMissionNavigation(mission, system, [initial.biosphere]));
+      Object.assign(save, progress.createSnapshot());
+      return { save, missionIds: offers.map((mission) => mission.id), sourceId: source.id };
+    }, fixture);
+    await load(alternatives.save);
+    await press('a');
+    await press('s');
+    const prepared = await checkpoint();
+    assert.equal(prepared.player.terrainVehicle.cargoHold.specimens[0].kind, 'tissue');
+    assert(
+      prepared.readyMissionIds.includes(alternatives.missionIds[0]),
+      'Detailed analysis did not create a site-specific mission packet.'
+    );
+    await press('x');
+    await page.waitForTimeout(1700);
+    await capture('science-log-analysis-and-tissue');
+    await press('Escape');
+    prepared.xenobiology.activeSiteId = null;
+    prepared.player.terrainVehicle.deployed = false;
+    prepared.location = { ...docked.location };
+    await load(prepared);
+    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    await capture('research-alternative-contracts');
+    await press('ArrowDown');
+    await press('Enter');
+    await press('Enter'); // The remaining tissue request moves into the same selected row.
+    const alternativesDelivered = await checkpoint();
+    assert(
+      alternatives.missionIds.every((id) => alternativesDelivered.completedMissionIds.includes(id)),
+      'Alternative requests were not both settled.'
+    );
+    assert.equal(alternativesDelivered.player.terrainVehicle.cargoHold.specimens.length, 0);
+    assert(
+      alternativesDelivered.player.resources.credits >= prepared.player.resources.credits + 1000,
+      'Alternative contract fees missing.'
+    );
+    await press('Enter');
+    assert.equal(
+      (await checkpoint()).player.resources.credits,
+      alternativesDelivered.player.resources.credits,
+      'Repeated alternative delivery paid again.'
+    );
+    await capture('research-alternatives-settled');
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify(

@@ -85,10 +85,16 @@ export function organismBrief(species: SpeciesDefinition, level: number): string
   return `${species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1)} ${species.role}; ${movement}. ${species.metabolism.charAt(0).toUpperCase() + species.metabolism.slice(1)}.${social}`;
 }
 
+/** Keeps sub-kilogram estimates meaningful without producing reversed or zero-width mass ranges. */
+function massEstimate(massKg: number): string {
+  const precision = massKg < 0.1 ? 3 : massKg < 1 ? 2 : 1;
+  return `${(massKg * 0.8).toFixed(precision)}-${(massKg * 1.2).toFixed(precision)} kg`;
+}
+
 /** Projects only acquired evidence; raw hidden traits never enter distant scanner text. */
 export function speciesDescription(species: SpeciesDefinition, service: XenobiologyService): string[] {
   const level = service.evidence(species.id)?.level ?? 0;
-  const mass = `${Math.max(0.1, species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg`;
+  const mass = massEstimate(species.massKg);
   const lines = [
     level >= 2 ? species.name : 'Unresolved organism',
     `${species.symmetry}; ${mass}`,
@@ -212,7 +218,7 @@ export function createEncounterView(
       ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds && target.state === 'active' ? 'withdrawing' : target.state}`
       : '--',
     targetMass: species
-      ? `${(species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg / ${individualSizeLabel(target?.sizeScale)} / ${species.symmetry}`
+      ? `${massEstimate(species.massKg)} / ${individualSizeLabel(target?.sizeScale)} / ${species.symmetry}`
       : '',
     targetSprite: target ? organismSprite(individualSpecies(field, target), target.sizeScale) : undefined,
     cargo: {
@@ -298,11 +304,7 @@ export function createBiologicalDossier(
   );
   section('Field Identification');
   lines.push({ segments: [{ text: organismBrief(species, level), tone: 'normal', font: 'thin' }] });
-  entry(
-    'Mass estimate',
-    `${Math.max(0.1, species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg`,
-    'amber'
-  );
+  entry('Mass estimate', massEstimate(species.massKg), 'amber');
   entry('Body plan', species.symmetry);
   if (contact?.target.sizeScale !== undefined)
     entry('Individual size', individualSizeLabel(contact.target.sizeScale), 'amber');
@@ -376,7 +378,7 @@ export function createBiologicalDossier(
   } else entry('Value', 'Unresolved until a reliable observation establishes identification.', 'amber');
   if (level >= 2 && contact?.requests?.length) {
     section('Accepted Research Request');
-    for (const request of contact.requests) entry('Live delivery', request, 'amber');
+    for (const request of contact.requests) entry('Contribution', request, 'amber');
     entry(
       'Settlement',
       'Deliver through Research or Missions at the issuer. Ordinary sale does not fulfil the contract.',
@@ -422,7 +424,7 @@ export function specimenRows(
       `${service.quote(container.species, container).credits}`,
       container.kind,
     ],
-    detail: `${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale).massKg.toFixed(1)} kg / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
+    detail: `${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
     tone: container.kind === 'live' ? 'green' : 'normal',
   }));
 }

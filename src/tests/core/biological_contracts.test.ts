@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { createBiologicalContract, deliverBiologicalContract } from '../../core/biological_contracts';
+import {
+  createBiologicalContract,
+  createBiologicalContracts,
+  deliverBiologicalContract,
+} from '../../core/biological_contracts';
 import { MissionProgressService } from '../../core/mission_progress';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { createDefaultCargo } from '../../core/components';
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
-import { createEncounter } from '../../systems/surface_encounter_system';
+import { createEncounter, SurfaceEncounterSystem } from '../../systems/surface_encounter_system';
 import { biologyFixture } from '../fixtures/biology';
 import {
   HABITAT_VERSION,
@@ -76,6 +80,127 @@ function fixture() {
 }
 
 describe('habitat specimen contracts', () => {
+  it('offers real analysis and tissue alternatives alongside the finite live-reference request', () => {
+    const f = fixture();
+    const offers = createBiologicalContracts(
+      f.station,
+      'Fixture System',
+      [f.biosphere],
+      f.research.snapshot.fields,
+      [],
+      f.research
+    );
+    expect(offers).toHaveLength(3);
+    expect(new Set(offers.map((mission) => mission.id)).size).toBe(3);
+    expect(offers.some((mission) => mission.objectives[0].kind === 'biology-data')).toBe(true);
+    expect(
+      offers.some(
+        (mission) =>
+          mission.objectives[0].kind === 'specimen' && mission.objectives[0].requiredKind === 'tissue'
+      )
+    ).toBe(true);
+    expect(
+      createBiologicalContracts(
+        { ...f.station, kind: 'automated-depot' },
+        'Fixture System',
+        [f.biosphere],
+        {},
+        [],
+        f.research
+      )
+    ).toEqual([]);
+    for (const actor of f.field.individuals) {
+      actor.state = 'collected';
+      actor.sampled = true;
+    }
+    expect(
+      createBiologicalContracts(
+        f.station,
+        'Fixture System',
+        [f.biosphere],
+        f.research.snapshot.fields,
+        [],
+        f.research
+      )
+    ).toEqual([]);
+  });
+
+  it('requires site-specific detailed evidence and settles a data request once without consuming cargo', () => {
+    const f = fixture();
+    const mission = createBiologicalContracts(
+      f.station,
+      'Fixture System',
+      [f.biosphere],
+      f.research.snapshot.fields,
+      [],
+      f.research
+    ).find((entry) => entry.objectives[0].kind === 'biology-data')!;
+    const objective = mission.objectives[0];
+    if (objective.kind !== 'biology-data') throw new Error('Expected an analysis objective.');
+    const species = f.field.species.find((entry) => entry.id === objective.speciesId)!;
+    f.progress.accept(mission);
+    f.research.observe(species, 3);
+    f.progress.recordBiologicalEvidence(species.id, 'wrong-site', 3);
+    f.progress.recordBiologicalEvidence(species.id, objective.siteId, 2);
+    expect(f.progress.getStatus(mission)).toBe('ACTIVE');
+    const context = { station: f.station, holds: [f.hold, f.rover], resources: f.resources };
+    expect(deliverBiologicalContract(f.progress, f.research, context, mission.id).ok).toBe(false);
+    f.progress.recordBiologicalEvidence(species.id, objective.siteId, 3);
+    expect(f.progress.getStatus(mission)).toBe('READY');
+    expect(
+      deliverBiologicalContract(
+        f.progress,
+        f.research,
+        { ...context, station: { ...f.station, id: 'other' } },
+        mission.id
+      ).ok
+    ).toBe(false);
+    const value = f.research.quote(species).credits;
+    expect(deliverBiologicalContract(f.progress, f.research, context, mission.id).ok).toBe(true);
+    expect(f.resources.credits).toBe(1000 + 450 + value);
+    expect(f.hold.specimens).toHaveLength(0);
+    expect(f.research.quote(species).credits).toBe(0);
+    const after = f.progress.createSnapshot();
+    expect(deliverBiologicalContract(f.progress, f.research, context, mission.id).ok).toBe(false);
+    expect(f.progress.createSnapshot()).toEqual(after);
+    expect(f.resources.credits).toBe(1000 + 450 + value);
+  });
+
+  it('consumes one tissue container with source provenance and leaves its organism in the field', () => {
+    const f = fixture();
+    const mission = createBiologicalContracts(
+      f.station,
+      'Fixture System',
+      [f.biosphere],
+      f.research.snapshot.fields,
+      [],
+      f.research
+    ).find(
+      (entry) => entry.objectives[0].kind === 'specimen' && entry.objectives[0].requiredKind === 'tissue'
+    )!;
+    const objective = mission.objectives[0];
+    if (objective.kind !== 'specimen') throw new Error('Expected a tissue objective.');
+    const actor = f.field.individuals.find((entry) => entry.speciesId === objective.speciesId)!;
+    f.field.roverX = actor.x;
+    f.field.roverY = actor.y + 1;
+    const result = new SurfaceEncounterSystem().act(
+      f.field,
+      { kind: 'sample', targetId: actor.id },
+      f.rover,
+      0
+    );
+    expect(result.evidence).toBeDefined();
+    f.research.collected(result.evidence!.species);
+    f.progress.accept(mission);
+    expect(f.progress.getStatus(mission, f.rover.specimens!)).toBe('READY');
+    expect(f.progress.getStatus(mission, [])).toBe('ACTIVE');
+    const context = { station: f.station, holds: [f.hold, f.rover], resources: f.resources };
+    expect(deliverBiologicalContract(f.progress, f.research, context, mission.id).ok).toBe(true);
+    expect(f.rover.specimens).toHaveLength(0);
+    expect(actor.state).not.toBe('collected');
+    expect(actor.sampled).toBe(true);
+    expect(f.resources.credits).toBeGreaterThanOrEqual(1550);
+  });
   it('offers a deterministic real target compatible with included stasis', () => {
     const f = fixture();
     expect(

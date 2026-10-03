@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { Game } from '../../core/game';
 import { Player } from '../../core/player';
 import { MissionJournal } from '../../core/mission_journal';
+import { ScienceLog } from '../../core/science_log';
+import { XenobiologyService } from '../../core/xenobiology_service';
+import { generateBiosphere } from '../../entities/biology/biosphere_generator';
+import { biologyFixture } from '../fixtures/biology';
 import { MissionProgressService } from '../../core/mission_progress';
 import { InterfaceModeController } from '../../core/modes/game_mode_controllers';
 import { OrbitModeController } from '../../core/modes/orbit_mode_controller';
@@ -16,6 +20,9 @@ import { AU_IN_METERS } from '../../constants/physics';
 import type { CommandBarModel } from '../../core/command_bar';
 
 interface JournalGameHarness {
+  openScienceLog(): void;
+  closeScienceLog(): void;
+  handleScienceLogInput(): boolean;
   openMissionJournal(): void;
   closeMissionJournal(): void;
   handleMissionJournalInput(): boolean;
@@ -125,6 +132,45 @@ function harness() {
 }
 
 describe('mission journal Game integration', () => {
+  it('routes the science log through a paused menu and selects a recorded moon without landing', () => {
+    const { game, owner, orbit, actions, effects, moon, parent } = harness();
+    const service = new XenobiologyService();
+    service.observe(generateBiosphere(biologyFixture())!.species[0], 3, {
+      systemName: 'Sol',
+      worldX: 12,
+      worldY: -9,
+      systemSlot: 0,
+      bodyPath: 'planet:0/moon:0',
+      bodyName: 'Luna',
+      surface: { x: 123, y: 456, siteId: 'science-site', label: 'Recorded habitat' },
+    });
+    const log = new ScienceLog();
+    Object.assign(game, { _xenobiology: service, _scienceLog: log });
+    owner.open('ship-menu');
+    game.activateShipMenuSelection({ id: 'science', cells: [] });
+    expect(owner.kind).toBe('science-log');
+    expect(game.isGameClockPaused()).toBe(true);
+    expect(game.shouldSuppressHudForeground()).toBe(true);
+    game._update(0.1);
+    expect(game.gameClockElapsedSeconds).toBe(123);
+    log.reveal.complete();
+    actions.add('QUIT');
+    game.handleScienceLogInput();
+    expect(owner.kind).toBe('ship-menu');
+    owner.close();
+    game.openScienceLog();
+    log.reveal.complete();
+    actions.add('ENTER_SYSTEM');
+    game._processInput();
+    expect(owner.kind).toBe('none');
+    expect(orbit.getSelectedBody(parent)).toBe(moon);
+    expect(orbit.landingX).toBe(123);
+    expect(orbit.landingY).toBe(456);
+    expect(effects.land).not.toHaveBeenCalled();
+    owner.open('galaxy-map');
+    game.openScienceLog();
+    expect(owner.kind).toBe('galaxy-map');
+  });
   it('opens and returns through ship and station menu entries, preserving the parent interface', () => {
     const { game, owner, journal, actions } = harness();
     owner.open('ship-menu');
