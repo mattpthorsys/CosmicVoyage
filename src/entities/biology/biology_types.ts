@@ -116,6 +116,8 @@ export interface SpecimenContainer {
   kind: SpecimenKind;
   quality: number;
   volumeM3: number;
+  /** Mass relative to the canonical species profile; absent in pre-variation containers. */
+  sizeScale?: number;
 }
 
 export interface EncounterIndividual {
@@ -133,6 +135,7 @@ export interface EncounterIndividual {
   alerted: boolean;
   groupId?: string;
   retreatUntil?: number;
+  sizeScale?: number;
 }
 
 export interface EncounterField {

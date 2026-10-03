@@ -25,7 +25,7 @@ export const ROVER_SPRITE: PixelSprite = {
 };
 
 /** Bakes tiny four-colour silhouettes once; visual variation never advances a gameplay RNG. */
-export function createOrganismSprite(species: SpeciesDefinition): PixelSprite {
+export function createOrganismSprite(species: SpeciesDefinition, sizeScale = 1): PixelSprite {
   const prng = new PRNG(species.id).seedNew('silhouette');
   const sessile = species.behaviour === 'sessile';
   const pattern = species.bodyForm
@@ -48,5 +48,21 @@ export function createOrganismSprite(species: SpeciesDefinition): PixelSprite {
   const first: string[] = [...pattern];
   first[1] = first[1].replace('3', '4');
   second[1] = second[1].replace('3', '4');
-  return { frames: [first, second], palette: colours };
+  return { frames: [first, second].map((frame) => sizeSilhouette(frame, sizeScale)), palette: colours };
+}
+
+/** Fits size variation within the stable six-by-four sprite footprint, preserving field spacing. */
+function sizeSilhouette(frame: readonly string[], sizeScale: number): readonly string[] {
+  if (sizeScale === 1 || sizeScale > 1.3) return frame;
+  const width = sizeScale < 0.7 ? 4 : 5;
+  const height = sizeScale < 0.7 ? 3 : 4;
+  const left = Math.floor((6 - width) / 2);
+  return Array.from({ length: 4 }, (_, y) =>
+    Array.from({ length: 6 }, (_, x) => {
+      if (x < left || x >= left + width || y < 4 - height) return '.';
+      return frame[Math.min(3, Math.floor(((y - (4 - height)) * 4) / height))][
+        Math.min(5, Math.floor(((x - left) * 6) / width))
+      ];
+    }).join('')
+  );
 }

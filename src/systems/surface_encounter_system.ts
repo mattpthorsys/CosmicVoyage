@@ -3,7 +3,7 @@ import { PRNG } from '../utils/prng';
 import type { CargoComponent } from '../core/components';
 import { SpecimenCargoSystem } from './specimen_cargo_system';
 import { stunOutcome } from '../entities/biology/stun_model';
-import { canShareRoverCell } from '../entities/biology/biology_rules';
+import { canShareRoverCell, individualPhysicalProfile } from '../entities/biology/biology_rules';
 import { createHabitatPatches, habitatCommunity } from '../entities/biology/habitat';
 import {
   ENCOUNTER_HEIGHT,
@@ -144,6 +144,12 @@ function createHabitatPopulation(
     const cell = prng.choice(cells);
     if (!cell) continue;
     const { x, y } = cell;
+    const ordinal = individuals.filter((actor) => actor.speciesId === species.id).length;
+    const massScale =
+      [0.45, 1, 1.65][ordinal % 3] * new PRNG(site.id).seedNew('individual-size', index).random(0.94, 1.06);
+    // The existing low-energy anaerobic content remains small even at the top of its size distribution.
+    const sizeScale =
+      species.respiration === 'anaerobic' ? Math.min(massScale, 3 / species.massKg) : massScale;
     // Join each contact to the observation corridor, regardless of illustrative outcrop placement.
     for (let cx = Math.min(x, 16); cx <= Math.max(x, 16); cx++)
       terrain[y] = terrain[y].substring(0, cx) + '.' + terrain[y].substring(cx + 1);
@@ -162,6 +168,7 @@ function createHabitatPopulation(
       alerted: false,
       groupId: species.socialBehaviour ? `${site.id}/group:${species.id}` : undefined,
       retreatUntil: species.socialBehaviour ? 0 : undefined,
+      sizeScale,
     });
   }
   return individuals;
@@ -172,6 +179,11 @@ export function individualSpecies(field: EncounterField, individual: EncounterIn
   const species = field.species.find((item) => item.id === individual.speciesId);
   if (!species) throw new Error('Encounter individual references an unknown species.');
   return species;
+}
+
+/** Resolves effective dimensions for handling, outcomes and presentation while leaving catalogue traits canonical. */
+export function individualProfile(field: EncounterField, individual: EncounterIndividual): SpeciesDefinition {
+  return individualPhysicalProfile(individualSpecies(field, individual), individual.sizeScale);
 }
 
 /** Determines sensor/weapon visibility along a short obstacle-tested ray. */
@@ -212,6 +224,7 @@ export class SurfaceEncounterSystem {
     if ('targetId' in command && (!target || !encounterVisible(field, target)))
       return { ...result, message: 'No visible biological target.' };
     const species = target ? individualSpecies(field, target) : undefined;
+    const profile = target ? individualProfile(field, target) : undefined;
     const range = target ? Math.hypot(target.x - field.roverX, target.y - field.roverY) : 0;
     if (command.kind === 'move') {
       if (Math.abs(command.dx) > 1 || Math.abs(command.dy) > 1 || (!command.dx && !command.dy))
@@ -225,7 +238,7 @@ export class SurfaceEncounterSystem {
             item.state !== 'collected' &&
             item.x === x &&
             item.y === y &&
-            !canShareRoverCell(individualSpecies(field, item))
+            !canShareRoverCell(individualProfile(field, item))
         )
       )
         return { ...result, message: 'Local route obstructed.' };
@@ -242,7 +255,7 @@ export class SurfaceEncounterSystem {
     } else if (command.kind === 'wait') {
       result.elapsedSeconds = 10;
       result.message = 'Observing local activity.';
-    } else if (target && species) {
+    } else if (target && species && profile) {
       if (command.kind === 'observe' || command.kind === 'analyse') {
         if (command.kind === 'analyse' && range > 5)
           return { ...result, message: 'Detailed analysis requires range <=25 m.' };
@@ -262,7 +275,7 @@ export class SurfaceEncounterSystem {
           command.kind === 'collect' &&
           target.state === 'active' &&
           species.behaviour !== 'sessile' &&
-          !canShareRoverCell(species)
+          !canShareRoverCell(profile)
         )
           return { ...result, message: 'Organism must be incapacitated before collection.' };
         const kind = command.kind === 'sample' ? 'tissue' : target.state === 'dead' ? 'dead' : 'live';
@@ -273,7 +286,8 @@ export class SurfaceEncounterSystem {
           species,
           kind,
           quality: Math.max(0.2, 1 - target.injury * 0.35),
-          volumeM3: kind === 'tissue' ? 0.1 : Math.ceil((0.2 + species.massKg / 250) * 10) / 10,
+          volumeM3: kind === 'tissue' ? 0.1 : Math.ceil((0.2 + profile.massKg / 250) * 10) / 10,
+          sizeScale: target.sizeScale,
         } as const;
         const refusal = this.specimens.add(cargo, container, stasisClass);
         if (refusal) return { ...result, message: refusal };
@@ -295,7 +309,7 @@ export class SurfaceEncounterSystem {
               ...result,
               message: 'Sessile biology has no applicable stun profile; sample or collect instead.',
             };
-          const outcome = stunOutcome(species, command.power, target.exposure, target.injury, range * 5);
+          const outcome = stunOutcome(profile, command.power, target.exposure, target.injury, range * 5);
           const roll = new PRNG(field.seed).seedNew('shot', target.id, field.turn).random();
           target.exposure++;
           target.injury += outcome.dead * 0.3;
@@ -327,7 +341,7 @@ export class SurfaceEncounterSystem {
       for (const individual of [...field.individuals].sort((a, b) => a.id.localeCompare(b.id))) {
         if (individual.state === 'stunned' && individual.recoveryAt <= tick * 5) individual.state = 'active';
         if (individual.state !== 'active') continue;
-        const species = individualSpecies(field, individual);
+        const species = individualProfile(field, individual);
         const distance = Math.hypot(individual.x - field.roverX, individual.y - field.roverY);
         const dangerous = species.behaviour === 'territorial' || species.behaviour === 'ambush';
         if (dangerous && distance < (species.behaviour === 'ambush' ? 2 : 4)) {

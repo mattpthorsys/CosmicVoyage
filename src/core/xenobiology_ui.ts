@@ -6,7 +6,8 @@ import type {
   StunPower,
 } from '../entities/biology/biology_types';
 import { estimateStun } from '../entities/biology/stun_model';
-import { encounterVisible, individualSpecies } from '../systems/surface_encounter_system';
+import { encounterVisible, individualSpecies, individualProfile } from '../systems/surface_encounter_system';
+import { individualPhysicalProfile, individualSizeLabel } from '../entities/biology/biology_rules';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import { wrapDashboardLines, type TextDashboardLine, type TextTableRow, type TextTone } from './text_ui';
 import type { XenobiologyService } from './xenobiology_service';
@@ -62,14 +63,16 @@ export interface EncounterViewModel {
   readonly requests: readonly string[];
 }
 
-const spriteCache = new WeakMap<SpeciesDefinition, PixelSprite>();
+const spriteCache = new WeakMap<SpeciesDefinition, Map<number, PixelSprite>>();
 
 /** Keeps procedural sprite baking outside the frame drawing loop. */
-function organismSprite(species: SpeciesDefinition): PixelSprite {
-  const prior = spriteCache.get(species);
+function organismSprite(species: SpeciesDefinition, sizeScale = 1): PixelSprite {
+  const variants = spriteCache.get(species) ?? new Map<number, PixelSprite>();
+  const prior = variants.get(sizeScale);
   if (prior) return prior;
-  const sprite = createOrganismSprite(species);
-  spriteCache.set(species, sprite);
+  const sprite = createOrganismSprite(species, sizeScale);
+  variants.set(sizeScale, sprite);
+  spriteCache.set(species, variants);
   return sprite;
 }
 
@@ -120,6 +123,7 @@ function specimenEstimates(
       kind,
       quality: Math.max(0.2, 1 - (kind === 'dead' && target.state !== 'dead' ? 1 : target.injury) * 0.35),
       volumeM3: 0.1,
+      sizeScale: target.sizeScale,
     }).credits,
   }));
 }
@@ -149,7 +153,7 @@ export function createEncounterView(
   const target = visible.find((individual) => individual.id === targetId);
   const scanner: string[] = [];
   if (target) {
-    const species = individualSpecies(field, target);
+    const species = individualProfile(field, target);
     const level = service.evidence(species.id)?.level ?? 0;
     scanner.push(...speciesDescription(species, service).slice(0, 3));
     const range = Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5;
@@ -167,10 +171,11 @@ export function createEncounterView(
       );
     }
     scanner.push(`Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`);
+    if (target.sizeScale !== undefined) scanner.push(`Size: ${individualSizeLabel(target.sizeScale)}`);
     if (target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds)
       scanner.push('Observed activity: coordinated group withdrawal');
   } else scanner.push('No contact selected', `${visible.length} visible biological contacts`);
-  const species = target ? individualSpecies(field, target) : undefined;
+  const species = target ? individualProfile(field, target) : undefined;
   const level = species ? (service.evidence(species.id)?.level ?? 0) : 0;
   return {
     title: `${presentation.bodyName ?? 'SURFACE'} / ${field.site.label.toUpperCase()}`,
@@ -190,7 +195,7 @@ export function createEncounterView(
           (service.evidence(species.id)?.level ?? 0) >= 2 &&
           ['territorial', 'ambush'].includes(species.behaviour),
         selected: individual.id === targetId,
-        sprite: organismSprite(species),
+        sprite: organismSprite(species, individual.sizeScale),
       };
     }),
     scanner,
@@ -207,9 +212,9 @@ export function createEncounterView(
       ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds && target.state === 'active' ? 'withdrawing' : target.state}`
       : '--',
     targetMass: species
-      ? `${(species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg / ${species.symmetry}`
+      ? `${(species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg / ${individualSizeLabel(target?.sizeScale)} / ${species.symmetry}`
       : '',
-    targetSprite: species ? organismSprite(species) : undefined,
+    targetSprite: target ? organismSprite(individualSpecies(field, target), target.sizeScale) : undefined,
     cargo: {
       ...cargo,
       percent: cargo.capacityM3 > 0 ? Math.round((100 * cargo.usedM3) / cargo.capacityM3) : 0,
@@ -299,6 +304,8 @@ export function createBiologicalDossier(
     'amber'
   );
   entry('Body plan', species.symmetry);
+  if (contact?.target.sizeScale !== undefined)
+    entry('Individual size', individualSizeLabel(contact.target.sizeScale), 'amber');
   if (level >= 1 && species.bodyForm) entry('External form', species.bodyForm, 'cyan');
   if (contact)
     entry(
@@ -415,7 +422,7 @@ export function specimenRows(
       `${service.quote(container.species, container).credits}`,
       container.kind,
     ],
-    detail: `${container.kind.toUpperCase()} / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
+    detail: `${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale).massKg.toFixed(1)} kg / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
     tone: container.kind === 'live' ? 'green' : 'normal',
   }));
 }
@@ -437,7 +444,7 @@ export function specimenSaleRows(
     return {
       id: `sample:${container.id}`,
       cells: [container.species.name, '1', String(credits), `${container.kind} specimen`],
-      detail: `${availability} ${container.kind.toUpperCase()} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
+      detail: `${availability} ${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
       disabled: credits <= 0,
       tone: credits > 0 ? 'green' : 'normal',
       cellTones: ['normal', 'normal', 'amber', 'cyan'],

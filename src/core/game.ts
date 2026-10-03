@@ -141,7 +141,7 @@ import {
   createEncounter,
   SurfaceEncounterSystem,
   type EncounterCommand,
-  individualSpecies,
+  individualProfile,
   encounterVisible,
 } from '../systems/surface_encounter_system';
 import { prepareEncounterSurface } from './encounter_surface';
@@ -5116,7 +5116,7 @@ export class Game {
           )
       : [];
     for (const target of nearby) {
-      const species = individualSpecies(field!, target);
+      const species = individualProfile(field!, target);
       pickup.push({
         id: `collect-organism:${target.id}`,
         cells: [
@@ -5125,7 +5125,7 @@ export class Game {
           '--',
           target.state === 'dead' ? 'Secure intact remains' : 'Place in stasis',
         ],
-        detail: `${(this.xenobiology.evidence(species.id)?.level ?? 0) >= 2 ? species.name : 'Selected contact'}: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first.`,
+        detail: `${(this.xenobiology.evidence(species.id)?.level ?? 0) >= 2 ? species.name : 'Selected contact'} / estimated ${species.massKg.toFixed(1)} kg: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first. Handling limit 80 kg.`,
         tone: 'green',
       });
     }

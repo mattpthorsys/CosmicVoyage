@@ -1,7 +1,7 @@
 import type { EncounterField, EncounterIndividual, StunPower } from '../../entities/biology/biology_types';
 import {
   encounterVisible,
-  individualSpecies,
+  individualProfile,
   type EncounterCommand,
 } from '../../systems/surface_encounter_system';
 import { TerminalTextReveal } from '../terminal_text_reveal';
@@ -251,7 +251,7 @@ export class SurfaceEncounterController {
             { segments: [] },
           ])
         : target
-          ? createBiologicalDossier(individualSpecies(field, target), service, width, {
+          ? createBiologicalDossier(individualProfile(field, target), service, width, {
               field,
               target,
               power: this.power,

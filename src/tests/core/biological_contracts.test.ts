@@ -53,6 +53,7 @@ function fixture() {
     kind: 'live',
     quality: 1,
     volumeM3: 0.5,
+    sizeScale: source.sizeScale,
   };
   const hold = createDefaultCargo(10),
     rover = createDefaultCargo(10);

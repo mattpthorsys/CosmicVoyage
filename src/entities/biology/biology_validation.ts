@@ -7,7 +7,7 @@ import {
   type SpecimenContainer,
   type XenobiologySnapshot,
 } from './biology_types';
-import { canShareRoverCell } from './biology_rules';
+import { canShareRoverCell, individualPhysicalProfile } from './biology_rules';
 
 /** Requires a structured save value without trusting a cast of imported JSON. */
 function record(value: unknown): asserts value is Record<string, unknown> {
@@ -116,6 +116,7 @@ export function validateSpecimen(value: unknown): asserts value is SpecimenConta
   choice(value.kind, ['live', 'dead', 'tissue']);
   number(value.quality, 0, 1);
   number(value.volumeM3, 0.1, 100);
+  if (value.sizeScale !== undefined) number(value.sizeScale, 0.3, 1.8);
 }
 
 /** Validates campaign records and cross-references physical ownership across both cargo carriers. */
@@ -224,6 +225,7 @@ export function validateXenobiology(
       number(individual.exposure, 0, Number.MAX_SAFE_INTEGER, true);
       number(individual.injury, 0);
       number(individual.recoveryAt, 0);
+      if (individual.sizeScale !== undefined) number(individual.sizeScale, 0.3, 1.8);
       if (individual.groupId !== undefined) {
         text(individual.groupId);
         number(individual.retreatUntil, 0);
@@ -244,7 +246,12 @@ export function validateXenobiology(
           positions.has(position) ||
           (individual.x === field.roverX &&
             individual.y === field.roverY &&
-            !canShareRoverCell(field.species.find((species) => species.id === individual.speciesId)!)) ||
+            !canShareRoverCell(
+              individualPhysicalProfile(
+                field.species.find((species) => species.id === individual.speciesId)!,
+                individual.sizeScale as number | undefined
+              )
+            )) ||
           field.terrain[individual.y as number][individual.x as number] !== '.'
         )
           throw new Error('Overlapping encounter actors.');
@@ -275,5 +282,7 @@ export function validateXenobiology(
       (container.kind === 'tissue' ? !individual.sampled : individual.state !== 'collected')
     )
       throw new Error('Specimen source lifecycle inconsistent.');
+    if (container.sizeScale !== individual.sizeScale)
+      throw new Error('Specimen size does not match its source.');
   }
 }
