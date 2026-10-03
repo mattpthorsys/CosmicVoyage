@@ -4,6 +4,7 @@ import type { CargoComponent } from '../core/components';
 import { SpecimenCargoSystem } from './specimen_cargo_system';
 import { stunOutcome } from '../entities/biology/stun_model';
 import { canShareRoverCell, individualPhysicalProfile } from '../entities/biology/biology_rules';
+import { defensiveIntent } from './organism_behaviour';
 import { createHabitatPatches, habitatCommunity } from '../entities/biology/habitat';
 import {
   ENCOUNTER_HEIGHT,
@@ -358,22 +359,28 @@ export class SurfaceEncounterSystem {
     for (let tick = Math.floor(previous / 5) + 1; tick <= Math.floor(field.elapsedSeconds / 5); tick++) {
       this.alertGroups(field, tick * 5, result);
       for (const individual of [...field.individuals].sort((a, b) => a.id.localeCompare(b.id))) {
-        if (individual.state === 'stunned' && individual.recoveryAt <= tick * 5) individual.state = 'active';
+        if (individual.state === 'stunned' && individual.recoveryAt <= tick * 5) {
+          individual.state = 'active';
+          individual.alerted = false;
+          individual.displayUntil = undefined;
+        }
         if (individual.state !== 'active') continue;
         const species = individualProfile(field, individual);
         const distance = Math.hypot(individual.x - field.roverX, individual.y - field.roverY);
-        const dangerous = species.behaviour === 'territorial' || species.behaviour === 'ambush';
-        if (dangerous && distance < (species.behaviour === 'ambush' ? 2 : 4)) {
-          if (!individual.alerted) {
-            individual.alerted = true;
-            newlyAlerted.add(individual.id);
-            result.message += ' Defensive display detected.';
-          } else if (distance < 1.6 && !newlyAlerted.has(individual.id)) {
-            result.damage += species.massKg > 10 ? 8 : 3;
-            if (!result.message.includes('strikes rover'))
-              result.message += ' Organism strikes rover armour.';
-          }
+        const sensed = encounterVisible(field, individual);
+        const defense = defensiveIntent(field, individual, species, tick * 5, sensed, newlyAlerted);
+        if (
+          defense?.warning &&
+          !result.message.includes('display') &&
+          !result.message.includes('Threat posture')
+        )
+          result.message += ` ${defense.warning}`;
+        if (defense?.damage) {
+          result.damage += defense.damage;
+          if (!result.message.includes('strikes rover')) result.message += ' Organism strikes rover armour.';
         }
+        if (defense && !defense.goal) continue;
+        if (species.behaviour === 'sessile') individual.activity = 'attached';
         if (
           species.behaviour === 'sessile' ||
           (species.behaviour === 'ambush' && !individual.alerted) ||
@@ -384,13 +391,18 @@ export class SurfaceEncounterSystem {
         let gx = individual.x + prng.randomInt(-1, 1),
           gy = individual.y + prng.randomInt(-1, 1);
         const retreating = individual.groupId && (individual.retreatUntil ?? 0) > tick * 5;
-        if (retreating || (species.behaviour === 'skittish' && distance < 7)) {
+        if (defense?.goal) {
+          [gx, gy] = defense.goal;
+        } else if (retreating || (species.behaviour === 'skittish' && sensed && distance < 7)) {
+          individual.activity = 'withdrawing';
           gx = individual.x + Math.sign(individual.x - field.roverX) * 4;
           gy = individual.y + Math.sign(individual.y - field.roverY) * 4;
-        } else if (dangerous && individual.alerted && distance < 6) {
-          gx = field.roverX;
-          gy = field.roverY;
-        } else if (individual.groupId) {
+        } else {
+          const phase = new PRNG(field.seed).seedNew(individual.id, 'activity-phase').randomInt(0, 5);
+          individual.activity = (tick + phase) % 6 < 2 ? 'resting' : 'foraging';
+          if (individual.activity === 'resting') continue;
+        }
+        if (!defense && !retreating && individual.groupId && individual.activity === 'foraging') {
           const neighbours = field.individuals.filter(
             (other) =>
               other.id !== individual.id && other.state === 'active' && other.groupId === individual.groupId
@@ -407,7 +419,8 @@ export class SurfaceEncounterSystem {
         if (
           Math.hypot(individual.x - individual.homeX, individual.y - individual.homeY) > 7 &&
           distance > 6 &&
-          !retreating
+          !retreating &&
+          !defense
         ) {
           gx = individual.homeX;
           gy = individual.homeY;
@@ -443,8 +456,11 @@ export class SurfaceEncounterSystem {
     }
     // Evaluate exact recovery deadlines even when a short command does not cross a behaviour tick.
     for (const individual of field.individuals)
-      if (individual.state === 'stunned' && individual.recoveryAt <= field.elapsedSeconds)
+      if (individual.state === 'stunned' && individual.recoveryAt <= field.elapsedSeconds) {
         individual.state = 'active';
+        individual.alerted = false;
+        individual.displayUntil = undefined;
+      }
   }
 
   /** Shares a nearby sensed disturbance before any member moves, keeping actor order irrelevant. */

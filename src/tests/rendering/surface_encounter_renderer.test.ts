@@ -56,6 +56,40 @@ describe('field survey graphics contracts', () => {
   it.each([
     [120, 42],
     [30, 45],
+  ])(
+    'renders a visible defensive posture without changing state or escaping the %sx%s field',
+    (cols, rows) => {
+      const biosphere = generateBiosphere(biologyFixture())!;
+      const field = createEncounter(biosphere, { id: 'display', x: 1, y: 1, label: 'Display' });
+      const target = field.individuals[1];
+      const index = field.species.findIndex((entry) => entry.id === target.speciesId);
+      field.species[index] = { ...field.species[index], behaviour: 'territorial', bodyForm: 'walker' };
+      field.individuals = [target];
+      target.x = field.roverX + 1;
+      target.y = field.roverY - 1;
+      const service = new XenobiologyService();
+      service.observe(field.species[index], 2);
+      const presentation = {
+        power: 1 as const,
+        stasisClass: 1,
+        integrity: 100,
+        cargo: { usedM3: 0, capacityM3: 50 },
+        message: '',
+      };
+      const normal = display(cols, rows);
+      drawSurfaceEncounter(normal.buffer, createEncounterView(field, target.id, service, presentation));
+      target.activity = 'displaying';
+      const before = structuredClone(field);
+      const warning = display(cols, rows);
+      drawSurfaceEncounter(warning.buffer, createEncounterView(field, target.id, service, presentation));
+      expect(warning.pixels).not.toEqual(normal.pixels);
+      expect(warning.outside).toEqual([]);
+      expect(field).toEqual(before);
+    }
+  );
+  it.each([
+    [120, 42],
+    [30, 45],
   ])('keeps confirmed mission markers bounded and distinct from selection in a %sx%s view', (cols, rows) => {
     const screen = display(cols, rows);
     const field = createEncounter(generateBiosphere(biologyFixture())!, {

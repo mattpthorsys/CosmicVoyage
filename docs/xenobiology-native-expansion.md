@@ -15,7 +15,12 @@ requested model handoff at verification.
    movement poses and a prepared defensive pose. The existing six-by-four raster
    footprint and four-colour limit stay fixed. Dossiers show observed external
    anatomy without revealing ancestry before analysis.
-3. Readable behaviour: pending.
+3. Readable behaviour: implemented, verification pending. Threats use direct
+   visibility, warn without injuring during the initiating action, and have
+   bounded home ranges. Territorial organisms hold a visible display before
+   defending, disengage when the rover withdraws, then return home. Benign
+   contacts alternate resting/foraging; dossiers and sensors report visible
+   activity. Reading still advances neither actors nor recovery timers.
 4. Comparative expeditions: pending.
 
 ## Generation Policy

@@ -235,6 +235,22 @@ export function validateXenobiology(
       number(individual.injury, 0);
       number(individual.recoveryAt, 0);
       if (individual.sizeScale !== undefined) number(individual.sizeScale, 0.3, 1.8);
+      if (individual.activity !== undefined)
+        choice(individual.activity, [
+          'attached',
+          'resting',
+          'foraging',
+          'withdrawing',
+          'displaying',
+          'defending',
+          'returning',
+        ]);
+      if (individual.displayUntil !== undefined) {
+        number(individual.displayUntil, 0);
+        const species = field.species.find((entry) => entry.id === individual.speciesId)!;
+        if (!['territorial', 'ambush'].includes(species.behaviour))
+          throw new Error('Defensive timer on a benign organism.');
+      }
       if (individual.groupId !== undefined) {
         text(individual.groupId);
         number(individual.retreatUntil, 0);

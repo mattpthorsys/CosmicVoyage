@@ -51,9 +51,11 @@ function drawSprite(
   pixelScale: number,
   frame: number,
   clip: Region,
-  state = 'active'
+  state = 'active',
+  displaying = false
 ): void {
-  const pattern = sprite.frames[frame % sprite.frames.length];
+  const pattern =
+    displaying && sprite.displayFrame ? sprite.displayFrame : sprite.frames[frame % sprite.frames.length];
   const palette =
     state === 'dead'
       ? ['#343537', '#74767b', '#b4b5b0', '#d4d3c8']
@@ -128,7 +130,7 @@ export function drawSurfaceEncounter(buffer: ScreenBuffer, model: EncounterViewM
     buffer.drawString('[<]', entry[0], entry[1], TEXT_PALETTE.amber, null);
   for (const actor of model.actors) {
     const p = point(actor.x, actor.y);
-    drawSprite(buffer, actor.sprite, p[0], p[1], 0.5, model.turn, field, actor.state);
+    drawSprite(buffer, actor.sprite, p[0], p[1], 0.5, model.turn, field, actor.state, actor.displaying);
     // The office marker follows this camera projection, while cyan brackets retain selection ownership.
     if (
       actor.missionTarget &&
@@ -275,7 +277,8 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
       1,
       model.turn,
       panel,
-      actor?.state
+      actor?.state,
+      actor?.displaying
     );
     y += 6;
   }

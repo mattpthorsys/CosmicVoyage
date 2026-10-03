@@ -8,6 +8,14 @@ export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territor
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
 export type EvidenceLevel = 0 | 1 | 2 | 3;
 export type StunPower = 0 | 1 | 2;
+export type BiologicalActivity =
+  | 'attached'
+  | 'resting'
+  | 'foraging'
+  | 'withdrawing'
+  | 'displaying'
+  | 'defending'
+  | 'returning';
 export type HabitatKind =
   | 'moist-margin'
   | 'sheltered-ground'
@@ -149,6 +157,9 @@ export interface EncounterIndividual {
   groupId?: string;
   retreatUntil?: number;
   sizeScale?: number;
+  activity?: BiologicalActivity;
+  /** Local action time, never wall time; a fresh warning protects the whole initiating command. */
+  displayUntil?: number;
 }
 
 export interface EncounterField {

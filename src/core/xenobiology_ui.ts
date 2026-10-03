@@ -9,6 +9,7 @@ import { estimateStun } from '../entities/biology/stun_model';
 import { encounterVisible, individualSpecies, individualProfile } from '../systems/surface_encounter_system';
 import { individualPhysicalProfile, individualSizeLabel } from '../entities/biology/biology_rules';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
+import { organismActivity } from '../systems/organism_behaviour';
 import {
   wrapDashboardLines,
   type TextDashboardLine,
@@ -58,6 +59,7 @@ export interface EncounterViewModel {
     selected: boolean;
     sprite: PixelSprite;
     missionTarget: boolean;
+    displaying: boolean;
   }>[];
   readonly scanner: readonly string[];
   readonly scannerDashboard: readonly TextDashboardLine[];
@@ -218,7 +220,7 @@ export function createEncounterView(
     scanner.push(...speciesDescription(species, service).slice(0, 3));
     const range = Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5;
     scanner.push(
-      `${range.toFixed(0)} m / ${target.state}${target.sampled ? ' / sampled' : ''}`,
+      `${range.toFixed(0)} m / ${organismActivity(target)}${target.sampled ? ' / sampled' : ''}`,
       targetQuotes(field, target, service)
     );
     if (target.state === 'stunned')
@@ -295,6 +297,7 @@ export function createEncounterView(
           missionRequests,
           { field, target: individual, stasisClass }
         ).eligible,
+        displaying: individual.state === 'active' && individual.activity === 'displaying',
       };
     }),
     scanner,
@@ -327,7 +330,7 @@ export function createEncounterView(
     targetName: species && level >= 2 ? species.name : 'Unresolved organism',
     targetStatus: species ? service.status(species) : 'NO CONTACT',
     targetRange: target
-      ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds && target.state === 'active' ? 'withdrawing' : target.state}`
+      ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds && target.state === 'active' ? 'withdrawing' : organismActivity(target)}`
       : '--',
     targetMass: species
       ? `${massEstimate(species.massKg)} / ${individualSizeLabel(target?.sizeScale)} / ${species.symmetry}`
@@ -446,6 +449,12 @@ export function createBiologicalDossier(
       'Contact',
       `${contact.target.state.toUpperCase()} / ${Math.round(Math.hypot(contact.target.x - contact.field.roverX, contact.target.y - contact.field.roverY) * 5)} m`,
       contact.target.state === 'dead' ? 'red' : 'normal'
+    );
+  if (contact?.target.activity)
+    entry(
+      'Observed action',
+      organismActivity(contact.target),
+      ['displaying', 'defending'].includes(contact.target.activity) ? 'amber' : 'cyan'
     );
   section('Ecology & Chemistry');
   if (contact?.field.site.habitat) {
