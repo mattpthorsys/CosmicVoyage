@@ -114,6 +114,7 @@ describe('xenobiology interface', () => {
       'D',
       'N',
       'O',
+      'J',
       'Esc',
     ]);
     controller.input(new Set(['MOVE_RIGHT']), field);

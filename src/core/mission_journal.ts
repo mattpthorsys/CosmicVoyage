@@ -167,7 +167,7 @@ export class MissionJournal {
     this.viewOffset = Math.min(this.viewOffset, Math.max(0, dashboard.length - visibleRowCount));
     return {
       title: 'MISSION JOURNAL',
-      subtitle: `${entries.length ? `${this.selection + 1} / ${entries.length} accepted contracts` : 'Ship contract memory'} / TIME HELD`,
+      subtitle: `${entries.length ? `${this.selection + 1}/${entries.length} ACTIVE` : 'NO ACTIVE'} / HELD`,
       footer,
       columns: [],
       widths: [],

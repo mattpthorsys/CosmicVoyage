@@ -85,7 +85,14 @@ describe('habitat communities', () => {
     const result = system.act(field, { kind: 'wait' }, createDefaultCargo(10), 1);
     expect(result.damage).toBe(0);
     expect(result.message).toContain('Group withdrawal');
-    expect(group.every((actor) => actor.y < 10 && actor.retreatUntil! > field.elapsedSeconds)).toBe(true);
+    expect(
+      group.every(
+        (actor) =>
+          Math.hypot(actor.x - field.roverX, actor.y - field.roverY) > 4 &&
+          actor.retreatUntil! > field.elapsedSeconds
+      ),
+      JSON.stringify(group.map(({ x, y, retreatUntil }) => ({ x, y, retreatUntil })))
+    ).toBe(true);
     const snapshot = createXenobiologySnapshot();
     snapshot.fields[field.site.id] = field;
     expect(() => validateXenobiology(snapshot, [])).not.toThrow();

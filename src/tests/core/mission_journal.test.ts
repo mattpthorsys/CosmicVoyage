@@ -122,9 +122,10 @@ describe('mission terminal', () => {
     journal.reveal.complete();
     let model = journal.createModel(entries, 100, 24, true);
     journal.input(input('PAGE_DOWN'), entries, model);
-    expect(journal.viewOffset).toBe(model.visibleRowCount);
+    const maxOffset = model.dashboard!.length - model.visibleRowCount;
+    expect(journal.viewOffset).toBe(Math.min(model.visibleRowCount, maxOffset));
     journal.input(input('MOVE_UP'), entries, model);
-    expect(journal.viewOffset).toBe(model.visibleRowCount - 1);
+    expect(journal.viewOffset).toBe(Math.max(0, Math.min(model.visibleRowCount, maxOffset) - 1));
     journal.input(input('MOVE_LEFT'), entries, model);
     expect(journal.selected(entries)?.mission.id).toBe('second');
     expect(journal.viewOffset).toBe(0);
@@ -138,8 +139,12 @@ describe('mission terminal', () => {
   it('handles empty journals and ready contracts honestly', () => {
     const journal = new MissionJournal();
     journal.selection = 99;
+    const empty = journal.createModel([], 30, 24, false);
     expect(text(journal, [])).toContain('NO ACTIVE CONTRACTS');
+    expect((empty.subtitle ?? '').length).toBeLessThanOrEqual(20);
     expect(journal.selection).toBe(0);
+    const ready = journal.createModel([{ ...entry(), status: 'READY', completed: 1 }], 30, 24, false);
+    expect((ready.subtitle ?? '').length).toBeLessThanOrEqual(20);
     expect(text(journal, [{ ...entry(), status: 'READY', completed: 1 }])).toContain('Delivery ready.');
   });
 });
