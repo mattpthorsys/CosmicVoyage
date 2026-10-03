@@ -1,9 +1,23 @@
 # Xenobiology Expansion: Verification Handoff
 
-Implementation is checkpointed in stages. Automated tests, typechecking,
-lint, build and browser execution for this expansion have deliberately not
-been run, following the requested Luna handoff. Formatting and diff whitespace
-checks are the only checks performed during implementation.
+Implementation is checkpointed in stages. Verification completed 2026-10-03.
+
+## Verification Results
+
+- Focused xenobiology and rendering coverage: 14 files, 120 tests passed.
+- `npm run check`: documentation comments, formatting, lint, app and test
+  typechecks, 108 test files / 716 tests, and production build all passed.
+- Browser walkthrough passed with no console errors. It exercised the paused
+  science log, desktop and narrow captures, live delivery, and analysis/tissue
+  settlement. Captures are in `/tmp/cosmic-xenobiology`.
+- Visual review confirmed the science log layers over the field and that both
+  fonts load at desktop and narrow widths. The Vite build reports its main
+  minified JavaScript chunk at 787.81 kB, above the 500 kB advisory threshold;
+  the build succeeds.
+
+The browser fixture completed live, analysis and tissue contributions and
+verified the alternative contract fees and single settlement. This does not
+replace a personal playthrough for expedition pacing or economy balance.
 
 ## Personal Playthrough
 
@@ -40,7 +54,7 @@ not guaranteed to have every habitat class. Compare water margins, broken
 rock beside water, sheltered outcrops, open substrate and elevated substrate
 where they exist. The science log never lists unencountered species.
 
-## Luna Automated Checks
+## Automated Checks
 
 Begin with the focused new/domain suites:
 
@@ -72,6 +86,5 @@ canonical. Version-12 storage migrates into version 13. A scan at another
 colony cannot establish a requested site's detailed evidence. Ordinary sales
 must still list zero-value specimens and must not complete acquisition requests.
 
-Update this document and the roadmap with measured results after execution,
-and commit corrections separately. Automated success does not establish
-long-session economy balance or whether the expeditions are enjoyable.
+Automated success does not establish long-session economy balance or whether
+the expeditions are enjoyable.

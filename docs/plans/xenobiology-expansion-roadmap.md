@@ -1,10 +1,10 @@
 # Xenobiology: Ambitious Expansion Roadmap
 
 Status: the first habitat/group/live-reference expansion and mission navigation
-passed automated and browser verification. The next authorised four steps now
-have implementation and regression cases: a science log, expanded habitat and
-anatomy content, ordinary individual size variation, and analysis/tissue
-requests. Verification of this new expansion awaits the requested Luna handoff.
+passed automated and browser verification. The next authorised four steps
+(science log, expanded habitat and anatomy content, ordinary individual size
+variation, and analysis/tissue requests) also passed full automated and browser
+verification. See the [verification handoff](../xenobiology-expansion-verification.md).
 Later waves remain exploratory, not implementation commitments.
 Codebase baseline inspected: 2026-10-03. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
