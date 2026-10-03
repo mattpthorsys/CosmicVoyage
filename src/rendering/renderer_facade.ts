@@ -252,6 +252,7 @@ export class RendererFacade {
     const canvasWidth = cols * charWidthPx;
     const canvasHeight = rows * charHeightPx;
     const canvasResized = this.canvas.width !== canvasWidth || this.canvas.height !== canvasHeight;
+    const bufferResized = this.screenBuffer.getCols() !== cols || this.screenBuffer.getRows() !== rows;
     if (canvasResized) {
       // Assigning canvas dimensions clears its pixels. Only do that for a real grid change and
       // tell Game to repaint before it next considers the cached render signature.
@@ -261,6 +262,9 @@ export class RendererFacade {
       this.orbitCanvas.height = canvasHeight;
       this.overlayCanvas.width = canvasWidth;
       this.overlayCanvas.height = canvasHeight;
+    }
+    // A restored session owns a fresh buffer even when the DOM canvas already has the right size.
+    if (canvasResized || bufferResized) {
       this.screenBuffer.updateDimensions(cols, rows, charWidthPx, charHeightPx);
       this.nebulaRenderer.clearCache();
       this.sceneRenderer.clearCaches();
@@ -292,7 +296,7 @@ export class RendererFacade {
     this.overlayCanvas.style.top = `${canvasMarginTop}px`;
     this.overlayCanvas.style.width = `${this.canvas.width}px`;
     this.overlayCanvas.style.height = `${this.canvas.height}px`;
-    if (canvasResized) this.clearOverlay();
+    if (canvasResized || bufferResized) this.clearOverlay();
 
     logger.info(
       `[RendererFacade.fitToScreen] Resized complete. Grid: ${cols}x${rows}, Canvas: ${this.canvas.width}x${this.canvas.height}px, Avail: ${availableWidth}x${availableHeight}px`
