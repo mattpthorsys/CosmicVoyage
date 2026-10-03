@@ -59,3 +59,13 @@ The older root documents remain useful summaries:
 - [`src/tests/README.md`](../../src/tests/README.md)
 
 This directory should be treated as the consolidated operational guide.
+
+## Feature Planning
+
+The following documents describe proposed work, not current gameplay:
+
+- [Xenobiology first-version implementation plan](../plans/xenobiology-first-version.md):
+  bounded encounters, procedural biology, scanning, specimen logistics, research
+  demand, and programming milestones.
+- [Xenobiology expansion roadmap](../plans/xenobiology-expansion-roadmap.md):
+  exploratory extensions and prerequisites beyond the first playable version.
