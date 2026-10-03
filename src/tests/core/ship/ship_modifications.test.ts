@@ -27,6 +27,7 @@ describe('ship modifications', () => {
     expect(ship.superstructure.cargoBays).toBe(16);
     expect(ship.cargoPodsInstalled).toBe(4);
     expect(ship.surveyEquipmentClass).toBe(1);
+    expect(ship.stasisClass).toBe(1);
     expect(getShipCargoCapacity(ship)).toBe(100);
     expect(ship.missileCount).toBe(5);
     expect(ship.shieldClass).toBe(0);

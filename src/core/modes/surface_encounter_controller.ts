@@ -5,9 +5,11 @@ import {
   type EncounterCommand,
 } from '../../systems/surface_encounter_system';
 import { TerminalTextReveal } from '../terminal_text_reveal';
-import { biologyDashboard, speciesDescription } from '../xenobiology_ui';
+import { biologyDashboard, createBiologicalDossier } from '../xenobiology_ui';
 import type { XenobiologyService } from '../xenobiology_service';
 import { getDashboardVisibleRows, type TextModalTableModel } from '../text_ui';
+import { ENCOUNTER_ACTIONS, type EncounterAction } from '../encounter_actions';
+import { commandButton, type CommandBarModel } from '../command_bar';
 
 type EncounterInteraction =
   | { kind: 'drive' }
@@ -16,19 +18,6 @@ type EncounterInteraction =
   | { kind: 'confirm'; targetId: string }
   | { kind: 'dossier' | 'catalogue'; offset: number };
 export type EncounterIntent = { kind: 'command'; command: EncounterCommand } | { kind: 'leave' | 'cargo' };
-const ACTIONS = [
-  'observe',
-  'analyse',
-  'stun',
-  'sample',
-  'collect',
-  'shoot',
-  'wait',
-  'dossier',
-  'catalogue',
-  'cargo',
-  'leave',
-] as const;
 
 /** Owns mutually exclusive local driving, action menus, weapon preparation and scientific reading. */
 export class SurfaceEncounterController {
@@ -101,18 +90,6 @@ export class SurfaceEncounterController {
       if (confirm) return { kind: 'command', command: { kind: 'shoot', targetId: state.targetId } };
       return;
     }
-    if (state.kind === 'menu') {
-      if (cancel) this.interaction = { kind: 'drive' };
-      else if (actions.has('MOVE_UP')) state.index = (state.index + ACTIONS.length - 1) % ACTIONS.length;
-      else if (actions.has('MOVE_DOWN')) state.index = (state.index + 1) % ACTIONS.length;
-      else if (confirm) return this.choose(ACTIONS[state.index], target?.id);
-      return;
-    }
-    if (cancel) return { kind: 'leave' };
-    if (confirm) {
-      this.interaction = { kind: 'menu', index: 0 };
-      return;
-    }
     if (actions.has('CYCLE_TARGET')) {
       const visible = field.individuals.filter((individual) => encounterVisible(field, individual));
       this.targetId =
@@ -120,18 +97,33 @@ export class SurfaceEncounterController {
           ?.id ?? null;
       return;
     }
-    if (actions.has('SCAN')) return this.choose('observe', target?.id);
-    if (actions.has('APPROACH_TARGET')) return this.choose('analyse', target?.id);
-    if (actions.has('ORBIT_DOSSIER')) return this.choose('dossier', target?.id);
-    if (actions.has('TARGET_MENU')) return this.choose('catalogue', target?.id);
-    if (actions.has('SHIP_MENU')) return { kind: 'cargo' };
+    if (state.kind === 'menu') {
+      if (cancel) this.interaction = { kind: 'drive' };
+      else if (actions.has('MOVE_UP') || actions.has('MOVE_LEFT'))
+        state.index = (state.index + ENCOUNTER_ACTIONS.length - 1) % ENCOUNTER_ACTIONS.length;
+      else if (actions.has('MOVE_DOWN') || actions.has('MOVE_RIGHT'))
+        state.index = (state.index + 1) % ENCOUNTER_ACTIONS.length;
+      else if (confirm) return this.choose(ENCOUNTER_ACTIONS[state.index].kind, target?.id);
+      else {
+        const shortcut = ENCOUNTER_ACTIONS.find((item) => actions.has(item.action));
+        if (shortcut) return this.choose(shortcut.kind, target?.id);
+      }
+      return;
+    }
+    if (cancel) return { kind: 'leave' };
+    if (confirm) {
+      this.interaction = { kind: 'menu', index: 0 };
+      return;
+    }
+    const shortcut = ENCOUNTER_ACTIONS.find((item) => actions.has(item.action));
+    if (shortcut) return this.choose(shortcut.kind, target?.id);
     const dx = actions.has('MOVE_RIGHT') ? 1 : actions.has('MOVE_LEFT') ? -1 : 0;
     const dy = actions.has('MOVE_DOWN') ? 1 : actions.has('MOVE_UP') ? -1 : 0;
     if (dx || dy) return { kind: 'command', command: { kind: 'move', dx, dy } };
   }
 
   /** Resolves an explicit menu choice without performing gameplay effects itself. */
-  private choose(action: (typeof ACTIONS)[number], targetId?: string): EncounterIntent | undefined {
+  private choose(action: EncounterAction, targetId?: string): EncounterIntent | undefined {
     this.interaction = { kind: 'drive' };
     if (action === 'leave' || action === 'cargo') return { kind: action };
     if (action === 'wait') return { kind: 'command', command: { kind: 'wait' } };
@@ -153,54 +145,70 @@ export class SurfaceEncounterController {
     return { kind: 'command', command: { kind: action, targetId } };
   }
 
+  /** Exposes the actual bottom action menu and replaces it with safe controls while a modal owns input. */
+  createCommandBar(field: EncounterField): CommandBarModel {
+    const state = this.interaction;
+    const context = 'biological field';
+    if (state.kind === 'power')
+      return {
+        context,
+        buttons: [
+          commandButton('dose-down', 'Lower dose', 'MOVE_LEFT', { key: 'Left' }),
+          commandButton('dose-up', 'Raise dose', 'MOVE_RIGHT', { key: 'Right' }),
+          commandButton('fire', 'Fire stunner', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' }),
+          commandButton('cancel', 'Cancel', 'QUIT', { key: 'Esc' }),
+        ],
+      };
+    if (state.kind === 'confirm')
+      return {
+        context,
+        buttons: [
+          commandButton('confirm', 'Confirm lethal shot', 'ENTER_SYSTEM', { key: 'Enter', tone: 'red' }),
+          commandButton('cancel', 'Cancel', 'QUIT', { key: 'Esc' }),
+        ],
+      };
+    if (state.kind === 'dossier' || state.kind === 'catalogue')
+      return {
+        context,
+        buttons: [
+          commandButton('page-up', 'Previous page', 'PAGE_UP', { key: 'PgUp' }),
+          commandButton('page-down', 'Next page', 'PAGE_DOWN', { key: 'PgDn' }),
+          commandButton('cancel', 'Return to field', 'QUIT', { key: 'Esc' }),
+        ],
+      };
+    const target = this.target(field);
+    return {
+      context,
+      leftButtons: [
+        commandButton('target', 'Target', 'CYCLE_TARGET', { key: 'Tab' }),
+        commandButton('actions', 'Actions', 'ENTER_SYSTEM', { key: 'Enter' }),
+      ],
+      selectedButtonId: state.kind === 'menu' ? ENCOUNTER_ACTIONS[state.index].kind : undefined,
+      buttons: ENCOUNTER_ACTIONS.map((item) =>
+        commandButton(item.kind, item.label, item.action, {
+          key: item.key,
+          enabled: ['cargo', 'leave', 'wait', 'catalogue'].includes(item.kind) || !!target,
+          tone: item.kind === 'shoot' ? 'red' : item.kind === 'collect' ? 'green' : 'normal',
+        })
+      ),
+    };
+  }
+
   /** Prepares a terminal modal; scrolling is clamped against responsive wrapped content. */
   createModal(
     field: EncounterField,
     service: XenobiologyService,
     cols: number,
     rows: number,
-    scanner: readonly string[]
+    scanner: readonly string[],
+    stasisClass = 1
   ): TextModalTableModel | undefined {
     const state = this.interaction;
-    if (state.kind === 'drive') return;
+    if (state.kind === 'drive' || state.kind === 'menu') return;
     const base = { columns: [], widths: [], rows: [], selectedIndex: 0, viewOffset: 0, visibleRowCount: 8 };
     /** Wraps shortcut descriptions to the shared modal's actual footer width. */
     const footer = (...lines: string[]): string[] =>
       biologyDashboard(lines, cols - 10).map((line) => line.segments.map((span) => span.text).join(''));
-    if (state.kind === 'menu' && cols < 42) {
-      const dashboard = biologyDashboard(
-        ACTIONS.map((action, index) => `${index === state.index ? '>' : ' '} ${action.toUpperCase()}`),
-        cols - 12
-      );
-      const shortcuts = footer('UP/DN select', 'ENTER execute / ESC back');
-      const visible = getDashboardVisibleRows(dashboard.length, rows, shortcuts.length);
-      return {
-        ...base,
-        title: 'BIO OPERATIONS',
-        dashboard,
-        visibleRowCount: visible,
-        viewOffset: Math.max(0, state.index - visible + 1),
-        footer: shortcuts,
-      };
-    }
-    if (state.kind === 'menu')
-      return {
-        ...base,
-        title: 'BIOLOGICAL OPERATIONS',
-        columns: ['ACTION'],
-        widths: [36],
-        rows: ACTIONS.map((action) => ({
-          id: action,
-          cells: [action.toUpperCase()],
-          detail:
-            action === 'leave'
-              ? 'Return to local entry at X16 Y21 to withdraw.'
-              : 'Local time advances only when an operation succeeds.',
-        })),
-        selectedIndex: state.index,
-        viewOffset: Math.max(0, state.index - 7),
-        footer: footer('UP/DN select  ENTER execute  ESC back'),
-      };
     if (state.kind === 'confirm')
       return {
         ...base,
@@ -230,23 +238,22 @@ export class SurfaceEncounterController {
         footer: footer('LEFT/RIGHT dose  ENTER fire  ESC cancel'),
       };
     const target = this.target(field);
-    const lines =
+    const width = Math.min(72, cols - 12);
+    const dashboard =
       state.kind === 'catalogue'
-        ? [
-            'XENOBIOLOGY / PERSONAL RECORD',
-            ...Object.values(service.snapshot.evidence).flatMap((evidence) => [
-              ...speciesDescription(evidence.species, service),
-              '',
-            ]),
-          ]
+        ? Object.values(service.snapshot.evidence).flatMap((evidence) => [
+            ...createBiologicalDossier(evidence.species, service, width),
+            { segments: [] },
+          ])
         : target
-          ? [
-              'BIOLOGICAL DOSSIER',
-              ...speciesDescription(individualSpecies(field, target), service),
-              ...scanner.slice(3),
-            ]
-          : ['No biological target'];
-    const dashboard = biologyDashboard(lines, Math.min(88, cols - 12));
+          ? createBiologicalDossier(individualSpecies(field, target), service, width, {
+              field,
+              target,
+              power: this.power,
+              stasisClass,
+            })
+          : biologyDashboard(['No biological target'], width);
+    if (!dashboard.length) dashboard.push(...biologyDashboard(['No biological records yet.'], width));
     const shortcuts = footer('UP/DN scroll  PGUP/DN page', 'ESC return to field');
     const visible = getDashboardVisibleRows(dashboard.length, rows, shortcuts.length);
     state.offset = Math.min(state.offset, Math.max(0, dashboard.length - visible));

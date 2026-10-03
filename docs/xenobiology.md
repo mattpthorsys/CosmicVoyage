@@ -30,14 +30,27 @@ loop. It is an addition to ordinary surface travel, not a separate world mode.
 | Tab           | Cycle visible contacts                                  |
 | V             | Observe the selected organism                           |
 | A             | Detailed biochemical analysis within 25 m               |
-| Enter / Space | Biological operations menu                              |
+| Enter / Space | Select an action in the bottom command bar              |
+| T             | Prepare the variable-power stunner                      |
+| S             | Take a tissue sample                                    |
+| C             | Collect the selected nearby organism                    |
+| K             | Prepare a confirmed lethal shot                         |
+| W             | Wait ten local seconds                                  |
 | D             | Scrollable dossier for the selected species             |
 | N             | Personal species/evidence record                        |
 | O             | Rover cargo manifest                                    |
 | Escape        | Close a panel, or withdraw near the entry at X16 Y21    |
 
-The operations menu includes Observe, Analyse, Stun, Sample, Collect, Shoot,
-Wait, Dossier, Catalogue, Cargo and Leave. Up/Down select; Enter executes.
+The bottom menu includes Observe, Analyse, Stun, Sample, Collect, Shoot,
+Wait, Dossier, Species, Cargo and Withdraw. Left/Right (or Up/Down) select;
+Enter executes. Buttons also work directly with the mouse or their hotkeys.
+Escape leaves menu selection and restores driving.
+
+The close field view retains the habitat's regional terrain colour. Tiny
+four-colour silhouettes distinguish the rover, mobile organisms and sessile
+colonies. A telemetry panel shows rover integrity, fuel, actual crew health,
+cargo percentage/volume and a short evidence-limited contact description.
+On narrow displays the telemetry sits below the terrain instead of beside it.
 
 In stun preparation, Left/Right choose low, standard or high dose. The display
 updates incapacitation and mortality estimates before Enter fires. Escape
@@ -61,10 +74,18 @@ enough. Actual quality and prior submissions affect those estimates.
 
 Physical sampling requires approach within 7.5 m. A tissue sample uses a small
 sealed container and needs no stasis. A mobile organism must be incapacitated
-for whole live collection; sessile organisms can be collected directly. Dead
+for whole live collection, except for benign organisms no larger than 0.5 m
+and 5 kg. Sessile organisms can be collected directly. Dead
 organisms can provide intact remains. Each individual supplies at most one
 tissue sample and one whole specimen: revisiting or reloading does not recreate
 it.
+
+To pick up an organism, drive next to it (small benign organisms can share the
+rover's cell), press `O` for Cargo, select **Collect selected organism** or
+**Collect nearby organism**, and press Enter. The sealed specimen then appears
+in that same manifest. `C` is a shortcut for the selected contact. Large mobile
+organisms must first be stunned; incompatible stasis, a full hold or exhausted
+live slots refuse collection without advancing time or removing the organism.
 
 Containers use ordinary cargo volume, cannot be split into commodity quantities,
 and appear in ship/rover manifests. Disposal requires confirmation and is
@@ -73,14 +94,15 @@ the stowed rover. Ordinary commodity sales do not sell biological containers.
 
 ## Stasis, Threats And Time
 
-Buy biological stasis at an inhabited starbase's Shipyard:
+Basic stasis is fitted from the beginning and supports ordinary Earth-like
+life. Extended equipment is available at an inhabited starbase's Shipyard:
 
 | Kit      | Cost     | Envelope               | Live slots per carrier |
 | -------- | -------- | ---------------------- | ---------------------- |
-| Basic    | 700 Cr   | 280-315 K; 0.3-2 bar   | 2                      |
+| Basic    | Included | 280-315 K; 0.3-2 bar   | 2                      |
 | Extended | 1,900 Cr | 273-345 K; 0.04-12 bar | 6                      |
 
-Initial installation uses one special-purpose bay. Upgrading uses the same bay.
+Basic stasis shares the standard survey bay. Upgrading uses that same bay.
 Both kits support the version-one carbon-water profiles and a handling limit
 of 80 kg. Containers also need cargo volume. Incompatible live specimens remain
 in the field; observations, tissue and dead specimens are still alternatives.
@@ -139,6 +161,10 @@ ordinary organisms arbitrary distances.
   research rows. Renderers never receive hidden traits as scanner text.
 - `rendering/surface_encounter_renderer.ts`: detached field snapshot drawing;
   narrow screens crop the camera without changing physical field coordinates.
+- `core/encounter_surface.ts` and `rendering/encounter_sprites.ts`: cached native
+  terrain appearance and independently seeded four-colour pixel silhouettes.
+- `core/encounter_actions.ts`: one action list shared by hotkeys and the bottom
+  command bar, rather than a second boxed operations menu.
 - `core/save_game.ts` and `entities/biology/biology_validation.ts`: schema 11,
   migration from 10 and validation of species, actor lifecycle, demand,
   containers, ownership and active-location consistency.
@@ -166,8 +192,8 @@ narrow screenshots plus canvas/font checks. No development shortcuts are added
 to normal gameplay.
 
 Version one deliberately omits ecosystem simulation, exotic solvents,
-reproductive-material commodities, unusual individual variants, animated
-multi-cell body construction, personal ground combat and a full phylogeny
+reproductive-material commodities, unusual individual variants, articulated
+body construction, personal ground combat and a full phylogeny
 browser. Three small inherited clades and five behavioural archetypes establish
 the first loop. Long-session economy balance and player enjoyment still need
 playtesting; automated verification cannot establish those.

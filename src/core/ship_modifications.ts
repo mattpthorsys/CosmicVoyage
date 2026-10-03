@@ -48,7 +48,7 @@ export interface ShipModificationState {
   probeBaysOccupied: number;
   specialBaysOccupied: number;
   surveyEquipmentClass: number;
-  /** Zero means no kit; fitted classes occupy one special-purpose bay. */
+  /** Basic stasis shares the included survey bay; extended equipment upgrades that installation. */
   stasisClass?: number;
   damage: ShipDamageState;
 }
@@ -132,7 +132,8 @@ export function createDefaultShipModifications(): ShipModificationState {
     probeBaysOccupied: 0,
     specialBaysOccupied: 1,
     surveyEquipmentClass: 1,
-    stasisClass: 0,
+    // Basic carbon-water stasis shares the standard survey bay; no paid refit is needed to begin collecting.
+    stasisClass: 1,
     damage: {
       hullIntegrity: 100,
       maxHullIntegrity: 100,

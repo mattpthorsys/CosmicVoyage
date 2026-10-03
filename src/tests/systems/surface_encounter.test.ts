@@ -30,6 +30,7 @@ describe('bounded biological encounters', () => {
   });
   it('refuses obstructed movement without advancing any clocks or actors', () => {
     const { field, system, cargo } = fixture();
+    field.species[0] = { ...field.species[0], massKg: 20, sizeM: 1 };
     const before = structuredClone(field);
     expect(system.act(field, { kind: 'move', dx: -1, dy: 0 }, cargo, 0).elapsedSeconds).toBe(0);
     expect(field).toEqual(before);
@@ -59,6 +60,24 @@ describe('bounded biological encounters', () => {
     expect(target.state).toBe('collected');
     expect(cargo.specimens).toHaveLength(2);
     expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 1).elapsedSeconds).toBe(0);
+  });
+  it('allows a small benign organism to share the rover cell and be collected without stun', () => {
+    const { field, target, system, cargo } = fixture();
+    field.species[0] = {
+      ...field.species[0],
+      behaviour: 'passive',
+      massKg: 4,
+      sizeM: 0.3,
+      respiration: 'anaerobic',
+    };
+    expect(system.act(field, { kind: 'move', dx: -1, dy: 0 }, cargo, 1).elapsedSeconds).toBe(5);
+    expect(field.roverX).toBe(target.x);
+    const service = new XenobiologyService();
+    service.snapshot.fields[field.site.id] = field;
+    expect(() => validateXenobiology(service.snapshot, [])).not.toThrow();
+    expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 1).elapsedSeconds).toBe(5);
+    expect(cargo.specimens![0].kind).toBe('live');
+    expect(() => validateXenobiology(service.snapshot, cargo.specimens!)).not.toThrow();
   });
   it('uses a single mutually-exclusive dose distribution and increasing mortality', () => {
     const species = generateBiosphere(biologyFixture())!.species[1];
@@ -104,7 +123,7 @@ describe('bounded biological encounters', () => {
   });
   it('captures a stunned mobile organism whole and suspends its recovery in cargo', () => {
     const { field, target, system, cargo } = fixture();
-    field.species[0] = { ...field.species[0], behaviour: 'passive' };
+    field.species[0] = { ...field.species[0], behaviour: 'passive', massKg: 20, sizeM: 1 };
     expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 1).elapsedSeconds).toBe(0);
     target.state = 'stunned';
     target.recoveryAt = 20;
@@ -136,9 +155,9 @@ describe('biological cargo and snapshot contracts', () => {
     const species = { ...fixture().field.species[0], temperatureK: 330, pressureBar: 8 };
     expect(stasisCompatibility(species, 1)).not.toBeNull();
     installShipyardUpgrade(ship, 'shipyard:stasis:1');
-    expect(ship.specialBaysOccupied).toBe(bays + 1);
+    expect(ship.specialBaysOccupied).toBe(bays);
     installShipyardUpgrade(ship, 'shipyard:stasis:2');
-    expect(ship.specialBaysOccupied).toBe(bays + 1);
+    expect(ship.specialBaysOccupied).toBe(bays);
     expect(stasisCompatibility(species, ship.stasisClass!)).toBeNull();
     expect(stasisCompatibility({ ...species, massKg: 100 }, 2)).toContain('mass');
   });

@@ -4,7 +4,13 @@ import { generateBiosphere } from '../../entities/biology/biosphere_generator';
 import { biologyFixture } from '../fixtures/biology';
 import { createEncounter } from '../../systems/surface_encounter_system';
 import { SurfaceEncounterController } from '../../core/modes/surface_encounter_controller';
-import { biologyDashboard, createEncounterView, speciesDescription } from '../../core/xenobiology_ui';
+import {
+  biologyDashboard,
+  createEncounterView,
+  speciesDescription,
+  createBiologicalDossier,
+  organismBrief,
+} from '../../core/xenobiology_ui';
 import { surfaceCoordinates, surfaceLongitudeDelta } from '../../utils/surface_coordinates';
 
 describe('xenobiology interface', () => {
@@ -38,15 +44,31 @@ describe('xenobiology interface', () => {
       command: { kind: 'move', dx: 0, dy: -1 },
     });
   });
-  it('uses a visible compact operations dashboard and wraps dossier controls on narrow screens', () => {
+  it('uses the bottom action menu, with cargo and all capture hotkeys, rather than another popup', () => {
     const biosphere = generateBiosphere(biologyFixture())!,
       field = createEncounter(biosphere, { id: 'site', label: 'Site', x: 1, y: 1 });
     const controller = new SurfaceEncounterController(),
       service = new XenobiologyService();
     controller.input(new Set(['ENTER_SYSTEM']), field);
-    const menu = controller.createModal(field, service, 30, 45, [])!;
-    expect(menu.dashboard?.some((line) => line.segments[0].text === '> OBSERVE')).toBe(true);
-    expect(menu.footer?.every((line) => line.length <= 20)).toBe(true);
+    expect(controller.createModal(field, service, 30, 45, [])).toBeUndefined();
+    const menu = controller.createCommandBar(field);
+    expect(menu.selectedButtonId).toBe('observe');
+    expect(menu.buttons.map((button) => button.key)).toContain('O');
+    expect(menu.buttons.map((button) => button.key)).toEqual([
+      'V',
+      'A',
+      'T',
+      'S',
+      'C',
+      'K',
+      'W',
+      'D',
+      'N',
+      'O',
+      'Esc',
+    ]);
+    controller.input(new Set(['MOVE_RIGHT']), field);
+    expect(controller.createCommandBar(field).selectedButtonId).toBe('analyse');
     controller.input(new Set(['QUIT']), field);
     controller.input(new Set(['TARGET_MENU']), field);
     const record = controller.createModal(field, service, 30, 45, [])!;
@@ -58,10 +80,57 @@ describe('xenobiology interface', () => {
     const biosphere = generateBiosphere(biologyFixture())!,
       field = createEncounter(biosphere, { id: 'site', label: 'Site', x: 1, y: 1 });
     field.individuals[0].state = 'collected';
-    const view = createEncounterView(field, null, new XenobiologyService(), 1, 0, 100, '0/50', 'Ready');
+    const view = createEncounterView(field, null, new XenobiologyService(), {
+      power: 1,
+      stasisClass: 1,
+      integrity: 100,
+      cargo: { usedM3: 12.5, capacityM3: 50 },
+      message: 'Ready',
+      crew: [{ name: 'Test Pilot', hitPoints: 17, maxHitPoints: 30 }],
+    });
     expect(view.actors.some((actor) => actor.id === field.individuals[0].id)).toBe(false);
     field.roverX = 1;
     expect(view.rover.x).toBe(16);
+    expect(view.cargo.percent).toBe(25);
+    expect(view.crew[0].hitPoints).toBe(17);
+  });
+  it('colour-codes report sections, values and risks, retaining evidence gates after wrapping', () => {
+    const species = generateBiosphere(biologyFixture())!.species[1],
+      service = new XenobiologyService();
+    service.observe(species, 1);
+    let report = createBiologicalDossier(species, service, 18);
+    expect(
+      report
+        .flatMap((line) => line.segments)
+        .map((span) => span.text)
+        .join(' ')
+    ).not.toContain(species.senses);
+    expect(organismBrief(species, 0)).not.toContain(species.role);
+    service.observe(species, 3);
+    report = createBiologicalDossier(species, service, 48);
+    const spans = report.flatMap((line) => line.segments);
+    expect(new Set(spans.map((span) => span.tone)).size).toBeGreaterThanOrEqual(5);
+    expect(spans.some((span) => span.text.includes(species.senses))).toBe(true);
+    expect(
+      report.every((line) => line.segments.reduce((length, span) => length + span.text.length, 0) <= 48)
+    ).toBe(true);
+    expect(organismBrief(species, 2).toLowerCase()).toContain(species.behaviour);
+  });
+  it('keeps hotkey capture and modal weapon preparation separate from movement', () => {
+    const field = createEncounter(generateBiosphere(biologyFixture())!, {
+      id: 'site',
+      label: 'Site',
+      x: 1,
+      y: 1,
+    });
+    const controller = new SurfaceEncounterController();
+    expect(controller.input(new Set(['SHIP_MENU']), field)).toEqual({ kind: 'cargo' });
+    controller.input(new Set(['TRADE']), field);
+    expect(controller.interaction.kind).toBe('power');
+    const before = field.roverX;
+    controller.input(new Set(['MOVE_LEFT']), field);
+    expect(field.roverX).toBe(before);
+    expect(controller.power).toBe(0);
   });
   it('uses cyclic longitude and bounded latitude consistently', () => {
     expect(surfaceCoordinates(-1, -1, 16)).toEqual({ x: 15, y: 0 });

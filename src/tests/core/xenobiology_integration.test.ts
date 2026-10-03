@@ -11,6 +11,7 @@ import type { Starbase } from '../../entities/starbase';
 import { eventManager } from '../../core/event_manager';
 import { parseGameSave, SAVE_GAME_VERSION, type GameSave } from '../../core/save_game';
 import { CONFIG } from '../../config';
+import type { TextModalTableModel, TextTableRow } from '../../core/text_ui';
 
 interface BiologyGameHarness {
   player: Player;
@@ -22,6 +23,10 @@ interface BiologyGameHarness {
   _update(delta: number): void;
   transferRoverCargoToShip(): number;
   submitBiologicalResearch(id: string, starbase: Starbase): void;
+  getRoverCargoRows(): TextTableRow[];
+  dropSelectedRoverCargo(row: TextTableRow): void;
+  createRoverCargoModel(): TextModalTableModel;
+  surfaceMode: { roverCargoSelection: number };
 }
 
 /** Connects production Game orchestration to a bounded test field without a canvas or generated universe. */
@@ -36,6 +41,7 @@ function harness() {
     y: 1,
   });
   field.individuals = [field.individuals[0]];
+  field.species[0] = { ...field.species[0], massKg: 20, sizeM: 1 };
   field.individuals[0].x = 15;
   field.individuals[0].y = 21;
   const service = new XenobiologyService();
@@ -49,6 +55,7 @@ function harness() {
     gameClockElapsedSeconds: 100,
     stateManager: { state: 'planet', currentSystem: null, currentPlanet: null },
     inputManager: { justPressedActions: keys, wasAnyKeyJustPressed: () => keys.size > 0 },
+    renderer: { getGridCols: () => 30 },
     statusMessage: '',
     forceFullRender: false,
   });
@@ -95,6 +102,44 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('collects an adjacent organism through Cargo using included basic stasis', () => {
+    const { game, field, player, service } = harness();
+    const pickup = game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!;
+    expect(player.ship.stasisClass).toBe(1);
+    expect(pickup.cells[0]).toBe('Collect selected organism');
+    game.dropSelectedRoverCargo(pickup);
+    expect(player.terrainVehicle.cargoHold.specimens![0].kind).toBe('live');
+    expect(field.individuals[0].state).toBe('collected');
+    expect(game.gameClockElapsedSeconds).toBe(105);
+    expect(service.evidence(field.species[0].id)?.collected).toBe(true);
+    game.dropSelectedRoverCargo(pickup);
+    expect(game.gameClockElapsedSeconds).toBe(105);
+    expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
+    expect(() => parseGameSave(saveFixture(player, service))).not.toThrow();
+  });
+  it('keeps the selected cargo record and complete controls visible on narrow screens', () => {
+    const { game, player } = harness();
+    player.terrainVehicle.cargoHold.items = { IRON: 1, GOLD: 1 };
+    game.surfaceMode.roverCargoSelection = 2;
+    const model = game.createRoverCargoModel();
+    expect(model.dashboard).toBeDefined();
+    const visible = model.dashboard!.slice(model.viewOffset);
+    expect(visible[0].segments.map((span) => span.text).join('')).toMatch(/^> /);
+    expect(model.footer?.every((line) => line.length <= 20)).toBe(true);
+    expect(model.footer?.join(' ')).toContain('Enter use');
+  });
+  it('refuses an incompatible Cargo pickup without consuming the organism or action time', () => {
+    const { game, field, player } = harness();
+    field.species[0] = { ...field.species[0], temperatureK: 330 };
+    const pickup = game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!;
+    game.dropSelectedRoverCargo(pickup);
+    expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(0);
+    expect(game.gameClockElapsedSeconds).toBe(100);
+    expect(field.individuals[0].state).toBe('active');
+    expect(game.createRoverCargoModel().footer?.join(' ')).toContain(
+      'Temperature outside preservation envelope'
+    );
+  });
   it('freezes accelerated orbital time and actors between explicit field commands', () => {
     const { game, field } = harness();
     expect(game.isGameClockPaused()).toBe(true);

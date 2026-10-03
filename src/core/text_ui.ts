@@ -47,6 +47,35 @@ export interface TextModalTableModel extends TextTableModel {
   dashboardReveal?: number;
 }
 
+/** Wraps styled terminal lines by words while retaining each span's colour and font. */
+export function wrapDashboardLines(lines: readonly TextDashboardLine[], width: number): TextDashboardLine[] {
+  const limit = Math.max(1, Math.floor(width));
+  return lines.flatMap((line) => {
+    const text = line.segments.map((span) => span.text).join('');
+    if (!text.length) return [{ segments: [] }];
+    const wrapped: TextDashboardLine[] = [];
+    let start = 0;
+    while (start < text.length) {
+      let end = Math.min(text.length, start + limit);
+      if (end < text.length && text[end] !== ' ') {
+        const space = text.lastIndexOf(' ', end);
+        if (space > start) end = space;
+      }
+      let position = 0;
+      const segments = line.segments.flatMap((span) => {
+        const from = Math.max(0, start - position),
+          to = Math.min(span.text.length, end - position);
+        position += span.text.length;
+        return to > from ? [{ ...span, text: span.text.slice(from, to) }] : [];
+      });
+      wrapped.push({ segments });
+      start = end;
+      while (text[start] === ' ') start++;
+    }
+    return wrapped;
+  });
+}
+
 export interface SelectionViewport {
   selectedIndex: number;
   viewOffset: number;

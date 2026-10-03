@@ -154,6 +154,7 @@ describe('save game persistence', () => {
     expect(migrated.generationVersion).toBe(old.generationVersion);
     expect(migrated.xenobiology).toEqual(createXenobiologySnapshot());
     expect(migrated.player.terrainVehicle.integrity).toBe(100);
+    expect(migrated.player.ship.stasisClass).toBe(1);
     expect(old.player.ship.stasisClass).toBeUndefined();
   });
   it('round-trips session and persistent browser saves independently', () => {
@@ -475,7 +476,11 @@ describe('save game persistence', () => {
         generationVersion: CONFIG.GALAXY_MODEL_VERSION,
         migratedFromGenerationVersion: 5,
       });
-      expect(result?.player).toEqual(oldSave.player);
+      expect(result?.player).toEqual({
+        ...oldSave.player,
+        ship: { ...oldSave.player.ship, stasisClass: 1 },
+      });
+      expect(oldSave.player.ship.stasisClass).toBe(0);
       expect(result?.location).toEqual(oldSave.location);
       expect(store.getItem(oldKey)).toBeNull();
       expect(store.getItem(kind === 'session' ? SESSION_SAVE_KEY : MANUAL_SAVE_KEY)).not.toBeNull();

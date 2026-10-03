@@ -8,12 +8,31 @@ import type {
 import { estimateStun } from '../entities/biology/stun_model';
 import { encounterVisible, individualSpecies } from '../systems/surface_encounter_system';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
-import type { TextDashboardLine, TextTableRow } from './text_ui';
+import { wrapDashboardLines, type TextDashboardLine, type TextTableRow, type TextTone } from './text_ui';
 import type { XenobiologyService } from './xenobiology_service';
+import type { CrewMember } from './crew';
+import type { EncounterSurface } from './encounter_surface';
+import { createOrganismSprite, type PixelSprite } from '../rendering/encounter_sprites';
+
+export interface EncounterPresentation {
+  readonly power: StunPower;
+  readonly stasisClass: number;
+  readonly integrity: number;
+  readonly cargo: Readonly<{ usedM3: number; capacityM3: number }>;
+  readonly message: string;
+  readonly fuel?: number;
+  readonly maxFuel?: number;
+  readonly crew?: readonly Pick<CrewMember, 'name' | 'hitPoints' | 'maxHitPoints'>[];
+  readonly surface?: EncounterSurface;
+  readonly bodyName?: string;
+  readonly menuActive?: boolean;
+}
 
 export interface EncounterViewModel {
   readonly title: string;
   readonly terrain: readonly string[];
+  readonly surface?: EncounterSurface;
+  readonly turn: number;
   readonly rover: Readonly<{ x: number; y: number }>;
   readonly actors: readonly Readonly<{
     id: string;
@@ -23,10 +42,41 @@ export interface EncounterViewModel {
     state: string;
     dangerous: boolean;
     selected: boolean;
+    sprite: PixelSprite;
   }>[];
   readonly scanner: readonly string[];
   readonly status: readonly string[];
   readonly message: string;
+  readonly brief: string;
+  readonly targetName: string;
+  readonly targetStatus: string;
+  readonly targetRange: string;
+  readonly targetMass: string;
+  readonly targetSprite?: PixelSprite;
+  readonly cargo: Readonly<{ usedM3: number; capacityM3: number; percent: number }>;
+  readonly integrity: number;
+  readonly fuelPercent: number;
+  readonly crew: readonly Pick<CrewMember, 'name' | 'hitPoints' | 'maxHitPoints'>[];
+  readonly menuActive: boolean;
+}
+
+const spriteCache = new WeakMap<SpeciesDefinition, PixelSprite>();
+
+/** Keeps procedural sprite baking outside the frame drawing loop. */
+function organismSprite(species: SpeciesDefinition): PixelSprite {
+  const prior = spriteCache.get(species);
+  if (prior) return prior;
+  const sprite = createOrganismSprite(species);
+  spriteCache.set(species, sprite);
+  return sprite;
+}
+
+/** Summarises only observed ecology, without exposing an unknown organism's hidden physiology. */
+export function organismBrief(species: SpeciesDefinition, level: number): string {
+  if (level < 1) return 'Unresolved biological contact. Observe to establish movement and ecology.';
+  if (level < 2) return `${species.locomotion}. Probable ${species.metabolism}; catalogue match unresolved.`;
+  const movement = species.behaviour === 'sessile' ? 'anchored to the substrate' : species.locomotion;
+  return `${species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1)} ${species.role}; ${movement}. ${species.metabolism.charAt(0).toUpperCase() + species.metabolism.slice(1)}.`;
 }
 
 /** Projects only acquired evidence; raw hidden traits never enter distant scanner text. */
@@ -50,6 +100,27 @@ export function speciesDescription(species: SpeciesDefinition, service: Xenobiol
   return lines;
 }
 
+/** Returns structured specimen estimates using the same quality assumptions as actual collection. */
+function specimenEstimates(
+  field: EncounterField,
+  target: EncounterIndividual,
+  service: XenobiologyService
+): { kind: 'tissue' | 'dead' | 'live'; credits: number }[] {
+  const species = individualSpecies(field, target);
+  return (['tissue', 'dead', 'live'] as const).map((kind) => ({
+    kind,
+    credits: service.quote(species, {
+      id: `${target.id}/${kind}`,
+      sourceId: target.id,
+      siteId: field.site.id,
+      species,
+      kind,
+      quality: Math.max(0.2, 1 - (kind === 'dead' && target.state !== 'dead' ? 1 : target.injury) * 0.35),
+      volumeM3: 0.1,
+    }).credits,
+  }));
+}
+
 /** Provides comparable pre-pursuit quotes for a particular source individual. */
 export function targetQuotes(
   field: EncounterField,
@@ -58,19 +129,9 @@ export function targetQuotes(
 ): string {
   const species = individualSpecies(field, target);
   if ((service.evidence(species.id)?.level ?? 0) < 2) return 'Value unresolved: observe within 40 m';
-  const prices = (['tissue', 'dead', 'live'] as const).map(
-    (kind) =>
-      service.quote(species, {
-        id: `${target.id}/${kind}`,
-        sourceId: target.id,
-        siteId: field.site.id,
-        species,
-        kind,
-        quality: Math.max(0.2, 1 - (kind === 'dead' && target.state !== 'dead' ? 1 : target.injury) * 0.35),
-        volumeM3: 0.1,
-      }).credits
-  );
-  return `Cr data ${service.quote(species).credits} / tissue ${prices[0]} / dead ${prices[1]} / live ${prices[2]} (est.)`;
+  return `Cr data ${service.quote(species).credits} / ${specimenEstimates(field, target, service)
+    .map((quote) => `${quote.kind} ${quote.credits}`)
+    .join(' / ')} (est.)`;
 }
 
 /** Builds a detached rendering snapshot, excluding occluded or collected contacts. */
@@ -78,12 +139,9 @@ export function createEncounterView(
   field: EncounterField,
   targetId: string | null,
   service: XenobiologyService,
-  power: StunPower,
-  stasisClass: number,
-  integrity: number,
-  cargo: string,
-  message: string
+  presentation: EncounterPresentation
 ): EncounterViewModel {
+  const { power, stasisClass, integrity, cargo, message } = presentation;
   const visible = field.individuals.filter((individual) => encounterVisible(field, individual));
   const target = visible.find((individual) => individual.id === targetId);
   const scanner: string[] = [];
@@ -107,9 +165,13 @@ export function createEncounterView(
     }
     scanner.push(`Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`);
   } else scanner.push('No contact selected', `${visible.length} visible biological contacts`);
+  const species = target ? individualSpecies(field, target) : undefined;
+  const level = species ? (service.evidence(species.id)?.level ?? 0) : 0;
   return {
-    title: `FIELD / ${field.site.label.toUpperCase()}`,
+    title: `${presentation.bodyName ?? 'SURFACE'} / ${field.site.label.toUpperCase()}`,
     terrain: [...field.terrain],
+    surface: presentation.surface,
+    turn: field.turn,
     rover: { x: field.roverX, y: field.roverY },
     actors: visible.map((individual) => {
       const species = individualSpecies(field, individual);
@@ -123,42 +185,192 @@ export function createEncounterView(
           (service.evidence(species.id)?.level ?? 0) >= 2 &&
           ['territorial', 'ambush'].includes(species.behaviour),
         selected: individual.id === targetId,
+        sprite: organismSprite(species),
       };
     }),
     scanner,
     status: [
       `LOCAL ${field.elapsedSeconds.toFixed(0)} s / 5 m per cell`,
-      `Integrity ${integrity}% / hold ${cargo} m3`,
+      `ENTRY 16,21 / X${field.roverX} Y${field.roverY}`,
     ],
     message,
+    brief: species ? organismBrief(species, level) : 'No contact acquired. TAB cycles visible organisms.',
+    targetName: species && level >= 2 ? species.name : 'Unresolved organism',
+    targetStatus: species ? service.status(species) : 'NO CONTACT',
+    targetRange: target
+      ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.state}`
+      : '--',
+    targetMass: species
+      ? `${(species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg / ${species.symmetry}`
+      : '',
+    targetSprite: species ? organismSprite(species) : undefined,
+    cargo: {
+      ...cargo,
+      percent: cargo.capacityM3 > 0 ? Math.round((100 * cargo.usedM3) / cargo.capacityM3) : 0,
+    },
+    integrity,
+    fuelPercent: presentation.maxFuel
+      ? Math.round((100 * (presentation.fuel ?? 0)) / presentation.maxFuel)
+      : 100,
+    crew: (presentation.crew ?? []).map((member) => ({ ...member })),
+    menuActive: presentation.menuActive ?? false,
   };
 }
 
 /** Wraps a dossier's text at cell boundaries, retaining every word on narrow displays. */
 export function biologyDashboard(lines: readonly string[], width: number): TextDashboardLine[] {
-  const result: TextDashboardLine[] = [];
-  const limit = Math.max(12, width);
-  for (const line of lines) {
-    let remainder = line;
-    do {
-      let end = Math.min(limit, remainder.length);
-      if (end < remainder.length) {
-        const space = remainder.lastIndexOf(' ', end);
-        if (space > 0) end = space;
-      }
-      result.push({
+  return wrapDashboardLines(
+    lines.map((text, index) => ({
+      segments: [
+        {
+          text,
+          tone: index === 0 ? 'cyan' : 'normal',
+          font: index === 0 ? 'thick' : 'thin',
+        },
+      ],
+    })),
+    width
+  );
+}
+
+/** Builds a colour-coded biological report with stable sections and evidence-gated fields. */
+export function createBiologicalDossier(
+  species: SpeciesDefinition,
+  service: XenobiologyService,
+  width: number,
+  contact?: { field: EncounterField; target: EncounterIndividual; power: StunPower; stasisClass: number }
+): TextDashboardLine[] {
+  const level = service.evidence(species.id)?.level ?? 0;
+  const lines: TextDashboardLine[] = [];
+  /** Separates report topics with a display-face heading and a restrained rule. */
+  const section = (text: string): void => {
+    lines.push(
+      { segments: [] },
+      {
         segments: [
-          {
-            text: remainder.slice(0, end),
-            tone: result.length === 0 ? 'cyan' : 'green',
-            font: result.length === 0 ? 'thick' : 'thin',
-          },
+          { text: text.toUpperCase(), tone: 'cyan', font: 'thick' },
+          { text: ` ${'-'.repeat(Math.max(0, width - text.length - 1))}`, tone: 'muted' },
         ],
-      });
-      remainder = remainder.slice(end).trimStart();
-    } while (remainder);
+      }
+    );
+  };
+  /** Aligns labels on wide reports, retaining readable wrapped values on smaller displays. */
+  const entry = (label: string, value: string, tone: TextTone = 'normal'): void => {
+    lines.push({
+      segments: [
+        { text: width >= 42 ? `${label.padEnd(16)} ` : `${label}: `, tone: 'muted', font: 'thin' },
+        { text: value, tone, font: 'thin' },
+      ],
+    });
+  };
+  lines.push({
+    segments: [
+      {
+        text: level >= 2 ? species.name.toUpperCase() : 'UNRESOLVED BIOLOGICAL CONTACT',
+        tone: 'bright',
+        font: 'thick',
+      },
+    ],
+  });
+  const status = service.status(species);
+  entry('Catalogue', status, status.includes('UNKNOWN') ? 'amber' : 'green');
+  entry(
+    'Evidence',
+    ['CONTACT ONLY', 'PRELIMINARY', 'OBSERVED', 'BIOCHEMICAL ANALYSIS'][level],
+    level >= 2 ? 'green' : 'amber'
+  );
+  section('Field Identification');
+  lines.push({ segments: [{ text: organismBrief(species, level), tone: 'normal', font: 'thin' }] });
+  entry(
+    'Mass estimate',
+    `${Math.max(0.1, species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg`,
+    'amber'
+  );
+  entry('Body plan', species.symmetry);
+  if (contact)
+    entry(
+      'Contact',
+      `${contact.target.state.toUpperCase()} / ${Math.round(Math.hypot(contact.target.x - contact.field.roverX, contact.target.y - contact.field.roverY) * 5)} m`,
+      contact.target.state === 'dead' ? 'red' : 'normal'
+    );
+  section('Ecology & Chemistry');
+  if (level >= 2) {
+    entry('Trophic role', `${species.metabolism} / ${species.role}`, 'green');
+    entry(
+      'Behaviour',
+      species.behaviour,
+      ['territorial', 'ambush'].includes(species.behaviour) ? 'amber' : 'normal'
+    );
+    entry('Locomotion', species.locomotion);
+    entry('Biochemistry', species.chemistry, 'green');
+  } else entry('Assessment', 'Observe at <=40 m to resolve ecology and catalogue identity.', 'amber');
+  section('Structure & Lineage');
+  if (level >= 3) {
+    entry(
+      'Ancestry',
+      `${species.lineage} / ${species.origin === 'introduced' ? 'managed introduction' : 'native biosphere'}`,
+      'cyan'
+    );
+    entry('Organisation', species.organisation);
+    entry('Covering', species.covering);
+    entry('Senses', species.senses);
+    entry('Length', `${species.sizeM.toFixed(2)} m`, 'amber');
+    entry(
+      'Environment',
+      `${species.temperatureK.toFixed(0)} K / ${species.pressureBar.toFixed(2)} bar`,
+      'amber'
+    );
+  } else
+    entry('Assessment', 'Close analysis or a specimen is needed to resolve structural details.', 'muted');
+  section('Scientific Demand');
+  if (level >= 2) {
+    entry('Scan data', `${service.quote(species).credits.toLocaleString()} Cr`, 'amber');
+    if (contact) {
+      for (const quote of specimenEstimates(contact.field, contact.target, service))
+        entry(
+          `${quote.kind.charAt(0).toUpperCase() + quote.kind.slice(1)} specimen`,
+          `${quote.credits.toLocaleString()} Cr (est.)`,
+          'amber'
+        );
+      entry(
+        'Stasis',
+        stasisCompatibility(species, contact.stasisClass) ?? 'COMPATIBLE',
+        stasisCompatibility(species, contact.stasisClass) ? 'amber' : 'green'
+      );
+    }
+    lines.push({
+      segments: [
+        {
+          text: 'Awards reflect remaining demand, specimen quality and prior submissions. Quotes are estimates.',
+          tone: 'muted',
+          font: 'thin',
+        },
+      ],
+    });
+  } else entry('Value', 'Unresolved until a reliable observation establishes identification.', 'amber');
+  if (contact && species.susceptibility > 0 && contact.target.state !== 'dead') {
+    section('Capture Assessment');
+    const estimate = estimateStun(
+      species,
+      contact.power,
+      level,
+      contact.target.exposure,
+      contact.target.injury,
+      Math.hypot(contact.target.x - contact.field.roverX, contact.target.y - contact.field.roverY) * 5
+    );
+    entry('Stun dose', ['LOW', 'STANDARD', 'HIGH'][contact.power], 'cyan');
+    entry('Incapacitation', estimate.stun, 'green');
+    entry('Mortality risk', estimate.mortality, 'red');
+    entry('Recovery', estimate.recovery, 'amber');
+    entry(
+      'Confidence',
+      level >= 3
+        ? 'Analysed profile; estimates remain probabilistic.'
+        : 'Incomplete physiology; probability ranges are broad.',
+      'muted'
+    );
   }
-  return result;
+  return wrapDashboardLines(lines, width);
 }
 
 /** Builds an inspectable specimen manifest with independent scientific quotes. */

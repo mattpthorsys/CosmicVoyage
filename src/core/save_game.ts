@@ -558,7 +558,7 @@ function migrateV10Save(save: GameSaveV10): GameSave {
         integrity: 100,
         cargoHold: { ...save.player.terrainVehicle.cargoHold, specimens: [] },
       },
-      ship: { ...save.player.ship, stasisClass: 0 },
+      ship: { ...save.player.ship, stasisClass: 1 },
     },
   };
 }

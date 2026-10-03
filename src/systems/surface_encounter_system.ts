@@ -3,6 +3,7 @@ import { PRNG } from '../utils/prng';
 import type { CargoComponent } from '../core/components';
 import { SpecimenCargoSystem } from './specimen_cargo_system';
 import { stunOutcome } from '../entities/biology/stun_model';
+import { canShareRoverCell } from '../entities/biology/biology_rules';
 import {
   ENCOUNTER_HEIGHT,
   ENCOUNTER_WIDTH,
@@ -133,7 +134,13 @@ export class SurfaceEncounterSystem {
         y = field.roverY + command.dy;
       if (
         field.terrain[y]?.[x] !== '.' ||
-        field.individuals.some((item) => item.state !== 'collected' && item.x === x && item.y === y)
+        field.individuals.some(
+          (item) =>
+            item.state !== 'collected' &&
+            item.x === x &&
+            item.y === y &&
+            !canShareRoverCell(individualSpecies(field, item))
+        )
       )
         return { ...result, message: 'Local route obstructed.' };
       if (
@@ -165,7 +172,12 @@ export class SurfaceEncounterSystem {
         if (range > 1.5) return { ...result, message: 'Approach within 7.5 m for physical sampling.' };
         if (command.kind === 'sample' && target.sampled)
           return { ...result, message: 'This individual has already supplied a tissue sample.' };
-        if (command.kind === 'collect' && target.state === 'active' && species.behaviour !== 'sessile')
+        if (
+          command.kind === 'collect' &&
+          target.state === 'active' &&
+          species.behaviour !== 'sessile' &&
+          !canShareRoverCell(species)
+        )
           return { ...result, message: 'Organism must be incapacitated before collection.' };
         const kind = command.kind === 'sample' ? 'tissue' : target.state === 'dead' ? 'dead' : 'live';
         const container = {

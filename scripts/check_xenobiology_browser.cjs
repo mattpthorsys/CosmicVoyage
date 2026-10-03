@@ -15,6 +15,11 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => {
+      // Chromium requests this optional browser icon even though it is not a game asset.
+      if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico'))
+        errors.push(`${message.text()} @ ${message.location().url}`);
+    });
     await page.goto(process.env.COSMIC_URL || 'http://127.0.0.1:5173/');
     await page.waitForSelector('#newGameButton');
     const fixture = await page.evaluate(async () => {
@@ -26,7 +31,6 @@ async function main() {
       const { prepareBiosphere } = await import('/src/entities/biology/biosphere_generator.ts');
       const { createXenobiologySnapshot } = await import('/src/entities/biology/biology_types.ts');
       const { SAVE_GAME_VERSION, getSystemPlanetPaths } = await import('/src/core/save_game.ts');
-      const { installShipyardUpgrade } = await import('/src/core/ship_modifications.ts');
       const seed = 'xenobiology-browser-v1',
         prng = new PRNG(seed);
       const x = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X,
@@ -41,7 +45,7 @@ async function main() {
       if (!biosphere?.sites.length) throw new Error('Starting colony has no accessible biology.');
       const player = new Player(x, y);
       player.resources.credits = 10000;
-      installShipyardUpgrade(player.ship, 'shipyard:stasis:2');
+      if (player.ship.stasisClass !== 1) throw new Error('Basic stasis missing from starting equipment.');
       return {
         station: { id: system.starbase.id, name: system.starbase.name },
         biosphere,
@@ -122,8 +126,17 @@ async function main() {
             const index = (y * canvas.width + x) * 4;
             centreHash = Math.imul(centreHash ^ (data[index] + data[index + 1] + data[index + 2]), 16777619);
           }
+        const spriteCanvas = document.querySelector('#gameCanvasOrbit');
+        const sprites = spriteCanvas
+          .getContext('2d')
+          .getImageData(0, 0, spriteCanvas.width, spriteCanvas.height).data;
+        let spritePixels = 0;
+        for (let index = 0; index < sprites.length; index += 4)
+          if (sprites[index + 3] > 0 && sprites[index] + sprites[index + 1] + sprites[index + 2] > 60)
+            spritePixels++;
         return {
           lit,
+          spritePixels,
           centreHash: centreHash >>> 0,
           width: canvas.width,
           height: canvas.height,
@@ -131,8 +144,8 @@ async function main() {
           thin: document.fonts.check('16px PxPlus_IBM_CGAthin'),
         };
       });
-      assert(pixels.lit > 500 && pixels.thick && pixels.thin, JSON.stringify(pixels));
       await page.screenshot({ path: path.join(output, `${name}.png`) });
+      assert(pixels.lit > 500 && pixels.thick && pixels.thin, JSON.stringify({ ...pixels, errors }));
       return pixels;
     };
     await load(fixture.save);
@@ -151,6 +164,7 @@ async function main() {
     assert.equal((await checkpoint()).gameClockElapsedSeconds, startTime, 'Local time advanced while idle.');
     await press('v');
     const metrics = { desktop: await capture('desktop-field') };
+    assert(metrics.desktop.spritePixels > 20, 'Field silhouettes absent from the overlay raster.');
     save = await checkpoint();
     assert(Object.keys(save.xenobiology.evidence).length > 0, 'Observation not recorded.');
     await press('d');
@@ -182,14 +196,33 @@ async function main() {
     }
     for (let attempt = 0; attempt < 12; attempt++) {
       await press('v');
-      await press('Enter');
-      for (let index = 0; index < 3; index++) await press('ArrowDown');
-      await press('Enter');
+      await press('s');
       save = await checkpoint();
       if (save.player.terrainVehicle.cargoHold.specimens.length) break;
       await press('Tab');
     }
     assert.equal(save.player.terrainVehicle.cargoHold.specimens.length, 1, 'Physical collection failed.');
+    await page.locator('[data-command-id="cargo"]').click();
+    await page.waitForTimeout(150);
+    await capture('desktop-cargo');
+    const currentField = save.xenobiology.fields[save.xenobiology.activeSiteId];
+    const nearby = currentField.individuals.filter(
+      (actor) =>
+        actor.state !== 'collected' &&
+        Math.hypot(actor.x - currentField.roverX, actor.y - currentField.roverY) <= 1.5
+    ).length;
+    for (let index = 0; index < nearby; index++) {
+      await press('Enter');
+      save = await checkpoint();
+      if (save.player.terrainVehicle.cargoHold.specimens.some((container) => container.kind === 'live'))
+        break;
+      await press('ArrowDown');
+    }
+    assert.equal(save.player.ship.stasisClass, 1, 'Test silently acquired upgraded stasis.');
+    assert.equal(save.player.terrainVehicle.cargoHold.specimens.length, 2, 'Nearby Cargo pickup failed.');
+    assert(save.player.terrainVehicle.cargoHold.specimens.some((container) => container.kind === 'live'));
+    await capture('desktop-cargo-collected');
+    await press('Escape');
     const restored = structuredClone(save);
     await load(restored);
     save = await checkpoint();
@@ -200,12 +233,27 @@ async function main() {
     await page.setViewportSize({ width: 480, height: 900 });
     await page.waitForTimeout(400);
     metrics.narrow = await capture('narrow-field');
+    assert(metrics.narrow.spritePixels > 20, 'Narrow field silhouettes absent.');
     await press('d');
     await page.waitForTimeout(1700);
     assert.notEqual((await capture('narrow-dossier')).centreHash, metrics.narrow.centreHash);
     await press('Escape');
     await press('Enter');
-    assert.notEqual((await capture('narrow-operations')).centreHash, metrics.narrow.centreHash);
+    await capture('narrow-operations');
+    assert.notEqual(
+      await page.locator('[data-command-id="observe"]').evaluate((button) => button.style.boxShadow),
+      'none'
+    );
+    await press('ArrowRight');
+    assert.notEqual(
+      await page.locator('[data-command-id="analyse"]').evaluate((button) => button.style.boxShadow),
+      'none'
+    );
+    await press('Escape');
+    await press('o');
+    await capture('narrow-cargo');
+    await press('ArrowDown');
+    await capture('narrow-cargo-selected');
     await press('Escape');
     await page.setViewportSize({ width: 1400, height: 900 });
     const docked = structuredClone(save);
@@ -221,7 +269,8 @@ async function main() {
     };
     await load(docked);
     for (let index = 0; index < 4; index++) await press('ArrowRight');
-    await capture('research-exchange');
+    const researchPixels = await capture('research-exchange');
+    assert.equal(researchPixels.spritePixels, 0, 'Field silhouettes leaked into the station view.');
     const before = (await checkpoint()).player.resources.credits;
     await press('Enter');
     const paid = (await checkpoint()).player.resources.credits;
@@ -235,7 +284,7 @@ async function main() {
           output,
           body: fixture.biosphere.bodyName,
           habitats: fixture.biosphere.sites.length,
-          specimen: save.player.terrainVehicle.cargoHold.specimens[0].kind,
+          specimens: save.player.terrainVehicle.cargoHold.specimens.map((item) => item.kind),
           award: paid - before,
           metrics,
           errors,

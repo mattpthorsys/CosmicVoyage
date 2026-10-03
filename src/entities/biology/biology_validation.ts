@@ -5,6 +5,7 @@ import {
   type SpecimenContainer,
   type XenobiologySnapshot,
 } from './biology_types';
+import { canShareRoverCell } from './biology_rules';
 
 /** Requires a structured save value without trusting a cast of imported JSON. */
 function record(value: unknown): asserts value is Record<string, unknown> {
@@ -158,7 +159,9 @@ export function validateXenobiology(
       if (individual.state !== 'collected') {
         if (
           positions.has(position) ||
-          (individual.x === field.roverX && individual.y === field.roverY) ||
+          (individual.x === field.roverX &&
+            individual.y === field.roverY &&
+            !canShareRoverCell(field.species.find((species) => species.id === individual.speciesId)!)) ||
           field.terrain[individual.y as number][individual.x as number] !== '.'
         )
           throw new Error('Overlapping encounter actors.');

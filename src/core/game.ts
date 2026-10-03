@@ -122,7 +122,14 @@ import { GalaxyMapController } from './galaxy_map';
 import { TelemetryField, TravelTelemetryModel } from './travel_telemetry';
 import { XenobiologyService } from './xenobiology_service';
 import { SurfaceEncounterController } from './modes/surface_encounter_controller';
-import { createEncounter, SurfaceEncounterSystem } from '../systems/surface_encounter_system';
+import {
+  createEncounter,
+  SurfaceEncounterSystem,
+  type EncounterCommand,
+  individualSpecies,
+  encounterVisible,
+} from '../systems/surface_encounter_system';
+import { prepareEncounterSurface } from './encounter_surface';
 import { SpecimenCargoSystem } from '../systems/specimen_cargo_system';
 import { prepareBiosphere } from '../entities/biology/biosphere_generator';
 import {
@@ -130,7 +137,7 @@ import {
   type EncounterField,
   createXenobiologySnapshot,
 } from '../entities/biology/biology_types';
-import { createEncounterView, researchRows, specimenRows } from './xenobiology_ui';
+import { createEncounterView, researchRows, specimenRows, biologyDashboard } from './xenobiology_ui';
 import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coordinates';
 
 // ScanTarget type includes SolarSystem now
@@ -386,38 +393,64 @@ export class Game {
         this.statusMessage = 'Field expedition ended. Cargo and research records retained.';
       }
     } else if (intent?.kind === 'command') {
-      const command = intent.command;
-      const rover = this.player.terrainVehicle;
-      if (command.kind === 'move' && rover.fuel < 0.02)
-        this.statusMessage = 'Local fuel reserve exhausted; select Leave for emergency withdrawal.';
-      else {
-        const result = (this._encounterSystem ??= new SurfaceEncounterSystem()).act(
-          field,
-          command,
-          rover.cargoHold,
-          this.player.ship.stasisClass ?? 0
-        );
-        this.statusMessage = result.message;
-        if (result.elapsedSeconds > 0) {
-          this.gameClockElapsedSeconds += result.elapsedSeconds;
-          if (command.kind === 'move') rover.fuel = Math.max(0, rover.fuel - 0.02);
-          rover.integrity = Math.max(0, (rover.integrity ?? 100) - result.damage);
-          if (result.evidence) {
-            this.xenobiology.observe(result.evidence.species, result.evidence.level);
-            if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
-          }
-          if (rover.integrity === 0) {
-            rover.integrity = 15;
-            this.xenobiology.snapshot.activeSiteId = null;
-            this.encounterController.reset();
-            this.interfaceMode.close('xenobiology');
-            this.statusMessage += ' Emergency retreat to regional entry. Repair required; cargo retained.';
-          }
-        }
-      }
+      this.applyEncounterCommand(field, intent.command);
     }
     if (intent || this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
     return true;
+  }
+
+  /** Commits a field operation consistently whether requested by a hotkey, action menu or cargo pickup. */
+  private applyEncounterCommand(field: EncounterField, command: EncounterCommand): void {
+    const rover = this.player.terrainVehicle;
+    if (command.kind === 'move' && rover.fuel < 0.02)
+      this.statusMessage = 'Local fuel reserve exhausted; select Leave for emergency withdrawal.';
+    else {
+      const result = (this._encounterSystem ??= new SurfaceEncounterSystem()).act(
+        field,
+        command,
+        rover.cargoHold,
+        this.player.ship.stasisClass ?? 1
+      );
+      this.statusMessage = result.message;
+      if (result.elapsedSeconds > 0) {
+        this.gameClockElapsedSeconds += result.elapsedSeconds;
+        if (command.kind === 'move') rover.fuel = Math.max(0, rover.fuel - 0.02);
+        rover.integrity = Math.max(0, (rover.integrity ?? 100) - result.damage);
+        if (result.evidence) {
+          this.xenobiology.observe(result.evidence.species, result.evidence.level);
+          if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
+        }
+        if (rover.integrity === 0) {
+          rover.integrity = 15;
+          this.xenobiology.snapshot.activeSiteId = null;
+          this.encounterController.reset();
+          this.interfaceMode.close('xenobiology');
+          this.statusMessage += ' Emergency retreat to regional entry. Repair required; cargo retained.';
+        }
+      }
+    }
+    this.forceFullRender = true;
+  }
+
+  /** Prepares the close terrain view and actual vehicle, crew and hold telemetry. */
+  private createCurrentEncounterView(field: EncounterField) {
+    const rover = this.player.terrainVehicle;
+    return createEncounterView(field, this.encounterController.target(field)?.id ?? null, this.xenobiology, {
+      power: this.encounterController.power,
+      stasisClass: this.player.ship.stasisClass ?? 1,
+      integrity: rover.integrity ?? 100,
+      cargo: {
+        usedM3: this.cargoSystem.getTotalUnits(rover.cargoHold),
+        capacityM3: rover.cargoHold.capacity,
+      },
+      fuel: rover.fuel,
+      maxFuel: rover.maxFuel,
+      crew: this.player.crew,
+      surface: prepareEncounterSurface(field, this.stateManager.currentPlanet ?? undefined),
+      bodyName: this.stateManager.currentPlanet?.name,
+      menuActive: this.encounterController.interaction.kind === 'menu',
+      message: this.statusMessage,
+    });
   }
 
   /** Reconciles ship or rover specimen ownership before committing shared demand and payment. */
@@ -1058,6 +1091,8 @@ export class Game {
     this.player.terrainVehicle = cloneSaveValue(save.player.terrainVehicle);
     this.player.crew = cloneSaveValue(save.player.crew);
     this.player.ship = cloneSaveValue(save.player.ship);
+    // Basic biological stasis is part of the standard survey bay, including earlier personal voyages.
+    if (!(this.player.ship.stasisClass ?? 0)) this.player.ship.stasisClass = 1;
     this.xenobiology.restoreSnapshot(
       isLegacyGalaxyMigration ? createXenobiologySnapshot() : save.xenobiology
     );
@@ -1271,9 +1306,11 @@ export class Game {
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
     if (this.activeEncounter) {
-      if (this.interfaceMode.kind !== 'none' && this.interfaceMode.kind !== 'xenobiology') return;
       this.inputManager.justPressedActions.add(data.action);
-      this.handleEncounterInput();
+      if (this.jettisonConfirmation) this._handleJettisonConfirmationInput();
+      else if (this.roverCargoOpen) this._handleRoverCargoInput();
+      else if (this.interfaceMode.kind === 'none' || this.interfaceMode.kind === 'xenobiology')
+        this.handleEncounterInput();
       this.inputManager.justPressedActions.delete(data.action);
       this.forceFullRender = true;
       this._publishStatusUpdate();
@@ -4666,16 +4703,49 @@ export class Game {
     );
     this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
     this.surfaceMode.roverCargoOffset = viewport.viewOffset;
+    const cols = this.renderer.getGridCols();
+    const field = this.activeEncounter;
+    const footer = biologyDashboard(
+      field
+        ? [this.statusMessage, 'Up/Down select  Enter use', 'Esc/Left close']
+        : ['Up/Down select  Enter drop stack  Esc/Left close'],
+      cols - 10
+    ).map((line) => line.segments.map((span) => span.text).join(''));
+    const groups =
+      cols < 42
+        ? rows.map((row, index) =>
+            biologyDashboard(
+              [
+                `${index === viewport.selectedIndex ? '>' : ' '} ${row.cells[0]}`,
+                row.cells.slice(1).join(' / '),
+                row.detail ?? '',
+                '',
+              ],
+              cols - 12
+            )
+          )
+        : undefined;
     return {
       title: 'Terrain Vehicle Cargo',
-      subtitle: 'Rover hold only. Enter drops selected cargo onto the planet surface.',
+      subtitle:
+        cols < 42
+          ? field
+            ? 'Contacts / hold'
+            : 'Sealed hold'
+          : field
+            ? 'Collect a nearby contact or inspect sealed containers.'
+            : 'Rover hold only. Enter drops selected cargo onto the planet surface.',
       columns: ['CARGO', 'QTY', 'VALUE', 'ACTION'],
       widths: [26, 7, 10, 36],
       rows,
       selectedIndex: this.surfaceMode.roverCargoSelection,
-      viewOffset: this.surfaceMode.roverCargoOffset,
+      // Compact cargo uses wrapped text lines, not the wide table's item-row offset.
+      viewOffset: groups
+        ? groups.slice(0, viewport.selectedIndex).reduce((count, group) => count + group.length, 0)
+        : this.surfaceMode.roverCargoOffset,
       visibleRowCount: visibleRows,
-      footer: ['Up/Down select  Enter drop stack  Esc/Left close'],
+      dashboard: groups?.flat(),
+      footer,
     };
   }
 
@@ -4685,10 +4755,40 @@ export class Game {
       ([, amount]) => amount > 0
     );
     const specimens = specimenRows(this.player.terrainVehicle.cargoHold.specimens ?? [], this.xenobiology);
-    if (entries.length === 0 && specimens.length === 0) {
+    const pickup: TextTableRow[] = [];
+    const field = this.activeEncounter;
+    const selected = field ? this.encounterController.target(field) : undefined;
+    const nearby = field
+      ? field.individuals
+          .filter(
+            (target) =>
+              encounterVisible(field, target) &&
+              Math.hypot(target.x - field.roverX, target.y - field.roverY) <= 1.5
+          )
+          .sort(
+            (a, b) =>
+              Number(b.id === selected?.id) - Number(a.id === selected?.id) || a.id.localeCompare(b.id)
+          )
+      : [];
+    for (const target of nearby) {
+      const species = individualSpecies(field!, target);
+      pickup.push({
+        id: `collect-organism:${target.id}`,
+        cells: [
+          target.id === selected?.id ? 'Collect selected organism' : 'Collect nearby organism',
+          '1',
+          '--',
+          target.state === 'dead' ? 'Secure intact remains' : 'Place in stasis',
+        ],
+        detail: `${(this.xenobiology.evidence(species.id)?.level ?? 0) >= 2 ? species.name : 'Selected contact'}: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first.`,
+        tone: 'green',
+      });
+    }
+    if (entries.length === 0 && specimens.length === 0 && pickup.length === 0) {
       return [{ id: 'empty', cells: ['Rover hold empty', '0', '0', 'No cargo to drop.'], disabled: true }];
     }
     return [
+      ...pickup,
       ...specimens,
       ...entries.map(([itemKey, amount]) => {
         const info = this.getTradeItemInfo(itemKey);
@@ -4710,6 +4810,13 @@ export class Game {
   /** Drops the selected rover cargo item onto the current surface cell. */
   private dropSelectedRoverCargo(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id.startsWith('collect-organism:') && this.activeEncounter) {
+      this.applyEncounterCommand(this.activeEncounter, {
+        kind: 'collect',
+        targetId: row.id.slice('collect-organism:'.length),
+      });
+      return;
+    }
     if (row.id.startsWith('specimen:')) {
       const container = this.player.terrainVehicle.cargoHold.specimens?.find(
         (item) => `specimen:${item.id}` === row.id
@@ -6493,19 +6600,7 @@ export class Game {
                     body: planet,
                     overlay: this.createSurfaceVehicleOverlayModel(),
                     encounter: this.activeEncounter
-                      ? createEncounterView(
-                          this.activeEncounter,
-                          this.encounterController.target(this.activeEncounter)?.id ?? null,
-                          this.xenobiology,
-                          this.encounterController.power,
-                          this.player.ship.stasisClass ?? 0,
-                          this.player.terrainVehicle.integrity ?? 100,
-                          this.formatCargoLoad(
-                            this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold),
-                            this.player.terrainVehicle.cargoHold.capacity
-                          ),
-                          this.statusMessage
-                        )
+                      ? this.createCurrentEncounterView(this.activeEncounter)
                       : undefined,
                   })
                 );
@@ -6550,22 +6645,14 @@ export class Game {
         // Draw Popup (if active)
         const field = this.activeEncounter;
         if (field && this.interfaceMode.is('xenobiology')) {
-          const view = createEncounterView(
-            field,
-            this.encounterController.targetId,
-            this.xenobiology,
-            this.encounterController.power,
-            this.player.ship.stasisClass ?? 0,
-            this.player.terrainVehicle.integrity ?? 100,
-            '',
-            this.statusMessage
-          );
+          const view = this.createCurrentEncounterView(field);
           const modal = this.encounterController.createModal(
             field,
             this.xenobiology,
             this.renderer.getGridCols(),
             this.renderer.getGridRows(),
-            view.scanner
+            view.scanner,
+            this.player.ship.stasisClass ?? 1
           );
           if (modal) this.renderer.drawTextModalTable(modal);
         }
@@ -7406,19 +7493,27 @@ export class Game {
   /** Creates surface command bar. */
   private createSurfaceCommandBar(): CommandBarModel {
     const rover = this.player.terrainVehicle;
-    if (this.activeEncounter)
-      return {
-        context: 'biological field',
-        targetName: this.stateManager.currentPlanet?.name,
-        buttons: [
-          commandButton('observe', 'Observe', 'SCAN', { key: 'V' }),
-          commandButton('analyse', 'Analyse', 'APPROACH_TARGET', { key: 'A' }),
-          commandButton('operations', 'Operations', 'ENTER_SYSTEM', { key: 'Enter' }),
-          commandButton('dossier', 'Dossier', 'ORBIT_DOSSIER', { key: 'D' }),
-          commandButton('species', 'Species', 'TARGET_MENU', { key: 'N' }),
-          commandButton('leave', 'Withdraw', 'QUIT', { key: 'Esc' }),
-        ],
-      };
+    if (this.activeEncounter) {
+      if (this.jettisonConfirmation)
+        return {
+          context: 'specimen disposal',
+          buttons: [
+            commandButton('confirm', 'Confirm disposal', 'ENTER_SYSTEM', { key: 'Enter', tone: 'red' }),
+            commandButton('cancel', 'Cancel', 'QUIT', { key: 'Esc' }),
+          ],
+        };
+      if (this.roverCargoOpen)
+        return {
+          context: 'rover cargo',
+          buttons: [
+            commandButton('previous', 'Previous', 'MOVE_UP', { key: 'Up' }),
+            commandButton('next', 'Next', 'MOVE_DOWN', { key: 'Down' }),
+            commandButton('use', 'Use selected', 'ENTER_SYSTEM', { key: 'Enter' }),
+            commandButton('close', 'Return to field', 'QUIT', { key: 'Esc' }),
+          ],
+        };
+      return this.encounterController.createCommandBar(this.activeEncounter);
+    }
     if (!rover.deployed && !rover.onFoot) {
       return {
         context: 'landed ship',
