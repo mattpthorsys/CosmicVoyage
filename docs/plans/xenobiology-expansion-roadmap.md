@@ -1,14 +1,18 @@
 # Xenobiology: Ambitious Expansion Roadmap
 
-Status: exploratory planning, not an implementation commitment.
-Codebase baseline inspected: 2026-10-03. The bounded xenobiology system itself
-is still proposed; references to a first-version foundation below mean the
-future result of [the implementation plan](xenobiology-first-version.md).
+Status: revised exploratory roadmap based on the implemented first version.
+Codebase baseline inspected: 2026-10-03. The bounded discovery, capture, cargo,
+stasis, and research loop now exists, including the terrain-integrated field
+view and specimen listings in Sell. See the [implementation plan](xenobiology-first-version.md)
+and [current implementation/player guide](../xenobiology.md). Long-session
+balance and enjoyment are not established by automated verification or the
+initial successful expeditions. Recheck source contracts before implementation.
 
 This document explores richer biology, research, logistics, visualisation, and
 encounters. It is deliberately not a checklist that must all be completed.
-Select extensions only after the smaller discovery/capture/submission loop is
-playable, reliable, and demonstrably enjoyable.
+Prioritise distinct, readable expeditions over additional menus or specimen
+categories. Select larger extensions only when representative playthroughs
+justify their complexity; the roadmap is not an implementation commitment.
 
 Navigation: [priorities](#3-candidate-priorities),
 [research](#4-richer-research-and-scientific-commodities),
@@ -18,6 +22,7 @@ Navigation: [priorities](#3-candidate-priorities),
 [atmospheres](#9-native-biospheres-atmospheres-and-terraforming),
 [traversal](#11-expanded-surface-environments),
 [expansion waves](#15-suggested-expansion-waves),
+[next milestone](#recommended-next-milestone-one-coherent-expedition),
 [decision gates](#16-verification-and-decision-gates).
 
 ## 1. Direction And Boundaries
@@ -43,25 +48,98 @@ Maintain the existing [scientific, quiet design](../ai-guide/game-design.md):
 Do not adopt a full ecosystem/evolution simulator as the assumed destination.
 It may never be the best game for this codebase.
 
+### Lessons from the implemented loop
+
+- Life belongs in the landscape. Preserve regional terrain colours, an unframed
+  field, small pixel silhouettes, the bottom action menu, and readable telemetry;
+  do not return to a separate boxed creature minigame.
+- Physical proximity and the Cargo pickup flow provide a common interaction
+  language. New sampling tools should extend it rather than create unrelated
+  control schemes. Keep direct action hotkeys and mutually exclusive menu modes.
+- Basic stasis is included from the start. Ordinary compatible life must remain
+  collectible without a paid refit; specialisation should unlock new choices.
+- Collection, scientific recognition, remaining demand, and buyer capability
+  are separate facts. A zero-price specimen remains visible in the manifest and
+  Sell; the player needs a reason for the price, not a disappearing possession.
+- Tiny cached four-colour silhouettes already make contacts more tangible.
+  Extend a constrained visual library before considering general procedural
+  skeletons. Sparse motion and labels remain part of the aesthetic.
+- A polished presentation does not establish ecological depth. Species and
+  encounter composition are still deliberately small and repetitive; improving
+  their relationship to the habitat has greater immediate value than more loot.
+
+### Intended extended expedition
+
+A possible expedition starts with a mineral-rich, moist habitat identified by
+survey. Producer colonies occupy suitable patches; small armoured grazers and
+a related shelter-dwelling form share inherited anatomical features. Their
+distribution and behaviour suggest how they belong to this place. This is a
+generated ecological scene, not a simulated food web or a claim that these
+specific alien organisms are scientifically predictable.
+
+Observation reveals a group's retreat response or a defensive display before
+danger. Analysis narrows handling uncertainty. Two basic live-specimen slots
+make a novel reference organism compete with a familiar population requested
+by a research station. A large adult might justify tissue collection rather
+than capture; a later size-variant feature could make a smaller individual a
+useful alternative. Field records retain the evidence and provenance needed
+to choose a return visit. Discovery need not end with killing or collecting.
+
 ## 2. Preconditions And Architecture
 
-Require the first version to establish these contracts before adding breadth:
+Preserve established contracts and distinguish them from unfinished extensions:
 
-| Foundation | Why expansion depends on it |
-| --- | --- |
-| Stable species, site, individual, and container IDs | New content cannot reset knowledge, ownership, or rewards. |
-| Separate definitions, evidence, science demand, and specimen state | A visual change or new trait must not become an economic migration by accident. |
-| Explicit encounter time and modal pausing | Complex behaviour/recovery cannot use accelerated travel time accidentally. |
-| Whole-container transactions and shared occupied volume | More sample types/carriers cannot duplicate specimens or bypass cargo capacity. |
-| Typed commands, bounded actors, and readonly scene models | Additional interactions remain testable without enlarging Game/SceneRenderer. |
-| Versioned snapshots and sparse visited-site deltas | Revisit and save/load remain coherent as content grows. |
-| Evidence-filtered descriptions and capability-based handling | More chemistry does not require rewriting every scanner or equipment branch. |
+| Foundation | Current position | Expansion constraint |
+| --- | --- | --- |
+| Stable species, site, individual, and container IDs | Implemented, with independent biology seeds | New content must not reset knowledge, ownership, or rewards unintentionally. |
+| Separate definitions, evidence, science demand, and specimen state | Implemented | A visual change or new trait must not become an economic migration by accident. |
+| Explicit encounter time and modal pausing | Successful commands advance local time; reading and inactive fields are suspended | Extra behaviour must not silently use accelerated travel or rendering time. |
+| Whole-container transactions and shared occupied volume | Ship and rover specimens share ordinary cargo capacity | New material/carriers must not permit partial organisms, duplicate ownership, or duplicate sales. |
+| Typed commands, bounded actors, and readonly scene models | Implemented with controller/system/renderer separation | Add concrete domain rules rather than more formulas in Game or SceneRenderer. |
+| Versioned snapshots | Schema 11 stores complete visited fields, evidence, demand, and ownership | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
+| Evidence-filtered descriptions and handling checks | Implemented; stasis uses class-based temperature/pressure/mass limits and live slots | Typed chemistry/containment capability envelopes are still an extension. |
+| Terrain-integrated field UI and pixel silhouettes | Implemented with cached surface appearance and two-frame sprites | Appearance is not detailed local geology, habitat simulation, or continuous traversal. |
+
+### Current limits that should guide expansion
+
+- The generator supplies six species in three inherited groups. It uses a
+  carbon-water suitability gate and explicit gameplay occurrence priors, not
+  measured probabilities for alien life. The inherited groups are not a stored
+  phylogenetic tree.
+- Sites are accessible land locations. They do not yet have distinct ecological
+  profiles; species temperature and pressure use whole-planet environmental
+  inputs rather than a local climate model.
+- Each 32 by 24 field starts with ten individuals and a repeating species and
+  position pattern. Its logical cells remain 5 m regardless of viewport size.
+- Surface colours come from the prepared regional terrain; local texture is an
+  illustrative layer. Habitat suitability must become explicit domain input,
+  not something inferred from pixel colour or renderer noise.
+- Individuals have lifecycle, injury, sampling, and alert state, but no size
+  variants, social groups, or inherited individual adaptations yet.
+- Scientific demand is campaign-wide. Sell and Research use the same award
+  ledger for physical specimens; data remains in Research. Neither tab is a
+  second buyer capable of renewing novelty.
+- Full visited-field snapshots are reasonable for a small prototype. Measure
+  save growth before expanding site counts or introducing streamed terrain.
 
 These are useful domain boundaries, not instructions to write a generic plugin,
 AI, inventory, taxonomy, or simulation framework in advance. Extend concrete
 systems when a selected feature needs the extension.
 
-The current hooks remain [Planet](../../src/entities/planet.ts),
+The primary implemented owners are:
+
+| Owner | Reuse for expansion |
+| --- | --- |
+| [Biosphere generator](../../src/entities/biology/biosphere_generator.ts) | Numeric environment adapter, inherited species groups, and canonical site generation. |
+| [Biology types](../../src/entities/biology/biology_types.ts) and [validation](../../src/entities/biology/biology_validation.ts) | Versioned definitions, actor state, evidence, provenance, and lifecycle validation. |
+| [Encounter system](../../src/systems/surface_encounter_system.ts) | Deterministic action time, visibility, rot-js routing, handling, and bounded behaviour. |
+| [Specimen cargo](../../src/systems/specimen_cargo_system.ts) | Whole-container capacity, transfer, and preservation checks. |
+| [Xenobiology service](../../src/core/xenobiology_service.ts) | Evidence, recognition, capped novelty, repeat demand, and submission records. |
+| [Encounter controller](../../src/core/modes/surface_encounter_controller.ts) and [actions](../../src/core/encounter_actions.ts) | Driving, target selection, menus, confirmations, hotkeys, and Cargo pickup. |
+| [Biology UI](../../src/core/xenobiology_ui.ts) and [field renderer](../../src/rendering/surface_encounter_renderer.ts) | Evidence-limited readouts, coloured dossiers, manifests, and responsive telemetry. |
+| [Surface appearance](../../src/core/encounter_surface.ts) and [sprites](../../src/rendering/encounter_sprites.ts) | Cached regional colours and constrained four-colour contact silhouettes. |
+
+Wider integration hooks remain [Planet](../../src/entities/planet.ts),
 [surface generation](../../src/entities/planet/surface_generator.ts),
 [human presence](../../src/generation/milky_way_model.ts),
 [ship equipment](../../src/core/ship_modifications.ts),
@@ -71,28 +149,50 @@ depend on the renderer or browser.
 
 ## 3. Candidate Priorities
 
-Effort is relative to a completed first version, not a calendar estimate.
-Costs increase sharply where a feature requires a new traversal environment.
+Effort is relative to the implemented bounded version, not a calendar estimate
+or a measured performance claim. Costs increase sharply where a feature needs
+a new traversal environment. Habitat coherence and readable encounter behaviour
+move ahead of exotic chemistry; the next milestone combines a small amount of
+each with one purposeful contract rather than implementing whole rows at once.
 
 | Extension | Expected return | Relative effort | Suggested order |
 | --- | --- | --- | --- |
-| Specific scientific acquisition contracts | High: gives an expedition purpose | Low-medium | Early |
-| Useful individual variation | High if rare and legible | Medium | Early |
-| Species database and evidence comparison | High for accumulated exploration | Medium | Early |
-| More constrained body-plan/content families | High, with existing runtime | Medium | Early |
+| Habitat-specific communities and population placement | High: makes expeditions feel different | Medium | First representative scene |
+| One readable group or defensive behaviour | High if it changes approach | Medium | With the first scene |
+| Specific scientific acquisition contracts | High: gives an expedition purpose | Medium: new objective and physical hand-in semantics | One bounded request early |
+| More constrained body-plan/content families | High, with existing runtime | Medium | Alongside habitat variety |
+| Expanded four-colour silhouette library | High readability and identity | Low-medium | Alongside content, not a new renderer |
+| Species database and evidence comparison | High for accumulated exploration | Medium | After the first purposeful expedition |
+| Useful individual variation | High if rare and legible | Medium | After species/habitat distinctions are clear |
 | Reproductive material and specialised sampling | Medium-high | Medium-high | After logistics validation |
 | Wider stasis envelopes and laboratory equipment | High if tied to accessible habitats | Medium-high | Alongside new content |
 | Exotic biochemistry | Potentially high wonder; scientific uncertainty | High | Prototype one family |
 | Native atmosphere/biosphere coupling | High scientific coherence | High | Separate generation audit |
-| Richer behaviour and modest social groups | Medium-high | Medium | Only where readable |
+| Additional social/stalking behaviours | Medium-high | Medium | One at a time after the first behaviour |
 | Continuous/chunked surface encounters | High freedom | High | Separate architecture project |
 | Aquatic, aerial, and subsurface expeditions | High variety | Very high | One environment at a time |
-| Procedural anatomical portraits/animation | Medium visual return | High | Dossier prototype first |
+| Larger anatomical portraits or articulated animation | Uncertain benefit beyond existing silhouettes | High | Optional dossier prototype later |
 | Lightweight ecological change | Uncertain gameplay return | High | Experiment, not commitment |
 | Full population simulation/evolution | Low direct player return | Very high | Defer indefinitely |
 | Simulated research communications networks | Low unless central to exploration | High | Prefer abstract policy |
 
 ## 4. Richer Research And Scientific Commodities
+
+### Scientific interest, demand, and price
+
+Keep catalogue recognition, player evidence, specimen ownership, current
+scientific demand, and buyer capability separate. The scanner can explain both
+scientific interest and an actionable estimate; the market must show every
+owned specimen, even if the current offer is zero or the port cannot receive it.
+Distinguish unresolved identification from exhausted demand and an unequipped
+buyer instead of presenting all three as an unexplained zero.
+
+A recognised, adequately sampled species may still support a finite request
+for a regional reference specimen or comparison. That request does not make
+the species unknown again. Ordinary familiar life can also provide context and
+observation without every organism becoming profitable cargo. Any later
+zero-value donation flow needs explicit consent and a clear ownership result;
+the current implementation leaves such containers aboard.
 
 ### Evidence types rather than one universal rarity ladder
 
@@ -131,9 +231,31 @@ preferable to repeatedly reopening an analysis panel.
 
 ### Contracts and buyers
 
-Extend the current scan-only objective union with typed evidence/submission
-objectives referencing stable species/site IDs, required contribution, quality,
-and handling conditions. Keep existing issuing-station hand-in semantics.
+The mission board currently stores arrays of `ScanMissionObjective`; progress
+matches discovery and hands in at the issuing station. Introduce a discriminated
+objective union with typed evidence/submission objectives referencing stable
+species/site IDs, required contribution, quality, and handling conditions.
+Update objective evaluation and save validation together. Keep issuing-station
+hand-in semantics, but do not treat possession at capture time as an irreversible
+delivery: a live container may subsequently be sold or discarded.
+
+Start with one request for an existing, identified habitat population rather
+than individual variants or new evidence categories. A contract destination,
+required specimen, handling limit, and fixed payment must be legible before
+departure. Only advertise a target whose canonical site and eligible organism
+can actually be resolved; preparation/readiness is not a reason to invent a
+replacement species or mutate the universe to fulfil a board entry.
+
+Physical hand-in must revalidate station identity, specimen ownership,
+species/site provenance, kind, and quality before consuming exactly one whole
+container and completing the objective. Commit cargo, mission, credits, and
+applicable research-ledger changes atomically. Specify ordinary research value
+and the finite contract payment separately; if the latter includes the former,
+settle both in one transaction rather than awarding novelty again in Sell.
+Record accepted scientific contributions even when their ordinary market price
+is zero; accepting material for a contract is not the same as a refused sale.
+One physical container must not satisfy multiple delivery contracts. Decide
+explicitly whether nonphysical evidence can serve multiple independent requests.
 
 Examples: a live reference voucher for a recognised but poorly sampled species;
 reproductive material from a particular habitat; comparison of two related
@@ -156,6 +278,14 @@ symbiont association, or a genuinely informative environmental adaptation.
 Distinguish ordinary within-species variation from a scientifically useful
 variant. Unusual does not automatically mean valuable.
 
+There is no persisted individual-variant model yet. Start with one bounded
+feature, such as body size or life stage, only after habitat/species variety
+works. If size changes, scanner mass, silhouette scale, stun outcomes, handling
+limits, and container volume must all use the same resolved individual traits.
+Retain those traits in specimen provenance rather than regenerating them from
+a possibly revised species definition at sale time. Juveniles can be a useful
+handling choice without guaranteeing the adult's full reference value.
+
 Possible demand rule: a limited research request for an unsampled phenotype
 cluster or habitat-associated form, rather than a permanent rare-loot multiplier.
 Require appropriate evidence to distinguish the variant and estimate value.
@@ -177,10 +307,16 @@ noticing a variant, without being trained to grind endless low-value contacts.
 
 ### More coherent histories
 
-Expand the initial ancestral groups into a shallow generated tree. Store
-parent relationships and inherited biochemical/developmental traits. Generate
-descendants by constrained changes, allowing ecological specialisation and
-convergence without assuming that visual similarity means close relationship.
+The existing paired species share seeded symmetry, covering, senses, and some
+organisation through three ancestor groups. Use this to make visible family
+resemblances before expanding the model: related contacts should have recognisable
+structural features and coherent handling, not just a common clade label.
+
+When evidence comparison warrants it, expand these groups into a shallow
+generated tree. Store parent relationships and inherited biochemical/developmental
+traits. Generate descendants by constrained changes, allowing ecological
+specialisation and convergence without assuming that visual similarity means
+close relationship.
 
 The root primarily supplies biochemical foundations. Symmetry, appendages,
 segmentation, colonies, and sensory organisation belong to appropriate branches;
@@ -244,6 +380,13 @@ equipment and scientific uncertainty. Avoid implementing a dozen solvent
 families as interchangeable labels.
 
 ## 8. Stasis And Handling Progression
+
+Basic carbon-water stasis is already included in the standard survey bay:
+280-315 K, 0.3-2 bar, two live slots per carrier, and an 80 kg handling limit.
+The existing extended kit expands the thermal/pressure envelope and live slots.
+These are gameplay equipment specifications, not measured preservation limits
+for unknown organisms. Preserve the included kit and reliable handling of
+compatible specimens when introducing specialisation.
 
 Prefer capability envelopes to a single power level that eventually accepts
 everything. Candidate upgrades expand pressure containment, thermal control,
@@ -315,7 +458,13 @@ vegetation or populate more planets conveniently.
 
 ## 10. More Behaviour Without Expensive Ecosystem AI
 
-Good candidates after four basic families work:
+The encounter system already supports sessile, passive, skittish, territorial,
+and ambush families. Behaviour advances on successful local actions, not a
+free-running clock; dangerous contacts warn before damage. Retain these pacing
+and safety contracts. Motion can be richer without turning reading and target
+selection into reflex tests.
+
+Good candidates, added one at a time:
 
 - Herd groups sharing a home area and loose cohesion.
 - Defensive displays and retreat before attacking.
@@ -337,6 +486,11 @@ before simpler state machines demonstrate a limitation.
 Habitat and group membership can make encounters feel ecological without
 simulating hunger, individual reproduction, and every predator/prey interaction.
 
+Pair behaviour with a relevant habitat and legible visual response. Loose group
+retreat around a producer patch offers more expedition value than a new
+behaviour label whose movement is indistinguishable from random roaming. Do
+not increase contact density or warning frequency just to demonstrate the AI.
+
 Prototype gate: the player can distinguish behaviours through observation and
 adapt their approach. If extra AI mostly produces unexplained aggression,
 oscillation, or more chasing, remove it.
@@ -349,6 +503,12 @@ Replacing bounded fields with streamed terrain chunks is a major spatial
 project. It needs canonical planetary/local coordinates, persistent chunk and
 actor identities, cross-chunk movement, loading boundaries, resource rules,
 and bounded generation/prefetch. Screen resizing must not change world geometry.
+
+The current full-area presentation does not remove this boundary: it still
+shows a 32 by 24 logical field. Complete visited fields are saved and frozen
+while away. Any streaming proposal must explicitly replace or extend these
+contracts and budget retained state; neither chunk ownership nor sparse
+site-change persistence is already implemented.
 
 Do not reinterpret existing tens-of-kilometres heightmap cells as metres.
 Derive detailed terrain beneath a macro region while preserving geology and
@@ -386,13 +546,23 @@ fields cannot, while preserving reasonable travel time and recovery options.
 
 ## 12. Procedural Visual Anatomy
 
-Start with dossier portraits using small ASCII silhouettes assembled from
-archetype modules. Derive symmetry, segmentation, appendages, covering, and
-proportions from the same typed traits used in biology descriptions.
+The first visual step already exists: small four-colour pixel silhouettes from
+six patterns, two-frame mobile animation, and a selected-contact portrait when
+the telemetry layout has room. They use a separate pixel drawing layer rather
+than replacing the game's terminal typography. Patterns currently distinguish
+broad sessile/mobile, radial, covering, and ambush characteristics; they are not
+a complete anatomical grammar or a literal scale model.
 
-Cache prepared portraits by species definition/visual version. Keep animation
-to a few deliberate frames, and preserve terminal typography and spacing.
-The map glyph remains a legible contact, not a miniature unreadable portrait.
+Extend the library with constrained proportions, segmentation, appendage
+arrangements, and inherited family cues. Derive visible anatomy from the same
+typed traits used in biology descriptions. Match both field silhouettes and
+dossier portraits to those traits; do not generate contradictory illustrations
+from an unrelated decorative seed. Keep each sprite within four colours.
+
+Cache prepared sprites/portraits by stable identity and visual version. Keep
+animation to a few deliberate frames and preserve terminal typography, contact
+brackets, and spacing. A richer image must not leak unobserved internal chemistry
+or hidden lineage. Visual-only work must not advance gameplay random streams.
 
 Later options include directional multi-cell silhouettes or a constrained
 developmental grammar. Costs include valid topology, limb placement,
@@ -461,18 +631,81 @@ generated history cannot provide.
 ## 15. Suggested Expansion Waves
 
 Choose one small project within a wave; do not implement all columns at once.
+The first vertical slice intentionally connects habitat, behaviour, and a
+contract so their benefit can be assessed together. Later waves remain optional.
 
 | Wave | Candidate deliverable | Prerequisite | Exit gate |
 | --- | --- | --- | --- |
-| A: Research depth | Specific contracts, useful variants, improved species table | Bounded version complete and balanced | Different specimen choices without grind or duplicate rewards. |
-| B: Handling choices | Propagules, specialised sampling, one broader stasis envelope | Stable container/evidence contracts | A new expedition has visible preparation and useful fallback rewards. |
-| C: Scientific breadth | One exotic family or native atmosphere coupling | Reviewed numeric environment model | Coherent physical fixtures and a distinct playable loop. |
-| D: Encounter richness | One social/stalking behaviour or portrait library | Readable existing AI/rendering | Noticeable improvement without constant aggression or visual noise. |
-| E: New traversal | One streamed/local, aquatic, aerial, or subsurface prototype | Canonical coordinates and bounded persistence | Discoveries justify the new vehicle/loading/rescue complexity. |
+| A: Coherent expedition | One habitat community, one readable behaviour, one acquisition request | Existing bounded loop; reviewed canonical habitat inputs | The player recognises the scene and changes approach/specimen selection for a reason. |
+| B: Research continuity | Useful species/evidence comparison, provenance, further specific requests | First purposeful expedition is enjoyable | Records help choose a return visit or preparation without a completion grind. |
+| C: Individual choices | One size/life-stage/adaptation variant or specialised sample type | Clear species/habitat distinctions and stable provenance | Individual choice changes handling or finite demand without rare-loot farming. |
+| D: Handling and scientific breadth | One carbon-water extremophile family with relevant equipment; later one reviewed speculative family | Typed physical compatibility and reliable basic stasis | A new expedition has visible preparation, uncertainty, and useful fallback evidence. |
+| E: New traversal | One streamed/local, aquatic, aerial, or subsurface prototype | Canonical coordinates and bounded persistence | Discoveries justify new vehicle/loading/rescue complexity. |
 | F: Ecological experiment | One observable local disturbance/seasonal effect | Explicit multi-timescale policy | Player-facing benefit exceeds upkeep and simulation cost. |
 
 Atmosphere coupling may need to precede a specific content family; wave order
 is not permission to generate physically incompatible life while waiting.
+
+### Recommended next milestone: one coherent expedition
+
+Implement this only after explicit implementation approval. It is a scoped
+programming proposal, not an instruction to enact the rest of the roadmap.
+
+**Player decision:** choose how to approach a recognisable community and which
+eligible specimen to retain for a known research request while live slots and
+cargo remain limited. A familiar species can be worthwhile for the request
+without being reclassified as a new discovery.
+
+**Content boundary:** one accessible carbon-water habitat family, roughly three
+relevant taxa drawn from a constrained content library, and a sparse population
+within the existing field dimensions and actor budget. Use numeric terrain,
+liquid proximity, and environmental inputs where available. Describe a moist
+rocky margin only when these inputs support it; do not add a new microclimate
+simulation or infer moisture from terrain colour. Include plausible producers
+and consumers without inventing an unreviewed high-energy anaerobic community.
+Allow barren/unsuitable sites rather than filling every field with life.
+
+**Behaviour boundary:** one loose group-retreat behaviour for suitable mobile
+organisms. Shared home areas and local reaction are enough; no feeding,
+reproduction, flocking engine, or continuous population simulation. Keep a
+reachable return route and ensure collective movement cannot permanently trap
+the rover. Existing hazardous behaviour remains bounded and telegraphed.
+
+**Research boundary:** one finite request for a live specimen of a recognised
+species from a specified habitat, within existing basic-stasis limits. Do not
+require individual variants, new solvents, or a general multidimensional
+research-demand model for this milestone. Tissue/data retain their ordinary
+fallback value but do not silently fulfil a live-delivery objective.
+
+| Stage | Implementation focus | Completion gate |
+| --- | --- | --- |
+| A0: Specify a representative fixture | Inspect numeric environment/surface inputs and existing tests; define one suitable habitat, target, finite payment policy, and intentionally changed generation version | A canonical eligible site can be produced without changing unrelated stellar, geology, mineral, or market streams. |
+| A1: Generate the community | Extend biology definitions/generation with explicit habitat suitability and species affinities; replace fixed composition/placement for this family only | Suitable contacts occupy reachable, appropriate patches; unsuitable and legacy sites have a documented fallback. |
+| A2: Add readable group retreat | Extend encounter actor state and bounded update rules with stable group membership/local sensing; persist and validate actual new state | The player can recognise a coordinated response; identical actions reproduce it across save/reload and suspension. |
+| A3: Add the one acquisition objective | Extend mission objective types, progress evaluation, board generation/readiness, save validation, and atomic physical hand-in | A real target is advertised; the correct live container can be delivered once at the issuer; wrong provenance, sold specimens, and duplicate claims fail without mutation. |
+| A4: Present the expedition | Reuse field renderer, sprite library, action list, evidence-filtered dossiers, Cargo, Sell, and Research; show requested specimen and destination | Habitat, behaviour, handling requirements, price, and contract eligibility are readable without permanent label clutter or hidden-trait leakage. |
+| A5: Verify and playtest | Announce the testing phase, then run focused generation/actor/cargo/mission/save/UI tests, graphics captures, and the complete existing checks | One representative expedition changes approach or collection choice; regressions and repeat-reward exploits are absent; results distinguish measured behaviour from design expectations. |
+
+Implement domain rules in the current generator, encounter system, cargo, and
+research/mission services. Keep Game as the orchestration boundary. Add a
+focused habitat helper only if it removes concrete complexity; do not introduce
+an ecosystem manager, generic quest engine, or third carrier in advance.
+
+Version new biology and mission save contracts deliberately. Preserve unrelated
+world identities and existing owned specimens/evidence, or provide an explicit
+development-save reset policy rather than silently mixing regenerated species
+with old actor records. Generation changes need not reproduce unreleased old
+worlds forever; they must still have clear ownership and deterministic outcomes.
+
+Verify zero-value/unsupported specimen visibility, basic-stasis availability,
+nearby Cargo pickup, direct hotkeys versus menu selection, reading/reveal pauses,
+and desktop/narrow-screen layering alongside the new feature. Avoid replacing
+unrelated graphics expectations to make the expansion pass.
+
+**Stop condition:** if the first scene merely adds more labels, extra chasing,
+or another routine collection reward, improve or remove that addition before
+implementing more habitat families. Do not proceed directly to streamed
+terrain, exotic solvents, an inferred tree browser, or ecosystem simulation.
 
 ## 16. Verification And Decision Gates
 
@@ -494,6 +727,11 @@ graphics snapshots merely because a new biology feature was added.
 
 Additional checks by project:
 
+- Habitats: numeric suitability and constrained abundance, distinct composition,
+  reachable entry/contacts, empty-site fallback, and no ecology inferred from pixels.
+- Contracts: eligible advertised targets, provenance/ownership revalidation at
+  physical hand-in, issuing-station identity, atomic completion, and no duplicate
+  container or novelty award through another contract/tab/port.
 - Chemistry: solvent phase, energy/redox compatibility, and explicit speculation.
 - Atmosphere: converged temperature/composition, retention, multi-star exposure,
   managed/native distinctions, and intentional generation-version changes.
@@ -514,6 +752,10 @@ workflow. Distinguish measured performance or playtest observations from guesses
 ## 17. Open Decisions To Revisit
 
 - How rare should life and encounterable complexity be for enjoyable travel?
+- Can players recognise different habitats and behaviours without reading every
+  dossier? Does a specific request change which specimen they retain?
+- Do zero-demand specimens need an optional donation flow, or is clear pricing
+  and deliberate disposal sufficient? Keep ownership visible either way.
 - Is structured analysis a useful action, an automatic equipment capability,
   or a travel-time laboratory task?
 - Which scientific contributions justify a first reference-specimen reward,
