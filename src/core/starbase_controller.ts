@@ -108,7 +108,7 @@ export class StarbaseController {
       widths: meta.widths,
       title: meta.title,
       subtitle: meta.subtitle,
-      detailLineCount: this.sectionId === 'overview' || this.sectionId === 'research' ? 2 : 1,
+      detailLineCount: ['overview', 'research', 'sell'].includes(this.sectionId) ? 2 : 1,
       alert: this.alert || context.statusMessage,
     });
   }
@@ -143,7 +143,7 @@ export class StarbaseController {
       case 'sell':
         return {
           title: 'Trade Depot - Sell',
-          subtitle: 'Sell selected cargo lots with Enter.',
+          subtitle: 'Cargo lots / sealed specimens / scientific demand',
           columns: ['CARGO', 'HELD', 'SELL CR', 'CLASS'],
           widths: [26, 7, 9, 20],
         };

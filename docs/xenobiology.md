@@ -140,6 +140,14 @@ can earn only the remaining novelty entitlement. Repeat specimens rapidly lose
 value. Origin remoteness contributes a bounded premium, not a bonus for hauling
 ordinary organisms arbitrary distances.
 
+Physical specimens also appear in **Sell**, including those worth `0 Cr` and
+containers remaining in the stowed rover. The displayed price is for one whole
+container, not per cubic metre. Enter submits a valuable specimen through the
+same campaign-wide research ledger; switching tabs or ports cannot collect the
+award twice. Zero-demand specimens remain visible and aboard, with an explanation
+when selected. Automated depots show the containers but cannot receive them;
+take them to an inhabited port. Scientific data remains in **Research**.
+
 ## Implementation Map
 
 - `entities/biology/biosphere_generator.ts`: numeric environment adapter,

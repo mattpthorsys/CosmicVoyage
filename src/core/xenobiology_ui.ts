@@ -392,6 +392,32 @@ export function specimenRows(
   }));
 }
 
+/** Lists indivisible specimens in Sell without turning them into bulk commodities or hiding zero demand. */
+export function specimenSaleRows(
+  containers: readonly SpecimenContainer[],
+  service: XenobiologyService,
+  receivesResearch: boolean,
+  carrier: 'ship' | 'rover' = 'ship'
+): TextTableRow[] {
+  return containers.map((container) => {
+    const credits = receivesResearch ? service.quote(container.species, container).credits : 0;
+    const availability = !receivesResearch
+      ? 'No scientific receiving staff here; visit an inhabited port.'
+      : credits > 0
+        ? 'Enter submits the whole container at the same award as Research.'
+        : 'No additional scientific demand. Specimen stays aboard; nothing is discarded.';
+    return {
+      id: `sample:${container.id}`,
+      cells: [container.species.name, '1', String(credits), `${container.kind} specimen`],
+      detail: `${availability} ${container.kind.toUpperCase()} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
+      disabled: credits <= 0,
+      tone: credits > 0 ? 'green' : 'normal',
+      cellTones: ['normal', 'normal', 'amber', 'cyan'],
+      detailTone: credits > 0 ? 'cyan' : 'amber',
+    };
+  });
+}
+
 /** Lists data upgrades and physical contributions; ownership is rechecked when selected. */
 export function researchRows(
   service: XenobiologyService,

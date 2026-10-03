@@ -137,7 +137,13 @@ import {
   type EncounterField,
   createXenobiologySnapshot,
 } from '../entities/biology/biology_types';
-import { createEncounterView, researchRows, specimenRows, biologyDashboard } from './xenobiology_ui';
+import {
+  createEncounterView,
+  researchRows,
+  specimenRows,
+  specimenSaleRows,
+  biologyDashboard,
+} from './xenobiology_ui';
 import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coordinates';
 
 // ScanTarget type includes SolarSystem now
@@ -7836,6 +7842,11 @@ export class Game {
       return;
     }
     if (this.starbaseMode.sectionId === 'sell') {
+      // Both panels settle against the same research ledger, never the bulk-cargo quantity selector.
+      if (row.id.startsWith('sample:')) {
+        this.submitBiologicalResearch(row.id, starbase);
+        return;
+      }
       this.starbaseMode.tradeSelectionIndex = Math.max(
         0,
         market.findIndex((item) => item.itemKey === row.id)
@@ -8054,7 +8065,7 @@ export class Game {
           detail: item.description,
         }));
       case 'sell':
-        return Object.entries(this.player.cargoHold.items)
+        const commodities = Object.entries(this.player.cargoHold.items)
           .filter(([, amount]) => amount > 0)
           .map(([itemKey, amount]) => {
             const quote = this.starbaseCommerce.getTradeQuote(stationKey, itemKey);
@@ -8070,6 +8081,20 @@ export class Game {
               disabled: !quote,
             };
           });
+        return [
+          ...commodities,
+          ...specimenSaleRows(
+            this.player.cargoHold.specimens ?? [],
+            this.xenobiology,
+            starbase.kind !== 'automated-depot'
+          ),
+          ...specimenSaleRows(
+            this.player.terrainVehicle.cargoHold.specimens ?? [],
+            this.xenobiology,
+            starbase.kind !== 'automated-depot',
+            'rover'
+          ),
+        ];
       case 'services':
         return [
           {
@@ -8388,7 +8413,10 @@ export class Game {
   /** Returns section status. */
   private getSectionStatus(sectionId: StarbaseSectionId): string {
     if (sectionId === 'sell')
-      return this.cargoSystem.getTotalUnits(this.player.cargoHold) > 0 ? 'Ready' : 'No cargo';
+      return this.cargoSystem.getTotalUnits(this.player.cargoHold) > 0 ||
+        (this.player.terrainVehicle.cargoHold.specimens?.length ?? 0) > 0
+        ? 'Ready'
+        : 'No cargo';
     if (sectionId === 'missions') {
       const active = this.missionProgress.getActiveCount();
       const ready = this.missionProgress.getReadyCount();
@@ -8409,7 +8437,7 @@ export class Game {
       overview: 'Station summary',
       cargo: 'Review hold contents and estimated value.',
       buy: 'Buy station commodities.',
-      sell: 'Sell cargo carried in your hold.',
+      sell: 'Sell commodity lots and sealed specimens; biological awards follow scientific demand.',
       research: 'Submit xenobiological data and sealed specimens.',
       services: 'Refuel and future station services.',
       notices: 'Read local port bulletins.',

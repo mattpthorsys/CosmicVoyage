@@ -12,6 +12,9 @@ import { eventManager } from '../../core/event_manager';
 import { parseGameSave, SAVE_GAME_VERSION, type GameSave } from '../../core/save_game';
 import { CONFIG } from '../../config';
 import type { TextModalTableModel, TextTableRow } from '../../core/text_ui';
+import { PRNG } from '../../utils/prng';
+import type { StarbaseSectionId } from '../../core/starbase_ui';
+import type { StarbaseController } from '../../core/starbase_controller';
 
 interface BiologyGameHarness {
   player: Player;
@@ -27,6 +30,10 @@ interface BiologyGameHarness {
   dropSelectedRoverCargo(row: TextTableRow): void;
   createRoverCargoModel(): TextModalTableModel;
   surfaceMode: { roverCargoSelection: number };
+  starbaseMode: StarbaseController;
+  quantitySelector: { context: { type: string; itemKey?: string }; max: number } | null;
+  getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): TextTableRow[];
+  activateStarbaseSelection(starbase: Starbase, row: TextTableRow): void;
 }
 
 /** Connects production Game orchestration to a bounded test field without a canvas or generated universe. */
@@ -53,7 +60,13 @@ function harness() {
     _xenobiology: service,
     cargoSystem: new CargoSystem(),
     gameClockElapsedSeconds: 100,
-    stateManager: { state: 'planet', currentSystem: null, currentPlanet: null },
+    stateManager: {
+      state: 'planet',
+      currentSystem: null,
+      currentPlanet: null,
+      currentStarbase: null as Starbase | null,
+    },
+    gameSeedPRNG: new PRNG('biology-fixture'),
     inputManager: { justPressedActions: keys, wasAnyKeyJustPressed: () => keys.size > 0 },
     renderer: { getGridCols: () => 30 },
     statusMessage: '',
@@ -102,6 +115,87 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('lists both ship and rover specimens in Sell even when their scientific value is zero', () => {
+    const { game, keys, field, player, service } = harness();
+    field.species[0] = { ...field.species[0], baselineSamples: 6 };
+    const station = { id: 'biology-port', name: 'Biology Port', kind: 'starbase' } as Starbase;
+    keys.add('SCAN_SYSTEM_OBJECT');
+    game.handleEncounterInput();
+    game.dropSelectedRoverCargo(
+      game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!
+    );
+    player.cargoHold.specimens!.push(player.terrainVehicle.cargoHold.specimens!.shift()!);
+    player.terrainVehicle.deployed = false;
+    const rows = game.getStarbaseRows(station, 'sell');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.cells[2])).toEqual(['0', '0']);
+    expect(rows[0].detail).toContain('ship hold');
+    expect(rows[1].detail).toContain('stowed rover');
+    const before = service.createSnapshot(),
+      credits = player.resources.credits;
+    game.starbaseMode.openSection('sell');
+    game.activateStarbaseSelection(station, rows[0]);
+    expect(game.quantitySelector).toBeNull();
+    expect(player.resources.credits).toBe(credits);
+    expect(player.cargoHold.specimens).toHaveLength(1);
+    expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
+    expect(game.starbaseMode.alert).toContain('No additional scientific demand');
+    expect(service.createSnapshot()).toEqual(before);
+  });
+  it('settles Sell specimens through the same ledger as Research, atomically and only once', () => {
+    const { game, field, player, service } = harness();
+    field.species[0] = { ...field.species[0], recognised: false, baselineSamples: 0 };
+    const station = { id: 'biology-port', name: 'Biology Port', kind: 'starbase' } as Starbase;
+    game.dropSelectedRoverCargo(
+      game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!
+    );
+    player.terrainVehicle.deployed = false;
+    const row = game.getStarbaseRows(station, 'sell')[0];
+    const research = game.getStarbaseRows(station, 'research').find((candidate) => candidate.id === row.id)!;
+    expect(research.cells[2]).toBe(`${row.cells[2]} Cr`);
+    expect(Number(row.cells[2])).toBeGreaterThan(0);
+    game.starbaseMode.openSection('sell');
+    const before = player.resources.credits;
+    const publish = vi.spyOn(eventManager, 'publish').mockImplementation(() => undefined);
+    try {
+      game.activateStarbaseSelection(station, row);
+      expect(game.quantitySelector).toBeNull();
+      expect(player.resources.credits).toBe(before + Number(row.cells[2]));
+      expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(0);
+      expect(service.snapshot.demand[field.species[0].id].samples).toBe(1);
+      game.activateStarbaseSelection(station, row);
+      game.starbaseMode.openSection('research');
+      game.activateStarbaseSelection(station, research);
+      expect(player.resources.credits).toBe(before + Number(row.cells[2]));
+      expect(game.getStarbaseRows(station, 'sell')).toHaveLength(0);
+    } finally {
+      publish.mockRestore();
+    }
+  });
+  it('leaves specimens aboard at automated depots and preserves commodity quantity sales', () => {
+    const { game, field, player } = harness();
+    field.species[0] = { ...field.species[0], recognised: false, baselineSamples: 0 };
+    game.dropSelectedRoverCargo(
+      game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!
+    );
+    player.terrainVehicle.deployed = false;
+    player.cargoHold.items.IRON = 2;
+    const station = { id: 'biology-port', name: 'Biology Port', kind: 'automated-depot' } as Starbase;
+    game.stateManager.currentStarbase = station;
+    const rows = game.getStarbaseRows(station, 'sell');
+    expect(rows[0].id).toBe('IRON');
+    expect(rows[1].cells[2]).toBe('0');
+    expect(rows[1].disabled).toBe(true);
+    game.starbaseMode.openSection('sell');
+    const before = player.resources.credits;
+    game.activateStarbaseSelection(station, rows[1]);
+    expect(player.resources.credits).toBe(before);
+    expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
+    expect(game.starbaseMode.alert).toContain('No scientific receiving staff');
+    game.activateStarbaseSelection(station, rows[0]);
+    expect(game.quantitySelector?.context).toEqual({ type: 'sell', itemKey: 'IRON' });
+    expect(game.quantitySelector?.max).toBe(2);
+  });
   it('collects an adjacent organism through Cargo using included basic stasis', () => {
     const { game, field, player, service } = harness();
     const pickup = game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!;

@@ -10,10 +10,59 @@ import {
   speciesDescription,
   createBiologicalDossier,
   organismBrief,
+  specimenSaleRows,
 } from '../../core/xenobiology_ui';
 import { surfaceCoordinates, surfaceLongitudeDelta } from '../../utils/surface_coordinates';
 
 describe('xenobiology interface', () => {
+  it('keeps zero-value containers inspectable in Sell without mutating scientific demand', () => {
+    const species = { ...generateBiosphere(biologyFixture())!.species[0], baselineSamples: 6 };
+    const service = new XenobiologyService();
+    service.collected(species);
+    const container = {
+      id: 'c1',
+      sourceId: 'a1',
+      siteId: 's1',
+      species,
+      kind: 'live' as const,
+      quality: 1,
+      volumeM3: 0.3,
+    };
+    const before = service.createSnapshot();
+    const row = specimenSaleRows([container], service, true, 'rover')[0];
+    expect(row.id).toBe('sample:c1');
+    expect(row.cells).toEqual([species.name, '1', '0', 'live specimen']);
+    expect(row.detail).toContain('stowed rover');
+    expect(row.detail).toContain('No additional scientific demand');
+    expect(row.disabled).toBe(true);
+    expect(service.createSnapshot()).toEqual(before);
+  });
+  it('quotes whole specimens at scientific prices but cannot offer them to an uncrewed depot', () => {
+    const species = {
+      ...generateBiosphere(biologyFixture())!.species[1],
+      recognised: false,
+      baselineSamples: 0,
+    };
+    const service = new XenobiologyService();
+    service.collected(species);
+    const container = {
+      id: 'c1',
+      sourceId: 'a1',
+      siteId: 's1',
+      species,
+      kind: 'live' as const,
+      quality: 0.8,
+      volumeM3: 0.6,
+    };
+    const row = specimenSaleRows([container], service, true)[0];
+    expect(Number(row.cells[2])).toBe(service.quote(species, container).credits);
+    expect(row.disabled).toBe(false);
+    expect(row.detail).toContain('whole container');
+    const unavailable = specimenSaleRows([container], service, false)[0];
+    expect(unavailable.cells[2]).toBe('0');
+    expect(unavailable.disabled).toBe(true);
+    expect(unavailable.detail).toContain('No scientific receiving staff');
+  });
   it('does not disclose chemistry, behaviour or clade before suitable observations', () => {
     const species = generateBiosphere(biologyFixture())!.species[1],
       service = new XenobiologyService();

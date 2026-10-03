@@ -268,7 +268,22 @@ async function main() {
       starbaseName: fixture.station.name,
     };
     await load(docked);
-    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    for (let index = 0; index < 3; index++) await press('ArrowRight');
+    await capture('sell-specimens');
+    const selling = await checkpoint();
+    await press('Enter');
+    const retained = await checkpoint();
+    assert.equal(
+      retained.player.resources.credits,
+      selling.player.resources.credits,
+      'Zero-value specimen paid.'
+    );
+    assert.equal(
+      retained.player.terrainVehicle.cargoHold.specimens.length,
+      2,
+      'Zero-demand specimen was discarded.'
+    );
+    await press('ArrowRight');
     const researchPixels = await capture('research-exchange');
     assert.equal(researchPixels.spritePixels, 0, 'Field silhouettes leaked into the station view.');
     const before = (await checkpoint()).player.resources.credits;
