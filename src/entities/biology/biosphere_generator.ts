@@ -10,6 +10,7 @@ import {
   type SpeciesDefinition,
 } from './biology_types';
 import { classifyHabitat } from './habitat';
+import { generateNativeSpecies } from './native_biosphere';
 
 export interface BiologyEnvironment {
   readonly bodyId: string;
@@ -81,10 +82,18 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
     return null;
   const prng = new PRNG(e.origin === 'introduced' ? 'managed-carbon-water' : e.seed).seedNew(
     'biology',
-    BIOLOGY_VERSION
+    e.origin === 'introduced' ? 1 : BIOLOGY_VERSION
   );
   const temperate = Math.max(0.15, 1 - Math.abs(e.temperatureK - 294) / 65);
   if (e.origin === 'native' && prng.random() > 0.34 * temperate * Math.min(1, e.ageGyr / 2)) return null;
+  if (e.origin === 'native')
+    return {
+      id: e.bodyId,
+      bodyName: e.bodyName,
+      origin: e.origin,
+      species: generateNativeSpecies(e, prng),
+      sites: [],
+    };
   const aerobic = e.origin === 'introduced' || e.oxygenBar >= 0.035;
   const species: SpeciesDefinition[] = [];
   // Keep the original six identities and inherited streams; new content uses additional indices.

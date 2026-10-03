@@ -93,6 +93,14 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
     );
   }
   if (value.socialBehaviour !== undefined) choice(value.socialBehaviour, ['group-retreat']);
+  if (value.relativeAbundance !== undefined) number(value.relativeAbundance, 0.05, 1);
+  if (value.anatomy !== undefined) {
+    record(value.anatomy);
+    number(value.anatomy.appendages, 0, 12, true);
+    number(value.anatomy.segments, 1, 4, true);
+    choice(value.anatomy.profile, ['low', 'raised']);
+    choice(value.anatomy.pigment, ['green', 'blue', 'ochre', 'red', 'violet', 'pale']);
+  }
   if (value.bodyForm !== undefined)
     choice(value.bodyForm, [
       'mat',

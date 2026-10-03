@@ -108,8 +108,21 @@ function createHabitatPopulation(
 ): EncounterIndividual[] {
   if (!site.habitat) return [];
   const community = habitatCommunity(biosphere, site.habitat.kind);
-  const producer = community.find((species) => species.metabolism !== 'heterotroph');
-  const consumers = community.filter((species) => species.metabolism === 'heterotroph');
+  const selection = new PRNG(site.id).seedNew('native-community');
+  const producers = community.filter((species) => species.metabolism !== 'heterotroph');
+  const producer = biosphere.origin === 'native' ? weightedSpecies(producers, selection) : producers[0];
+  const availableConsumers = community.filter((species) => species.metabolism === 'heterotroph');
+  const firstConsumer = weightedSpecies(availableConsumers, selection);
+  const consumers =
+    biosphere.origin === 'native'
+      ? [
+          firstConsumer,
+          weightedSpecies(
+            availableConsumers.filter((entry) => entry !== firstConsumer),
+            selection
+          ),
+        ].filter((entry): entry is SpeciesDefinition => !!entry)
+      : availableConsumers;
   if (!producer) return [];
   const sparse = site.habitat.kind === 'exposed-ground' || site.habitat.kind === 'upland-ground';
   const population = [
@@ -172,6 +185,12 @@ function createHabitatPopulation(
     });
   }
   return individuals;
+}
+
+/** Samples finite community weights without rewarding rare taxa or disturbing generation outside biology. */
+function weightedSpecies(species: readonly SpeciesDefinition[], prng: PRNG): SpeciesDefinition | undefined {
+  let roll = prng.random() * species.reduce((total, entry) => total + (entry.relativeAbundance ?? 1), 0);
+  return species.find((entry) => (roll -= entry.relativeAbundance ?? 1) < 0);
 }
 
 /** Returns a field's immutable species definition for one individual. */

@@ -1,4 +1,4 @@
-export const BIOLOGY_VERSION = 1;
+export const BIOLOGY_VERSION = 2;
 export const HABITAT_VERSION = 1;
 export const ENCOUNTER_WIDTH = 32;
 export const ENCOUNTER_HEIGHT = 24;
@@ -25,6 +25,14 @@ export type OrganismBodyForm =
   | 'radial'
   | 'burrower'
   | 'ambush';
+
+/** External family traits, kept separate from inferred ancestry and internal physiology. */
+export interface OrganismAnatomy {
+  readonly appendages: number;
+  readonly segments: number;
+  readonly profile: 'low' | 'raised';
+  readonly pigment: 'green' | 'blue' | 'ochre' | 'red' | 'violet' | 'pale';
+}
 
 export interface HabitatProfile {
   readonly version: number;
@@ -65,6 +73,9 @@ export interface SpeciesDefinition {
   readonly socialBehaviour?: 'group-retreat';
   /** Observed external anatomy; this also selects the constrained silhouette library. */
   readonly bodyForm?: OrganismBodyForm;
+  readonly anatomy?: OrganismAnatomy;
+  /** A bounded community-selection weight, not a simulated population count. */
+  readonly relativeAbundance?: number;
 }
 
 export interface BiologySite {
