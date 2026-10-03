@@ -201,7 +201,8 @@ export class SurfaceEncounterController {
     cols: number,
     rows: number,
     scanner: readonly string[],
-    stasisClass = 1
+    stasisClass = 1,
+    requests: readonly string[] = []
   ): TextModalTableModel | undefined {
     const state = this.interaction;
     if (state.kind === 'drive' || state.kind === 'menu') return;
@@ -251,6 +252,7 @@ export class SurfaceEncounterController {
               target,
               power: this.power,
               stasisClass,
+              requests,
             })
           : biologyDashboard(['No biological target'], width);
     if (!dashboard.length) dashboard.push(...biologyDashboard(['No biological records yet.'], width));

@@ -26,6 +26,7 @@ export interface EncounterPresentation {
   readonly surface?: EncounterSurface;
   readonly bodyName?: string;
   readonly menuActive?: boolean;
+  readonly requests?: readonly string[];
 }
 
 export interface EncounterViewModel {
@@ -58,6 +59,7 @@ export interface EncounterViewModel {
   readonly fuelPercent: number;
   readonly crew: readonly Pick<CrewMember, 'name' | 'hitPoints' | 'maxHitPoints'>[];
   readonly menuActive: boolean;
+  readonly requests: readonly string[];
 }
 
 const spriteCache = new WeakMap<SpeciesDefinition, PixelSprite>();
@@ -197,6 +199,7 @@ export function createEncounterView(
       `ENTRY 16,21 / X${field.roverX} Y${field.roverY}`,
     ],
     message,
+    requests: [...(presentation.requests ?? [])],
     brief: species ? organismBrief(species, level) : 'No contact acquired. TAB cycles visible organisms.',
     targetName: species && level >= 2 ? species.name : 'Unresolved organism',
     targetStatus: species ? service.status(species) : 'NO CONTACT',
@@ -241,7 +244,13 @@ export function createBiologicalDossier(
   species: SpeciesDefinition,
   service: XenobiologyService,
   width: number,
-  contact?: { field: EncounterField; target: EncounterIndividual; power: StunPower; stasisClass: number }
+  contact?: {
+    field: EncounterField;
+    target: EncounterIndividual;
+    power: StunPower;
+    stasisClass: number;
+    requests?: readonly string[];
+  }
 ): TextDashboardLine[] {
   const level = service.evidence(species.id)?.level ?? 0;
   const lines: TextDashboardLine[] = [];
@@ -357,6 +366,15 @@ export function createBiologicalDossier(
       ],
     });
   } else entry('Value', 'Unresolved until a reliable observation establishes identification.', 'amber');
+  if (level >= 2 && contact?.requests?.length) {
+    section('Accepted Research Request');
+    for (const request of contact.requests) entry('Live delivery', request, 'amber');
+    entry(
+      'Settlement',
+      'Deliver through Research or Missions at the issuer. Ordinary sale does not fulfil the contract.',
+      'muted'
+    );
+  }
   if (contact && species.susceptibility > 0 && contact.target.state !== 'dead') {
     section('Capture Assessment');
     const estimate = estimateStun(

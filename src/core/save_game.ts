@@ -11,15 +11,17 @@ import type { ScanMissionObjective, StarbaseMission } from './mission_board';
 import type { ShipModificationState } from './ship_modifications';
 import { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
-import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './discovery';
+import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord, DISCOVERY_LEVELS } from './discovery';
 import type { EconomySnapshot } from './starbase_commerce';
 import { CONFIG } from '../config';
 import { createXenobiologySnapshot, type XenobiologySnapshot } from '../entities/biology/biology_types';
 import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 
-export const SAVE_GAME_VERSION = 11;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v11';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v11';
+export const SAVE_GAME_VERSION = 12;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v12';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v12';
+const VERSION_ELEVEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v11';
+const VERSION_ELEVEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v11';
 const VERSION_TEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v10';
 const VERSION_TEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v10';
 const VERSION_NINE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v9';
@@ -179,7 +181,11 @@ export interface GameSaveV11 extends Omit<GameSaveV10, 'version'> {
   xenobiology: XenobiologySnapshot;
 }
 
-export type GameSave = GameSaveV11;
+export interface GameSaveV12 extends Omit<GameSaveV11, 'version'> {
+  version: 12;
+}
+
+export type GameSave = GameSaveV12;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -222,6 +228,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV9
     | GameSaveV10
     | GameSaveV11
+    | GameSaveV12
   >;
   if (
     record.version !== 1 &&
@@ -234,6 +241,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 8 &&
     record.version !== 9 &&
     record.version !== 10 &&
+    record.version !== 11 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -297,8 +305,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 10:
       save = migrateV10Save(candidate as unknown as GameSaveV10);
       break;
+    case 11:
+      save = migrateV11Save(candidate as unknown as GameSaveV11);
+      break;
     default:
-      save = candidate as unknown as GameSaveV11;
+      save = candidate as unknown as GameSaveV12;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -563,6 +574,11 @@ function migrateV10Save(save: GameSaveV10): GameSave {
   };
 }
 
+/** Retains existing specimens and frozen legacy fields while admitting typed biological objectives. */
+function migrateV11Save(save: GameSaveV11): GameSave {
+  return { ...save, version: SAVE_GAME_VERSION };
+}
+
 /** Migrates a typed local location while retaining only its mode-specific fields. */
 function migrateGenerationTwoLocation(location: LocationSaveData): LocationSaveData {
   return {
@@ -720,13 +736,37 @@ function validateMissionProgress(save: GameSave): void {
       assertNonEmptyString(mission.originStarbaseId, 'mission origin station id');
     }
     assertNonEmptyString(mission.originStarbaseName, 'mission origin starbase');
+    assertFiniteNumber(mission.rewardCredits, 'mission reward');
+    if (!Number.isSafeInteger(mission.rewardCredits) || mission.rewardCredits < 0)
+      throw new Error('Invalid mission reward.');
     if (!Array.isArray(mission.objectives) || mission.objectives.length === 0) {
       throw new Error('Save mission objectives are invalid.');
     }
     for (const objective of mission.objectives) {
       assertNonEmptyString(objective.id, 'mission objective id');
       assertNonEmptyString(objective.targetName, 'mission objective target');
+      assertNonEmptyString(objective.targetLabel, 'mission objective label');
+      if (objective.kind === 'scan') {
+        if (
+          !['planet', 'star', 'system'].includes(objective.targetType) ||
+          !DISCOVERY_LEVELS.includes(objective.requiredDiscoveryLevel)
+        )
+          throw new Error('Invalid scan mission objective.');
+      } else if (objective.kind === 'specimen') {
+        assertNonEmptyString(objective.speciesId, 'mission species id');
+        assertNonEmptyString(objective.siteId, 'mission habitat id');
+        assertFiniteNumber(objective.minimumQuality, 'mission specimen quality');
+        if (objective.requiredKind !== 'live' || objective.minimumQuality < 0 || objective.minimumQuality > 1)
+          throw new Error('Invalid specimen mission objective.');
+      } else throw new Error('Unsupported mission objective kind.');
     }
+    if (new Set(mission.objectives.map((objective) => objective.id)).size !== mission.objectives.length)
+      throw new Error('Duplicate mission objective identity.');
+    if (
+      mission.objectives.some((objective) => objective.kind === 'specimen') &&
+      (mission.type !== 'xenobiology' || mission.objectives.length !== 1 || !mission.originStarbaseId)
+    )
+      throw new Error('Invalid biological delivery contract.');
   }
   for (const [missionId, objectiveIds] of Object.entries(save.missionObjectiveProgress)) {
     if (!save.activeMissions[missionId] || !Array.isArray(objectiveIds)) {
@@ -848,6 +888,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_ELEVEN_SESSION_SAVE_KEY,
       VERSION_TEN_SESSION_SAVE_KEY,
       VERSION_NINE_SESSION_SAVE_KEY,
       VERSION_EIGHT_SESSION_SAVE_KEY,
@@ -869,6 +910,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_ELEVEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_NINE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(PREVIOUS_SESSION_SAVE_KEY);
@@ -886,6 +928,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_ELEVEN_MANUAL_SAVE_KEY,
       VERSION_TEN_MANUAL_SAVE_KEY,
       VERSION_NINE_MANUAL_SAVE_KEY,
       VERSION_EIGHT_MANUAL_SAVE_KEY,
@@ -907,6 +950,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_ELEVEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_NINE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(PREVIOUS_MANUAL_SAVE_KEY);

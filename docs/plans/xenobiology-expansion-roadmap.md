@@ -1,6 +1,10 @@
 # Xenobiology: Ambitious Expansion Roadmap
 
-Status: revised exploratory roadmap based on the implemented first version.
+Status: revised exploratory roadmap based on the implemented first version and
+the authorised first expansion. Habitat communities, one group response and one
+live-reference contract now have code and regression cases; expansion runtime
+verification and representative playtesting are pending the requested model
+switch. Later waves remain exploratory, not implementation commitments.
 Codebase baseline inspected: 2026-10-03. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
 view and specimen listings in Sell. See the [implementation plan](xenobiology-first-version.md)
@@ -96,7 +100,7 @@ Preserve established contracts and distinguish them from unfinished extensions:
 | Explicit encounter time and modal pausing | Successful commands advance local time; reading and inactive fields are suspended | Extra behaviour must not silently use accelerated travel or rendering time. |
 | Whole-container transactions and shared occupied volume | Ship and rover specimens share ordinary cargo capacity | New material/carriers must not permit partial organisms, duplicate ownership, or duplicate sales. |
 | Typed commands, bounded actors, and readonly scene models | Implemented with controller/system/renderer separation | Add concrete domain rules rather than more formulas in Game or SceneRenderer. |
-| Versioned snapshots | Schema 11 stores complete visited fields, evidence, demand, and ownership | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
+| Versioned snapshots | Schema 12 preserves version-11 fields/specimens and adds habitat/group/objective validation | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
 | Evidence-filtered descriptions and handling checks | Implemented; stasis uses class-based temperature/pressure/mass limits and live slots | Typed chemistry/containment capability envelopes are still an extension. |
 | Terrain-integrated field UI and pixel silhouettes | Implemented with cached surface appearance and two-frame sprites | Appearance is not detailed local geology, habitat simulation, or continuous traversal. |
 
@@ -106,16 +110,17 @@ Preserve established contracts and distinguish them from unfinished extensions:
   carbon-water suitability gate and explicit gameplay occurrence priors, not
   measured probabilities for alien life. The inherited groups are not a stored
   phylogenetic tree.
-- Sites are accessible land locations. They do not yet have distinct ecological
-  profiles; species temperature and pressure use whole-planet environmental
-  inputs rather than a local climate model.
-- Each 32 by 24 field starts with ten individuals and a repeating species and
-  position pattern. Its logical cells remain 5 m regardless of viewport size.
+- New accessible land sites have coarse numeric water-margin, sheltered, or
+  exposed profiles and approximately five to eight contacts from three taxa.
+  Species temperature and pressure still use whole-planet environmental inputs,
+  not a local climate model. Preserved legacy fields retain their ten-contact
+  pattern. The 32 by 24 field's cells remain 5 m regardless of viewport size.
 - Surface colours come from the prepared regional terrain; local texture is an
   illustrative layer. Habitat suitability must become explicit domain input,
   not something inferred from pixel colour or renderer noise.
-- Individuals have lifecycle, injury, sampling, and alert state, but no size
-  variants, social groups, or inherited individual adaptations yet.
+- Individuals have lifecycle, injury, sampling, alert state, and optional local
+  retreat-group membership/timers, but no size variants or inherited individual
+  adaptations yet. Groups are bounded encounter behaviour, not an ecosystem.
 - Scientific demand is campaign-wide. Sell and Research use the same award
   ledger for physical specimens; data remains in Research. Neither tab is a
   second buyer capable of renewing novelty.
@@ -648,8 +653,10 @@ is not permission to generate physically incompatible life while waiting.
 
 ### Recommended next milestone: one coherent expedition
 
-Implement this only after explicit implementation approval. It is a scoped
-programming proposal, not an instruction to enact the rest of the roadmap.
+This milestone has been explicitly authorised. Its habitat, group-retreat,
+typed request/delivery, UI, and save code is now present, with verification
+pending. The stages below document scope and acceptance gates rather than
+claiming tested completion or instructing implementation of later waves.
 
 **Player decision:** choose how to approach a recognisable community and which
 eligible specimen to retain for a known research request while live slots and

@@ -51,8 +51,15 @@ import {
 import { createHelpReferenceLines } from './help_reference';
 import { getPlanetMapSize, OrbitScreenModel } from './orbit_ui';
 import { OrbitModeController } from './modes/orbit_mode_controller';
-import { formatMissionDetail, generateStarbaseMissions, generateStarbaseNotices } from './mission_board';
+import {
+  formatMissionDetail,
+  generateStarbaseMissions,
+  generateStarbaseNotices,
+  matchesSpecimenObjective,
+  type StarbaseMission,
+} from './mission_board';
 import { MissionProgressService } from './mission_progress';
+import { createBiologicalContract, deliverBiologicalContract } from './biological_contracts';
 import { ScanService } from './scan_service';
 import { DiscoveryLevel, formatDiscoveryLevel } from './discovery';
 import {
@@ -135,6 +142,7 @@ import { prepareBiosphere } from '../entities/biology/biosphere_generator';
 import {
   type BiosphereDefinition,
   type EncounterField,
+  type SpecimenContainer,
   createXenobiologySnapshot,
 } from '../entities/biology/biology_types';
 import {
@@ -456,7 +464,28 @@ export class Game {
       bodyName: this.stateManager.currentPlanet?.name,
       menuActive: this.encounterController.interaction.kind === 'menu',
       message: this.statusMessage,
+      requests: this.getEncounterRequestLines(field),
     });
+  }
+
+  /** Reads all physical specimens, including overflow retained in a stowed rover. */
+  private get ownedSpecimens(): SpecimenContainer[] {
+    return [
+      ...(this.player.cargoHold.specimens ?? []),
+      ...(this.player.terrainVehicle.cargoHold.specimens ?? []),
+    ];
+  }
+
+  /** Projects only accepted requests matching the selected contact's actual habitat. */
+  private getEncounterRequestLines(field: EncounterField): string[] {
+    const target = this.encounterController.target(field);
+    if (!target || (this.xenobiology.evidence(target.speciesId)?.level ?? 0) < 2) return [];
+    return this.missionProgress
+      .getSpecimenRequests(target.speciesId, field.site.id)
+      .map(
+        (mission) =>
+          `LIVE reference / quality >=75% / ${mission.rewardCredits} Cr + research / deliver to ${mission.originStarbaseName}`
+      );
   }
 
   /** Reconciles ship or rover specimen ownership before committing shared demand and payment. */
@@ -5965,7 +5994,7 @@ export class Game {
     const target = this.getSelectedTarget();
     const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
     const activeMissionCount = this.missionProgress.getActiveCount();
-    const readyMissionCount = this.missionProgress.getReadyCount();
+    const readyMissionCount = this.missionProgress.getReadyCount(this.ownedSpecimens);
 
     rows.push(
       this.createShipLogRow(
@@ -6658,7 +6687,8 @@ export class Game {
             this.renderer.getGridCols(),
             this.renderer.getGridRows(),
             view.scanner,
-            this.player.ship.stasisClass ?? 1
+            this.player.ship.stasisClass ?? 1,
+            view.requests
           );
           if (modal) this.renderer.drawTextModalTable(modal);
         }
@@ -7855,7 +7885,8 @@ export class Game {
       return;
     }
     if (this.starbaseMode.sectionId === 'research') {
-      this.submitBiologicalResearch(row.id, starbase);
+      if (row.id.startsWith('contract:')) this.settleBiologicalDelivery(row.id.slice(9), starbase);
+      else this.submitBiologicalResearch(row.id, starbase);
       return;
     }
     if (this.starbaseMode.sectionId === 'services' && row.id === 'rover-repair') {
@@ -8000,18 +8031,22 @@ export class Game {
       return;
     }
 
-    const mission = generateStarbaseMissions(starbase, system).find((candidate) => candidate.id === row.id);
+    const mission = this.getCurrentStarbaseMissions(starbase).find((candidate) => candidate.id === row.id);
     if (!mission) {
       this.starbaseMode.alert = row.detail || 'No contract selected.';
       return;
     }
 
-    const status = this.missionProgress.getStatus(mission);
+    const status = this.missionProgress.getStatus(mission, this.ownedSpecimens);
     if (status === 'COMPLETE') {
       this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
     }
     if (status === 'READY') {
+      if (mission.type === 'xenobiology') {
+        this.settleBiologicalDelivery(mission.id, starbase);
+        return;
+      }
       const handedIn = this.missionProgress.handIn(mission.id, starbase.name, starbase.id);
       if (!handedIn) {
         this.starbaseMode.alert = `Telemetry is complete. Return to ${mission.originStarbaseName} for settlement.`;
@@ -8038,6 +8073,63 @@ export class Game {
     this.statusMessage = this.starbaseMode.alert;
   }
 
+  /** Builds one real biological offer once surface data is ready, retaining authoritative accepted targets. */
+  private getCurrentStarbaseMissions(starbase: Starbase): StarbaseMission[] {
+    const system = this.stateManager.currentSystem;
+    if (!system) return [];
+    const biospheres: BiosphereDefinition[] = [];
+    const pending: Planet[] = [];
+    if (starbase.kind !== 'automated-depot') {
+      for (const { planet } of getSystemPlanetPaths(system)) {
+        const biosphere = this.getBiosphere(planet);
+        if (!biosphere) continue;
+        biospheres.push(biosphere);
+        if (!planet.isSurfaceReady()) pending.push(planet);
+      }
+      // Use the existing serialized worker queue. Board rendering never invokes synchronous terrain getters.
+      this.surfacePrefetch.enqueue(pending.slice(0, 2), () => {
+        if (this.stateManager.state === 'starbase' && this.stateManager.currentSystem === system)
+          this.forceFullRender = true;
+      });
+    }
+    const contract = createBiologicalContract(
+      starbase,
+      system.name,
+      biospheres,
+      this.xenobiology.snapshot.fields,
+      this.ownedSpecimens
+    );
+    const missions = generateStarbaseMissions(starbase, system);
+    if (contract) missions.push(contract);
+    const combined = new Map(missions.map((mission) => [mission.id, mission]));
+    for (const mission of this.missionProgress.getStationMissions(starbase.name, starbase.id))
+      combined.set(mission.id, mission);
+    return [...combined.values()];
+  }
+
+  /** Delegates atomic physical delivery, publishing credit and crew effects only after all owners commit. */
+  private settleBiologicalDelivery(missionId: string, starbase: Starbase): void {
+    const result = deliverBiologicalContract(
+      this.missionProgress,
+      this.xenobiology,
+      {
+        station: starbase,
+        holds: [this.player.cargoHold, this.player.terrainVehicle.cargoHold],
+        resources: this.player.resources,
+      },
+      missionId
+    );
+    this.statusMessage = this.starbaseMode.alert = result.message;
+    if (!result.ok) return;
+    this.player.awardCrewExperience('communication', 12);
+    this.player.awardCrewExperience('astroscience', 8);
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: result.credits,
+    });
+    this.forceFullRender = true;
+  }
+
   /** Returns starbase rows. */
   private getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): StarbaseTableRow[] {
     const stationKey = this.getStationPersistenceKey(starbase);
@@ -8054,10 +8146,22 @@ export class Game {
       case 'cargo':
         return this.getCargoRows();
       case 'research':
-        return researchRows(this.xenobiology, [
-          ...(this.player.cargoHold.specimens ?? []),
-          ...(this.player.terrainVehicle.cargoHold.specimens ?? []),
-        ]);
+        return [
+          ...this.missionProgress
+            .getStationMissions(starbase.name, starbase.id)
+            .filter((mission) => mission.type === 'xenobiology')
+            .map((mission) => ({
+              id: `contract:${mission.id}`,
+              cells: [
+                mission.title,
+                'LIVE delivery',
+                `${mission.rewardCredits} Cr + research`,
+                this.missionProgress.getStatus(mission, this.ownedSpecimens),
+              ],
+              detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter delivers one eligible whole live container.`,
+            })),
+          ...researchRows(this.xenobiology, this.ownedSpecimens),
+        ];
       case 'buy':
         return market.map((item) => ({
           id: item.itemKey,
@@ -8081,7 +8185,7 @@ export class Game {
               disabled: !quote,
             };
           });
-        return [
+        const sales = [
           ...commodities,
           ...specimenSaleRows(
             this.player.cargoHold.specimens ?? [],
@@ -8095,6 +8199,22 @@ export class Game {
             'rover'
           ),
         ];
+        return sales.map((row) => {
+          const container = this.ownedSpecimens.find((entry) => `sample:${entry.id}` === row.id);
+          if (!container) return row;
+          const request = this.missionProgress
+            .getSpecimenRequests(container.species.id, container.siteId)
+            .find((mission) =>
+              mission.objectives.some(
+                (objective) => objective.kind === 'specimen' && matchesSpecimenObjective(objective, container)
+              )
+            );
+          if (!request) return row;
+          return {
+            ...row,
+            detail: `${row.detail} Contract match: deliver through Research or Missions at ${request.originStarbaseName} for ${request.rewardCredits} Cr + research. Ordinary sale does not fulfil the request.`,
+          };
+        });
       case 'services':
         return [
           {
@@ -8161,9 +8281,9 @@ export class Game {
             },
           ];
         }
-        return generateStarbaseMissions(starbase, this.stateManager.currentSystem).map((mission) => {
-          const status = this.missionProgress.getStatus(mission);
-          const progress = this.missionProgress.getObjectiveCounts(mission);
+        return this.getCurrentStarbaseMissions(starbase).map((mission) => {
+          const status = this.missionProgress.getStatus(mission, this.ownedSpecimens);
+          const progress = this.missionProgress.getObjectiveCounts(mission, this.ownedSpecimens);
           return {
             id: mission.id,
             cells: [
@@ -8419,7 +8539,7 @@ export class Game {
         : 'No cargo';
     if (sectionId === 'missions') {
       const active = this.missionProgress.getActiveCount();
-      const ready = this.missionProgress.getReadyCount();
+      const ready = this.missionProgress.getReadyCount(this.ownedSpecimens);
       if (ready > 0) return `${ready} Ready`;
       return active > 0 ? `${active} Active` : 'Available';
     }

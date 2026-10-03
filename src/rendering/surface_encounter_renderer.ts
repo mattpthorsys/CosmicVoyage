@@ -223,7 +223,15 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
     ? model.scanner.find((line) => line.startsWith('Cr data') || line.startsWith('Value unresolved'))
     : undefined;
   const assessmentRows = biologyDashboard(
-    [model.targetName, model.targetStatus, model.brief, model.targetMass, model.targetRange, quote ?? ''],
+    [
+      model.targetName,
+      model.targetStatus,
+      model.brief,
+      model.targetMass,
+      model.targetRange,
+      quote ?? '',
+      ...model.requests,
+    ],
     width
   ).length;
   // A magnified silhouette is optional; never trade away the actual assessment to fit a portrait.
@@ -250,5 +258,6 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
   text(model.targetMass, TEXT_PALETTE.textMuted);
   text(model.targetRange, TEXT_PALETTE.cyan);
   if (quote) text(quote, TEXT_PALETTE.amber);
+  for (const request of model.requests) text(request, TEXT_PALETTE.amber);
   drawShortcutText(buffer, '[D] dossier  [O] cargo'.slice(0, width), x, limit, TEXT_PALETTE.cyan, bg);
 }

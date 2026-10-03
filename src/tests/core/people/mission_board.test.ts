@@ -63,12 +63,14 @@ describe('mission board generation', () => {
   it('matches scan completion against the mission target only', () => {
     const { system, starbase } = createMissionSystem();
     const mission = generateStarbaseMissions(starbase, system).find((candidate) =>
-      candidate.objectives.some((objective) => objective.targetType === 'planet')
+      candidate.objectives.some((objective) => objective.kind === 'scan' && objective.targetType === 'planet')
     );
     if (!mission) throw new Error('Expected at least one planet scan mission.');
 
-    const objective = mission.objectives.find((candidate) => candidate.targetType === 'planet');
-    if (!objective) throw new Error('Expected a planet objective.');
+    const objective = mission.objectives.find(
+      (candidate) => candidate.kind === 'scan' && candidate.targetType === 'planet'
+    );
+    if (!objective || objective.kind !== 'scan') throw new Error('Expected a planet objective.');
     const target = system.planets.find((planet) => planet?.name === objective.targetName);
     const other = system.planets.find((planet) => planet && planet.name !== objective.targetName);
     if (!target) throw new Error('Expected mission target in generated system.');

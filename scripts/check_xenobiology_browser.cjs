@@ -105,7 +105,10 @@ async function main() {
     const checkpoint = async () => {
       await press('F10');
       await page.locator('#checkpointButton').click();
-      const save = await page.evaluate(() => JSON.parse(sessionStorage.getItem('cosmic-voyage.session.v11')));
+      const save = await page.evaluate(async () => {
+        const { SESSION_SAVE_KEY } = await import('/src/core/save_game.ts');
+        return JSON.parse(sessionStorage.getItem(SESSION_SAVE_KEY));
+      });
       await press('F10');
       return save;
     };
@@ -178,7 +181,16 @@ async function main() {
     await capture('desktop-stun');
     await press('Escape');
     // The permanently sessile nearest producer is a stable collection target for this real generated field.
-    const target = field.individuals[8];
+    const target = field.individuals
+      .filter(
+        (actor) => field.species.find((species) => species.id === actor.speciesId)?.behaviour === 'sessile'
+      )
+      .sort(
+        (a, b) =>
+          Math.hypot(a.x - field.roverX, a.y - field.roverY) -
+          Math.hypot(b.x - field.roverX, b.y - field.roverY)
+      )[0];
+    assert(target, 'No sessile reference organism in this habitat.');
     const { Path } = require('rot-js');
     const route = [];
     new Path.AStar(
@@ -259,6 +271,11 @@ async function main() {
     const docked = structuredClone(save);
     docked.xenobiology.activeSiteId = null;
     docked.player.terrainVehicle.deployed = false;
+    // The zero-demand regression is a controlled fixture, independent of which habitat taxon was sampled.
+    for (const container of docked.player.terrainVehicle.cargoHold.specimens) {
+      container.species.baselineSamples = 12;
+      docked.xenobiology.evidence[container.species.id].species.baselineSamples = 12;
+    }
     docked.location = {
       kind: 'starbase',
       worldX: fixture.save.location.worldX,
@@ -292,6 +309,69 @@ async function main() {
     assert(paid > before, 'Research submission did not pay.');
     await press('Enter');
     assert.equal((await checkpoint()).player.resources.credits, paid, 'Repeat submission paid again.');
+
+    // A controlled incapacitation fixture isolates UI/cargo/contract integration from probabilistic weapons.
+    const delivery = await page.evaluate(async (initial) => {
+      const { createBiologicalContract } = await import('/src/core/biological_contracts.ts');
+      const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
+      const { createXenobiologySnapshot } = await import('/src/entities/biology/biology_types.ts');
+      const station = { ...initial.station, kind: 'starbase' };
+      const mission = createBiologicalContract(station, 'Browser fixture', [initial.biosphere], {});
+      if (!mission) throw new Error('No compatible real biological request in the starting colony.');
+      const objective = mission.objectives[0];
+      const site = initial.biosphere.sites.find((entry) => entry.id === objective.siteId);
+      const field = createEncounter(initial.biosphere, site);
+      const source = field.individuals.find((actor) => actor.speciesId === objective.speciesId);
+      source.x = source.homeX = 16;
+      source.y = source.homeY = 20;
+      source.state = 'stunned';
+      source.recoveryAt = 3600;
+      const save = structuredClone(initial.save);
+      save.player.position.surfaceX = site.x;
+      save.player.position.surfaceY = site.y;
+      save.player.terrainVehicle.deployed = true;
+      save.location.kind = 'planet';
+      save.xenobiology = createXenobiologySnapshot();
+      save.xenobiology.fields[site.id] = field;
+      save.xenobiology.activeSiteId = site.id;
+      save.acceptedMissionIds = [mission.id];
+      save.activeMissions = { [mission.id]: mission };
+      save.missionObjectiveProgress = { [mission.id]: [] };
+      return { save, mission };
+    }, fixture);
+    await load(delivery.save);
+    await press('v');
+    metrics.contractField = await capture('desktop-contract-field');
+    await press('d');
+    await page.waitForTimeout(1700);
+    await capture('desktop-contract-dossier');
+    await press('Escape');
+    await press('o');
+    await press('Enter');
+    const capturedReference = await checkpoint();
+    assert.equal(capturedReference.player.terrainVehicle.cargoHold.specimens.length, 1);
+    assert.equal(capturedReference.player.terrainVehicle.cargoHold.specimens[0].kind, 'live');
+    capturedReference.xenobiology.activeSiteId = null;
+    capturedReference.player.terrainVehicle.deployed = false;
+    capturedReference.location = { ...docked.location };
+    await load(capturedReference);
+    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    await capture('research-live-contract');
+    const deliveryCredits = capturedReference.player.resources.credits;
+    await press('Enter');
+    const delivered = await checkpoint();
+    assert(
+      delivered.completedMissionIds.includes(delivery.mission.id),
+      'Physical delivery did not complete the request.'
+    );
+    assert.equal(
+      delivered.player.terrainVehicle.cargoHold.specimens.length,
+      0,
+      'Delivered container remains aboard.'
+    );
+    const contractAward = delivered.player.resources.credits - deliveryCredits;
+    assert(contractAward >= 900, 'Contract fee missing.');
+    await capture('research-contract-settled');
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify(
@@ -301,6 +381,7 @@ async function main() {
           habitats: fixture.biosphere.sites.length,
           specimens: save.player.terrainVehicle.cargoHold.specimens.map((item) => item.kind),
           award: paid - before,
+          contractAward,
           metrics,
           errors,
         },

@@ -51,7 +51,7 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 11,
+    version: SAVE_GAME_VERSION,
     xenobiology: createXenobiologySnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-06-20T00:00:00.000Z',
@@ -142,6 +142,56 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('migrates version-eleven storage without resetting biology or other progress', () => {
+    const session = new MemoryStorage();
+    const storage = new SaveGameStorage(session, new MemoryStorage());
+    const legacy = { ...createSave(), version: 11 };
+    session.setItem('cosmic-voyage.session.v11', JSON.stringify(legacy));
+    const migrated = storage.loadSession();
+    expect(migrated).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
+    expect(session.getItem('cosmic-voyage.session.v11')).toBeNull();
+    expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
+  });
+
+  it('validates biological objective identity, kind and quality bounds', () => {
+    const save = createSave();
+    save.acceptedMissionIds = ['biology-contract'];
+    save.activeMissions['biology-contract'] = {
+      id: 'biology-contract',
+      title: 'Reference',
+      type: 'xenobiology',
+      issuer: 'Science Office',
+      summary: 'Live specimen',
+      detail: 'Regional reference',
+      rewardCredits: 900,
+      risk: 'Low',
+      originStarbaseId: 'biology-port',
+      originStarbaseName: 'Biology Port',
+      systemName: 'Fixture',
+      objectives: [
+        {
+          id: 'deliver',
+          kind: 'specimen',
+          targetName: 'Known organism',
+          targetLabel: 'Live reference',
+          speciesId: 'managed-carbon-water:1',
+          siteId: 'fixture/site:4,4',
+          requiredKind: 'live',
+          minimumQuality: 0.75,
+        },
+      ],
+    };
+    save.missionObjectiveProgress = { 'biology-contract': [] };
+    expect(() => parseGameSave(save)).not.toThrow();
+    const objective = save.activeMissions['biology-contract'].objectives[0];
+    if (objective.kind !== 'specimen') throw new Error('Expected a specimen objective.');
+    objective.minimumQuality = 1.5;
+    expect(() => parseGameSave(save)).toThrow('specimen mission objective');
+    objective.minimumQuality = 0.75;
+    objective.siteId = '';
+    expect(() => parseGameSave(save)).toThrow('habitat id');
+  });
+
   it('migrates version ten without altering generated-world identity or vessel progress', () => {
     const old = { ...createSave(), version: 10, xenobiology: undefined };
     delete old.player.cargoHold.specimens;
@@ -185,7 +235,7 @@ describe('save game persistence', () => {
     const migrated = storage.loadSession();
 
     expect(migrated).toMatchObject({
-      version: 11,
+      version: SAVE_GAME_VERSION,
       generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       migratedFromGenerationVersion: 3,
     });
@@ -206,7 +256,7 @@ describe('save game persistence', () => {
     const migrated = storage.loadSession();
 
     expect(migrated).toMatchObject({
-      version: 11,
+      version: SAVE_GAME_VERSION,
       generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       migratedFromGenerationVersion: 4,
     });
@@ -472,7 +522,7 @@ describe('save game persistence', () => {
       store.setItem(oldKey, JSON.stringify(oldSave));
       const result = kind === 'session' ? storage.loadSession() : storage.loadManual();
       expect(result).toMatchObject({
-        version: 11,
+        version: SAVE_GAME_VERSION,
         generationVersion: CONFIG.GALAXY_MODEL_VERSION,
         migratedFromGenerationVersion: 5,
       });

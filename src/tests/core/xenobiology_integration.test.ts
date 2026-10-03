@@ -15,6 +15,8 @@ import type { TextModalTableModel, TextTableRow } from '../../core/text_ui';
 import { PRNG } from '../../utils/prng';
 import type { StarbaseSectionId } from '../../core/starbase_ui';
 import type { StarbaseController } from '../../core/starbase_controller';
+import type { StarbaseMission } from '../../core/mission_board';
+import type { MissionProgressService } from '../../core/mission_progress';
 
 interface BiologyGameHarness {
   player: Player;
@@ -31,6 +33,7 @@ interface BiologyGameHarness {
   createRoverCargoModel(): TextModalTableModel;
   surfaceMode: { roverCargoSelection: number };
   starbaseMode: StarbaseController;
+  missionProgress: MissionProgressService;
   quantitySelector: { context: { type: string; itemKey?: string }; max: number } | null;
   getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): TextTableRow[];
   activateStarbaseSelection(starbase: Starbase, row: TextTableRow): void;
@@ -115,6 +118,66 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('delivers an accepted zero-price live reference through Research and persists the contract', () => {
+    const { game, field, player, service } = harness();
+    field.species[0] = { ...field.species[0], baselineSamples: 12 };
+    const station = { id: 'biology-port', name: 'Biology Port', kind: 'starbase' } as Starbase;
+    const mission: StarbaseMission = {
+      id: 'live-reference-test',
+      title: 'Live reference',
+      type: 'xenobiology',
+      issuer: 'Survey Office',
+      summary: 'Live regional reference',
+      detail: 'One live container at >=75% quality.',
+      rewardCredits: 900,
+      risk: 'Low',
+      originStarbaseId: station.id,
+      originStarbaseName: station.name,
+      systemName: 'Fixture',
+      objectives: [
+        {
+          id: 'deliver',
+          kind: 'specimen',
+          targetName: field.species[0].name,
+          targetLabel: 'Live regional reference',
+          speciesId: field.species[0].id,
+          siteId: field.site.id,
+          requiredKind: 'live',
+          minimumQuality: 0.75,
+        },
+      ],
+    };
+    game.missionProgress.accept(mission);
+    game.dropSelectedRoverCargo(
+      game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!
+    );
+    const saved = parseGameSave({
+      ...saveFixture(player, service),
+      ...game.missionProgress.createSnapshot(),
+    });
+    expect(saved.activeMissions[mission.id].objectives[0].kind).toBe('specimen');
+    expect(saved.version).toBe(SAVE_GAME_VERSION);
+    expect(parseGameSave({ ...saved, version: 11 }).xenobiology).toEqual(saved.xenobiology);
+    player.terrainVehicle.deployed = false;
+    const row = game
+      .getStarbaseRows(station, 'research')
+      .find((entry) => entry.id === `contract:${mission.id}`)!;
+    expect(row.cells[3]).toBe('READY');
+    const credits = player.resources.credits;
+    const publish = vi.spyOn(eventManager, 'publish').mockImplementation(() => undefined);
+    try {
+      game.starbaseMode.openSection('research');
+      game.activateStarbaseSelection(station, row);
+      expect(player.resources.credits).toBe(credits + 900);
+      expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(0);
+      expect(game.missionProgress.getStatus(mission)).toBe('COMPLETE');
+      expect(service.snapshot.demand[field.species[0].id].samples).toBe(1);
+      game.activateStarbaseSelection(station, row);
+      expect(player.resources.credits).toBe(credits + 900);
+    } finally {
+      publish.mockRestore();
+    }
+  });
   it('lists both ship and rover specimens in Sell even when their scientific value is zero', () => {
     const { game, keys, field, player, service } = harness();
     field.species[0] = { ...field.species[0], baselineSamples: 6 };

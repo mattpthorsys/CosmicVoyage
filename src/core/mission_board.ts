@@ -3,6 +3,7 @@ import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { StellarBody } from '../entities/stellar_body';
 import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
+import type { SpecimenContainer } from '../entities/biology/biology_types';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
 export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'READY' | 'COMPLETE';
@@ -25,10 +26,23 @@ export interface ScanMissionObjective {
   requiredDiscoveryLevel: DiscoveryLevel;
 }
 
+export interface SpecimenMissionObjective {
+  id: string;
+  kind: 'specimen';
+  targetName: string;
+  targetLabel: string;
+  speciesId: string;
+  siteId: string;
+  requiredKind: 'live';
+  minimumQuality: number;
+}
+
+export type MissionObjective = ScanMissionObjective | SpecimenMissionObjective;
+
 export interface StarbaseMission {
   id: string;
   title: string;
-  type: 'survey' | 'charting' | 'recovery';
+  type: 'survey' | 'charting' | 'recovery' | 'xenobiology';
   issuer: string;
   summary: string;
   detail: string;
@@ -37,7 +51,7 @@ export interface StarbaseMission {
   originStarbaseId?: string;
   originStarbaseName: string;
   systemName: string;
-  objectives: ScanMissionObjective[];
+  objectives: MissionObjective[];
 }
 
 export interface MissionProgressState {
@@ -70,10 +84,11 @@ export function formatMissionDetail(mission: StarbaseMission, status: MissionSta
 
 /** Returns whether a mission objective is satisfied by target knowledge. */
 export function isMissionObjectiveCompletedByDiscovery(
-  objective: ScanMissionObjective,
+  objective: MissionObjective,
   target: Planet | StellarBody | SolarSystem,
   discoveryLevel: DiscoveryLevel
 ): boolean {
+  if (objective.kind !== 'scan') return false;
   if (!hasDiscoveryLevel(discoveryLevel, objective.requiredDiscoveryLevel)) return false;
   if (target instanceof Planet) {
     return objective.targetType === 'planet' && target.name === objective.targetName;
@@ -82,6 +97,19 @@ export function isMissionObjectiveCompletedByDiscovery(
     return objective.targetType === 'system' && target.name === objective.targetName;
   }
   return objective.targetType === 'star' && target.name === objective.targetName;
+}
+
+/** Matches actual specimen provenance and condition, never just a personal collection flag. */
+export function matchesSpecimenObjective(
+  objective: SpecimenMissionObjective,
+  container: SpecimenContainer
+): boolean {
+  return (
+    container.species.id === objective.speciesId &&
+    container.siteId === objective.siteId &&
+    container.kind === objective.requiredKind &&
+    container.quality >= objective.minimumQuality
+  );
 }
 
 /** Generates starbase notices. */

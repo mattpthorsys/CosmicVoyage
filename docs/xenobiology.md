@@ -3,6 +3,13 @@
 Cosmic Voyage now has a bounded discovery, observation, sampling and research
 loop. It is an addition to ordinary surface travel, not a separate world mode.
 
+The first expansion adds habitat-dependent communities, local grazing-group
+retreat, and one finite live-reference request per inhabited station when a
+real compatible population is available. Automated depots do not issue these
+requests. The expansion's automated and browser verification is pending the
+requested testing/model-switching phase; do not treat these notes as playtest
+evidence.
+
 ## First Expedition
 
 1. Visit the colony in the guaranteed starting hub, one cell east of the new
@@ -21,6 +28,28 @@ loop. It is an addition to ordinary surface travel, not a separate world mode.
 5. Observe and analyse contacts before deciding which specimens justify capture.
    Unknown native species generally offer much more scientific value than
    familiar managed organisms.
+
+## Habitat Communities
+
+Prepared land sites are classified from numeric relief and nearby verified
+liquid-water coverage, not their display colour. Water margins support producer
+patches, grazers and detritus consumers; sheltered ground has substrate colonies
+and shelter-associated consumers; exposed ground has sparser producers and
+foragers. These are coarse habitat priors, not a rainfall or ecosystem model.
+Metre-scale moist/open/sheltered patches are a local procedural interpretation
+of the region. They retain its terrain palette and affect placement; outcrops
+still use the existing passability rules.
+
+New profiled fields contain approximately five to eight organisms from three
+relevant taxa rather than the same ten-contact distribution at every site.
+Small aerobic grazers on water margins form loose groups. A nearby member
+sensing the rover can trigger local coordinated withdrawal; after a short
+disturbance interval, separated members can regroup. This is a bounded local
+response, not global communication, hunger or reproduction. Most life remains
+nonaggressive. Behaviour still advances only through successful actions.
+
+Previously visited fields retain their saved composition and state. Their older
+layout is not regenerated, and captured organisms do not return on reentry.
 
 ## Field Controls
 
@@ -148,10 +177,41 @@ award twice. Zero-demand specimens remain visible and aboard, with an explanatio
 when selected. Automated depots show the containers but cannot receive them;
 take them to an inhabited port. Scientific data remains in **Research**.
 
+## Live Reference Contracts
+
+At an inhabited port, open **Missions** and look for **Habitat reference
+specimen**. Surface data may briefly prepare in the background before an offer
+appears. The board only requests an actually obtainable, scientifically
+recognised organism compatible with included basic stasis. Some ports have no
+suitable local offer; no planet or species is manufactured to fill the board.
+
+Accept with Enter. The request gives the planet, habitat X/Y, species, live
+condition and minimum quality of 75%. After reliable observation, matching
+contacts show the accepted request in the field assessment and `D` dossier.
+Approach, stun if necessary, and use `O` Cargo or `C` to collect normally.
+Tissue and dead specimens retain their ordinary scientific use but do not
+satisfy a live-reference request. Repeated stunning can reduce specimen quality.
+
+Return the sealed container to the issuer, in either the ship or stowed rover.
+In **Research**, select the live-delivery contract row and press Enter; **Missions**
+also settles it with Enter when READY. Delivery consumes exactly one eligible
+whole container and pays a **900 Cr contract fee plus remaining ordinary
+research value**, which can legitimately be zero. The scientific contribution
+is recorded in the same campaign ledger used by Research and Sell. The contract
+is finite, not refreshed by changing tabs or revisiting the station.
+
+Readiness reflects actual current cargo. Selling, discarding or losing the
+container removes READY; a previous personal collection does not count as
+delivery. Sell details identify specimens matching an accepted request, but
+ordinary sales do not fulfil it or pay the contract fee. An accepted target
+stays fixed even if a newly generated board offer would choose another species.
+
 ## Implementation Map
 
 - `entities/biology/biosphere_generator.ts`: numeric environment adapter,
   independently seeded species/lineages and accessible regional habitats.
+- `entities/biology/habitat.ts`: numeric site classification, constrained
+  communities and independently seeded local ecological patches.
 - `entities/biology/biology_types.ts`: versioned identities and persisted records.
 - `entities/biology/stun_model.ts`: shared fictional dose-response model and
   uncertainty projection; these probabilities are gameplay priors, not measured
@@ -161,7 +221,12 @@ take them to an inhabited port. Scientific data remains in **Research**.
   rot-js routing. NPCs cannot occupy the reserved return point.
 - `systems/specimen_cargo_system.ts`: whole-container validation and transfer.
 - `core/xenobiology_service.ts`: evidence, scientific recognition and marginal
-  campaign research awards.
+  campaign research awards, including zero-value scientific acceptance only
+  when explicitly delivered under a contract.
+- `core/biological_contracts.ts`: real compatible reference offers and atomic
+  whole-container delivery across mission, research, cargo and credit owners.
+- `core/mission_board.ts` and `core/mission_progress.ts`: typed scan/specimen
+  objectives, fixed accepted targets, and cargo-derived delivery readiness.
 - `core/modes/surface_encounter_controller.ts`: mutually exclusive driving,
   operations, weapon preparation, confirmation and dossiers. Its modals use the
   existing `InterfaceModeController`'s `xenobiology` owner.
@@ -173,9 +238,11 @@ take them to an inhabited port. Scientific data remains in **Research**.
   terrain appearance and independently seeded four-colour pixel silhouettes.
 - `core/encounter_actions.ts`: one action list shared by hotkeys and the bottom
   command bar, rather than a second boxed operations menu.
-- `core/save_game.ts` and `entities/biology/biology_validation.ts`: schema 11,
-  migration from 10 and validation of species, actor lifecycle, demand,
-  containers, ownership and active-location consistency.
+- `core/save_game.ts` and `entities/biology/biology_validation.ts`: schema 12,
+  migration from 11 preserving existing specimens/fields, and validation of
+  habitat/group metadata, mission objectives, species, actor lifecycle, demand,
+  containers, ownership and active-location consistency. Earlier saves still
+  migrate through the existing chain; unrelated world identities do not change.
 
 Regional longitude wraps and latitude stops at the poles. Movement, display,
 mining, scanning, habitat proximity and ship bearings now follow that convention.

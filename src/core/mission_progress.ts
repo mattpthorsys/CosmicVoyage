@@ -4,7 +4,9 @@ import {
   isMissionObjectiveCompletedByDiscovery,
   MissionStatus,
   StarbaseMission,
+  matchesSpecimenObjective,
 } from './mission_board';
+import type { SpecimenContainer } from '../entities/biology/biology_types';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { StellarBody } from '../entities/stellar_body';
@@ -32,18 +34,33 @@ export class MissionProgressService {
   private missionObjectiveProgress: Record<string, string[]> = {};
 
   /** Returns the current status of a generated mission. */
-  getStatus(mission: StarbaseMission): MissionStatus {
-    return getMissionStatus(mission, {
+  getStatus(mission: StarbaseMission, specimens: readonly SpecimenContainer[] = []): MissionStatus {
+    const status = getMissionStatus(mission, {
       acceptedMissionIds: this.acceptedMissionIds,
       readyMissionIds: this.readyMissionIds,
       completedMissionIds: this.completedMissionIds,
     });
+    if (
+      (status === 'ACTIVE' || status === 'READY') &&
+      mission.objectives.some((objective) => objective.kind === 'specimen')
+    ) {
+      const counts = this.getObjectiveCounts(mission, specimens);
+      return counts.completed === counts.total ? 'READY' : 'ACTIVE';
+    }
+    return status;
   }
 
   /** Returns completed and total objective counts for one mission. */
-  getObjectiveCounts(mission: StarbaseMission): { completed: number; total: number } {
+  getObjectiveCounts(
+    mission: StarbaseMission,
+    specimens: readonly SpecimenContainer[] = []
+  ): { completed: number; total: number } {
     return {
-      completed: this.missionObjectiveProgress[mission.id]?.length ?? 0,
+      completed: mission.objectives.filter((objective) =>
+        objective.kind === 'specimen'
+          ? specimens.some((container) => matchesSpecimenObjective(objective, container))
+          : this.missionObjectiveProgress[mission.id]?.includes(objective.id)
+      ).length,
       total: mission.objectives.length,
     };
   }
@@ -52,7 +69,7 @@ export class MissionProgressService {
   accept(mission: StarbaseMission): boolean {
     if (this.getStatus(mission) !== 'AVAILABLE') return false;
     this.acceptedMissionIds.add(mission.id);
-    this.activeMissions[mission.id] = mission;
+    this.activeMissions[mission.id] = structuredClone(mission);
     this.missionObjectiveProgress[mission.id] = [];
     return true;
   }
@@ -84,9 +101,14 @@ export class MissionProgressService {
   }
 
   /** Hands in one ready mission at its issuing starbase. */
-  handIn(missionId: string, starbaseName: string, starbaseId?: string): StarbaseMission | null {
+  handIn(
+    missionId: string,
+    starbaseName: string,
+    starbaseId?: string,
+    specimen?: SpecimenContainer
+  ): StarbaseMission | null {
     const mission = this.activeMissions[missionId];
-    if (!mission || !this.readyMissionIds.has(missionId)) return null;
+    if (!mission || this.getStatus(mission, specimen ? [specimen] : []) !== 'READY') return null;
     if (mission.originStarbaseId) {
       if (mission.originStarbaseId !== starbaseId) return null;
     } else if (mission.originStarbaseName !== starbaseName) {
@@ -99,14 +121,40 @@ export class MissionProgressService {
     return mission;
   }
 
+  /** Reads the accepted contract so changing generation or board readiness cannot change its target. */
+  getMission(missionId: string): StarbaseMission | undefined {
+    return this.activeMissions[missionId];
+  }
+
+  /** Retains accepted contracts on their issuing board even when targets are no longer in the field. */
+  getStationMissions(starbaseName: string, starbaseId: string): StarbaseMission[] {
+    return Object.values(this.activeMissions).filter((mission) =>
+      mission.originStarbaseId
+        ? mission.originStarbaseId === starbaseId
+        : mission.originStarbaseName === starbaseName
+    );
+  }
+
+  /** Returns active requests relevant to an encountered species at its actual collection site. */
+  getSpecimenRequests(speciesId: string, siteId: string): StarbaseMission[] {
+    return Object.values(this.activeMissions).filter((mission) =>
+      mission.objectives.some(
+        (objective) =>
+          objective.kind === 'specimen' && objective.speciesId === speciesId && objective.siteId === siteId
+      )
+    );
+  }
+
   /** Returns the number of currently active contracts, including those ready for hand-in. */
   getActiveCount(): number {
     return Object.keys(this.activeMissions).length;
   }
 
   /** Returns the number of contracts ready to hand in. */
-  getReadyCount(): number {
-    return this.readyMissionIds.size;
+  getReadyCount(specimens: readonly SpecimenContainer[] = []): number {
+    return Object.values(this.activeMissions).filter(
+      (mission) => this.getStatus(mission, specimens) === 'READY'
+    ).length;
   }
 
   /** Returns JSON-compatible mission progression state. */

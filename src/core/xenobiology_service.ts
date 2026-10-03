@@ -82,10 +82,15 @@ export class XenobiologyService {
     return { credits: novelty + additional, entitlement, contribution };
   }
 
-  /** Commits one contribution after the caller validates physical ownership and buyer capability. */
-  submit(species: SpeciesDefinition, container?: SpecimenContainer): number {
+  /** Records an accepted contribution; only explicit contract delivery can accept zero-value material. */
+  submit(species: SpeciesDefinition, container?: SpecimenContainer, acceptZeroValue = false): number {
     const quote = this.quote(species, container);
-    if (!quote.contribution || quote.credits <= 0) return 0;
+    if (
+      !quote.contribution ||
+      (quote.credits <= 0 && !acceptZeroValue) ||
+      this.state.demand[species.id]?.contributions.includes(quote.contribution)
+    )
+      return 0;
     const ledger: ResearchDemandRecord = this.state.demand[species.id] ?? {
       entitlementPaid: 0,
       samples: 0,
