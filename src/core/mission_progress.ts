@@ -4,7 +4,7 @@ import {
   isMissionObjectiveCompletedByDiscovery,
   MissionStatus,
   StarbaseMission,
-  matchesSpecimenObjective,
+  allocateSpecimenObjectives,
 } from './mission_board';
 import type { SpecimenContainer } from '../entities/biology/biology_types';
 import { Planet } from '../entities/planet';
@@ -59,13 +59,24 @@ export class MissionProgressService {
     specimens: readonly SpecimenContainer[] = []
   ): { completed: number; total: number } {
     return {
-      completed: mission.objectives.filter((objective) =>
-        objective.kind === 'specimen'
-          ? specimens.some((container) => matchesSpecimenObjective(objective, container))
-          : this.missionObjectiveProgress[mission.id]?.includes(objective.id)
-      ).length,
+      completed: this.getCompletedObjectiveIds(mission, specimens).length,
       total: mission.objectives.length,
     };
+  }
+
+  /** Combines durable analysis packets and uniquely allocated physical contributions for all readouts. */
+  getCompletedObjectiveIds(mission: StarbaseMission, specimens: readonly SpecimenContainer[] = []): string[] {
+    const allocated = allocateSpecimenObjectives(
+      mission.objectives.filter((objective) => objective.kind === 'specimen'),
+      specimens
+    );
+    return mission.objectives
+      .filter((objective) =>
+        objective.kind === 'specimen'
+          ? allocated.has(objective.id)
+          : this.missionObjectiveProgress[mission.id]?.includes(objective.id)
+      )
+      .map((objective) => objective.id);
   }
 
   /** Accepts an available mission and returns whether state changed. */
@@ -126,10 +137,11 @@ export class MissionProgressService {
     missionId: string,
     starbaseName: string,
     starbaseId?: string,
-    specimen?: SpecimenContainer
+    specimen?: SpecimenContainer | readonly SpecimenContainer[]
   ): StarbaseMission | null {
     const mission = this.activeMissions[missionId];
-    if (!mission || this.getStatus(mission, specimen ? [specimen] : []) !== 'READY') return null;
+    const specimens = specimen ? ('id' in specimen ? [specimen] : specimen) : [];
+    if (!mission || this.getStatus(mission, specimens) !== 'READY') return null;
     if (mission.originStarbaseId) {
       if (mission.originStarbaseId !== starbaseId) return null;
     } else if (mission.originStarbaseName !== starbaseName) {

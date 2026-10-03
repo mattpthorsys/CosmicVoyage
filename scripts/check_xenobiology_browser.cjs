@@ -508,7 +508,8 @@ async function main() {
         research
       ).filter(
         (mission) =>
-          mission.objectives[0].kind === 'biology-data' || mission.objectives[0].requiredKind === 'tissue'
+          mission.objectives.length === 1 &&
+          (mission.objectives[0].kind === 'biology-data' || mission.objectives[0].requiredKind === 'tissue')
       );
       if (offers.length !== 2) throw new Error('Missing analysis/tissue requests.');
       const objective = offers[0].objectives[0];
@@ -575,6 +576,197 @@ async function main() {
       'Repeated alternative delivery paid again.'
     );
     await capture('research-alternatives-settled');
+    // Keep real generated size classes and source identities, positioning only the two contacts for a short walkthrough.
+    const comparative = await page.evaluate(async (initial) => {
+      const { createComparativeBiologicalContracts } = await import('/src/core/comparative_biology.ts');
+      const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
+      const { individualSizeClass } = await import('/src/entities/biology/biology_rules.ts');
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+      const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const prng = new PRNG(initial.save.seed);
+      const generator = new SystemDataGenerator(prng);
+      const system = new SolarSystem(
+        generator.getSystemProperties(initial.save.location.worldX, initial.save.location.worldY),
+        initial.save.location.worldX,
+        initial.save.location.worldY,
+        prng
+      );
+      const research = new XenobiologyService();
+      const offer = createComparativeBiologicalContracts(
+        { ...initial.station, kind: 'starbase' },
+        initial.systemName,
+        [initial.biosphere],
+        {},
+        [],
+        research
+      ).find((mission) => mission.id.endsWith('size-comparison'));
+      if (!offer) throw new Error('No obtainable comparative size request.');
+      const mission = resolveMissionNavigation(offer, system, [initial.biosphere]);
+      const site = initial.biosphere.sites.find((entry) => entry.id === mission.objectives[0].siteId);
+      const field = createEncounter(initial.biosphere, site);
+      const contacts = mission.objectives.map((objective, index) => {
+        const actor = field.individuals.find(
+          (entry) =>
+            entry.speciesId === objective.speciesId &&
+            individualSizeClass(entry.sizeScale) === objective.sizeClass
+        );
+        if (!actor || field.species.find((entry) => entry.id === actor.speciesId).behaviour !== 'sessile')
+          throw new Error('Expected obtainable sessile size reference.');
+        actor.x = actor.homeX = 16 + index;
+        actor.y = actor.homeY = 20;
+        return actor;
+      });
+      field.individuals = contacts;
+      field.terrain[20] = field.terrain[20].slice(0, 16) + '..' + field.terrain[20].slice(18);
+      const save = structuredClone(initial.save);
+      save.location.kind = 'planet';
+      save.player.position.surfaceX = site.x;
+      save.player.position.surfaceY = site.y;
+      save.player.terrainVehicle.deployed = true;
+      research.snapshot.fields[site.id] = field;
+      research.snapshot.activeSiteId = site.id;
+      save.xenobiology = research.createSnapshot();
+      const progress = new MissionProgressService();
+      progress.accept(mission);
+      Object.assign(save, progress.createSnapshot());
+      return { save, mission, sourceIds: contacts.map((actor) => actor.id) };
+    }, fixture);
+    await load(comparative.save);
+    await press('v');
+    await press('s');
+    const partial = await checkpoint();
+    assert.equal(partial.player.terrainVehicle.cargoHold.specimens.length, 1);
+    assert.equal(partial.player.terrainVehicle.cargoHold.specimens[0].sourceId, comparative.sourceIds[0]);
+    await press('j');
+    await page.waitForTimeout(1700);
+    await capture('comparative-partial-journal');
+    await page.setViewportSize({ width: 480, height: 800 });
+    await capture('narrow-comparative-journal');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await press('Escape');
+    await press('x');
+    await page.waitForTimeout(1700);
+    await capture('comparative-partial-science-log');
+    await press('Escape');
+    const partialDock = structuredClone(partial);
+    partialDock.xenobiology.activeSiteId = null;
+    partialDock.player.terrainVehicle.deployed = false;
+    partialDock.location = { ...docked.location };
+    await load(partialDock);
+    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    await press('ArrowDown');
+    await press('Enter');
+    const refused = await checkpoint();
+    assert.equal(
+      refused.player.resources.credits,
+      partialDock.player.resources.credits,
+      'Partial pair paid a reward.'
+    );
+    assert.equal(
+      refused.player.terrainVehicle.cargoHold.specimens.length + refused.player.cargoHold.specimens.length,
+      1,
+      'Partial delivery consumed a container.'
+    );
+    assert(!refused.completedMissionIds.includes(comparative.mission.id), 'Partial study marked complete.');
+    await capture('comparative-partial-refused');
+    await load(partial);
+    await press('Tab');
+    await press('s');
+    const complete = await checkpoint();
+    assert.equal(complete.player.terrainVehicle.cargoHold.specimens.length, 2);
+    assert.deepEqual(
+      complete.player.terrainVehicle.cargoHold.specimens.map((container) => container.sourceId).sort(),
+      [...comparative.sourceIds].sort()
+    );
+    await press('x');
+    await page.waitForTimeout(1700);
+    await capture('comparative-complete-science-log');
+    complete.xenobiology.activeSiteId = null;
+    complete.player.terrainVehicle.deployed = false;
+    complete.location = { ...docked.location };
+    await load(complete);
+    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    await press('ArrowDown');
+    await press('Enter');
+    const comparisonDelivered = await checkpoint();
+    assert(
+      comparisonDelivered.completedMissionIds.includes(comparative.mission.id),
+      'Paired delivery did not complete.'
+    );
+    assert.equal(
+      comparisonDelivered.player.terrainVehicle.cargoHold.specimens.length +
+        comparisonDelivered.player.cargoHold.specimens.length,
+      0
+    );
+    metrics.comparativeAward =
+      comparisonDelivered.player.resources.credits - complete.player.resources.credits;
+    assert(
+      metrics.comparativeAward >= comparative.mission.rewardCredits,
+      'Comparative contract fee missing.'
+    );
+    await capture('comparative-study-settled');
+    // Use an accepted, resolved two-habitat request to check destination cycling through the actual orbital interface.
+    const habitatNavigation = await page.evaluate(async (initial) => {
+      const { createComparativeBiologicalContracts } = await import('/src/core/comparative_biology.ts');
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const prng = new PRNG(initial.save.seed);
+      const system = new SolarSystem(
+        new SystemDataGenerator(prng).getSystemProperties(
+          initial.save.location.worldX,
+          initial.save.location.worldY
+        ),
+        initial.save.location.worldX,
+        initial.save.location.worldY,
+        prng
+      );
+      const offer = createComparativeBiologicalContracts(
+        { ...initial.station, kind: 'starbase' },
+        initial.systemName,
+        [initial.biosphere],
+        {},
+        [],
+        new XenobiologyService()
+      ).find((mission) => mission.id.endsWith('habitat-comparison'));
+      if (!offer) return null; // Some genuine terrain seeds lack two contrasting suitable habitats.
+      const mission = resolveMissionNavigation(offer, system, [initial.biosphere]);
+      const save = structuredClone(initial.save);
+      save.acceptedMissionIds = [mission.id];
+      save.activeMissions = { [mission.id]: mission };
+      save.missionObjectiveProgress = { [mission.id]: [] };
+      return { save, mission };
+    }, fixture);
+    if (habitatNavigation) {
+      await load(habitatNavigation.save);
+      await press('j');
+      await page.waitForTimeout(1700);
+      const firstDestination = await capture('comparative-first-habitat');
+      await press('b');
+      const secondDestination = await capture('comparative-second-habitat');
+      assert.notEqual(
+        firstDestination.centreHash,
+        secondDestination.centreHash,
+        'Destination cycling left stale terminal pixels.'
+      );
+      await press('Enter');
+      await capture('comparative-second-landing-target');
+      await press('Enter');
+      const landed = await checkpoint();
+      const target = habitatNavigation.mission.objectives[1].location.surface;
+      assert.equal(landed.location.kind, 'planet');
+      assert.deepEqual(
+        [landed.player.position.surfaceX, landed.player.position.surfaceY],
+        [target.x, target.y]
+      );
+      metrics.secondHabitatNavigation = true;
+    } else metrics.secondHabitatNavigation = 'no contrasting habitats on representative generated colony';
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify(

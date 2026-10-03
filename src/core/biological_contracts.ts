@@ -7,10 +7,11 @@ import type { Starbase } from '../entities/starbase';
 import type { CargoComponent, ResourceComponent } from './components';
 import { createEncounter, individualProfile } from '../systems/surface_encounter_system';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
-import { matchesSpecimenObjective, type StarbaseMission } from './mission_board';
+import { allocateSpecimenObjectives, type StarbaseMission } from './mission_board';
 import type { MissionProgressService } from './mission_progress';
 import type { XenobiologyService } from './xenobiology_service';
 import { createBiologicalReference } from './biological_mission_guidance';
+import { createComparativeBiologicalContracts } from './comparative_biology';
 
 export interface BiologicalDeliveryContext {
   readonly station: Pick<Starbase, 'id' | 'name' | 'kind'>;
@@ -20,10 +21,27 @@ export interface BiologicalDeliveryContext {
 
 export type BiologicalDeliveryResult =
   | { readonly ok: false; readonly message: string }
-  | { readonly ok: true; readonly message: string; readonly credits: number; readonly containerId?: string };
+  | {
+      readonly ok: true;
+      readonly message: string;
+      readonly credits: number;
+      readonly containerId?: string;
+      readonly containerIds?: readonly string[];
+    };
 
 /** Formats the actual acquisition requirement for field, journal and station readouts. */
 export function biologicalRequirement(mission: StarbaseMission): string {
+  if (mission.objectives.length > 1) {
+    if (mission.objectives.every((objective) => objective.kind === 'biology-data'))
+      return `${mission.objectives.length} HABITAT ANALYSES / no cargo required`;
+    return mission.objectives
+      .map((objective) =>
+        objective.kind === 'specimen'
+          ? `${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
+          : 'ANALYSIS'
+      )
+      .join(' + ');
+  }
   const objective = mission.objectives[0];
   return objective?.kind === 'specimen'
     ? `${objective.requiredKind.toUpperCase()} / quality >=${Math.round(objective.minimumQuality * 100)}%`
@@ -196,10 +214,13 @@ export function createBiologicalContracts(
     }
     if (offer) offers.push(offer);
   }
-  return offers;
+  return [
+    ...offers,
+    ...createComparativeBiologicalContracts(station, systemName, biospheres, fields, owned, research),
+  ];
 }
 
-/** Validates contribution ownership before settling field data or one whole specimen atomically. */
+/** Validates every contribution before settling a complete request and consuming its assigned containers atomically. */
 export function deliverBiologicalContract(
   progress: MissionProgressService,
   research: XenobiologyService,
@@ -210,8 +231,8 @@ export function deliverBiologicalContract(
   if (
     !mission ||
     mission.type !== 'xenobiology' ||
-    mission.objectives.length !== 1 ||
-    mission.objectives[0].kind === 'scan'
+    !mission.objectives.length ||
+    mission.objectives.some((objective) => objective.kind === 'scan')
   )
     return { ok: false, message: 'No active biological delivery request.' };
   if (context.station.kind === 'automated-depot')
@@ -222,61 +243,73 @@ export function deliverBiologicalContract(
       : mission.originStarbaseName !== context.station.name
   )
     return { ok: false, message: `Return the requested contribution to ${mission.originStarbaseName}.` };
-  const objective = mission.objectives[0];
-  if (objective.kind === 'biology-data') {
-    const evidence = research.evidence(objective.speciesId);
-    if (
-      !evidence ||
-      evidence.level < objective.requiredEvidenceLevel ||
-      progress.getStatus(mission) !== 'READY'
-    )
-      return { ok: false, message: 'Detailed field analysis from the requested habitat is not recorded.' };
-    const settled = progress.handIn(missionId, context.station.name, context.station.id);
-    if (!settled) return { ok: false, message: 'Field analysis is not ready for settlement.' };
-    const researchCredits = research.submit(evidence.species, undefined, true);
-    const credits = settled.rewardCredits + researchCredits;
-    context.resources.credits += credits;
-    return {
-      ok: true,
-      credits,
-      message: `Field analysis accepted: ${evidence.species.name}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
-    };
-  }
   const containers = context.holds.flatMap((hold) => hold.specimens ?? []);
-  const container = containers.find((entry) => matchesSpecimenObjective(objective, entry));
-  if (!container)
-    return {
-      ok: false,
-      message: `Requested ${objective.requiredKind} specimen is not aboard, or its habitat/quality does not match.`,
-    };
-  if (containers.filter((entry) => entry.id === container.id).length !== 1)
-    return { ok: false, message: 'Specimen ownership is ambiguous; delivery refused.' };
-  const field = research.snapshot.fields[container.siteId];
-  const source = field?.individuals.find((actor) => actor.id === container.sourceId);
-  if (
-    !source ||
-    (container.kind === 'tissue' ? !source.sampled : source.state !== 'collected') ||
-    container.sizeScale !== source.sizeScale ||
-    source.speciesId !== container.species.id ||
-    field.bodyId !== container.species.bodyId ||
-    (research.evidence(container.species.id)?.level ?? 0) < 2
-  )
-    return { ok: false, message: 'Specimen collection provenance cannot be confirmed.' };
-  const contribution = `${container.sourceId}:${container.kind}`;
-  if (research.snapshot.demand[container.species.id]?.contributions.includes(contribution))
-    return { ok: false, message: 'This specimen has already been submitted.' };
+  const allocated = allocateSpecimenObjectives(
+    mission.objectives.filter((objective) => objective.kind === 'specimen'),
+    containers
+  );
+  const completed = progress.getCompletedObjectiveIds(mission, containers);
+  for (const objective of mission.objectives) {
+    if (objective.kind === 'scan') return { ok: false, message: 'Unsupported biological objective.' };
+    if (objective.kind === 'biology-data') {
+      if (
+        !completed.includes(objective.id) ||
+        (research.evidence(objective.speciesId)?.level ?? 0) < objective.requiredEvidenceLevel
+      )
+        return { ok: false, message: `Detailed analysis not recorded: ${objective.targetLabel}.` };
+      continue;
+    }
+    const container = allocated.get(objective.id);
+    if (!container)
+      return {
+        ok: false,
+        message: `Contribution missing: ${objective.targetLabel}. Cargo, size and quality must match.`,
+      };
+    if (
+      containers.filter(
+        (entry) =>
+          entry.id === container.id ||
+          (entry.sourceId === container.sourceId && entry.kind === container.kind)
+      ).length !== 1
+    )
+      return { ok: false, message: 'Specimen ownership is ambiguous; delivery refused.' };
+    const field = research.snapshot.fields[container.siteId];
+    const source = field?.individuals.find((actor) => actor.id === container.sourceId);
+    if (
+      !source ||
+      (container.kind === 'tissue' ? !source.sampled : source.state !== 'collected') ||
+      container.sizeScale !== source.sizeScale ||
+      source.speciesId !== container.species.id ||
+      field.bodyId !== container.species.bodyId ||
+      (research.evidence(container.species.id)?.level ?? 0) < 2
+    )
+      return { ok: false, message: 'Specimen collection provenance cannot be confirmed.' };
+    if (
+      research.snapshot.demand[container.species.id]?.contributions.includes(
+        `${container.sourceId}:${container.kind}`
+      )
+    )
+      return { ok: false, message: 'This specimen has already been submitted.' };
+  }
   // No callbacks run between preparation and commit. Every ordinary refusal occurs above.
-  const settled = progress.handIn(missionId, context.station.name, context.station.id, container);
+  const selected = [...allocated.values()];
+  const settled = progress.handIn(missionId, context.station.name, context.station.id, selected);
   if (!settled) return { ok: false, message: 'Contract delivery is not ready for settlement.' };
-  const researchCredits = research.submit(container.species, container, true);
+  let researchCredits = 0;
+  for (const objective of mission.objectives)
+    if (objective.kind === 'biology-data')
+      researchCredits += research.submit(research.evidence(objective.speciesId)!.species, undefined, true);
+  for (const container of selected) researchCredits += research.submit(container.species, container, true);
+  const consumed = new Set(selected.map((container) => container.id));
   for (const hold of context.holds)
-    hold.specimens = (hold.specimens ?? []).filter((entry) => entry.id !== container.id);
+    if (selected.length) hold.specimens = (hold.specimens ?? []).filter((entry) => !consumed.has(entry.id));
   const credits = settled.rewardCredits + researchCredits;
   context.resources.credits += credits;
   return {
     ok: true,
     credits,
-    containerId: container.id,
-    message: `${container.kind === 'live' ? 'Live' : 'Tissue'} reference accepted: ${container.species.name}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
+    containerId: selected.length === 1 ? selected[0].id : undefined,
+    containerIds: selected.map((container) => container.id),
+    message: `${mission.objectives.length > 1 ? `Comparative study accepted (${mission.objectives.length} contributions)` : selected.length ? `${selected[0].kind === 'live' ? 'Live' : 'Tissue'} reference accepted: ${selected[0].species.name}` : 'Field analysis accepted'}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
   };
 }

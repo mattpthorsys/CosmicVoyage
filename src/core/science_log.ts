@@ -2,6 +2,8 @@ import type { BiologyOrigin, SpeciesEvidence, SpecimenContainer } from '../entit
 import type { InputManager } from './input_manager';
 import type { MissionJournalReturn } from './mission_journal';
 import type { StarbaseMission } from './mission_board';
+import { allocateSpecimenObjectives } from './mission_board';
+import { individualSizeLabel, individualPhysicalProfile } from '../entities/biology/biology_rules';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { createBiologicalDossier } from './xenobiology_ui';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
@@ -121,7 +123,8 @@ export class ScienceLog {
     cols: number,
     rows: number,
     canLand: boolean,
-    missions: readonly StarbaseMission[] = []
+    missions: readonly StarbaseMission[] = [],
+    objectiveProgress: Readonly<Record<string, readonly string[]>> = {}
   ): TextModalTableModel {
     const entries = this.entries(service, cargo);
     const entry = this.selected(entries);
@@ -172,8 +175,46 @@ export class ScienceLog {
           mission.objectives.some(
             (objective) => objective.kind !== 'scan' && objective.speciesId === entry.species.id
           )
-        )
+        ) {
           line(`Accepted request: ${mission.title} / return to ${mission.originStarbaseName}`, 'green');
+          if (mission.objectives.length > 1) {
+            line('COMPARATIVE EVIDENCE', 'cyan', true);
+            const allocated = allocateSpecimenObjectives(
+              mission.objectives.filter((objective) => objective.kind === 'specimen'),
+              cargo
+            );
+            for (const objective of mission.objectives) {
+              if (objective.kind === 'scan' || objective.speciesId !== species.id) continue;
+              const complete =
+                objectiveProgress[mission.id]?.includes(objective.id) ??
+                (objective.kind === 'specimen'
+                  ? allocated.has(objective.id)
+                  : entry.origins?.some(
+                      (record) => record.surface.siteId === objective.siteId && record.level === 3
+                    ));
+              line(
+                `${complete ? 'COMPLETE' : 'NEEDED'} / ${objective.targetLabel}`,
+                complete ? 'green' : 'amber'
+              );
+              const container = allocated.get(objective.id);
+              if (container && complete)
+                line(
+                  `${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}%`,
+                  'cyan'
+                );
+              if (objective.kind === 'biology-data' && complete) {
+                const profile = service.snapshot.fields[objective.siteId]?.species.find(
+                  (candidate) => candidate.id === species.id
+                );
+                if (profile)
+                  line(
+                    `Recorded environment ${profile.temperatureK.toFixed(0)} K / ${profile.pressureBar.toFixed(2)} bar`,
+                    'cyan'
+                  );
+              }
+            }
+          }
+        }
       if (entry.level >= 2) {
         line(
           `Preservation: ${stasisCompatibility(species, stasisClass) ?? 'typical individual compatible'}`,

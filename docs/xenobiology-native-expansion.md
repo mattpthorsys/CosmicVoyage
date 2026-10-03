@@ -21,7 +21,17 @@ requested model handoff at verification.
    defending, disengage when the rover withdraws, then return home. Benign
    contacts alternate resting/foraging; dossiers and sensors report visible
    activity. Reading still advances neither actors nor recovery timers.
-4. Comparative expeditions: pending.
+4. Comparative expeditions: implemented, verification pending. Staffed stations
+   can issue a small/large tissue pair and a two-habitat analysis pair using real
+   available contacts or acquired site records. Delivery validates every
+   contribution before consuming any cargo or paying once. The existing shared
+   scientific-demand ledger still governs marginal value. Journal and science
+   log show each outstanding contribution; `B` chooses distinct mission
+   destinations. Save schema 14 migrates earlier stored fields/evidence/cargo.
+
+Checkpoints: `28c5f12` native families, `64b1721` anatomy, `17bfaa9`
+activity/defence, and `45f53c3` guaranteed native movement poses. The comparative
+checkpoint contains its regression cases and browser walkthrough extension.
 
 ## Generation Policy
 
@@ -40,9 +50,65 @@ labels; species, source and contribution identities remain authoritative.
 
 ## Verification Handoff
 
-Run the native-family generation, anatomy rendering, encounter behaviour,
-comparative-contract, mission guidance, journal, science-log and save-validation
-regressions together, then the full project check and real-font browser flow.
-Verify deterministic persistence, atomic delivery/refusals, finite rewards,
-paused reading, marker placement and narrow layouts. The later stages will add
-their exact commands and personal-playthrough steps here before handoff.
+No unit tests, typechecks or browser data collection for these four stages have
+been run yet, to allow the requested switch to Luna before verification.
+Formatting is complete; this is not a claim of passing checks.
+
+Start with the focused regressions, then the full existing project gate:
+
+```bash
+./node_modules/.bin/vitest --run src/tests/generation/native_biosphere.test.ts src/tests/generation/biosphere_generator.test.ts src/tests/generation/habitat.test.ts src/tests/systems/organism_behaviour.test.ts src/tests/systems/surface_encounter.test.ts src/tests/systems/individual_variation.test.ts src/tests/rendering/encounter_assets.test.ts src/tests/rendering/surface_encounter_renderer.test.ts src/tests/core/comparative_biology.test.ts src/tests/core/biological_contracts.test.ts src/tests/core/biological_mission_guidance.test.ts src/tests/core/mission_progress.test.ts src/tests/core/mission_journal.test.ts src/tests/core/mission_journal_integration.test.ts src/tests/core/science_log.test.ts src/tests/core/interface/save_game.test.ts
+npm run check
+```
+
+With Vite running on an available port, exercise the real fonts and controls:
+
+```bash
+COSMIC_URL=http://127.0.0.1:5174/ PLAYWRIGHT_MODULE=/home/mpalmer/.cache/ms-playwright-go/1.57.0/package node scripts/check_xenobiology_browser.cjs
+```
+
+The extended script uses actual managed colony populations, including a real
+small/large pair. It checks partial refusal, complete settlement and journal/log
+captures at desktop and narrow widths. A second-habitat navigation check runs
+only if the generated colony actually has contrasting suitable habitats; its
+metrics explicitly report an absent fixture rather than pretending it passed.
+The unit fixtures cover contrasting habitats deterministically.
+
+Inspect `/tmp/cosmic-xenobiology/comparative-*.png` and
+`narrow-comparative-journal.png` for stale destination pixels, clipped text,
+modal leakage, readable completion colours and size markers. Also review native
+family sprites and defensive poses in a controlled eligible native field; the
+managed colony browser scene is not evidence of native visual variety.
+
+Fix failures in their owning modules. Do not change unrelated graphics snapshots
+to accommodate biology. Verify deterministic suspend/resume, bounded warning
+and return behaviour, loss of physical readiness on selling cargo, unique
+container assignment, finite demand, source provenance, version-13 migration,
+site-specific analysis, and paused terminal reading.
+
+## Personal Expedition
+
+1. Use new/unvisited habitats for newly generated native families. Old visited
+   fields keep their saved population. Native life remains occasional on suitable
+   liquid-water worlds; the starting managed colony is reliable for learning.
+2. At a staffed station accept **Comparative size reference** or
+   **Comparative habitat profile** when offered. No suitable contacts means no
+   offer; no population is manufactured to meet a contract.
+3. Open `J` in orbit. For a habitat pair, `B` cycles the two destinations.
+   `Enter` selects the chosen landing site; a later `Enter` lands normally.
+4. In the local field, `V` confirms species identity. `D` shows size, anatomy,
+   visible activity and requirement mismatches. Green `+` markers identify
+   remaining contributions, not every vaguely similar creature.
+5. For size comparison, approach within 7.5 m and use `S` on a SMALL and a LARGE
+   individual of the same requested species at the advertised habitat. Each
+   tissue sample needs at least 60% quality; neither requires stasis. These are
+   relative sizes, not necessarily juvenile/adult stages.
+6. For habitat comparison, use `A` within 25 m at each advertised habitat.
+   Detailed analysis elsewhere cannot supply the missing site packet. `X`
+   compares the acquired contributions and reports what remains outstanding.
+7. Read the defensive posture and withdraw from home territory to disengage.
+   Reading menus does not advance attacks, movement or recovery.
+8. Return to the issuer's **Research** or READY **Missions** entry. Deliver the
+   whole pair once: 1,000 Cr for tissue comparison or 1,100 Cr for habitat
+   comparison, plus only remaining ordinary research value. Attempting partial
+   delivery removes nothing. Ordinary Sell does not fulfil either contract.

@@ -12,6 +12,11 @@ still need personal playtesting.
 See [the expansion verification handoff](xenobiology-expansion-verification.md)
 for a personal playthrough and the automated/browser checks.
 
+The subsequent native-family, inherited anatomy, readable activity/defence and
+comparative-research additions are implemented but not yet verified. Their
+current checkpoints, verification commands and personal expedition are in
+[the native expansion handoff](xenobiology-native-expansion.md).
+
 ## First Expedition
 
 1. Visit the colony in the guaranteed starting hub, one cell east of the new
@@ -55,6 +60,13 @@ nonaggressive. Behaviour still advances only through successful actions.
 
 Previously visited fields retain their saved composition and state. Their older
 layout is not regenerated, and captured organisms do not return on reentry.
+
+New native biospheres draw from three to five related structural groups, each
+with two habitat specialisations. Related forms share symmetry, covering,
+sensory plan, pigment and limb arrangement. Oxygen availability, gravity and
+temperature constrain mobile mass; low-oxygen communities are small and lack
+large aerobic predators. These are explicit conservative gameplay priors, not
+a predictive model of alien evolution. Introduced colony taxa remain familiar.
 
 ## Field Controls
 
@@ -195,7 +207,10 @@ in the field; observations, tissue and dead specimens are still alternatives.
 
 Most organisms are sessile, passive or skittish. Territorial organisms and
 ambushers can threaten rover armour, but an initial warning action does not also
-inflict damage. The crew remains inside the vehicle. Incapacitation is temporary;
+inflict damage. A defensive pose precedes attacks, and withdrawing from the
+organism's bounded home territory causes it to disengage and return. Passive
+contacts alternate resting/foraging, and the sensor reports visible activity.
+The crew remains inside the vehicle. Incapacitation is temporary;
 recovery time runs on the local action clock. Repeated stun exposure increases
 injury and mortality. Estimates narrow with better evidence.
 
@@ -308,10 +323,40 @@ contract cannot reset novelty. Accepted requirements appear in contact
 dossiers, the science log and the mission journal. Ordinary sales do not
 settle acquisition contracts.
 
+## Comparative Requests
+
+Staffed ports may offer two further finite studies when the requested contacts
+actually exist. **Comparative size reference** needs tissue from two distinct
+individuals of one species, one SMALL and one LARGE, at the same advertised
+habitat, both at least 60% quality. This pays **1,000 Cr plus remaining ordinary
+research value**. Tissue uses ordinary cargo space and needs no stasis. Size
+does not create a new species or restore novelty.
+
+**Comparative habitat profile** needs detailed analysis of the same species at
+two different advertised habitat kinds on one planet. Use `A` within 25 m at
+both; the two site-specific data packets require no cargo and pay **1,100 Cr
+plus remaining ordinary data value**. Existing qualifying site records count.
+The comparison describes observations, not proof of adaptation or causation.
+
+`J` shows COMPLETE/NEEDED beside each contribution. For distinct destinations,
+`B` chooses the habitat before Enter selects its orbital landing cursor. Two
+samples from one habitat do not create duplicate landing stops. `X` shows the
+comparison against acquired samples and records. Once a contribution is ready,
+field markers identify only the outstanding size or analysis requirement.
+
+Return to the issuing station and deliver through **Research**, or through
+**Missions** when READY. Every contribution is revalidated before settlement;
+partial delivery consumes nothing. Each objective requires its own container.
+Selling or losing a required sample removes readiness. Payments share the
+ordinary scientific-demand ledger, so neither paired submissions nor switching
+ports can renew novelty. Accepted targets remain fixed after generation changes.
+
 ## Implementation Map
 
 - `entities/biology/biosphere_generator.ts`: numeric environment adapter,
   independently seeded species/lineages and accessible regional habitats.
+- `entities/biology/native_biosphere.ts`: bounded inherited native groups,
+  environmental mass budgets and habitat specialisations.
 - `entities/biology/habitat.ts`: numeric site classification, constrained
   communities and independently seeded local ecological patches.
 - `entities/biology/biology_types.ts`: versioned identities and persisted records.
@@ -322,11 +367,15 @@ settle acquisition contracts.
   persistent populations, visibility, successful-command time and bounded
   rot-js routing. NPCs cannot occupy the reserved return point.
 - `systems/specimen_cargo_system.ts`: whole-container validation and transfer.
+- `systems/organism_behaviour.ts`: visible activity, bounded home defence,
+  warning and disengagement intent; no ecosystem or continuous NPC simulation.
 - `core/xenobiology_service.ts`: evidence, scientific recognition and marginal
   campaign research awards, including zero-value scientific acceptance only
   when explicitly delivered under a contract.
 - `core/biological_contracts.ts`: real compatible reference offers and atomic
   whole-container delivery across mission, research, cargo and credit owners.
+- `core/comparative_biology.ts`: obtainable size and habitat comparisons using
+  the same mission/evidence/cargo contracts, not a new quest framework.
 - `core/mission_board.ts` and `core/mission_progress.ts`: typed scan/specimen/data
   objectives, fixed accepted targets, site-specific analysis packets and
   cargo-derived physical delivery readiness.
@@ -346,8 +395,8 @@ settle acquisition contracts.
   terrain appearance and independently seeded four-colour pixel silhouettes.
 - `core/encounter_actions.ts`: one action list shared by hotkeys and the bottom
   command bar, rather than a second boxed operations menu.
-- `core/save_game.ts` and `entities/biology/biology_validation.ts`: schema 12,
-  migration from 11 preserving existing specimens/fields, and validation of
+- `core/save_game.ts` and `entities/biology/biology_validation.ts`: schema 14,
+  migration from earlier versions preserving existing specimens/fields, and validation of
   habitat/group metadata, mission objectives, species, actor lifecycle, demand,
   containers, ownership and active-location consistency. Earlier saves still
   migrate through the existing chain; unrelated world identities do not change.
@@ -377,6 +426,6 @@ to normal gameplay.
 Version one deliberately omits ecosystem simulation, exotic solvents,
 reproductive-material commodities, rare adaptation variants, articulated
 body construction, personal ground combat and a full phylogeny
-browser. Five small inherited groups and five behavioural archetypes establish
-the first loop. Long-session economy balance and player enjoyment still need
+browser. Small inherited groups and five behavioural archetypes establish
+the loop. Long-session economy balance and player enjoyment still need
 playtesting; automated verification cannot establish those.

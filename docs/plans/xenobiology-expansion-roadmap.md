@@ -5,6 +5,10 @@ passed automated and browser verification. The next authorised four steps
 (science log, expanded habitat and anatomy content, ordinary individual size
 variation, and analysis/tissue requests) also passed full automated and browser
 verification. See the [verification handoff](../xenobiology-expansion-verification.md).
+The subsequent native-family, inherited pixel anatomy, bounded defensive
+activity and comparative-research steps are now implemented, with verification
+pending the requested model handoff. See
+[native expansion checkpoints](../xenobiology-native-expansion.md).
 Later waves remain exploratory, not implementation commitments.
 Codebase baseline inspected: 2026-10-03. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
@@ -663,8 +667,10 @@ is not permission to generate physically incompatible life while waiting.
 ### Recommended next milestone: one coherent expedition
 
 This milestone has been explicitly authorised and its automated and browser
-verification passed. The next four additions are implemented but await their
-own verification handoff. The stages below document scope and acceptance gates rather than
+verification passed, as did the science log, individual sizes and
+analysis/tissue requests. Native inherited groups, their silhouettes, visible
+defensive activity and paired comparison requests are the current unverified
+extension. The stages below document scope and acceptance gates rather than
 claiming tested completion or instructing implementation of later waves.
 
 **Player decision:** choose how to approach a recognisable community and which

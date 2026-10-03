@@ -65,6 +65,7 @@ import { ScienceLog } from './science_log';
 import {
   getMissionLandingBody,
   getMissionLandingLocation,
+  getMissionLandingObjectiveIndices,
   getRecordedLandingBody,
   isMissionSystem,
   resolveMissionNavigation,
@@ -578,7 +579,11 @@ export class Game {
     return this.missionProgress
       .getActiveMissions()
       .filter((mission) => mission.type === 'xenobiology')
-      .map((mission) => ({ mission, status: this.missionProgress.getStatus(mission, specimens) }));
+      .map((mission) => ({
+        mission,
+        status: this.missionProgress.getStatus(mission, specimens),
+        completedObjectiveIds: this.missionProgress.getCompletedObjectiveIds(mission, specimens),
+      }));
   }
 
   /** Reconciles ship or rover specimen ownership before committing shared demand and payment. */
@@ -3132,7 +3137,15 @@ export class Game {
       this.renderer.getGridCols(),
       this.renderer.getGridRows(),
       !!this.getScienceLandingBody(),
-      this.missionProgress.getActiveMissions()
+      this.missionProgress.getActiveMissions(),
+      Object.fromEntries(
+        this.missionProgress
+          .getActiveMissions()
+          .map((mission) => [
+            mission.id,
+            this.missionProgress.getCompletedObjectiveIds(mission, this.ownedSpecimens),
+          ])
+      )
     );
   }
 
@@ -3189,6 +3202,7 @@ export class Game {
       mission,
       status: this.missionProgress.getStatus(mission, specimens),
       ...this.missionProgress.getObjectiveCounts(mission, specimens),
+      completedObjectiveIds: this.missionProgress.getCompletedObjectiveIds(mission, specimens),
     }));
   }
 
@@ -3223,14 +3237,16 @@ export class Game {
     const system = this.stateManager.currentSystem;
     const parent = this.stateManager.currentOrbitReferencePlanet;
     return mission && system && parent && this.stateManager.state === 'orbit'
-      ? getMissionLandingBody(mission, system, parent)
+      ? getMissionLandingBody(mission, system, parent, this.missionJournal.landingObjectiveIndex(mission))
       : null;
   }
 
   /** Prepares the selected mission's landing cursor, never entering orbit or landing automatically. */
   private selectMissionLandingSite(mission: StarbaseMission | undefined): void {
     const body = this.getJournalLandingBody(mission);
-    const site = mission && getMissionLandingLocation(mission)?.surface;
+    const site =
+      mission &&
+      getMissionLandingLocation(mission, this.missionJournal.landingObjectiveIndex(mission))?.surface;
     if (!body || !site) {
       this.missionJournal.notice = !site
         ? 'No specific landing coordinates required by this contract.'
@@ -7299,6 +7315,7 @@ export class Game {
       return [
         'mission-journal',
         this.missionJournal.selection,
+        this.missionJournal.destinationIndex,
         this.missionJournal.viewOffset,
         this.missionJournal.notice,
         this.missionJournal.reveal.progress,
@@ -7806,6 +7823,9 @@ export class Game {
           commandButton('next', 'Next', 'MOVE_RIGHT', { key: 'Right' }),
           commandButton('scroll-up', 'Scroll up', 'MOVE_UP', { key: 'Up' }),
           commandButton('scroll-down', 'Scroll down', 'MOVE_DOWN', { key: 'Down' }),
+          ...(selected && getMissionLandingObjectiveIndices(selected.mission).length > 1
+            ? [commandButton('destination', 'Destination', 'BIOLOGY_SITE', { key: 'B' })]
+            : []),
           ...(this.getJournalLandingBody(selected?.mission)
             ? [commandButton('landing', 'Landing site', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' })]
             : []),
@@ -8684,14 +8704,14 @@ export class Game {
                 `${mission.rewardCredits} Cr + research`,
                 this.missionProgress.getStatus(mission, this.ownedSpecimens),
               ],
-              detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter submits the requested field data or one eligible whole container.`,
+              detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter submits all required contributions together; incomplete requests consume nothing.`,
               detailSegments: [
                 ...formatMissionDetailSegments(
                   mission,
                   this.missionProgress.getStatus(mission, this.ownedSpecimens)
                 ),
                 {
-                  text: ' Enter submits the requested field data or one eligible whole container.',
+                  text: ' Enter submits all required contributions together; incomplete requests consume nothing.',
                   font: 'thin' as const,
                 },
               ],

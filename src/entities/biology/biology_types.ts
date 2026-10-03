@@ -6,6 +6,7 @@ export const ENCOUNTER_CELL_METRES = 5;
 
 export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territorial' | 'ambush';
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
+export type IndividualSizeClass = 'small' | 'typical' | 'large';
 export type EvidenceLevel = 0 | 1 | 2 | 3;
 export type StunPower = 0 | 1 | 2;
 export type BiologicalActivity =

@@ -3,7 +3,12 @@ import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { StellarBody } from '../entities/stellar_body';
 import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
-import type { SpeciesDefinition, SpecimenContainer } from '../entities/biology/biology_types';
+import type {
+  IndividualSizeClass,
+  SpeciesDefinition,
+  SpecimenContainer,
+} from '../entities/biology/biology_types';
+import { individualSizeClass } from '../entities/biology/biology_rules';
 import type { TextDashboardSegment } from './text_ui';
 import { resolveMissionNavigation } from './mission_navigation';
 
@@ -50,6 +55,7 @@ export interface SpecimenMissionObjective {
   siteId: string;
   requiredKind: 'live' | 'tissue';
   minimumQuality: number;
+  sizeClass?: IndividualSizeClass;
   reference?: BiologicalReference;
   location?: MissionBodyLocation;
 }
@@ -117,7 +123,14 @@ export function formatMissionDetailSegments(
   status: MissionStatus
 ): TextDashboardSegment[] {
   const objectiveText = mission.objectives.map((objective) => objective.targetLabel).join(' -> ');
-  const references = mission.objectives.filter((objective) => objective.kind !== 'scan');
+  const species = new Set<string>();
+  const references = mission.objectives.filter(
+    (objective): objective is SpecimenMissionObjective | BiologicalDataObjective => {
+      if (objective.kind === 'scan' || species.has(objective.speciesId)) return false;
+      species.add(objective.speciesId);
+      return true;
+    }
+  );
   const segments: TextDashboardSegment[] = references.flatMap((objective) => [
     { text: 'CREATURE: ', tone: 'muted' as const, font: 'thin' as const },
     { text: biologicalReferenceDescription(objective), tone: 'cyan' as const, font: 'thin' as const },
@@ -175,8 +188,33 @@ export function matchesSpecimenObjective(
     container.species.id === objective.speciesId &&
     container.siteId === objective.siteId &&
     container.kind === objective.requiredKind &&
-    container.quality >= objective.minimumQuality
+    container.quality >= objective.minimumQuality &&
+    (!objective.sizeClass || individualSizeClass(container.sizeScale) === objective.sizeClass)
   );
+}
+
+/** Assigns distinct containers to objectives, including overlapping requirements, without mutating cargo. */
+export function allocateSpecimenObjectives(
+  objectives: readonly SpecimenMissionObjective[],
+  specimens: readonly SpecimenContainer[]
+): Map<string, SpecimenContainer> {
+  const owners = new Map<string, SpecimenMissionObjective>();
+  const allocated = new Map<string, SpecimenContainer>();
+  /** Reassigns an earlier flexible match when a later objective needs that particular container. */
+  function assign(objective: SpecimenMissionObjective, visited: Set<string>): boolean {
+    for (const specimen of specimens) {
+      if (visited.has(specimen.id) || !matchesSpecimenObjective(objective, specimen)) continue;
+      visited.add(specimen.id);
+      const previous = owners.get(specimen.id);
+      if (previous && !assign(previous, visited)) continue;
+      owners.set(specimen.id, objective);
+      allocated.set(objective.id, specimen);
+      return true;
+    }
+    return false;
+  }
+  for (const objective of objectives) assign(objective, new Set());
+  return allocated;
 }
 
 /** Generates starbase notices. */

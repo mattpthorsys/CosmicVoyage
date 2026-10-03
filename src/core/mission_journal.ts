@@ -1,6 +1,7 @@
 import type { InputManager } from './input_manager';
 import type { MissionStatus, StarbaseMission } from './mission_board';
 import { biologicalReferenceDescription } from './mission_board';
+import { getMissionLandingObjectiveIndices } from './mission_navigation';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import {
   clampIndex,
@@ -16,6 +17,7 @@ export interface MissionJournalEntry {
   status: MissionStatus;
   completed: number;
   total: number;
+  completedObjectiveIds?: readonly string[];
 }
 
 export type MissionJournalReturn = 'none' | 'ship-menu' | 'rover-cargo' | 'xenobiology';
@@ -25,6 +27,7 @@ export class MissionJournal {
   returnTo: MissionJournalReturn = 'none';
   selection = 0;
   viewOffset = 0;
+  destinationIndex = 0;
   notice = '';
   readonly reveal = new TerminalTextReveal();
 
@@ -32,6 +35,7 @@ export class MissionJournal {
   open(returnTo: MissionJournalReturn): void {
     this.returnTo = returnTo;
     this.viewOffset = 0;
+    this.destinationIndex = 0;
     this.notice = '';
     this.reveal.start();
   }
@@ -40,6 +44,13 @@ export class MissionJournal {
   selected(entries: readonly MissionJournalEntry[]): MissionJournalEntry | undefined {
     this.selection = clampIndex(this.selection, entries.length);
     return entries[this.selection];
+  }
+
+  /** Resolves the chosen actual objective, since size comparisons share a destination but habitat studies do not. */
+  landingObjectiveIndex(mission: StarbaseMission): number {
+    const indices = getMissionLandingObjectiveIndices(mission);
+    this.destinationIndex = clampIndex(this.destinationIndex, indices.length);
+    return indices[this.destinationIndex] ?? 0;
   }
 
   /** Consumes terminal controls, including the first key used to finish its rapid text reveal. */
@@ -58,6 +69,16 @@ export class MissionJournal {
       (input.wasActionJustPressed('ENTER_SYSTEM') || input.wasActionJustPressed('PRIMARY_ACTION'))
     )
       return 'landing';
+    if (input.wasActionJustPressed('BIOLOGY_SITE')) {
+      const mission = this.selected(entries)?.mission;
+      if (mission) {
+        const destinations = getMissionLandingObjectiveIndices(mission);
+        this.destinationIndex = (this.destinationIndex + 1) % Math.max(1, destinations.length);
+        this.viewOffset = 0;
+        this.notice = '';
+      }
+      return;
+    }
     const cycle = input.wasActionJustPressed('MOVE_LEFT')
       ? -1
       : input.wasActionJustPressed('MOVE_RIGHT') || input.wasActionJustPressed('CYCLE_TARGET')
@@ -66,6 +87,7 @@ export class MissionJournal {
     if (cycle && entries.length) {
       this.selection = (this.selection + cycle + entries.length) % entries.length;
       this.viewOffset = 0;
+      this.destinationIndex = 0;
       this.notice = '';
       this.reveal.complete();
       return;
@@ -109,14 +131,24 @@ export class MissionJournal {
         status === 'READY' ? 'green' : 'amber'
       );
       line(mission.summary);
+      const references = new Set<string>();
       for (const objective of mission.objectives) {
         if (objective.kind === 'scan') continue;
+        if (references.has(objective.speciesId)) continue;
+        references.add(objective.speciesId);
         line('REFERENCE ORGANISM', 'cyan', true);
         line(biologicalReferenceDescription(objective), 'cyan');
       }
       line('');
       line('DESTINATION', 'cyan', true);
       line(`System: ${mission.systemName}`);
+      const landingIndex = this.landingObjectiveIndex(mission);
+      const destinations = getMissionLandingObjectiveIndices(mission);
+      if (destinations.length > 1)
+        line(
+          `LANDING TARGET ${this.destinationIndex + 1}/${destinations.length}: ${mission.objectives[landingIndex].location!.surface!.label}`,
+          'cyan'
+        );
       const address = mission.systemAddress;
       line(
         address
@@ -124,9 +156,14 @@ export class MissionJournal {
           : 'Hyperspace coordinates not recorded; revisit the issuing system to resolve.',
         address ? 'green' : 'amber'
       );
-      for (const objective of mission.objectives) {
+      for (const [index, objective] of mission.objectives.entries()) {
         line('');
-        line(objective.targetLabel, 'amber');
+        const complete = entry.completedObjectiveIds?.includes(objective.id);
+        const prefix =
+          mission.objectives.length > 1
+            ? `${index === landingIndex ? '> ' : ''}${complete ? 'COMPLETE' : 'NEEDED'} / `
+            : '';
+        line(`${prefix}${objective.targetLabel}`, complete ? 'green' : 'amber');
         const location = objective.location;
         if (location) line(`Body: ${location.bodyName}`, 'cyan');
         if (location?.surface) {
@@ -143,7 +180,7 @@ export class MissionJournal {
         }
         if (objective.kind === 'specimen')
           line(
-            `Required: ${objective.requiredKind.toUpperCase()} / quality at least ${Math.round(objective.minimumQuality * 100)}%`,
+            `Required: ${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()} / quality at least ${Math.round(objective.minimumQuality * 100)}%`,
             'green'
           );
         else if (objective.kind === 'biology-data')
@@ -171,7 +208,13 @@ export class MissionJournal {
     const dashboard = wrapDashboardLines(lines, width);
     const footer = wrapDashboardLines(
       [
-        { segments: [{ text: 'Left/Right contract  UP/DN scroll  PGUP/DN page' }] },
+        {
+          segments: [
+            {
+              text: `Left/Right contract  UP/DN scroll  PGUP/DN page${entry && getMissionLandingObjectiveIndices(entry.mission).length > 1 ? '  B destination' : ''}`,
+            },
+          ],
+        },
         {
           segments: [{ text: `${canSelectLanding ? 'ENTER select landing site  ' : ''}ESC return  J close` }],
         },

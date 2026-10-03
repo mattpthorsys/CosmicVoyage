@@ -30,6 +30,7 @@ interface JournalGameHarness {
   activateMissionSelection(starbase: Starbase, row: TextTableRow): void;
   selectMissionLandingSite(mission: StarbaseMission): void;
   createCommandBarModel(actions: []): CommandBarModel;
+  getMainRenderSignature(): string;
   _handleCommandBarAction(data: { action: string }): void;
   _processInput(): void;
   _update(delta: number): void;
@@ -128,10 +129,43 @@ function harness() {
     ],
   };
   progress.accept(mission);
-  return { game, owner, journal, orbit, actions, input, effects, mission, moon, parent };
+  return { game, owner, journal, orbit, actions, input, effects, mission, moon, parent, progress };
 }
 
 describe('mission journal Game integration', () => {
+  it('routes B and Enter to the second actual habitat and exposes Destination only for distinct sites', () => {
+    const { game, owner, journal, orbit, actions, effects, mission, moon, parent, progress } = harness();
+    const accepted = progress.getMission(mission.id)!;
+    const objective = structuredClone(accepted.objectives[0]);
+    if (objective.kind !== 'specimen') throw new Error('Expected specimen.');
+    objective.id = 'second';
+    objective.siteId = 'second-habitat';
+    objective.location!.surface = { x: 700, y: 800, siteId: objective.siteId, label: 'Open ground' };
+    accepted.objectives.push(objective);
+    game.openMissionJournal();
+    journal.reveal.complete();
+    expect(game.createCommandBarModel([]).buttons.some((button) => button.action === 'BIOLOGY_SITE')).toBe(
+      true
+    );
+    const signature = game.getMainRenderSignature();
+    actions.add('BIOLOGY_SITE');
+    game.handleMissionJournalInput();
+    expect(journal.landingObjectiveIndex(accepted)).toBe(1);
+    expect(game.getMainRenderSignature()).not.toBe(signature);
+    actions.clear();
+    actions.add('ENTER_SYSTEM');
+    game._processInput();
+    expect(owner.kind).toBe('none');
+    expect(orbit.getSelectedBody(parent)).toBe(moon);
+    expect([orbit.landingX, orbit.landingY]).toEqual([700, 800]);
+    expect(effects.land).not.toHaveBeenCalled();
+    accepted.objectives[1].location = structuredClone(accepted.objectives[0].location);
+    game.openMissionJournal();
+    expect(game.createCommandBarModel([]).buttons.some((button) => button.action === 'BIOLOGY_SITE')).toBe(
+      false
+    );
+  });
+
   it('routes the science log through a paused menu and selects a recorded moon without landing', () => {
     const { game, owner, orbit, actions, effects, moon, parent } = harness();
     const service = new XenobiologyService();

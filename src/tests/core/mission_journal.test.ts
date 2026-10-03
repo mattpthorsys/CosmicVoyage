@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { MissionJournal, type MissionJournalEntry } from '../../core/mission_journal';
 import type { StarbaseMission } from '../../core/mission_board';
-import { getMissionLandingBody, resolveMissionNavigation } from '../../core/mission_navigation';
+import {
+  getMissionLandingBody,
+  getMissionLandingObjectiveIndices,
+  resolveMissionNavigation,
+} from '../../core/mission_navigation';
 import { MissionProgressService } from '../../core/mission_progress';
 import type { Planet } from '../../entities/planet';
 import type { SolarSystem } from '../../entities/solar_system';
@@ -60,6 +64,59 @@ function text(journal: MissionJournal, entries: MissionJournalEntry[], cols = 10
 }
 
 describe('mission terminal', () => {
+  it('cycles unique destinations, highlights individual progress and resets when changing contracts', () => {
+    const first = entry();
+    const objective = first.mission.objectives[0];
+    const second = structuredClone(objective);
+    second.id = 'second';
+    if (second.kind !== 'specimen') throw new Error('Expected specimen.');
+    second.siteId = 'second-habitat';
+    second.location!.surface = { x: 700, y: 800, siteId: second.siteId, label: 'Open substrate' };
+    second.targetLabel = 'Second contribution';
+    first.mission.objectives.push(second);
+    first.total = 2;
+    first.completed = 1;
+    first.completedObjectiveIds = [objective.id];
+    const journal = new MissionJournal();
+    const entries = [first, entry('other')];
+    journal.open('none');
+    let model = journal.createModel(entries, 100, 35, true);
+    journal.input(input('BIOLOGY_SITE'), entries, model);
+    expect(journal.destinationIndex).toBe(0); // The first key completes reveal, never selecting a destination.
+    journal.input(input('BIOLOGY_SITE'), entries, model);
+    expect(journal.landingObjectiveIndex(first.mission)).toBe(1);
+    expect(text(journal, entries)).toContain('LANDING TARGET 2/2: Open substrate');
+    expect(text(journal, entries)).toContain('> NEEDED / Second contribution');
+    model = journal.createModel(entries, 100, 35, true);
+    expect(
+      model.dashboard!.some((line) =>
+        line.segments.some((span) => span.text.startsWith('COMPLETE /') && span.tone === 'green')
+      )
+    ).toBe(true);
+    expect(model.footer!.join(' ')).toContain('B destination');
+    journal.input(input('BIOLOGY_SITE'), entries, model);
+    expect(journal.landingObjectiveIndex(first.mission)).toBe(0);
+    journal.destinationIndex = 1;
+    journal.input(input('MOVE_RIGHT'), entries, model);
+    expect(journal.destinationIndex).toBe(0);
+  });
+
+  it('does not invent a second landing stop for paired samples from the same habitat', () => {
+    const first = entry();
+    first.mission.objectives.push({ ...structuredClone(first.mission.objectives[0]), id: 'large' });
+    expect(getMissionLandingObjectiveIndices(first.mission)).toEqual([0]);
+    const journal = new MissionJournal();
+    expect(journal.createModel([first], 100, 35, true).footer!.join(' ')).not.toContain('B destination');
+    journal.destinationIndex = 99;
+    expect(journal.landingObjectiveIndex(first.mission)).toBe(0);
+    const model = journal.createModel([first], 32, 24, true);
+    expect(
+      model.dashboard!.every(
+        (line) => line.segments.reduce((count, span) => count + span.text.length, 0) <= 20
+      )
+    ).toBe(true);
+  });
+
   it('shows actionable coordinates, requirements and delivery details, using the two established fonts', () => {
     const journal = new MissionJournal();
     const entries = [entry()];

@@ -63,17 +63,35 @@ export function resolveMissionNavigation(
 }
 
 /** Returns a specific habitat request; surveys permitting any landing do not invent coordinates. */
-export function getMissionLandingLocation(mission: StarbaseMission): MissionBodyLocation | undefined {
+export function getMissionLandingLocation(
+  mission: StarbaseMission,
+  objectiveIndex?: number
+): MissionBodyLocation | undefined {
+  if (objectiveIndex !== undefined) return mission.objectives[objectiveIndex]?.location;
   return mission.objectives.find((objective) => objective.location?.surface)?.location;
+}
+
+/** Lists distinct advertised destinations, avoiding redundant stops for two specimens at the same habitat. */
+export function getMissionLandingObjectiveIndices(mission: StarbaseMission): number[] {
+  const seen = new Set<string>();
+  return mission.objectives.flatMap((objective, index) => {
+    const location = objective.location;
+    if (!location?.surface) return [];
+    const key = `${location.bodyPath}/${location.surface.siteId}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [index];
+  });
 }
 
 /** Allows selecting only a destination in the current orbital family, without teleporting to another planet. */
 export function getMissionLandingBody(
   mission: StarbaseMission,
   system: SolarSystem,
-  parent: Planet
+  parent: Planet,
+  objectiveIndex?: number
 ): Planet | null {
-  const location = getMissionLandingLocation(mission);
+  const location = getMissionLandingLocation(mission, objectiveIndex);
   if (!mission.systemAddress || !isMissionSystem(mission.systemAddress, system) || !location?.surface)
     return null;
   return getRecordedLandingBody(mission.systemAddress, location, system, parent);

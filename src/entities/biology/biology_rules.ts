@@ -1,4 +1,4 @@
-import type { SpeciesDefinition } from './biology_types';
+import type { IndividualSizeClass, SpeciesDefinition } from './biology_types';
 
 /** Converts a stored mass scale into one consistent physical profile without changing species identity. */
 export function individualPhysicalProfile(species: SpeciesDefinition, sizeScale = 1): SpeciesDefinition {
@@ -9,7 +9,12 @@ export function individualPhysicalProfile(species: SpeciesDefinition, sizeScale 
 
 /** Names an observed size class without asserting an unmeasured life stage. */
 export function individualSizeLabel(sizeScale = 1): string {
-  return sizeScale < 0.7 ? 'small individual' : sizeScale > 1.3 ? 'large individual' : 'typical individual';
+  return `${individualSizeClass(sizeScale)} individual`;
+}
+
+/** Classifies measured relative mass without identifying age, sex or scientific novelty. */
+export function individualSizeClass(sizeScale = 1): IndividualSizeClass {
+  return sizeScale < 0.7 ? 'small' : sizeScale > 1.3 ? 'large' : 'typical';
 }
 
 /** Allows small, non-aggressive organisms to share a five-metre rover cell and be handled without stun. */

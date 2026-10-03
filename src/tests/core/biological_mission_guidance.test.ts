@@ -61,6 +61,37 @@ function fixture() {
 }
 
 describe('biological mission guidance', () => {
+  it('marks only the missing size contribution, not an already supplied small individual', () => {
+    const f = fixture();
+    const template = f.mission.objectives[0];
+    if (template.kind !== 'specimen') throw new Error('Expected specimen.');
+    f.mission.objectives = [
+      { ...template, id: 'small', requiredKind: 'tissue', sizeClass: 'small' },
+      { ...template, id: 'large', requiredKind: 'tissue', sizeClass: 'large' },
+    ];
+    f.target.sizeScale = 0.5;
+    expect(assessBiologicalRequests(f.species, 2, [f.request], f.contact).eligible).toBe(true);
+    const partial = { ...f.request, completedObjectiveIds: ['small'] };
+    const guidance = assessBiologicalRequests(f.species, 2, [partial], f.contact);
+    expect(guidance.eligible).toBe(false);
+    expect(guidance.lines[0].segments[0].text).toContain('other contributions still needed');
+    expect(guidance.lines.flatMap((line) => line.segments.map((span) => span.text)).join(' ')).toContain(
+      'LARGE individual required'
+    );
+    f.target.sizeScale = 1.65;
+    const large = assessBiologicalRequests(f.species, 2, [partial], f.contact);
+    expect(large.eligible).toBe(true);
+    expect(large.summary!.segments[0].text).toContain('LARGE TISSUE');
+    expect(
+      assessBiologicalRequests(
+        f.species,
+        2,
+        [{ ...partial, completedObjectiveIds: ['small', 'large'] }],
+        f.contact
+      ).eligible
+    ).toBe(false);
+  });
+
   it('separates preliminary trait similarities from confirmed identity and never reveals hidden physiology', () => {
     const f = fixture();
     expect(assessBiologicalRequests(f.species, 0, [f.request], f.contact).lines).toEqual([]);

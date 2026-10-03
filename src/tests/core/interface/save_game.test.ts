@@ -143,6 +143,88 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('migrates version-thirteen storage without losing evidence or accepted contract packets', () => {
+    const legacy = { ...createSave(), version: 13 };
+    const session = new MemoryStorage();
+    const manual = new MemoryStorage();
+    session.setItem('cosmic-voyage.session.v13', JSON.stringify(legacy));
+    manual.setItem('cosmic-voyage.manual.v13', JSON.stringify(legacy));
+    const storage = new SaveGameStorage(session, manual);
+    expect(storage.loadSession()).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
+    expect(storage.loadManual()).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
+    expect(session.getItem('cosmic-voyage.session.v13')).toBeNull();
+    expect(manual.getItem('cosmic-voyage.manual.v13')).toBeNull();
+    expect(session.getItem(SESSION_SAVE_KEY)).not.toBeNull();
+    expect(manual.getItem(MANUAL_SAVE_KEY)).not.toBeNull();
+  });
+
+  it('round-trips bounded comparative objectives and rejects forged sizes, duplicate objectives or mixed surveys', () => {
+    const save = createSave();
+    const mission: StarbaseMission = {
+      id: 'comparison',
+      title: 'Size comparison',
+      type: 'xenobiology',
+      issuer: 'Office',
+      summary: 'Two specimens',
+      detail: 'Supply both.',
+      rewardCredits: 1000,
+      risk: 'Low',
+      originStarbaseId: 'port',
+      originStarbaseName: 'Port',
+      systemName: 'Fixture',
+      objectives: (['small', 'large'] as const).map((sizeClass) => ({
+        id: sizeClass,
+        kind: 'specimen' as const,
+        targetName: 'Organism',
+        targetLabel: `${sizeClass} tissue`,
+        speciesId: 'species',
+        siteId: 'site',
+        requiredKind: 'tissue' as const,
+        minimumQuality: 0.6,
+        sizeClass,
+      })),
+    };
+    save.activeMissions[mission.id] = mission;
+    save.acceptedMissionIds = [mission.id];
+    save.missionObjectiveProgress[mission.id] = [];
+    expect(parseGameSave(JSON.parse(JSON.stringify(save))).activeMissions[mission.id]).toEqual(mission);
+    const invalidSize = structuredClone(save);
+    Object.assign(invalidSize.activeMissions[mission.id].objectives[0], { sizeClass: 'gigantic' });
+    expect(() => parseGameSave(invalidSize)).toThrow('specimen mission objective');
+    const duplicate = structuredClone(save);
+    duplicate.activeMissions[mission.id].objectives[1].id = 'small';
+    expect(() => parseGameSave(duplicate)).toThrow('Duplicate mission objective');
+    const excessive = structuredClone(save);
+    excessive.activeMissions[mission.id].objectives = Array.from({ length: 5 }, (_, index) => ({
+      ...mission.objectives[0],
+      id: `${index}`,
+    }));
+    expect(() => parseGameSave(excessive)).toThrow('biological delivery contract');
+    const mixed = structuredClone(save);
+    mixed.activeMissions[mission.id].objectives.push({
+      id: 'scan',
+      kind: 'scan',
+      targetName: 'Fixture',
+      targetLabel: 'Scan',
+      targetType: 'planet',
+      requiredDiscoveryLevel: 'surveyed',
+    });
+    expect(() => parseGameSave(mixed)).toThrow('biological delivery contract');
+    mission.objectives = ['first', 'second'].map((siteId) => ({
+      id: siteId,
+      kind: 'biology-data' as const,
+      targetName: 'Organism',
+      targetLabel: siteId,
+      speciesId: 'species',
+      siteId,
+      requiredEvidenceLevel: 3 as const,
+    }));
+    save.missionObjectiveProgress[mission.id] = ['first'];
+    expect(parseGameSave(JSON.parse(JSON.stringify(save))).missionObjectiveProgress[mission.id]).toEqual([
+      'first',
+    ]);
+  });
+
   it('migrates version-eleven storage without resetting biology or other progress', () => {
     const session = new MemoryStorage();
     const storage = new SaveGameStorage(session, new MemoryStorage());

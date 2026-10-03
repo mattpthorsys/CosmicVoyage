@@ -17,9 +17,11 @@ import { CONFIG } from '../config';
 import { createXenobiologySnapshot, type XenobiologySnapshot } from '../entities/biology/biology_types';
 import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 
-export const SAVE_GAME_VERSION = 13;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v13';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v13';
+export const SAVE_GAME_VERSION = 14;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v14';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v14';
+const VERSION_THIRTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v13';
+const VERSION_THIRTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v13';
 const VERSION_TWELVE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v12';
 const VERSION_TWELVE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v12';
 const VERSION_ELEVEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v11';
@@ -191,7 +193,11 @@ export interface GameSaveV13 extends Omit<GameSaveV12, 'version'> {
   version: 13;
 }
 
-export type GameSave = GameSaveV13;
+export interface GameSaveV14 extends Omit<GameSaveV13, 'version'> {
+  version: 14;
+}
+
+export type GameSave = GameSaveV14;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -236,6 +242,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV11
     | GameSaveV12
     | GameSaveV13
+    | GameSaveV14
   >;
   if (
     record.version !== 1 &&
@@ -250,6 +257,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 10 &&
     record.version !== 11 &&
     record.version !== 12 &&
+    record.version !== 13 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -317,10 +325,11 @@ export function parseGameSave(value: string | unknown): GameSave {
       save = migrateV11Save(candidate as unknown as GameSaveV11);
       break;
     case 12:
+    case 13:
       save = { ...(candidate as unknown as GameSaveV12), version: SAVE_GAME_VERSION };
       break;
     default:
-      save = candidate as unknown as GameSaveV13;
+      save = candidate as unknown as GameSaveV14;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -800,6 +809,8 @@ function validateMissionProgress(save: GameSave): void {
         assertFiniteNumber(objective.minimumQuality, 'mission specimen quality');
         if (
           !['live', 'tissue'].includes(objective.requiredKind) ||
+          (objective.sizeClass !== undefined &&
+            !['small', 'typical', 'large'].includes(objective.sizeClass)) ||
           objective.minimumQuality < 0 ||
           objective.minimumQuality > 1
         )
@@ -817,7 +828,10 @@ function validateMissionProgress(save: GameSave): void {
       throw new Error('Duplicate mission objective identity.');
     if (
       mission.objectives.some((objective) => objective.kind !== 'scan') &&
-      (mission.type !== 'xenobiology' || mission.objectives.length !== 1 || !mission.originStarbaseId)
+      (mission.type !== 'xenobiology' ||
+        mission.objectives.length > 4 ||
+        mission.objectives.some((objective) => objective.kind === 'scan') ||
+        !mission.originStarbaseId)
     )
       throw new Error('Invalid biological delivery contract.');
   }
@@ -971,6 +985,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_THIRTEEN_SESSION_SAVE_KEY,
       VERSION_TWELVE_SESSION_SAVE_KEY,
       VERSION_ELEVEN_SESSION_SAVE_KEY,
       VERSION_TEN_SESSION_SAVE_KEY,
@@ -994,6 +1009,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_THIRTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWELVE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_ELEVEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TEN_SESSION_SAVE_KEY);
@@ -1013,6 +1029,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_THIRTEEN_MANUAL_SAVE_KEY,
       VERSION_TWELVE_MANUAL_SAVE_KEY,
       VERSION_ELEVEN_MANUAL_SAVE_KEY,
       VERSION_TEN_MANUAL_SAVE_KEY,
@@ -1036,6 +1053,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_THIRTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWELVE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_ELEVEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TEN_MANUAL_SAVE_KEY);

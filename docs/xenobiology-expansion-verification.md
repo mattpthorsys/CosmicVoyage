@@ -2,6 +2,9 @@
 
 Implementation is checkpointed in stages. Verification completed 2026-10-03.
 The results below include mission reference and confirmed-target highlighting.
+They do not cover the subsequent native-family/anatomy/behaviour/comparative
+extension; its verification is pending in
+[the new handoff](xenobiology-native-expansion.md).
 
 ## Verification Results
 

@@ -3,7 +3,7 @@ import type {
   EncounterIndividual,
   SpeciesDefinition,
 } from '../entities/biology/biology_types';
-import { individualPhysicalProfile } from '../entities/biology/biology_rules';
+import { individualPhysicalProfile, individualSizeClass } from '../entities/biology/biology_rules';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import type { BiologicalReference, MissionStatus, StarbaseMission } from './mission_board';
 import type { TextDashboardLine } from './text_ui';
@@ -13,6 +13,7 @@ export type BiologicalReferenceTrait = keyof BiologicalReference | 'name';
 export interface BiologicalFieldRequest {
   readonly mission: StarbaseMission;
   readonly status: MissionStatus;
+  readonly completedObjectiveIds?: readonly string[];
 }
 
 export interface BiologicalMissionGuidance {
@@ -53,7 +54,7 @@ export function assessBiologicalRequests(
     level >= 2
       ? ['symmetry', 'bodyForm', 'locomotion', 'metabolism', 'behaviour', 'role']
       : ['symmetry', 'bodyForm', 'locomotion', 'metabolism'];
-  for (const { mission, status } of requests) {
+  for (const { mission, status, completedObjectiveIds } of requests) {
     if (status !== 'ACTIVE' && status !== 'READY') continue;
     for (const objective of mission.objectives) {
       if (objective.kind === 'scan') continue;
@@ -92,10 +93,17 @@ export function assessBiologicalRequests(
           objective.kind === 'biology-data'
             ? 'Analysis recorded; return to issuer'
             : 'Reference aboard; return to issuer';
+      else if (completedObjectiveIds?.includes(objective.id))
+        reason =
+          objective.kind === 'biology-data'
+            ? 'Analysis recorded; other contributions still needed'
+            : 'Contribution aboard; other contributions still needed';
       else if (contact.target.state === 'collected') reason = 'Individual already collected';
       else if (objective.kind === 'specimen') {
         const quality = Math.max(0.2, 1 - contact.target.injury * 0.35);
-        if (quality < objective.minimumQuality)
+        if (objective.sizeClass && individualSizeClass(contact.target.sizeScale) !== objective.sizeClass)
+          reason = `${objective.sizeClass.toUpperCase()} individual required; observed ${individualSizeClass(contact.target.sizeScale).toUpperCase()}`;
+        else if (quality < objective.minimumQuality)
           reason = `Quality ${Math.round(quality * 100)}%; minimum ${Math.round(objective.minimumQuality * 100)}%`;
         else if (objective.requiredKind === 'tissue' && contact.target.sampled)
           reason = 'This individual has already been sampled';
@@ -113,10 +121,12 @@ export function assessBiologicalRequests(
       const requirement =
         objective.kind === 'biology-data'
           ? 'FIELD ANALYSIS'
-          : `${objective.requiredKind.toUpperCase()} REFERENCE`;
+          : `${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()} REFERENCE`;
       if (canContribute)
         requirements.add(
-          objective.kind === 'biology-data' ? 'ANALYSIS' : objective.requiredKind.toUpperCase()
+          objective.kind === 'biology-data'
+            ? 'ANALYSIS'
+            : `${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
         );
       lines.push({
         segments: [
