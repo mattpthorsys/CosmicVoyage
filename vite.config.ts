@@ -29,6 +29,9 @@ export default defineConfig({
   },
 
   test: {
+    // Large terrain fixtures otherwise compete across every advertised virtual CPU.
+    maxWorkers: 4,
+    minWorkers: 1,
     environment: 'happy-dom', // Use happy-dom for simulating DOM
     globals: true, // Use Vitest globals (describe, it, expect, etc.)
     setupFiles: ['./src/tests/setup.ts'],

@@ -5,6 +5,7 @@ import type { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import type { Starbase } from '../entities/starbase';
 import type { SurfaceVehicleOverlayModel } from './scene_renderer';
+import type { EncounterViewModel } from '../core/xenobiology_ui';
 
 export interface PlayerViewSnapshot {
   readonly position: Readonly<{
@@ -37,6 +38,7 @@ export type SceneViewModel =
       player: PlayerViewSnapshot;
       body: Planet | Starbase;
       overlay?: Readonly<SurfaceVehicleOverlayModel>;
+      encounter?: Readonly<EncounterViewModel>;
     }>
   | Readonly<{
       kind: 'starbase';

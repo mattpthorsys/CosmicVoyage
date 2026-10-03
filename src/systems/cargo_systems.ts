@@ -10,7 +10,9 @@ export class CargoSystem {
 
   /** Calculates the current total units of cargo held in a cargo component. */
   getTotalUnits(cargoHold: CargoComponent): number {
-    return roundCargoQuantity(Object.values(cargoHold.items).reduce((sum, quantity) => sum + quantity, 0));
+    const bulk = Object.values(cargoHold.items).reduce((sum, quantity) => sum + quantity, 0);
+    const specimens = (cargoHold.specimens ?? []).reduce((sum, item) => sum + item.volumeM3, 0);
+    return roundCargoQuantity(bulk + specimens);
   }
 
   /**

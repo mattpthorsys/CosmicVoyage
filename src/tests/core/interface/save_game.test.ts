@@ -6,11 +6,13 @@ import {
   parseGameSave,
   SaveGameStorage,
   SESSION_SAVE_KEY,
+  SAVE_GAME_VERSION,
 } from '../../../core/save_game';
 import { MissionProgressService } from '../../../core/mission_progress';
 import { ScanService } from '../../../core/scan_service';
 import { createDiscoveryRecord } from '../../../core/discovery';
 import { CONFIG } from '../../../config';
+import { createXenobiologySnapshot } from '../../../entities/biology/biology_types';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -49,7 +51,8 @@ class MemoryStorage implements Storage {
 /** Creates a minimal valid save payload. */
 function createSave(): GameSave {
   return {
-    version: 10,
+    version: 11,
+    xenobiology: createXenobiologySnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
@@ -67,8 +70,9 @@ function createSave(): GameSave {
       },
       render: { char: '@', fgColor: '#00A0A0', bgColor: null, directionGlyph: '>' },
       resources: { credits: 1200, fuel: 450, maxFuel: 500 },
-      cargoHold: { capacity: 100, items: { IRON: 2 } },
+      cargoHold: { capacity: 100, items: { IRON: 2 }, specimens: [] },
       terrainVehicle: {
+        integrity: 100,
         deployed: false,
         moving: false,
         available: true,
@@ -77,10 +81,11 @@ function createSave(): GameSave {
         shipSurfaceY: 5,
         fuel: 120,
         maxFuel: 120,
-        cargoHold: { capacity: 50, items: {} },
+        cargoHold: { capacity: 50, items: {}, specimens: [] },
       },
       crew: [],
       ship: {
+        stasisClass: 0,
         superstructure: {
           name: 'Test',
           engineMounts: 1,
@@ -137,6 +142,20 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('migrates version ten without altering generated-world identity or vessel progress', () => {
+    const old = { ...createSave(), version: 10, xenobiology: undefined };
+    delete old.player.cargoHold.specimens;
+    delete old.player.terrainVehicle.cargoHold.specimens;
+    delete old.player.terrainVehicle.integrity;
+    delete old.player.ship.stasisClass;
+    const migrated = parseGameSave(old);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
+    expect(migrated.location).toEqual(old.location);
+    expect(migrated.generationVersion).toBe(old.generationVersion);
+    expect(migrated.xenobiology).toEqual(createXenobiologySnapshot());
+    expect(migrated.player.terrainVehicle.integrity).toBe(100);
+    expect(old.player.ship.stasisClass).toBeUndefined();
+  });
   it('round-trips session and persistent browser saves independently', () => {
     const session = new MemoryStorage();
     const persistent = new MemoryStorage();
@@ -165,7 +184,7 @@ describe('save game persistence', () => {
     const migrated = storage.loadSession();
 
     expect(migrated).toMatchObject({
-      version: 10,
+      version: 11,
       generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       migratedFromGenerationVersion: 3,
     });
@@ -186,7 +205,7 @@ describe('save game persistence', () => {
     const migrated = storage.loadSession();
 
     expect(migrated).toMatchObject({
-      version: 10,
+      version: 11,
       generationVersion: CONFIG.GALAXY_MODEL_VERSION,
       migratedFromGenerationVersion: 4,
     });
@@ -233,7 +252,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.planetMutations[0].discovery.level).toBe('surveyed');
     expect(migrated.catalogueDiscoveries).toEqual({});
   });
@@ -274,7 +293,7 @@ describe('save game persistence', () => {
       },
     });
 
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.activeMissions['legacy-mission'].objectives[0].id).toBe('legacy-scan');
     expect(migrated.readyMissionIds).toEqual([]);
     expect(migrated.missionObjectiveProgress).toEqual({});
@@ -291,7 +310,7 @@ describe('save game persistence', () => {
       player: { ...legacy.player, ship: legacyShip },
     });
 
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.player.ship.surveyEquipmentClass).toBe(1);
     expect(migrated.economy).toEqual({});
   });
@@ -331,7 +350,7 @@ describe('save game persistence', () => {
       location: legacyLocation,
     });
 
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
     expect(migrated.migratedFromGenerationVersion).toBe(1);
     expect(migrated.location.systemSlot).toBe(0);
@@ -376,7 +395,7 @@ describe('save game persistence', () => {
       ],
     });
 
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
     expect(migrated.migratedFromGenerationVersion).toBe(2);
     expect(migrated.player.position).toMatchObject({
@@ -409,7 +428,7 @@ describe('save game persistence', () => {
       generationVersion: 3,
     });
 
-    expect(migrated.version).toBe(10);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.generationVersion).toBe(CONFIG.GALAXY_MODEL_VERSION);
     expect(migrated.migratedFromGenerationVersion).toBe(3);
     expect(migrated.player.position).toMatchObject({ worldX: 3, worldY: -2 });
@@ -452,7 +471,7 @@ describe('save game persistence', () => {
       store.setItem(oldKey, JSON.stringify(oldSave));
       const result = kind === 'session' ? storage.loadSession() : storage.loadManual();
       expect(result).toMatchObject({
-        version: 10,
+        version: 11,
         generationVersion: CONFIG.GALAXY_MODEL_VERSION,
         migratedFromGenerationVersion: 5,
       });

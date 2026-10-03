@@ -3,6 +3,7 @@ import { Player } from '../core/player';
 import { GameState } from '../core/game_state_manager'; // Assuming GameState type is defined/imported here
 import { PositionComponent, RenderComponent } from '../core/components';
 import { CONFIG } from '../config';
+import { surfaceCoordinates } from '../utils/surface_coordinates';
 import { GLYPHS } from '../constants/visual';
 import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from '../core/event_manager';
@@ -188,7 +189,7 @@ export class MovementSystem {
     }
   }
 
-  /** Updates player position on a planet surface (grid coordinates with wrapping). */
+  /** Updates longitude cyclically while respecting latitude boundaries. */
   private _moveSurface(
     position: PositionComponent,
     render: RenderComponent,
@@ -202,9 +203,9 @@ export class MovementSystem {
     }
     const oldX = position.surfaceX;
     const oldY = position.surfaceY;
-    // Ensure wrapping works correctly using modulo
-    position.surfaceX = (position.surfaceX + (dx % mapSize) + mapSize) % mapSize;
-    position.surfaceY = (position.surfaceY + (dy % mapSize) + mapSize) % mapSize;
+    const coordinates = surfaceCoordinates(position.surfaceX + dx, position.surfaceY + dy, mapSize);
+    position.surfaceX = coordinates.x;
+    position.surfaceY = coordinates.y;
     render.char = CONFIG.PLAYER_CHAR; // Ensure player char is used
     logger.debug(
       `[MovementSystem] Player moved SURFACE: [${oldX},${oldY}] -> [${position.surfaceX},${position.surfaceY}]`

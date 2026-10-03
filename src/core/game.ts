@@ -120,6 +120,18 @@ import { getOperationalCapabilities } from './operational_capabilities';
 import { SurfacePrefetchService } from './surface_prefetch';
 import { GalaxyMapController } from './galaxy_map';
 import { TelemetryField, TravelTelemetryModel } from './travel_telemetry';
+import { XenobiologyService } from './xenobiology_service';
+import { SurfaceEncounterController } from './modes/surface_encounter_controller';
+import { createEncounter, SurfaceEncounterSystem } from '../systems/surface_encounter_system';
+import { SpecimenCargoSystem } from '../systems/specimen_cargo_system';
+import { prepareBiosphere } from '../entities/biology/biosphere_generator';
+import {
+  type BiosphereDefinition,
+  type EncounterField,
+  createXenobiologySnapshot,
+} from '../entities/biology/biology_types';
+import { createEncounterView, researchRows, specimenRows } from './xenobiology_ui';
+import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coordinates';
 
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
@@ -131,6 +143,8 @@ type RoverActionId =
   | 'pickup'
   | 'mine'
   | 'scan'
+  | 'life'
+  | 'repair'
   | 'stun'
   | 'shoot'
   | 'embark'
@@ -234,6 +248,11 @@ export class Game {
     JettisonConfirmationState
   >;
   private _galaxyMap?: GalaxyMapController;
+  private _xenobiology?: XenobiologyService;
+  private _encounterController?: SurfaceEncounterController;
+  private _encounterSystem?: SurfaceEncounterSystem;
+  private biosphereCache?: WeakMap<Planet, { ready: boolean; biosphere: BiosphereDefinition | null }>;
+  private habitatSelection = 0;
   private planetMutationRegistry = new Map<string, PlanetMutationSaveData>();
   private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
@@ -251,6 +270,203 @@ export class Game {
   private get scanService(): ScanService {
     this._scanService ??= new ScanService();
     return this._scanService;
+  }
+
+  /** Returns the campaign's independent biology state, also in prototype-based test harnesses. */
+  private get xenobiology(): XenobiologyService {
+    return (this._xenobiology ??= new XenobiologyService());
+  }
+
+  /** Returns the focused local interaction controller. */
+  private get encounterController(): SurfaceEncounterController {
+    return (this._encounterController ??= new SurfaceEncounterController());
+  }
+
+  /** Resolves an active field only while its planetary rover is deployed. */
+  private get activeEncounter(): EncounterField | undefined {
+    if (this.stateManager.state !== 'planet' || !this.player.terrainVehicle.deployed) return;
+    const id = this.xenobiology.snapshot.activeSiteId;
+    return id ? this.xenobiology.snapshot.fields[id] : undefined;
+  }
+
+  /** Caches biosphere definitions without preventing terrain-ready sites from appearing later. */
+  private getBiosphere(planet = this.stateManager.currentPlanet): BiosphereDefinition | null {
+    const system = this.stateManager.currentSystem;
+    if (!planet || typeof planet.mapSeed !== 'string' || !system || !Array.isArray(system.planets))
+      return null;
+    const path = findSystemPlanetPath(system, planet);
+    if (!path) return null;
+    const cache = (this.biosphereCache ??= new WeakMap());
+    const ready = planet.isSurfaceReady();
+    const prior = cache.get(planet);
+    if (prior && prior.ready === ready) return prior.biosphere;
+    const biosphere = prepareBiosphere(planet, system, path);
+    cache.set(planet, { ready, biosphere });
+    return biosphere;
+  }
+
+  /** Enters a persistent five-metre field from the regional habitat's actual surface coordinate. */
+  private enterBiologySite(): void {
+    if (
+      this.stateManager.state !== 'planet' ||
+      !this.player.terrainVehicle.available ||
+      !this.player.terrainVehicle.deployed ||
+      this.player.terrainVehicle.onFoot
+    ) {
+      this.statusMessage = 'Deploy the terrain vehicle before investigating a habitat.';
+      return;
+    }
+    const biosphere = this.getBiosphere();
+    const planet = this.stateManager.currentPlanet;
+    if (!biosphere || !planet) {
+      this.statusMessage = 'No accessible biological signatures detected.';
+      return;
+    }
+    const size = getPlanetMapSize(planet);
+    const sites = [...biosphere.sites].sort(
+      (a, b) =>
+        Math.hypot(
+          surfaceLongitudeDelta(this.player.position.surfaceX, a.x, size),
+          a.y - this.player.position.surfaceY
+        ) -
+        Math.hypot(
+          surfaceLongitudeDelta(this.player.position.surfaceX, b.x, size),
+          b.y - this.player.position.surfaceY
+        )
+    );
+    const site = sites[0];
+    if (!site) {
+      this.statusMessage = 'Biological signatures present; accessible surface habitats unresolved.';
+      return;
+    }
+    if (
+      Math.abs(surfaceLongitudeDelta(this.player.position.surfaceX, site.x, size)) > 1 ||
+      Math.abs(site.y - this.player.position.surfaceY) > 1
+    ) {
+      this.statusMessage = `${site.label}: X${site.x} Y${site.y}. Approach within one regional cell; orbital dossier lists habitats.`;
+      this.addSurfaceNotification(this.statusMessage);
+      return;
+    }
+    if ((this.player.terrainVehicle.integrity ?? 100) < 30) {
+      this.statusMessage = 'Rover integrity below 30%. Repair at the ship or a port before field operations.';
+      return;
+    }
+    const fields = this.xenobiology.snapshot.fields;
+    const field = (fields[site.id] ??= createEncounter(biosphere, site));
+    field.roverX = 16;
+    field.roverY = 21;
+    this.xenobiology.snapshot.activeSiteId = site.id;
+    this.encounterController.reset();
+    this.player.terrainVehicle.moving = false;
+    this.surfaceMode.closeTransientInterfaces();
+    this.interfaceMode.close();
+    this.statusMessage = 'Biological field online. Observe contacts before selecting specimens.';
+    this.forceFullRender = true;
+  }
+
+  /** Applies one local intent; reading, selection and rejected operations do not advance time. */
+  private handleEncounterInput(): boolean {
+    const field = this.activeEncounter;
+    if (!field) return false;
+    if (this.encounterController.reveal.isActive && this.inputManager.wasAnyKeyJustPressed()) {
+      this.encounterController.reveal.complete();
+      this.forceFullRender = true;
+      return true;
+    }
+    const intent = this.encounterController.input(this.inputManager.justPressedActions, field);
+    if (this.encounterController.interaction.kind !== 'drive') this.interfaceMode.open('xenobiology');
+    else this.interfaceMode.close('xenobiology');
+    if (intent?.kind === 'cargo') this.openRoverCargo();
+    else if (intent?.kind === 'leave') {
+      if (Math.hypot(field.roverX - 16, field.roverY - 21) > 1.5 && this.player.terrainVehicle.fuel >= 0.02)
+        this.statusMessage = 'Return to entry X16 Y21 to withdraw.';
+      else {
+        this.xenobiology.snapshot.activeSiteId = null;
+        this.encounterController.reset();
+        this.statusMessage = 'Field expedition ended. Cargo and research records retained.';
+      }
+    } else if (intent?.kind === 'command') {
+      const command = intent.command;
+      const rover = this.player.terrainVehicle;
+      if (command.kind === 'move' && rover.fuel < 0.02)
+        this.statusMessage = 'Local fuel reserve exhausted; select Leave for emergency withdrawal.';
+      else {
+        const result = (this._encounterSystem ??= new SurfaceEncounterSystem()).act(
+          field,
+          command,
+          rover.cargoHold,
+          this.player.ship.stasisClass ?? 0
+        );
+        this.statusMessage = result.message;
+        if (result.elapsedSeconds > 0) {
+          this.gameClockElapsedSeconds += result.elapsedSeconds;
+          if (command.kind === 'move') rover.fuel = Math.max(0, rover.fuel - 0.02);
+          rover.integrity = Math.max(0, (rover.integrity ?? 100) - result.damage);
+          if (result.evidence) {
+            this.xenobiology.observe(result.evidence.species, result.evidence.level);
+            if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
+          }
+          if (rover.integrity === 0) {
+            rover.integrity = 15;
+            this.xenobiology.snapshot.activeSiteId = null;
+            this.encounterController.reset();
+            this.interfaceMode.close('xenobiology');
+            this.statusMessage += ' Emergency retreat to regional entry. Repair required; cargo retained.';
+          }
+        }
+      }
+    }
+    if (intent || this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
+  }
+
+  /** Reconciles ship or rover specimen ownership before committing shared demand and payment. */
+  private submitBiologicalResearch(id: string, starbase: Starbase): void {
+    if (starbase.kind === 'automated-depot') {
+      this.starbaseMode.alert = 'No scientific receiving staff at this depot.';
+      return;
+    }
+    const holds = [this.player.cargoHold, this.player.terrainVehicle.cargoHold];
+    const container = id.startsWith('sample:')
+      ? holds.flatMap((hold) => hold.specimens ?? []).find((item) => `sample:${item.id}` === id)
+      : undefined;
+    const species =
+      container?.species ??
+      (id.startsWith('data:') ? this.xenobiology.evidence(id.slice(5))?.species : undefined);
+    if (!species || (id.startsWith('sample:') && !container)) {
+      this.starbaseMode.alert = 'Research contribution no longer aboard.';
+      return;
+    }
+    const credits = this.xenobiology.submit(species, container);
+    if (credits <= 0) {
+      this.starbaseMode.alert = 'No additional scientific demand for this contribution.';
+      return;
+    }
+    if (container)
+      for (const hold of holds)
+        hold.specimens = (hold.specimens ?? []).filter((item) => item.id !== container.id);
+    this.player.resources.credits += credits;
+    this.statusMessage = this.starbaseMode.alert = `Research accepted: ${species.name}. Award ${credits} Cr.`;
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: credits,
+    });
+  }
+
+  /** Restores rover armour with an explicit affordable field/port service. */
+  private repairRover(): void {
+    const cost = Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * 5);
+    if (this.player.resources.credits < cost) {
+      this.statusMessage = `Rover repair requires ${cost} Cr.`;
+      return;
+    }
+    this.player.resources.credits -= cost;
+    this.player.terrainVehicle.integrity = 100;
+    this.statusMessage = `Rover integrity restored. Cost ${cost} Cr.`;
+    eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+      newCredits: this.player.resources.credits,
+      amountChanged: -cost,
+    });
   }
 
   /** Returns mission progression, including for lightweight prototype-based test harnesses. */
@@ -767,6 +983,7 @@ export class Game {
       ...this.missionProgress.createSnapshot(),
       catalogueDiscoveries: this.scanService.createSnapshot(),
       economy: this.starbaseCommerce.createSnapshot(),
+      xenobiology: this.xenobiology.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
     };
   }
@@ -841,6 +1058,15 @@ export class Game {
     this.player.terrainVehicle = cloneSaveValue(save.player.terrainVehicle);
     this.player.crew = cloneSaveValue(save.player.crew);
     this.player.ship = cloneSaveValue(save.player.ship);
+    this.xenobiology.restoreSnapshot(
+      isLegacyGalaxyMigration ? createXenobiologySnapshot() : save.xenobiology
+    );
+    this.encounterController.reset();
+    if (isLegacyGalaxyMigration) {
+      this.player.cargoHold.specimens = [];
+      this.player.terrainVehicle.cargoHold.specimens = [];
+    }
+    if (this.activeEncounter) this.interfaceMode.close();
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
     this.missionProgress.restoreSnapshot({
       acceptedMissionIds: isLegacyGalaxyMigration ? [] : save.acceptedMissionIds,
@@ -1006,6 +1232,8 @@ export class Game {
       }
     }
     if (newState !== 'planet') {
+      this.xenobiology.snapshot.activeSiteId = null;
+      this.encounterController.reset();
       this.surfaceMode.notifications = [];
     }
     // Close popups on state change
@@ -1042,6 +1270,15 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.activeEncounter) {
+      if (this.interfaceMode.kind !== 'none' && this.interfaceMode.kind !== 'xenobiology') return;
+      this.inputManager.justPressedActions.add(data.action);
+      this.handleEncounterInput();
+      this.inputManager.justPressedActions.delete(data.action);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (
       this.popupState !== 'inactive' ||
       (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) ||
@@ -1779,6 +2016,11 @@ export class Game {
       (!this.player.terrainVehicle.deployed && !this.player.terrainVehicle.onFoot)
     )
       return false;
+    if (this.inputManager.wasActionJustPressed('BIOLOGY_SITE') && this.player.terrainVehicle.deployed) {
+      this.enterBiologySite();
+      this.forceFullRender = true;
+      return true;
+    }
 
     if (this.surfaceMode.mapExpanded) {
       if (
@@ -2199,6 +2441,9 @@ export class Game {
           this.getSurfaceVehicleMenuItems().find((item) => item.id === 'move')
         );
         return;
+      case 'ROVER_LIFE':
+        this.enterBiologySite();
+        return;
       case 'ROVER_SCAN':
         this.activateSurfaceVehicleAction(
           this.getSurfaceVehicleMenuItems().find((item) => item.id === 'scan')
@@ -2504,6 +2749,18 @@ export class Game {
           }
           if (planet) {
             const surfaceData = readReadySurfaceData(planet);
+            if (surfaceData?.heightmap) {
+              const next = surfaceCoordinates(
+                this.player.position.surfaceX + dx,
+                this.player.position.surfaceY + dy,
+                surfaceData.heightmap.length
+              );
+              if (next.x === this.player.position.surfaceX && next.y === this.player.position.surfaceY) {
+                this.statusMessage = 'Latitude boundary reached.';
+                return;
+              }
+              moveData.dy = next.y - this.player.position.surfaceY;
+            }
             if (!surfaceData?.heightmap) {
               this.requestSurfacePreparation(planet);
               this.statusMessage = 'Surface navigation is waiting for terrain generation.';
@@ -2657,6 +2914,10 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
+    if (this.handleEncounterInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
     if (this._handleSurfaceLegendInput()) {
       this._publishStatusUpdate();
       return;
@@ -2668,6 +2929,36 @@ export class Game {
     // 2. Check starbase market controls before generic enter/backspace handling.
     if (this._handleStarbaseTradeInput()) {
       this._publishStatusUpdate();
+      return;
+    }
+    if (
+      this.inputManager.wasActionJustPressed('BIOLOGY_SITE') &&
+      this.stateManager.state === 'orbit' &&
+      !this.orbitModeState.dossier.isOpen
+    ) {
+      const parent = this.stateManager.currentOrbitReferencePlanet;
+      if (parent) {
+        const body = this.orbitModeState.getSelectedBody(parent);
+        const biosphere = this.getBiosphere(body);
+        const sites = biosphere?.sites ?? [];
+        if (sites.length) {
+          const site = sites[(this.habitatSelection ?? 0) % sites.length];
+          this.habitatSelection = (this.habitatSelection ?? 0) + 1;
+          this.orbitModeState.mode = 'landing';
+          this.orbitModeState.landingX = site.x;
+          this.orbitModeState.landingY = site.y;
+          this.orbitModeState.alert =
+            this.statusMessage = `${site.label} X${site.x} Y${site.y}. Enter lands; B cycles habitats.`;
+          this.orbitModeState.invalidateScreen();
+        } else {
+          if (biosphere && !body.isSurfaceReady()) this.requestSurfacePreparation(body);
+          this.statusMessage = biosphere
+            ? 'Habitat coordinates resolving; press B once surface preparation finishes.'
+            : 'No accessible biological signatures.';
+        }
+        this.forceFullRender = true;
+        this._publishStatusUpdate();
+      }
       return;
     }
     if (this._handleOrbitInput()) {
@@ -3384,6 +3675,11 @@ export class Game {
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
     let blockGameUpdates = this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen;
+    if (this.activeEncounter) {
+      if (this.encounterController.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     if (
       blockGameUpdates &&
       this.orbitModeState.dossier.reveal.update(this.currentVisualDeltaSeconds || deltaTime)
@@ -4233,7 +4529,7 @@ export class Game {
     const mapSize =
       planet?.surfaceElementMap?.length ?? planet?.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE;
     const dx = wrapDelta(site.x - this.player.position.surfaceX, mapSize);
-    const dy = wrapDelta(site.y - this.player.position.surfaceY, mapSize);
+    const dy = site.y - this.player.position.surfaceY;
     if (dx === 0 && dy === 0) return 'current square';
     return this.formatSurfaceDirection(dx, dy);
   }
@@ -4250,12 +4546,19 @@ export class Game {
       { id: 'pickup', label: 'Pick up', status: 'no local items' },
       { id: 'mine', label: 'Mine', status: `${cargoLoad} m^3` },
       { id: 'scan', label: 'Scan', status: 'local sweep' },
+      { id: 'life', label: 'Life', status: this.getBiosphere() ? 'habitats detected' : 'no signatures' },
       { id: 'stun', label: 'Stun', status: 'safe' },
       { id: 'shoot', label: 'Shoot', status: 'safe' },
       { id: 'icon', label: 'Icon', status: 'legend' },
     ];
     if (this.isAtParkedShip()) {
       items.splice(0, 0, { id: 'embark', label: 'Embark', status: 'board ship' });
+      if ((this.player.terrainVehicle.integrity ?? 100) < 100)
+        items.push({
+          id: 'repair',
+          label: 'Repair',
+          status: `${Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * 5)} Cr`,
+        });
     }
     return items;
   }
@@ -4302,7 +4605,13 @@ export class Game {
         maxHitPoints: member.maxHitPoints,
       })),
       ship: {
-        x: this.player.terrainVehicle.shipSurfaceX - this.player.position.surfaceX,
+        x: surfaceLongitudeDelta(
+          this.player.position.surfaceX,
+          this.player.terrainVehicle.shipSurfaceX,
+          this.stateManager.currentPlanet
+            ? getPlanetMapSize(this.stateManager.currentPlanet)
+            : CONFIG.PLANET_MAP_BASE_SIZE
+        ),
         y: this.player.terrainVehicle.shipSurfaceY - this.player.position.surfaceY,
       },
       shipDistance: this.getParkedShipRangeAndBearing(),
@@ -4375,28 +4684,39 @@ export class Game {
     const entries = Object.entries(this.player.terrainVehicle.cargoHold.items).filter(
       ([, amount]) => amount > 0
     );
-    if (entries.length === 0) {
+    const specimens = specimenRows(this.player.terrainVehicle.cargoHold.specimens ?? [], this.xenobiology);
+    if (entries.length === 0 && specimens.length === 0) {
       return [{ id: 'empty', cells: ['Rover hold empty', '0', '0', 'No cargo to drop.'], disabled: true }];
     }
-    return entries.map(([itemKey, amount]) => {
-      const info = this.getTradeItemInfo(itemKey);
-      const value = (info?.baseValue ?? 1) * amount;
-      return {
-        id: itemKey,
-        cells: [
-          info?.name ?? itemKey,
-          this.formatCargoAmount(amount),
-          this.formatCargoAmount(value),
-          'Drop on local surface',
-        ],
-        detail: `Drops ${this.formatCargoAmount(amount)} m^3 here. Surface item persistence is pending future salvage work.`,
-      };
-    });
+    return [
+      ...specimens,
+      ...entries.map(([itemKey, amount]) => {
+        const info = this.getTradeItemInfo(itemKey);
+        const value = (info?.baseValue ?? 1) * amount;
+        return {
+          id: itemKey,
+          cells: [
+            info?.name ?? itemKey,
+            this.formatCargoAmount(amount),
+            this.formatCargoAmount(value),
+            'Drop on local surface',
+          ],
+          detail: `Drops ${this.formatCargoAmount(amount)} m^3 here. Surface item persistence is pending future salvage work.`,
+        };
+      }),
+    ];
   }
 
   /** Drops the selected rover cargo item onto the current surface cell. */
   private dropSelectedRoverCargo(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id.startsWith('specimen:')) {
+      const container = this.player.terrainVehicle.cargoHold.specimens?.find(
+        (item) => `specimen:${item.id}` === row.id
+      );
+      if (container) this.openJettisonConfirmation(`rover:${row.id}`, container.volumeM3);
+      return;
+    }
     const amount = this.player.terrainVehicle.cargoHold.items[row.id] || 0;
     if (amount <= 0) return;
     const removed = this.cargoSystem.removeItem(this.player.terrainVehicle.cargoHold, row.id, amount);
@@ -4560,6 +4880,17 @@ export class Game {
     const resolution = this.scanService.resolvePlanet(planet, 'mapped', 100, 'surface-map');
     this.completeMissionsForDiscovery(planet, resolution.current.level);
     this.statusMessage = 'Surface scan complete.';
+    const biosphere = this.getBiosphere();
+    if (biosphere?.sites.length) {
+      const site = [...biosphere.sites].sort(
+        (a, b) =>
+          Math.hypot(surfaceLongitudeDelta(x, a.x, size), a.y - y) -
+          Math.hypot(surfaceLongitudeDelta(x, b.x, size), b.y - y)
+      )[0];
+      this.addSurfaceNotification(
+        `Biological signature: ${site.label} X${site.x} Y${site.y}. B investigates when nearby.`
+      );
+    }
     this.forceFullRender = true;
   }
 
@@ -4632,6 +4963,12 @@ export class Game {
       case 'scan':
         this.startSurfaceCursorScan();
         break;
+      case 'life':
+        this.enterBiologySite();
+        break;
+      case 'repair':
+        if (this.isAtParkedShip()) this.repairRover();
+        break;
       case 'embark':
         this.dockTerrainVehicle();
         break;
@@ -4647,10 +4984,10 @@ export class Game {
         this.statusMessage = 'No recoverable surface items detected.';
         break;
       case 'stun':
-        this.statusMessage = 'Stunner armed; no biological target acquired.';
+        this.statusMessage = 'Choose Life at a biological habitat to acquire a local target.';
         break;
       case 'shoot':
-        this.statusMessage = 'Rover weapon safe; no target designated.';
+        this.statusMessage = 'Choose Life at a biological habitat to acquire a local target.';
         break;
     }
   }
@@ -4740,7 +5077,13 @@ export class Game {
 
   /** Returns parked ship range and bearing. */
   private getParkedShipRangeAndBearing(): { distanceKm: number; direction: string } {
-    const dx = this.player.terrainVehicle.shipSurfaceX - this.player.position.surfaceX;
+    const dx = surfaceLongitudeDelta(
+      this.player.position.surfaceX,
+      this.player.terrainVehicle.shipSurfaceX,
+      this.stateManager.currentPlanet
+        ? getPlanetMapSize(this.stateManager.currentPlanet)
+        : CONFIG.PLANET_MAP_BASE_SIZE
+    );
     const dy = this.player.terrainVehicle.shipSurfaceY - this.player.position.surfaceY;
     return {
       distanceKm: Math.sqrt(dx * dx + dy * dy) * this.getSurfaceCellKilometers(),
@@ -4789,6 +5132,17 @@ export class Game {
         transferred += added;
       }
     }
+    for (const container of [...(this.player.terrainVehicle.cargoHold.specimens ?? [])]) {
+      if (
+        !new SpecimenCargoSystem().transfer(
+          this.player.terrainVehicle.cargoHold,
+          this.player.cargoHold,
+          container.id,
+          this.player.ship.stasisClass ?? 0
+        )
+      )
+        transferred += container.volumeM3;
+    }
     return transferred;
   }
 
@@ -4808,7 +5162,11 @@ export class Game {
       this.player.terrainVehicle.deployed = false;
       this.player.terrainVehicle.available = false;
       this.player.terrainVehicle.onFoot = true;
+      const lostContainers = this.player.terrainVehicle.cargoHold.specimens?.length ?? 0;
+      this.player.terrainVehicle.cargoHold.specimens = [];
       this.statusMessage = 'Terrain vehicle fuel exhausted. Vehicle abandoned; return to the ship on foot.';
+      if (lostContainers)
+        this.statusMessage += ` ${lostContainers} biological containers lost with the vehicle.`;
       this.addSurfaceNotification(this.statusMessage);
       this.forceFullRender = true;
       return false;
@@ -4909,6 +5267,11 @@ export class Game {
 
   /** Opens jettison quantity selector. */
   private openJettisonQuantitySelector(itemKey: string): void {
+    if (itemKey.startsWith('specimen:')) {
+      const specimen = this.player.cargoHold.specimens?.find((item) => `specimen:${item.id}` === itemKey);
+      if (specimen) this.openJettisonConfirmation(itemKey, specimen.volumeM3);
+      return;
+    }
     const held = this.player.cargoHold.items[itemKey] || 0;
     const name = this.getTradeItemInfo(itemKey)?.name ?? itemKey;
     if (held <= 0) {
@@ -4930,6 +5293,15 @@ export class Game {
 
   /** Removes the selected cargo quantity after confirmation. */
   private jettisonCargoItem(itemKey: string, amount: number): string {
+    if (itemKey.startsWith('specimen:') || itemKey.startsWith('rover:specimen:')) {
+      const rover = itemKey.startsWith('rover:');
+      const hold = rover ? this.player.terrainVehicle.cargoHold : this.player.cargoHold;
+      const id = itemKey.slice(rover ? 15 : 9);
+      const specimen = hold.specimens?.find((item) => item.id === id);
+      if (!specimen) return 'Selected biological container is no longer aboard.';
+      hold.specimens = (hold.specimens ?? []).filter((item) => item.id !== id);
+      return `Disposed of whole ${specimen.kind} container: ${specimen.species.name}. Unrecoverable.`;
+    }
     const removed = this.cargoSystem.removeItem(this.player.cargoHold, itemKey, amount);
     const name = this.getTradeItemInfo(itemKey)?.name ?? itemKey;
     eventManager.publish(GameEvents.PLAYER_CARGO_REMOVED, { elementKey: itemKey, amountRemoved: removed });
@@ -5243,7 +5615,7 @@ export class Game {
         detailTone: 'cyan',
       },
     ];
-    const shipCargoRows = this.getCargoRowsForHold(this.player.cargoHold.items, 'ship').map(
+    const shipCargoRows = this.getCargoRows().map(
       (row, index): TextTableRow => ({
         id: row.disabled ? row.id : `cargo:${row.id}`,
         cells: [
@@ -6120,6 +6492,21 @@ export class Game {
                     player: createPlayerViewSnapshot(this.player),
                     body: planet,
                     overlay: this.createSurfaceVehicleOverlayModel(),
+                    encounter: this.activeEncounter
+                      ? createEncounterView(
+                          this.activeEncounter,
+                          this.encounterController.target(this.activeEncounter)?.id ?? null,
+                          this.xenobiology,
+                          this.encounterController.power,
+                          this.player.ship.stasisClass ?? 0,
+                          this.player.terrainVehicle.integrity ?? 100,
+                          this.formatCargoLoad(
+                            this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold),
+                            this.player.terrainVehicle.cargoHold.capacity
+                          ),
+                          this.statusMessage
+                        )
+                      : undefined,
                   })
                 );
               } else {
@@ -6161,6 +6548,27 @@ export class Game {
         }
 
         // Draw Popup (if active)
+        const field = this.activeEncounter;
+        if (field && this.interfaceMode.is('xenobiology')) {
+          const view = createEncounterView(
+            field,
+            this.encounterController.targetId,
+            this.xenobiology,
+            this.encounterController.power,
+            this.player.ship.stasisClass ?? 0,
+            this.player.terrainVehicle.integrity ?? 100,
+            '',
+            this.statusMessage
+          );
+          const modal = this.encounterController.createModal(
+            field,
+            this.xenobiology,
+            this.renderer.getGridCols(),
+            this.renderer.getGridRows(),
+            view.scanner
+          );
+          if (modal) this.renderer.drawTextModalTable(modal);
+        }
         if (this.popupState !== 'inactive') {
           this.renderer.drawPopup(
             this.popupContent,
@@ -6266,6 +6674,7 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      Boolean(this.activeEncounter) ||
       this.shipMenuOpen ||
       this.targetMenuOpen ||
       this.galaxyMapOpen ||
@@ -6311,6 +6720,7 @@ export class Game {
   /** Returns whether game clock paused. */
   private isGameClockPaused(): boolean {
     return (
+      Boolean(this.activeEncounter) ||
       this.stateManager.state === 'starbase' ||
       (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) ||
       this.popupState !== 'inactive' ||
@@ -6996,6 +7406,19 @@ export class Game {
   /** Creates surface command bar. */
   private createSurfaceCommandBar(): CommandBarModel {
     const rover = this.player.terrainVehicle;
+    if (this.activeEncounter)
+      return {
+        context: 'biological field',
+        targetName: this.stateManager.currentPlanet?.name,
+        buttons: [
+          commandButton('observe', 'Observe', 'SCAN', { key: 'V' }),
+          commandButton('analyse', 'Analyse', 'APPROACH_TARGET', { key: 'A' }),
+          commandButton('operations', 'Operations', 'ENTER_SYSTEM', { key: 'Enter' }),
+          commandButton('dossier', 'Dossier', 'ORBIT_DOSSIER', { key: 'D' }),
+          commandButton('species', 'Species', 'TARGET_MENU', { key: 'N' }),
+          commandButton('leave', 'Withdraw', 'QUIT', { key: 'Esc' }),
+        ],
+      };
     if (!rover.deployed && !rover.onFoot) {
       return {
         context: 'landed ship',
@@ -7054,6 +7477,10 @@ export class Game {
           detail: 'Move the surface scan cursor.',
         }),
         commandButton('icon', 'Icon', 'ROVER_ICON', { detail: 'Open the surface icon legend.' }),
+        commandButton('life', 'Life', 'ROVER_LIFE', {
+          key: 'B',
+          detail: 'Investigate the biological habitat at this regional position.',
+        }),
       ],
       rightButtons: [
         commandButton('red-reserved', 'Alert', 'RED_RESERVED', {
@@ -7216,12 +7643,31 @@ export class Game {
   /** Builds the orbital view from current location and controller state. */
   private createCurrentOrbitScreen(): OrbitScreenModel {
     const parent = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
-    return this.orbitModeState.createScreen(
+    const screen = this.orbitModeState.createScreen(
       parent,
       this.stateManager.currentSystem?.stars ?? [],
       this.statusMessage,
       Game.SIMULATED_SECONDS_PER_REAL_SECOND
     );
+    const biosphere = this.getBiosphere(screen.selectedBody);
+    this.orbitModeState.dossier.biologyLines = biosphere
+      ? [
+          `${biosphere.origin === 'introduced' ? 'Managed introduced' : 'Probable native'} carbon-water biosphere. Surface observations required for species identification.`,
+          ...biosphere.sites.map((site) => `${site.label}: X${site.x} Y${site.y}`),
+          biosphere.sites.length
+            ? 'B cycles accessible habitat landing coordinates.'
+            : 'Accessible habitat coordinates pending terrain preparation.',
+        ]
+      : [];
+    return biosphere
+      ? {
+          ...screen,
+          summary: screen.summary.map((line, index) =>
+            index === 4 ? 'Biological signatures / B habitats' : line
+          ),
+          footer: [...screen.footer, 'B select biological habitat'],
+        }
+      : screen;
   }
 
   /** Starts worker-backed surface preparation and redraws when the current planet becomes ready. */
@@ -7300,6 +7746,15 @@ export class Game {
         market.findIndex((item) => item.itemKey === row.id)
       );
       this.openSellQuantitySelector(row.id);
+      return;
+    }
+    if (this.starbaseMode.sectionId === 'research') {
+      this.submitBiologicalResearch(row.id, starbase);
+      return;
+    }
+    if (this.starbaseMode.sectionId === 'services' && row.id === 'rover-repair') {
+      this.repairRover();
+      this.starbaseMode.alert = this.statusMessage;
       return;
     }
     if (this.starbaseMode.sectionId === 'services' && row.id === 'refuel') {
@@ -7492,6 +7947,11 @@ export class Game {
           }));
       case 'cargo':
         return this.getCargoRows();
+      case 'research':
+        return researchRows(this.xenobiology, [
+          ...(this.player.cargoHold.specimens ?? []),
+          ...(this.player.terrainVehicle.cargoHold.specimens ?? []),
+        ]);
       case 'buy':
         return market.map((item) => ({
           id: item.itemKey,
@@ -7517,6 +7977,16 @@ export class Game {
           });
       case 'services':
         return [
+          {
+            id: 'rover-repair',
+            cells: [
+              'Rover armour repair',
+              `${Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * 5)} Cr`,
+              `${this.player.terrainVehicle.integrity ?? 100}%`,
+              'Restore terrain vehicle integrity.',
+            ],
+            disabled: (this.player.terrainVehicle.integrity ?? 100) >= 100,
+          },
           {
             id: 'refuel',
             cells: [
@@ -7629,7 +8099,9 @@ export class Game {
 
   /** Returns cargo rows. */
   private getCargoRows(): StarbaseTableRow[] {
-    return this.getCargoRowsForHold(this.player.cargoHold.items, 'ship');
+    const specimens = specimenRows(this.player.cargoHold.specimens ?? [], this.xenobiology);
+    const bulk = this.getCargoRowsForHold(this.player.cargoHold.items, 'ship');
+    return specimens.length ? [...bulk.filter((row) => !row.disabled), ...specimens] : bulk;
   }
 
   /** Returns shipyard refit rows. */
@@ -7843,6 +8315,7 @@ export class Game {
       cargo: 'Review hold contents and estimated value.',
       buy: 'Buy station commodities.',
       sell: 'Sell cargo carried in your hold.',
+      research: 'Submit xenobiological data and sealed specimens.',
       services: 'Refuel and future station services.',
       notices: 'Read local port bulletins.',
       missions: 'Accept local scan and charting contracts.',

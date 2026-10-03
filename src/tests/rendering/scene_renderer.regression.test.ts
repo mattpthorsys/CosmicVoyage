@@ -663,6 +663,18 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it('does not paint the opposite hemisphere above a regional latitude boundary', () => {
+    const { buffer, drawCalls } = createMockScreenBuffer(100, 54);
+    const renderer = createSceneRenderer(buffer),
+      planet = createSolidPlanet();
+    const player = new Player();
+    player.position.surfaceY = 0;
+    renderer.drawPlanetSurface(player, planet);
+    const blocks = drawCalls.filter((call) => call.char === GLYPHS.BLOCK);
+    expect(blocks.length).toBeGreaterThan(0);
+    expect(Math.min(...blocks.map((call) => call.y))).toBeGreaterThan(1);
+  });
+
   it('draws shared materials on the surface and refreshes landing colours when material data changes', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(100, 54);
     const renderer = createSceneRenderer(buffer) as any;

@@ -1042,7 +1042,8 @@ export class SceneRenderer {
         const mapX = startMapX + Math.floor(x / cellScale);
         const mapY = startMapY + Math.floor(y / cellScale);
         const wrappedMapX = ((mapX % mapSize) + mapSize) % mapSize;
-        const wrappedMapY = ((mapY % mapSize) + mapSize) % mapSize;
+        if (mapY < 0 || mapY >= mapSize) continue;
+        const wrappedMapY = mapY;
         let height = map[wrappedMapY]?.[wrappedMapX] ?? 0;
         height = Math.max(0, Math.min(CONFIG.PLANET_HEIGHT_LEVELS - 1, Math.round(height)));
         const submerged = !!liquidOverlay && height <= liquidOverlay.seaLevel;

@@ -73,7 +73,10 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
     e.ageGyr < 0.3
   )
     return null;
-  const prng = new PRNG(e.seed).seedNew('biology', BIOLOGY_VERSION);
+  const prng = new PRNG(e.origin === 'introduced' ? 'managed-carbon-water' : e.seed).seedNew(
+    'biology',
+    BIOLOGY_VERSION
+  );
   const temperate = Math.max(0.15, 1 - Math.abs(e.temperatureK - 294) / 65);
   if (e.origin === 'native' && prng.random() > 0.34 * temperate * Math.min(1, e.ageGyr / 2)) return null;
   const aerobic = e.oxygenBar >= 0.035;

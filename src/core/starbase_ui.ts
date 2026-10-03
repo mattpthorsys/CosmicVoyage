@@ -1,12 +1,14 @@
 import { Player } from './player';
 import { Starbase } from '../entities/starbase';
 import { clampIndex, TextMenuSection, TextTableModel, TextTableRow } from './text_ui';
+import { CargoSystem } from '../systems/cargo_systems';
 
 export type StarbaseSectionId =
   | 'overview'
   | 'cargo'
   | 'buy'
   | 'sell'
+  | 'research'
   | 'services'
   | 'notices'
   | 'missions'
@@ -31,6 +33,7 @@ export const STARBASE_SECTIONS: StarbaseSection[] = [
   { id: 'cargo', label: 'Cargo' },
   { id: 'buy', label: 'Buy' },
   { id: 'sell', label: 'Sell' },
+  { id: 'research', label: 'Research' },
   { id: 'services', label: 'Services' },
   { id: 'notices', label: 'Notices' },
   { id: 'missions', label: 'Missions' },
@@ -41,6 +44,7 @@ export const STARBASE_SECTIONS: StarbaseSection[] = [
 /** Returns only the panels supported by a station's declared mechanical capabilities. */
 export function getStationSections(starbase: Starbase): StarbaseSection[] {
   return STARBASE_SECTIONS.filter((section) => {
+    if (section.id === 'research') return starbase.kind !== 'automated-depot';
     // Prototype-based tests and imported legacy saves may briefly expose a pre-capability station.
     if (!starbase.capabilities) return true;
     if (section.id === 'missions') return starbase.capabilities.missions;
@@ -66,7 +70,7 @@ export function createStarbaseScreenModel(args: {
   detailLineCount?: number;
   alert?: string;
 }): StarbaseScreenModel {
-  const cargoTotal = Object.values(args.player.cargoHold.items).reduce((sum, quantity) => sum + quantity, 0);
+  const cargoTotal = new CargoSystem().getTotalUnits(args.player.cargoHold);
   const maxOffset = Math.max(0, args.rows.length - args.visibleRowCount);
   const footer = [
     `Cr ${args.player.resources.credits.toLocaleString()}   Fuel ${args.player.resources.fuel.toFixed(0)}/${args.player.resources.maxFuel}   Cargo ${cargoTotal}/${args.player.cargoHold.capacity} m^3`,

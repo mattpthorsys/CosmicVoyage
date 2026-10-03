@@ -44,9 +44,9 @@ exports[`SceneRenderer visual regressions > does not draw background stars while
     "┐": 1,
     "└": 1,
     "┘": 1,
-    "█": 3053,
+    "█": 2982,
   },
-  "totalCalls": 3353,
+  "totalCalls": 3282,
 }
 `;
 

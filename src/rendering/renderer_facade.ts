@@ -23,6 +23,7 @@ import { StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import { HyperspaceSurveyService } from '../core/hyperspace_survey';
 import { TextModalTableModel } from '../core/text_ui';
+import { drawSurfaceEncounter } from './surface_encounter_renderer';
 import { TEXT_PALETTE } from './text_palette';
 import { getShortcutFontMask } from './shortcut_text';
 import { createPlayerViewSnapshot, SceneViewModel } from './scene_view_model';
@@ -392,7 +393,8 @@ export class RendererFacade {
         this.sceneRenderer.drawOrbitInterface(scene.model);
         return;
       case 'surface':
-        this.sceneRenderer.drawPlanetSurface(scene.player, scene.body, scene.overlay);
+        if (scene.encounter) drawSurfaceEncounter(this.screenBuffer, scene.encounter);
+        else this.sceneRenderer.drawPlanetSurface(scene.player, scene.body, scene.overlay);
         return;
       case 'starbase':
         this.sceneRenderer.drawStarbaseInterface(scene.player, scene.starbase, scene.model);

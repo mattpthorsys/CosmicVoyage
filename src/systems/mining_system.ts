@@ -250,7 +250,9 @@ export class MiningSystem {
     }
     const mapHeight = elementMap.length;
     const mapWidth = elementMap[0]?.length ?? 0;
-    return this.getMiningSiteAt(planet, elementMap, wrapIndex(x, mapWidth), wrapIndex(y, mapHeight));
+    if (y < 0 || y >= mapHeight)
+      return { canMine: false, maxAmount: 0, message: 'Outside surface latitude bounds.' };
+    return this.getMiningSiteAt(planet, elementMap, wrapIndex(x, mapWidth), y);
   }
 
   /** Returns mining site. */
@@ -304,7 +306,8 @@ export class MiningSystem {
     const coordinates: Array<{ x: number; y: number }> = [];
     for (const [dx, dy] of offsets) {
       const x = wrapIndex(currentX + dx, width);
-      const y = wrapIndex(currentY + dy, height);
+      const y = currentY + dy;
+      if (y < 0 || y >= height) continue;
       const key = `${x},${y}`;
       if (!seen.has(key)) {
         seen.add(key);

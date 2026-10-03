@@ -17,6 +17,7 @@ const FOOTER = ['UP/DN scroll  PGUP/DN page', 'ESC return to orbit'];
 
 /** Keeps the detailed orbital readout independent of the landing and body-selection modes. */
 export class OrbitDossier {
+  biologyLines: string[] = [];
   isOpen = false;
   viewOffset = 0;
   readonly reveal = new TerminalTextReveal();
@@ -51,6 +52,16 @@ export class OrbitDossier {
   ): TextModalTableModel {
     const width = Math.max(16, Math.min(88, viewportCols - 12));
     const dashboard = buildOrbitDossierLines(body, parent, sources, width);
+    if (this.biologyLines.length)
+      dashboard.splice(
+        0,
+        0,
+        { segments: [{ text: ' BIOLOGICAL SIGNATURES ', tone: 'cyan', font: 'thick' }] },
+        ...this.biologyLines.flatMap((line) =>
+          wrapValue(line, width).map((text) => ({ segments: [{ text, tone: 'green' as const }] }))
+        ),
+        { segments: [{ text: '' }] }
+      );
     const visible = getDashboardVisibleRows(dashboard.length, viewportRows, FOOTER.length);
     this.viewOffset = Math.min(this.viewOffset, Math.max(0, dashboard.length - visible));
     return {

@@ -14,10 +14,14 @@ import type { SolarSystem } from '../entities/solar_system';
 import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord } from './discovery';
 import type { EconomySnapshot } from './starbase_commerce';
 import { CONFIG } from '../config';
+import { createXenobiologySnapshot, type XenobiologySnapshot } from '../entities/biology/biology_types';
+import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 
-export const SAVE_GAME_VERSION = 10;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v10';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v10';
+export const SAVE_GAME_VERSION = 11;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v11';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v11';
+const VERSION_TEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v10';
+const VERSION_TEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v10';
 const VERSION_NINE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v9';
 const VERSION_NINE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v9';
 const LEGACY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v1';
@@ -170,7 +174,12 @@ export interface GameSaveV10 extends Omit<GameSaveV9, 'version'> {
   version: 10;
 }
 
-export type GameSave = GameSaveV10;
+export interface GameSaveV11 extends Omit<GameSaveV10, 'version'> {
+  version: 11;
+  xenobiology: XenobiologySnapshot;
+}
+
+export type GameSave = GameSaveV11;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -212,6 +221,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV8
     | GameSaveV9
     | GameSaveV10
+    | GameSaveV11
   >;
   if (
     record.version !== 1 &&
@@ -223,6 +233,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 7 &&
     record.version !== 8 &&
     record.version !== 9 &&
+    record.version !== 10 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -283,8 +294,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 9:
       save = migrateV9Save(candidate as unknown as GameSaveV9);
       break;
+    case 10:
+      save = migrateV10Save(candidate as unknown as GameSaveV10);
+      break;
     default:
-      save = candidate as unknown as GameSaveV10;
+      save = candidate as unknown as GameSaveV11;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -299,6 +313,22 @@ export function parseGameSave(value: string | unknown): GameSave {
   }
   validateLocation(save.location);
   validatePlayer(save.player);
+  validateXenobiology(save.xenobiology, [
+    ...(save.player.cargoHold.specimens ?? []),
+    ...(save.player.terrainVehicle.cargoHold.specimens ?? []),
+  ]);
+  if (save.xenobiology.activeSiteId) {
+    const field = save.xenobiology.fields[save.xenobiology.activeSiteId];
+    const location = save.location;
+    if (
+      location.kind !== 'planet' ||
+      !save.player.terrainVehicle.deployed ||
+      save.player.terrainVehicle.onFoot ||
+      field.bodyId !==
+        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio1`
+    )
+      throw new Error('Active encounter does not match saved location.');
+  }
   validateSystemOrbit(save.systemOrbit);
   if (!isRecord(save.catalogueDiscoveries)) {
     throw new Error('Save discovery catalogue is invalid.');
@@ -506,11 +536,30 @@ function migrateV9Save(save: GameSaveV9): GameSave {
   if (save.generationVersion !== 5) {
     throw new Error(`Unsupported Galaxy generation version: ${String(save.generationVersion)}.`);
   }
+  return migrateV10Save({
+    ...save,
+    version: 10,
+    generationVersion: CONFIG.GALAXY_MODEL_VERSION,
+    migratedFromGenerationVersion: save.migratedFromGenerationVersion ?? save.generationVersion,
+  });
+}
+
+/** Adds empty biological progression without changing current-generation world identities. */
+function migrateV10Save(save: GameSaveV10): GameSave {
   return {
     ...save,
     version: SAVE_GAME_VERSION,
-    generationVersion: CONFIG.GALAXY_MODEL_VERSION,
-    migratedFromGenerationVersion: save.migratedFromGenerationVersion ?? save.generationVersion,
+    xenobiology: createXenobiologySnapshot(),
+    player: {
+      ...save.player,
+      cargoHold: { ...save.player.cargoHold, specimens: [] },
+      terrainVehicle: {
+        ...save.player.terrainVehicle,
+        integrity: 100,
+        cargoHold: { ...save.player.terrainVehicle.cargoHold, specimens: [] },
+      },
+      ship: { ...save.player.ship, stasisClass: 0 },
+    },
   };
 }
 
@@ -634,6 +683,14 @@ function validatePlayer(player: PlayerSaveData): void {
     }
   }
   const ship = player.ship;
+  if (!Number.isInteger(ship.stasisClass) || (ship.stasisClass ?? -1) < 0 || (ship.stasisClass ?? 3) > 2)
+    throw new Error('Save stasis class is invalid.');
+  if (
+    !Number.isFinite(player.terrainVehicle.integrity) ||
+    (player.terrainVehicle.integrity ?? -1) < 0 ||
+    (player.terrainVehicle.integrity ?? 101) > 100
+  )
+    throw new Error('Save rover integrity is invalid.');
   assertFiniteNumber(ship.engineClass, 'ship engine class');
   assertFiniteNumber(ship.surveyEquipmentClass, 'ship survey equipment class');
   assertFiniteNumber(ship.damage.hullIntegrity, 'ship hull integrity');
@@ -647,6 +704,12 @@ function validateCargo(cargo: CargoComponent, label: string): void {
   for (const amount of Object.values(cargo.items)) {
     if (!Number.isFinite(amount) || amount < 0) throw new Error(`Save ${label} quantity is invalid.`);
   }
+  if (!Array.isArray(cargo.specimens)) throw new Error('Save specimen manifest is invalid.');
+  cargo.specimens.forEach(validateSpecimen);
+  const volume =
+    Object.values(cargo.items).reduce((sum, amount) => sum + amount, 0) +
+    cargo.specimens.reduce((sum, item) => sum + item.volumeM3, 0);
+  if (volume > cargo.capacity + 1e-6) throw new Error('Save cargo is over capacity.');
 }
 
 /** Validates mission progress references and completed objective arrays. */
@@ -785,6 +848,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_TEN_SESSION_SAVE_KEY,
       VERSION_NINE_SESSION_SAVE_KEY,
       VERSION_EIGHT_SESSION_SAVE_KEY,
       VERSION_SEVEN_SESSION_SAVE_KEY,
@@ -805,6 +869,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_TEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_NINE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(PREVIOUS_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_THREE_SESSION_SAVE_KEY);
@@ -821,6 +886,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_TEN_MANUAL_SAVE_KEY,
       VERSION_NINE_MANUAL_SAVE_KEY,
       VERSION_EIGHT_MANUAL_SAVE_KEY,
       VERSION_SEVEN_MANUAL_SAVE_KEY,
@@ -841,6 +907,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_TEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_NINE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(PREVIOUS_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_THREE_MANUAL_SAVE_KEY);

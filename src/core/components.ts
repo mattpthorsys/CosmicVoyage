@@ -1,6 +1,7 @@
 // Defines the interfaces for data components used in the ECS-lite pattern.
 
 import { GLYPHS } from '../constants/visual';
+import type { SpecimenContainer } from '../entities/biology/biology_types';
 
 /** Component storing entity position across different game contexts. */
 export interface PositionComponent {
@@ -41,6 +42,8 @@ export interface CargoComponent {
   capacity: number;
   /** Record storing cubic metres of each element held (key: element string ID, value: volume). */
   items: Record<string, number>;
+  /** Indivisible specimen containers; absent only on legacy components. */
+  specimens?: SpecimenContainer[];
 }
 
 /** Component for the small surface vehicle carried by the ship. */
@@ -54,6 +57,8 @@ export interface TerrainVehicleComponent {
   fuel: number;
   maxFuel: number;
   cargoHold: CargoComponent;
+  /** Biological encounter protection, separate from the starship hull. */
+  integrity?: number;
 }
 
 // --- Optional: Default Initializers ---
@@ -89,7 +94,7 @@ export function createDefaultResource(credits: number, fuel: number, maxFuel: nu
 
 /** Creates default cargo. */
 export function createDefaultCargo(capacity: number): CargoComponent {
-  return { capacity: capacity, items: {} };
+  return { capacity: capacity, items: {}, specimens: [] };
 }
 
 /** Creates default terrain vehicle. */
@@ -104,5 +109,6 @@ export function createDefaultTerrainVehicle(capacity: number, maxFuel: number): 
     fuel: maxFuel,
     maxFuel,
     cargoHold: createDefaultCargo(capacity),
+    integrity: 100,
   };
 }

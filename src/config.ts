@@ -76,6 +76,7 @@ export const CONFIG = {
     TARGET_MENU: 'n',
     SHIP_MENU: 'o',
     ORBIT_DOSSIER: 'd',
+    BIOLOGY_SITE: 'b',
     HELP: '?',
     TOGGLE_PROFILER: 'F3',
     GAME_MENU: 'F10',

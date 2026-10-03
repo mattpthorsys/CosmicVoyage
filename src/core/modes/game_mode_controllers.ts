@@ -86,6 +86,7 @@ export type ActiveInterface<Quantity, Extraction, Confirmation> =
   | { readonly kind: 'ship-menu' }
   | { readonly kind: 'rover-cargo' }
   | { readonly kind: 'surface-legend' }
+  | { readonly kind: 'xenobiology' }
   | { readonly kind: 'quantity'; readonly state: Quantity }
   | { readonly kind: 'surface-extraction'; readonly state: Extraction }
   | { readonly kind: 'jettison-confirmation'; readonly state: Confirmation };

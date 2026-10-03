@@ -148,6 +148,14 @@ export class StarbaseController {
           widths: [26, 7, 9, 20],
         };
       case 'services':
+      case 'research':
+        if (this.sectionId === 'research')
+          return {
+            title: 'Xenobiology Research Exchange',
+            subtitle: 'Scientific data and sealed specimens / shared research demand',
+            columns: ['SPECIES', 'EVIDENCE', 'AWARD', 'STATUS'],
+            widths: [24, 14, 12, 30],
+          };
         return {
           title: 'Port Services',
           subtitle: 'Station services and ship logistics.',

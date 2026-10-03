@@ -48,6 +48,8 @@ export interface ShipModificationState {
   probeBaysOccupied: number;
   specialBaysOccupied: number;
   surveyEquipmentClass: number;
+  /** Zero means no kit; fitted classes occupy one special-purpose bay. */
+  stasisClass?: number;
   damage: ShipDamageState;
 }
 
@@ -130,6 +132,7 @@ export function createDefaultShipModifications(): ShipModificationState {
     probeBaysOccupied: 0,
     specialBaysOccupied: 1,
     surveyEquipmentClass: 1,
+    stasisClass: 0,
     damage: {
       hullIntegrity: 100,
       maxHullIntegrity: 100,
@@ -332,6 +335,23 @@ export function createShipyardUpgradeOptions(
 ): ShipyardUpgradeOption[] {
   const repairCost = getShipRepairCost(ship);
   const options: ShipyardUpgradeOption[] = [
+    ...[1, 2].map(
+      (equipmentClass): ShipyardUpgradeOption => ({
+        id: `shipyard:stasis:${equipmentClass}`,
+        label: equipmentClass === 1 ? 'Basic biological stasis' : 'Extended biological stasis',
+        cost: equipmentClass === 1 ? 700 : 1900,
+        eta: '2h',
+        workOrder:
+          equipmentClass === 1
+            ? '2 live slots per carrier; 280-315 K, 0.3-2 bar'
+            : '6 live slots per carrier; 273-345 K, 0.04-12 bar',
+        detail:
+          'One special-purpose bay includes portable rover preservation. Sealed containers also occupy cargo volume. Carbon-water biology, handling limit 80 kg.',
+        disabled:
+          equipmentClass <= (ship.stasisClass ?? 0) ||
+          (!(ship.stasisClass ?? 0) && ship.specialBaysOccupied >= ship.superstructure.specialPurposeBays),
+      })
+    ),
     ...[1, 2, 3].map(
       (equipmentClass): ShipyardUpgradeOption => ({
         id: `shipyard:survey:${equipmentClass}`,
@@ -430,6 +450,18 @@ export function createShipyardUpgradeOptions(
 
 /** Applies a purchased shipyard upgrade to the ship. */
 export function installShipyardUpgrade(ship: ShipModificationState, optionId: string): string {
+  const stasisMatch = optionId.match(/^shipyard:stasis:([12])$/);
+  if (stasisMatch) {
+    const equipmentClass = Number(stasisMatch[1]);
+    if (equipmentClass <= (ship.stasisClass ?? 0)) return 'Stasis kit already installed or superseded.';
+    if (!(ship.stasisClass ?? 0)) {
+      if (ship.specialBaysOccupied >= ship.superstructure.specialPurposeBays)
+        return 'No free special-purpose bay.';
+      ship.specialBaysOccupied++;
+    }
+    ship.stasisClass = equipmentClass;
+    return `Installed biological stasis Class ${equipmentClass}.`;
+  }
   if (optionId === 'shipyard:repair') {
     return repairShipDamage(ship);
   }
