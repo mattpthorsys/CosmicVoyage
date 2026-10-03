@@ -37,6 +37,42 @@ function fieldFixture() {
 }
 
 describe('habitat communities', () => {
+  it('classifies rocky water margins and elevated substrate from numeric terrain', () => {
+    const terrain = surface();
+    terrain.heightmap![4][3] = 40;
+    expect(classifyHabitat(terrain, 4, 4, true)?.kind).toBe('rocky-margin');
+    terrain.heightmap = terrain.heightmap!.map((row) => row.map(() => 200));
+    expect(classifyHabitat(terrain, 4, 4, true)?.kind).toBe('upland-ground');
+  });
+  it('supplies distinct bounded communities with suitable producers in each supported habitat', () => {
+    const biosphere = generateBiosphere(biologyFixture())!;
+    for (const kind of [
+      'moist-margin',
+      'rocky-margin',
+      'sheltered-ground',
+      'exposed-ground',
+      'upland-ground',
+    ] as const) {
+      const habitat = {
+        version: 1,
+        kind,
+        description: 'Representative habitat.',
+        relief: 0.04,
+        waterDistanceCells: kind.includes('margin') ? 1 : null,
+      };
+      const field = createEncounter(biosphere, { id: `habitat:${kind}`, x: 4, y: 4, label: kind, habitat });
+      expect(field.individuals.length).toBeGreaterThan(0);
+      expect(field.individuals.length).toBeLessThanOrEqual(8);
+      expect(
+        field.individuals.every((actor) =>
+          habitatCommunity(biosphere, kind).some((species) => species.id === actor.speciesId)
+        )
+      ).toBe(true);
+      const snapshot = createXenobiologySnapshot();
+      snapshot.fields[field.site.id] = field;
+      expect(() => validateXenobiology(snapshot, [])).not.toThrow();
+    }
+  });
   it('uses real water proximity, not colour, and refuses submerged cells', () => {
     const terrain = surface();
     terrain.heightmap![4][3] = 80;

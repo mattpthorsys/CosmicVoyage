@@ -9,8 +9,8 @@ describe('bounded biosphere generation', () => {
     const unrelated = new PRNG('biology-fixture');
     for (let i = 0; i < 100; i++) unrelated.random();
     expect(generateBiosphere(biologyFixture())).toEqual(first);
-    expect(first?.species).toHaveLength(6);
-    for (let i = 0; i < 6; i += 2) {
+    expect(first?.species).toHaveLength(10);
+    for (let i = 0; i < 10; i += 2) {
       expect(first?.species[i].covering).toBe(first?.species[i + 1].covering);
       expect(first?.species[i].symmetry).toBe(first?.species[i + 1].symmetry);
       expect(first?.species[i].senses).toBe(first?.species[i + 1].senses);

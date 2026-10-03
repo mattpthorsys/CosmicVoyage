@@ -8,7 +8,23 @@ export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territor
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
 export type EvidenceLevel = 0 | 1 | 2 | 3;
 export type StunPower = 0 | 1 | 2;
-export type HabitatKind = 'moist-margin' | 'sheltered-ground' | 'exposed-ground';
+export type HabitatKind =
+  | 'moist-margin'
+  | 'sheltered-ground'
+  | 'exposed-ground'
+  | 'rocky-margin'
+  | 'upland-ground';
+export type OrganismBodyForm =
+  | 'mat'
+  | 'frond'
+  | 'colony'
+  | 'fan'
+  | 'rosette'
+  | 'walker'
+  | 'tripod'
+  | 'radial'
+  | 'burrower'
+  | 'ambush';
 
 export interface HabitatProfile {
   readonly version: number;
@@ -47,6 +63,8 @@ export interface SpeciesDefinition {
   readonly remoteness: number;
   readonly habitatAffinity?: readonly HabitatKind[];
   readonly socialBehaviour?: 'group-retreat';
+  /** Observed external anatomy; this also selects the constrained silhouette library. */
+  readonly bodyForm?: OrganismBodyForm;
 }
 
 export interface BiologySite {

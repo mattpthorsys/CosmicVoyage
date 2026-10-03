@@ -111,7 +111,7 @@ function createHabitatPopulation(
   const producer = community.find((species) => species.metabolism !== 'heterotroph');
   const consumers = community.filter((species) => species.metabolism === 'heterotroph');
   if (!producer) return [];
-  const sparse = site.habitat.kind === 'exposed-ground';
+  const sparse = site.habitat.kind === 'exposed-ground' || site.habitat.kind === 'upland-ground';
   const population = [
     ...Array.from({ length: sparse ? 3 : 4 }, () => producer),
     ...Array.from({ length: sparse ? 1 : 3 }, () => consumers[0]).filter((species) => !!species),
@@ -121,9 +121,10 @@ function createHabitatPopulation(
   for (const [index, species] of population.entries()) {
     const prng = new PRNG(site.id).seedNew('community', index);
     const patch =
-      site.habitat.kind === 'moist-margin' && species !== consumers[1]
+      (site.habitat.kind === 'moist-margin' || site.habitat.kind === 'rocky-margin') &&
+      species !== consumers[1]
         ? 'm'
-        : site.habitat.kind === 'exposed-ground'
+        : sparse
           ? 'o'
           : 's';
     const cells: Array<{ x: number; y: number }> = [];

@@ -87,7 +87,8 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
   if (e.origin === 'native' && prng.random() > 0.34 * temperate * Math.min(1, e.ageGyr / 2)) return null;
   const aerobic = e.origin === 'introduced' || e.oxygenBar >= 0.035;
   const species: SpeciesDefinition[] = [];
-  for (let index = 0; index < 6; index++) {
+  // Keep the original six identities and inherited streams; new content uses additional indices.
+  for (let index = 0; index < 10; index++) {
     const lineage = Math.floor(index / 2);
     const ancestor = prng.seedNew('ancestor', lineage);
     const individual = prng.seedNew('species', index);
@@ -106,7 +107,7 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
     const behaviour =
       index === 1 && aerobic
         ? 'skittish'
-        : index === 3 && sampledBehaviour === 'ambush'
+        : (index === 3 || index === 7 || index === 9 || !aerobic) && sampledBehaviour === 'ambush'
           ? 'passive'
           : sampledBehaviour;
     const massKg = Number(
@@ -130,10 +131,21 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
     species.push({
       id: e.origin === 'introduced' ? `managed-carbon-water:${index}` : `${e.bodyId}/species:${index}`,
       bodyId: e.bodyId,
+      bodyForm: producer
+        ? (['mat', 'colony', 'frond', 'fan', 'rosette'] as const)[lineage]
+        : behaviour === 'ambush'
+          ? 'ambush'
+          : lineage === 1 || lineage >= 3
+            ? 'burrower'
+            : symmetry === 'radial'
+              ? 'radial'
+              : symmetry === 'trilateral'
+                ? 'tripod'
+                : 'walker',
       name:
         e.origin === 'introduced'
-          ? `Managed ${['mat', 'grazer', 'colony', 'crawler', 'frond', 'burrower'][index]}`
-          : `Taxon ${lineage + 1}.${(index % 2) + 1}`,
+          ? `Managed ${['mat', 'grazer', 'colony', 'crawler', 'frond', 'burrower', 'fan', 'crevice feeder', 'rosette', 'upland crawler'][index]}`
+          : `${['Veil mat', 'Margin grazer', 'Substrate colony', 'Litter crawler', 'Ribbon frond', 'Shelter forager', 'Crevice fan', 'Rock detritivore', 'Upland rosette', 'Crust browser'][index]} ${lineage + 1}.${(index % 2) + 1}`,
       lineage: `Clade ${lineage + 1}`,
       origin: e.origin,
       symmetry,
@@ -146,14 +158,18 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
         ? 'primary producer'
         : behaviour === 'ambush'
           ? 'small prey predator'
-          : lineage === 1
+          : lineage === 1 || lineage >= 3
             ? 'decomposer / scavenger'
             : 'grazer',
       locomotion: producer
         ? 'rooted / sessile'
-        : symmetry === 'radial'
-          ? 'muscular creeping'
-          : 'articulated walking',
+        : lineage === 1 || lineage >= 3
+          ? 'substrate creeping'
+          : symmetry === 'radial'
+            ? 'muscular creeping'
+            : symmetry === 'trilateral'
+              ? 'three-armed walking'
+              : 'articulated walking',
       behaviour,
       massKg,
       sizeM: Number(Math.cbrt(massKg / 60).toFixed(2)),
@@ -176,7 +192,11 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
               ? ['moist-margin', 'sheltered-ground', 'exposed-ground']
               : index === 4
                 ? ['exposed-ground']
-                : ['sheltered-ground', 'exposed-ground'],
+                : index === 5
+                  ? ['sheltered-ground', 'exposed-ground', 'upland-ground']
+                  : index <= 7
+                    ? ['rocky-margin']
+                    : ['upland-ground'],
       socialBehaviour: index === 1 && aerobic ? 'group-retreat' : undefined,
     });
   }
@@ -199,7 +219,10 @@ export function prepareBiosphere(
   const used = new Set<string>();
   for (
     let attempt = 0;
-    attempt < 768 && (sites.length < 6 || !sites.some((site) => site.habitat?.kind === 'moist-margin'));
+    attempt < 768 &&
+    (sites.length < 6 ||
+      new Set(sites.map((site) => site.habitat?.kind)).size < 3 ||
+      !sites.some((site) => site.habitat?.waterDistanceCells !== null));
     attempt++
   ) {
     const x = prng.randomInt(0, map.length - 1);
@@ -208,18 +231,22 @@ export function prepareBiosphere(
     if (height <= (surface.liquidOverlay?.seaLevel ?? -1) || used.has(`${x},${y}`)) continue;
     const habitat = classifyHabitat(surface, x, y, environment.waterCoverage > 0);
     if (!habitat) continue;
-    if (sites.length === 6 && habitat.kind !== 'moist-margin') continue;
+    // Retain representative habitats when they actually occur in the prepared regional terrain.
+    if (sites.length === 6 && sites.some((site) => site.habitat?.kind === habitat.kind)) continue;
     used.add(`${x},${y}`);
     const site: BiologySite = {
       id: `${biosphere.id}/site:${x},${y}`,
       x,
       y,
       habitat,
-      label: `${habitat.kind === 'moist-margin' ? 'Water margin' : habitat.kind === 'sheltered-ground' ? 'Sheltered outcrops' : 'Open substrate'} ${Math.min(6, sites.length + 1)}`,
+      label: `${{ 'moist-margin': 'Water margin', 'rocky-margin': 'Rocky water margin', 'sheltered-ground': 'Sheltered outcrops', 'exposed-ground': 'Open substrate', 'upland-ground': 'Elevated substrate' }[habitat.kind]} ${Math.min(6, sites.length + 1)}`,
     };
-    // Prefer one real water margin when found; never manufacture a coast for the encounter feature.
-    if (sites.length === 6) sites[5] = site;
-    else sites.push(site);
+    if (sites.length === 6) {
+      const duplicate = sites.findIndex((entry, index) =>
+        sites.some((other, otherIndex) => index !== otherIndex && other.habitat?.kind === entry.habitat?.kind)
+      );
+      if (duplicate >= 0) sites[duplicate] = site;
+    } else sites.push(site);
   }
   return { ...biosphere, sites };
 }

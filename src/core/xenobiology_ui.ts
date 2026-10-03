@@ -299,6 +299,7 @@ export function createBiologicalDossier(
     'amber'
   );
   entry('Body plan', species.symmetry);
+  if (level >= 1 && species.bodyForm) entry('External form', species.bodyForm, 'cyan');
   if (contact)
     entry(
       'Contact',

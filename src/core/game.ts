@@ -334,7 +334,18 @@ export class Game {
     const ready = planet.isSurfaceReady();
     const prior = cache.get(planet);
     if (prior && prior.ready === ready) return prior.biosphere;
-    const biosphere = prepareBiosphere(planet, system, path);
+    const generated = prepareBiosphere(planet, system, path);
+    const savedSites = generated
+      ? Object.values(this.xenobiology.snapshot.fields)
+          .filter((field) => field.bodyId === generated.id)
+          .map((field) => field.site)
+      : [];
+    const biosphere = generated
+      ? {
+          ...generated,
+          sites: [...new Map([...generated.sites, ...savedSites].map((site) => [site.id, site])).values()],
+        }
+      : null;
     cache.set(planet, { ready, biosphere });
     return biosphere;
   }

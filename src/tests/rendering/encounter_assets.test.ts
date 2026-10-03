@@ -7,6 +7,23 @@ import { createEncounter } from '../../systems/surface_encounter_system';
 import type { Planet } from '../../entities/planet';
 
 describe('field visual assets', () => {
+  it('uses observed external anatomy and distinguishes newly added silhouette families', () => {
+    const species = generateBiosphere(biologyFixture())!.species[0];
+    const forms = [
+      'mat',
+      'frond',
+      'colony',
+      'fan',
+      'rosette',
+      'walker',
+      'tripod',
+      'radial',
+      'burrower',
+      'ambush',
+    ] as const;
+    const shapes = forms.map((bodyForm) => createOrganismSprite({ ...species, bodyForm }).frames[0].join(''));
+    expect(new Set(shapes).size).toBe(forms.length);
+  });
   it('bakes reproducible four-colour pixel silhouettes with consistent six-by-four frames', () => {
     const species = generateBiosphere(biologyFixture())!.species;
     for (const sprite of [...species.map(createOrganismSprite), ROVER_SPRITE]) {

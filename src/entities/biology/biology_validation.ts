@@ -41,11 +41,11 @@ function choice(value: unknown, choices: readonly unknown[]): void {
 export function validateHabitat(value: unknown): asserts value is HabitatProfile {
   record(value);
   if (value.version !== HABITAT_VERSION) throw new Error('Unsupported habitat version.');
-  choice(value.kind, ['moist-margin', 'sheltered-ground', 'exposed-ground']);
+  choice(value.kind, ['moist-margin', 'sheltered-ground', 'exposed-ground', 'rocky-margin', 'upland-ground']);
   text(value.description);
   number(value.relief, 0, 1);
   if (value.waterDistanceCells !== null) number(value.waterDistanceCells, 1, 2, true);
-  if ((value.kind === 'moist-margin') !== (value.waterDistanceCells !== null))
+  if (['moist-margin', 'rocky-margin'].includes(value.kind as string) !== (value.waterDistanceCells !== null))
     throw new Error('Invalid habitat water proximity.');
 }
 
@@ -89,10 +89,23 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
     )
       throw new Error('Invalid habitat affinity.');
     value.habitatAffinity.forEach((kind) =>
-      choice(kind, ['moist-margin', 'sheltered-ground', 'exposed-ground'])
+      choice(kind, ['moist-margin', 'sheltered-ground', 'exposed-ground', 'rocky-margin', 'upland-ground'])
     );
   }
   if (value.socialBehaviour !== undefined) choice(value.socialBehaviour, ['group-retreat']);
+  if (value.bodyForm !== undefined)
+    choice(value.bodyForm, [
+      'mat',
+      'frond',
+      'colony',
+      'fan',
+      'rosette',
+      'walker',
+      'tripod',
+      'radial',
+      'burrower',
+      'ambush',
+    ]);
 }
 
 /** Validates a complete biological container, never interpreting it as a divisible trade lot. */
