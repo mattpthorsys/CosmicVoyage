@@ -61,6 +61,8 @@ export function createOrganismSprite(species: SpeciesDefinition, sizeScale = 1):
     if (!species.anatomy.appendages) second[3] = '.1221.';
     else if (species.anatomy.appendages >= 6) second[3] = '.1111.';
     else if (species.anatomy.appendages === 3) second[0] = '...2..';
+    if (first.every((row, index) => row === second[index]))
+      second[3] = first[3] === '.1..1.' ? '1....1' : '.1..1.';
   }
   // A small highlight is an observed surface feature, not a disclosure of hidden physiology.
   first[1] = first[1].replace('3', '4');

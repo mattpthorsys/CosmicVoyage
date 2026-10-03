@@ -34,6 +34,10 @@ describe('field visual assets', () => {
     };
     const six = { ...four, anatomy: { ...four.anatomy, appendages: 6 } };
     expect(createOrganismSprite(four).frames[0]).not.toEqual(createOrganismSprite(six).frames[0]);
+    for (const mobile of species.filter((entry) => entry.behaviour !== 'sessile')) {
+      const sprite = createOrganismSprite(mobile);
+      expect(sprite.frames[0]).not.toEqual(sprite.frames[1]);
+    }
     expect(species).toEqual(before);
   });
   it('keeps detailed external traits out of preliminary dossiers while making them readable after observation', () => {
