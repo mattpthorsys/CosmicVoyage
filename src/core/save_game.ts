@@ -736,6 +736,12 @@ function validateMissionProgress(save: GameSave): void {
       assertNonEmptyString(mission.originStarbaseId, 'mission origin station id');
     }
     assertNonEmptyString(mission.originStarbaseName, 'mission origin starbase');
+    if (mission.systemAddress !== undefined) {
+      if (!isRecord(mission.systemAddress)) throw new Error('Invalid mission system address.');
+      assertFiniteNumber(mission.systemAddress.worldX, 'mission world X');
+      assertFiniteNumber(mission.systemAddress.worldY, 'mission world Y');
+      assertSystemSlot(mission.systemAddress.systemSlot, 'mission system slot');
+    }
     assertFiniteNumber(mission.rewardCredits, 'mission reward');
     if (!Number.isSafeInteger(mission.rewardCredits) || mission.rewardCredits < 0)
       throw new Error('Invalid mission reward.');
@@ -746,6 +752,31 @@ function validateMissionProgress(save: GameSave): void {
       assertNonEmptyString(objective.id, 'mission objective id');
       assertNonEmptyString(objective.targetName, 'mission objective target');
       assertNonEmptyString(objective.targetLabel, 'mission objective label');
+      if (objective.location !== undefined) {
+        if (!isRecord(objective.location) || !mission.systemAddress)
+          throw new Error('Invalid mission destination.');
+        assertBodyPath(objective.location.bodyPath, 'mission body path');
+        assertNonEmptyString(objective.location.bodyName, 'mission body name');
+        const surface = objective.location.surface;
+        if (surface !== undefined) {
+          if (!isRecord(surface)) throw new Error('Invalid mission landing site.');
+          assertFiniteNumber(surface.x, 'mission surface X');
+          assertFiniteNumber(surface.y, 'mission surface Y');
+          if (
+            !Number.isSafeInteger(surface.x) ||
+            !Number.isSafeInteger(surface.y) ||
+            surface.x < 0 ||
+            surface.y < 0 ||
+            surface.x > CONFIG.PLANET_MAP_BASE_SIZE ||
+            surface.y > CONFIG.PLANET_MAP_BASE_SIZE
+          )
+            throw new Error('Invalid mission landing coordinates.');
+          assertNonEmptyString(surface.siteId, 'mission landing habitat id');
+          assertNonEmptyString(surface.label, 'mission landing habitat label');
+          if (objective.kind === 'specimen' && surface.siteId !== objective.siteId)
+            throw new Error('Mission landing habitat does not match its specimen objective.');
+        }
+      }
       if (objective.kind === 'scan') {
         if (
           !['planet', 'star', 'system'].includes(objective.targetType) ||

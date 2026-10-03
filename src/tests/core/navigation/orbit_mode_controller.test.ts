@@ -44,6 +44,47 @@ function input(pressed: string[] = [], held: string[] = []) {
 }
 
 describe('orbital interaction controller', () => {
+  it('selects an exact mission habitat on a moon without landing until a separate confirmation', () => {
+    const parent = createBody('Mission parent');
+    const moon = createBody('Mission moon');
+    parent.moons.push(moon);
+    const orbit = new OrbitModeController();
+    const { context } = createContext(parent);
+    expect(orbit.selectLandingSite(parent, moon, 123, 456, 'Sheltered habitat')).toBe(true);
+    expect(orbit.getSelectedBody(parent)).toBe(moon);
+    expect(orbit.mode).toBe('landing');
+    expect(orbit.landingX).toBe(123);
+    expect(orbit.landingY).toBe(456);
+    expect(context.land).not.toHaveBeenCalled();
+    orbit.handleInput(input(['ENTER_SYSTEM']), context);
+    expect(context.land).toHaveBeenCalledWith(moon, 123, 456);
+  });
+
+  it('rejects unprepared, distant, gaseous or invalid mission landing selections without altering the cursor', () => {
+    const parent = createBody('Guarded habitat');
+    const other = createBody('Distant planet');
+    const giant = createBody('Giant', 'GasGiant');
+    parent.moons.push(giant);
+    const orbit = new OrbitModeController();
+    const start = { x: orbit.landingX, y: orbit.landingY };
+    expect(orbit.selectLandingSite(parent, other, 1, 1, 'Invalid')).toBe(false);
+    expect(orbit.selectLandingSite(parent, giant, 1, 1, 'Invalid')).toBe(false);
+    for (const [x, y] of [
+      [-1, 1],
+      [1, -1],
+      [0.5, 1],
+      [1, Infinity],
+      [9999, 1],
+    ])
+      expect(orbit.selectLandingSite(parent, parent, x, y, 'Invalid')).toBe(false);
+    vi.mocked(parent.isSurfaceReady).mockReturnValue(false);
+    expect(orbit.selectLandingSite(parent, parent, 1, 1, 'Loading')).toBe(false);
+    expect(orbit.mode).toBe('overview');
+    expect(orbit.landingX).toBe(start.x);
+    expect(orbit.landingY).toBe(start.y);
+    expect(orbit.selectedBodyIndex).toBe(0);
+  });
+
   it('refreshes physical light data without rebuilding cached descriptions', () => {
     const parent = createBody('Moving lights');
     parent.systemX = 0;

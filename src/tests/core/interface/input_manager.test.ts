@@ -13,6 +13,30 @@ function keyEvent(key: string, code: string): KeyboardEvent {
 }
 
 describe('InputManager', () => {
+  it('does not treat a repeated Enter as fresh confirmation after a modal clears input', () => {
+    const input = new InputManager() as any;
+    input.isListening = true;
+    input._handleKeyDown(keyEvent('Enter', 'Enter'));
+    input.clearState();
+    input._handleKeyDown({ ...keyEvent('Enter', 'Enter'), repeat: true });
+    expect(input.wasActionJustPressed('ENTER_SYSTEM')).toBe(false);
+    expect(input.wasAnyKeyJustPressed()).toBe(false);
+    input._handleKeyUp(keyEvent('Enter', 'Enter'));
+    input._handleKeyDown(keyEvent('Enter', 'Enter'));
+    expect(input.wasActionJustPressed('ENTER_SYSTEM')).toBe(true);
+  });
+
+  it('maps the mission journal without conflicting with the mining key', () => {
+    const input = new InputManager() as any;
+    input.isListening = true;
+    input._handleKeyDown(keyEvent('j', 'KeyJ'));
+    expect(input.wasActionJustPressed('MISSION_JOURNAL')).toBe(true);
+    input._handleKeyUp(keyEvent('j', 'KeyJ'));
+    input.update();
+    input._handleKeyDown(keyEvent('m', 'KeyM'));
+    expect(input.wasActionJustPressed('MINE')).toBe(true);
+  });
+
   it('detects unbound fresh keys, ignores held repeats, and clears frame and session state', () => {
     const input = new InputManager() as any;
     input.isListening = true;

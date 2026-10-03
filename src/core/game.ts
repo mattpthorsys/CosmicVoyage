@@ -59,6 +59,12 @@ import {
   type StarbaseMission,
 } from './mission_board';
 import { MissionProgressService } from './mission_progress';
+import { MissionJournal, type MissionJournalEntry } from './mission_journal';
+import {
+  getMissionLandingBody,
+  getMissionLandingLocation,
+  resolveMissionNavigation,
+} from './mission_navigation';
 import { createBiologicalContract, deliverBiologicalContract } from './biological_contracts';
 import { ScanService } from './scan_service';
 import { DiscoveryLevel, formatDiscoveryLevel } from './discovery';
@@ -158,6 +164,7 @@ import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coor
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
 type RoverActionId =
+  | 'missions'
   | 'map'
   | 'move'
   | 'cargo'
@@ -254,6 +261,7 @@ export class Game {
   private readonly hyperspaceSurveyService: HyperspaceSurveyService;
   private _scanService?: ScanService;
   private _missionProgress?: MissionProgressService;
+  private _missionJournal?: MissionJournal;
   private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
@@ -398,6 +406,7 @@ export class Game {
     if (this.encounterController.interaction.kind !== 'drive') this.interfaceMode.open('xenobiology');
     else this.interfaceMode.close('xenobiology');
     if (intent?.kind === 'cargo') this.openRoverCargo();
+    else if (intent?.kind === 'missions') this.openMissionJournal();
     else if (intent?.kind === 'leave') {
       if (Math.hypot(field.roverX - 16, field.roverY - 21) > 1.5 && this.player.terrainVehicle.fuel >= 0.02)
         this.statusMessage = 'Return to entry X16 Y21 to withdraw.';
@@ -541,6 +550,11 @@ export class Game {
   private get missionProgress(): MissionProgressService {
     this._missionProgress ??= new MissionProgressService();
     return this._missionProgress;
+  }
+
+  /** Returns the transient mission reader without storing menu state in world saves. */
+  private get missionJournal(): MissionJournal {
+    return (this._missionJournal ??= new MissionJournal());
   }
 
   /** Returns the serialized predictive surface-generation queue. */
@@ -1340,6 +1354,17 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.interfaceMode.is('mission-journal')) {
+      if (this.missionJournal.reveal.isActive) this.missionJournal.reveal.complete();
+      else {
+        this.inputManager.justPressedActions.add(data.action);
+        this.handleMissionJournalInput();
+        this.inputManager.justPressedActions.delete(data.action);
+      }
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.activeEncounter) {
       this.inputManager.justPressedActions.add(data.action);
       if (this.jettisonConfirmation) this._handleJettisonConfirmationInput();
@@ -2483,6 +2508,9 @@ export class Game {
       case 'OPEN_SHIP_MENU':
         this.openShipMenu();
         return;
+      case 'MISSION_JOURNAL':
+        this.openMissionJournal();
+        return;
       case 'ORBIT_DOSSIER':
         if (this.stateManager.state === 'orbit' && !this.orbitModeState.dossier.isOpen) {
           this.orbitModeState.dossier.open();
@@ -2950,6 +2978,121 @@ export class Game {
     this.forceFullRender = true;
   }
 
+  /** Resolves legacy local destinations from actual generated worlds before reading accepted contracts. */
+  private getMissionJournalEntries(): MissionJournalEntry[] {
+    if (!this.missionProgress.getActiveCount()) return [];
+    const system = this.stateManager.currentSystem;
+    if (system) {
+      const biospheres = getSystemPlanetPaths(system)
+        .map(({ planet }) => this.getBiosphere(planet))
+        .filter((entry): entry is BiosphereDefinition => entry !== null);
+      this.missionProgress.resolveNavigation(system, biospheres);
+    }
+    const specimens = this.ownedSpecimens;
+    return this.missionProgress.getActiveMissions().map((mission) => ({
+      mission,
+      status: this.missionProgress.getStatus(mission, specimens),
+      ...this.missionProgress.getObjectiveCounts(mission, specimens),
+    }));
+  }
+
+  /** Opens from travel or a safe parent menu, preserving its selection for Escape. */
+  private openMissionJournal(): void {
+    const kind = this.interfaceMode.kind;
+    if (kind !== 'none' && kind !== 'ship-menu' && kind !== 'rover-cargo' && kind !== 'xenobiology') return;
+    if (
+      this.popupState !== 'inactive' ||
+      (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen)
+    )
+      return;
+    if (this.activeEncounter && !['drive', 'menu'].includes(this.encounterController.interaction.kind))
+      return;
+    this.missionJournal.open(kind);
+    this.interfaceMode.open('mission-journal');
+    this.forceFullRender = true;
+  }
+
+  /** Restores the exact parent interface and prevents held terminal keys leaking into movement. */
+  private closeMissionJournal(): void {
+    const returnTo = this.missionJournal.returnTo;
+    if (returnTo === 'none') this.interfaceMode.close('mission-journal');
+    else this.interfaceMode.open(returnTo);
+    this.missionJournal.reveal.complete();
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Determines whether this journal target can be selected in the current orbital family. */
+  private getJournalLandingBody(mission: StarbaseMission | undefined): Planet | null {
+    const system = this.stateManager.currentSystem;
+    const parent = this.stateManager.currentOrbitReferencePlanet;
+    return mission && system && parent && this.stateManager.state === 'orbit'
+      ? getMissionLandingBody(mission, system, parent)
+      : null;
+  }
+
+  /** Prepares the selected mission's landing cursor, never entering orbit or landing automatically. */
+  private selectMissionLandingSite(mission: StarbaseMission | undefined): void {
+    const body = this.getJournalLandingBody(mission);
+    const site = mission && getMissionLandingLocation(mission)?.surface;
+    if (!body || !site) {
+      this.missionJournal.notice = !site
+        ? 'No specific landing coordinates required by this contract.'
+        : 'Enter orbit at the destination planet or its parent before selecting this site.';
+    } else if (!body.isSurfaceReady()) {
+      this.requestSurfacePreparation(body);
+      this.missionJournal.notice = 'Preparing destination terrain. Press Enter again when it is ready.';
+    } else if (
+      this.orbitModeState.selectLandingSite(
+        this.stateManager.currentOrbitReferencePlanet!,
+        body,
+        site.x,
+        site.y,
+        site.label
+      )
+    ) {
+      const resolution = this.scanService.resolvePlanet(body, 'surveyed', 100, 'orbital-survey');
+      this.completeMissionsForDiscovery(body, resolution.current.level);
+      this.enqueueSurfacePrefetch(
+        this.orbitModeState.getPrefetchWindow(this.stateManager.currentOrbitReferencePlanet!)
+      );
+      this.statusMessage = this.orbitModeState.alert;
+      this.closeMissionJournal();
+      return;
+    } else {
+      this.missionJournal.notice = 'Recorded landing coordinates are not valid for this body.';
+    }
+    this.missionJournal.viewOffset = 0;
+    this.forceFullRender = true;
+  }
+
+  /** Gives the mission terminal exclusive input ownership while allowing shortcuts from its parent menus. */
+  private handleMissionJournalInput(): boolean {
+    if (!this.interfaceMode.is('mission-journal')) {
+      if (!this.inputManager.wasActionJustPressed('MISSION_JOURNAL')) return false;
+      this.openMissionJournal();
+      return this.interfaceMode.is('mission-journal');
+    }
+    const entries = this.getMissionJournalEntries();
+    const model = this.createMissionJournalModel(entries);
+    const intent = this.missionJournal.input(this.inputManager, entries, model);
+    if (intent === 'close') this.closeMissionJournal();
+    else if (intent === 'landing')
+      this.selectMissionLandingSite(this.missionJournal.selected(entries)?.mission);
+    if (this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
+  }
+
+  /** Builds a responsive mission terminal with contextual landing controls. */
+  private createMissionJournalModel(entries = this.getMissionJournalEntries()): TextModalTableModel {
+    return this.missionJournal.createModel(
+      entries,
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows(),
+      !!this.getJournalLandingBody(this.missionJournal.selected(entries)?.mission)
+    );
+  }
+
   /** Processes all input for the current frame by calling helper methods. */
   private _processInput(): void {
     if (this._handleJettisonConfirmationInput()) {
@@ -2971,6 +3114,10 @@ export class Game {
     // The dossier owns all keys, including shortcuts for other instruments.
     if (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) {
       this._handleOrbitInput();
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this.handleMissionJournalInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -3746,6 +3893,11 @@ export class Game {
   /** Updates. */
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
+    if (this.interfaceMode.is('mission-journal')) {
+      if (this.missionJournal.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     let blockGameUpdates = this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen;
     if (this.activeEncounter) {
       if (this.encounterController.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
@@ -4622,6 +4774,7 @@ export class Game {
       { id: 'stun', label: 'Stun', status: 'safe' },
       { id: 'shoot', label: 'Shoot', status: 'safe' },
       { id: 'icon', label: 'Icon', status: 'legend' },
+      { id: 'missions', label: 'Missions', status: `${this.missionProgress.getActiveCount()} active` },
     ];
     if (this.isAtParkedShip()) {
       items.splice(0, 0, { id: 'embark', label: 'Embark', status: 'board ship' });
@@ -5099,6 +5252,9 @@ export class Game {
       case 'cargo':
         this.openRoverCargo();
         break;
+      case 'missions':
+        this.openMissionJournal();
+        break;
       case 'mine':
         this.openMiningQuantitySelector();
         break;
@@ -5331,6 +5487,10 @@ export class Game {
   /** Activates ship menu selection. */
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id === 'missions' || (this.shipOperations.section === 'log' && row.id === '007')) {
+      this.openMissionJournal();
+      return;
+    }
     if (this.shipOperations.section === 'main') {
       if (row.id === 'launch') {
         this.launchFromParkedShip();
@@ -5647,6 +5807,13 @@ export class Game {
             cells: ['Ship Log', this.getShipLogSummary()],
             detail: 'Persistent watch notes, discoveries, mission state, and navigation fixes.',
             cellTones: ['cyan', this.statusMessage ? 'amber' : 'green'],
+            detailTone: 'cyan',
+          },
+          {
+            id: 'missions',
+            cells: ['Mission Journal', `${this.missionProgress.getActiveCount()} accepted contracts`],
+            detail: 'Review destinations, objectives, habitat coordinates and delivery requirements.',
+            cellTones: ['cyan', 'green'],
             detailTone: 'cyan',
           },
         ];
@@ -6090,7 +6257,7 @@ export class Game {
           : activeMissionCount > 0
             ? `${activeMissionCount} accepted mission${activeMissionCount === 1 ? '' : 's'} in ship memory.`
             : 'No active contracts. Notice boards may hold new work at starbases.',
-        'Mission/notices integration point for the shipboard memory system.'
+        'Enter opens accepted contracts, destination coordinates and delivery instructions.'
       )
     );
 
@@ -6717,6 +6884,10 @@ export class Game {
           this.renderer.drawTextModalTable(this.createSurfaceLegendModel());
         }
 
+        if (this.interfaceMode.is('mission-journal')) {
+          this.renderer.drawTextModalTable(this.createMissionJournalModel());
+        }
+
         if (this.quantitySelector) {
           this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
         }
@@ -6797,6 +6968,7 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
       this.shipMenuOpen ||
       this.targetMenuOpen ||
@@ -6843,6 +7015,7 @@ export class Game {
   /** Returns whether game clock paused. */
   private isGameClockPaused(): boolean {
     return (
+      this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
       this.stateManager.state === 'starbase' ||
       (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) ||
@@ -6881,6 +7054,17 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.interfaceMode.is('mission-journal')) {
+      return [
+        'mission-journal',
+        this.missionJournal.selection,
+        this.missionJournal.viewOffset,
+        this.missionJournal.notice,
+        this.missionJournal.reveal.progress,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
+    }
     if (this.galaxyMapOpen) {
       const model = this.galaxyMap.createModel(
         this.systemDataGenerator.getGalaxyModel(),
@@ -7355,6 +7539,23 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.interfaceMode.is('mission-journal')) {
+      const selected = this.missionJournal.selected(this.getMissionJournalEntries());
+      return {
+        context: 'mission journal',
+        targetName: selected?.mission.title,
+        buttons: [
+          commandButton('previous', 'Previous', 'MOVE_LEFT', { key: 'Left' }),
+          commandButton('next', 'Next', 'MOVE_RIGHT', { key: 'Right' }),
+          commandButton('scroll-up', 'Scroll up', 'MOVE_UP', { key: 'Up' }),
+          commandButton('scroll-down', 'Scroll down', 'MOVE_DOWN', { key: 'Down' }),
+          ...(this.getJournalLandingBody(selected?.mission)
+            ? [commandButton('landing', 'Landing site', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' })]
+            : []),
+          commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
+        ],
+      };
+    }
     const state = this.stateManager.state;
     if (state === 'hyperspace') return this.createHyperspaceCommandBar(actions);
     if (state === 'system') return this.createSystemCommandBar(actions);
@@ -7457,6 +7658,10 @@ export class Game {
         commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', {
           detail: 'Open a reticle for long-range contact observation.',
         }),
+        commandButton('missions', 'Missions', 'MISSION_JOURNAL', {
+          key: 'J',
+          detail: 'Review accepted contracts and destination coordinates.',
+        }),
       ],
       rightButtons: [
         commandButton('red-reserved', 'Alert', 'RED_RESERVED', {
@@ -7514,6 +7719,10 @@ export class Game {
         commandButton('target-menu', 'Targets', 'TARGET_MENU', {
           key: CONFIG.KEY_BINDINGS.TARGET_MENU,
           detail: 'Open local navigation target list.',
+        }),
+        commandButton('missions', 'Missions', 'MISSION_JOURNAL', {
+          key: 'J',
+          detail: 'Review accepted contracts and destination coordinates.',
         }),
       ],
       rightButtons: [
@@ -7611,6 +7820,10 @@ export class Game {
         commandButton('life', 'Life', 'ROVER_LIFE', {
           key: 'B',
           detail: 'Investigate the biological habitat at this regional position.',
+        }),
+        commandButton('missions', 'Missions', 'MISSION_JOURNAL', {
+          key: 'J',
+          detail: 'Review habitat coordinates and specimen requirements.',
         }),
       ],
       rightButtons: [
@@ -7774,13 +7987,24 @@ export class Game {
   /** Builds the orbital view from current location and controller state. */
   private createCurrentOrbitScreen(): OrbitScreenModel {
     const parent = this.stateManager.currentOrbitReferencePlanet ?? this.stateManager.currentPlanet!;
-    const screen = this.orbitModeState.createScreen(
+    const base = this.orbitModeState.createScreen(
       parent,
       this.stateManager.currentSystem?.stars ?? [],
       this.statusMessage,
       Game.SIMULATED_SECONDS_PER_REAL_SECOND
     );
-    const biosphere = this.getBiosphere(screen.selectedBody);
+    const biosphere = this.getBiosphere(base.selectedBody);
+    // The orbital frame reserves two footer rows; keep habitat and mission hints inside it.
+    const screen = {
+      ...base,
+      footer:
+        base.mode === 'landing'
+          ? [
+              'Arrows site  Enter land  D dossier  J missions  Esc back',
+              `${base.footer[1]}${biosphere ? '  B habitats' : ''}`,
+            ]
+          : [base.footer[0], `J missions / landing targets${biosphere ? '  B habitats' : ''}`],
+    };
     this.orbitModeState.dossier.biologyLines = biosphere
       ? [
           `${biosphere.origin === 'introduced' ? 'Managed introduced' : 'Probable native'} carbon-water biosphere. Surface observations required for species identification.`,
@@ -7796,7 +8020,6 @@ export class Game {
           summary: screen.summary.map((line, index) =>
             index === 4 ? 'Biological signatures / B habitats' : line
           ),
-          footer: [...screen.footer, 'B select biological habitat'],
         }
       : screen;
   }
@@ -7808,13 +8031,29 @@ export class Game {
     void planet
       .prepareSurfaceReady()
       .then(() => {
-        if (this.stateManager.currentPlanet === planet) {
+        if (
+          this.interfaceMode.is('mission-journal') &&
+          this.getJournalLandingBody(
+            this.missionJournal.selected(this.getMissionJournalEntries())?.mission
+          ) === planet
+        ) {
+          this.missionJournal.notice = 'Destination terrain ready. Enter selects the requested landing site.';
+          this.forceFullRender = true;
+        } else if (this.stateManager.currentPlanet === planet) {
           if (!this.activeEncounter) this.statusMessage = `${planet.name} surface data ready.`;
           this.forceFullRender = true;
         }
       })
       .catch((error) => {
-        if (this.stateManager.currentPlanet === planet) {
+        if (
+          this.interfaceMode.is('mission-journal') &&
+          this.getJournalLandingBody(
+            this.missionJournal.selected(this.getMissionJournalEntries())?.mission
+          ) === planet
+        ) {
+          this.missionJournal.notice = 'Destination terrain preparation failed. Enter retries; Esc returns.';
+          this.forceFullRender = true;
+        } else if (this.stateManager.currentPlanet === planet) {
           this.statusMessage = `Surface preparation failed for ${planet.name}: ${
             error instanceof Error ? error.message : String(error)
           }`;
@@ -8025,6 +8264,10 @@ export class Game {
 
   /** Activates mission selection. */
   private activateMissionSelection(starbase: Starbase, row: StarbaseTableRow): void {
+    if (row.id === 'mission-journal') {
+      this.openMissionJournal();
+      return;
+    }
     const system = this.stateManager.currentSystem;
     if (!system) {
       this.starbaseMode.alert = 'Mission board unavailable: local system record missing.';
@@ -8100,7 +8343,8 @@ export class Game {
       this.ownedSpecimens
     );
     const missions = generateStarbaseMissions(starbase, system);
-    if (contract) missions.push(contract);
+    if (contract) missions.push(resolveMissionNavigation(contract, system, biospheres));
+    this.missionProgress.resolveNavigation(system, biospheres);
     const combined = new Map(missions.map((mission) => [mission.id, mission]));
     for (const mission of this.missionProgress.getStationMissions(starbase.name, starbase.id))
       combined.set(mission.id, mission);
@@ -8281,21 +8525,34 @@ export class Game {
             },
           ];
         }
-        return this.getCurrentStarbaseMissions(starbase).map((mission) => {
-          const status = this.missionProgress.getStatus(mission, this.ownedSpecimens);
-          const progress = this.missionProgress.getObjectiveCounts(mission, this.ownedSpecimens);
-          return {
-            id: mission.id,
+        return [
+          {
+            id: 'mission-journal',
             cells: [
-              mission.title,
-              `${mission.rewardCredits} Cr`,
-              mission.risk,
-              status === 'ACTIVE' ? `${progress.completed}/${progress.total}` : status,
-              mission.summary,
+              'Ship mission journal',
+              '--',
+              '--',
+              `${this.missionProgress.getActiveCount()} active`,
+              'All accepted contracts and destination coordinates',
             ],
-            detail: formatMissionDetail(mission, status),
-          };
-        });
+            detail: 'Enter opens the ship mission journal. J is available away from stations too.',
+          },
+          ...this.getCurrentStarbaseMissions(starbase).map((mission) => {
+            const status = this.missionProgress.getStatus(mission, this.ownedSpecimens);
+            const progress = this.missionProgress.getObjectiveCounts(mission, this.ownedSpecimens);
+            return {
+              id: mission.id,
+              cells: [
+                mission.title,
+                `${mission.rewardCredits} Cr`,
+                mission.risk,
+                status === 'ACTIVE' ? `${progress.completed}/${progress.total}` : status,
+                mission.summary,
+              ],
+              detail: formatMissionDetail(mission, status),
+            };
+          }),
+        ];
       case 'shipyard':
         const profile = getStarbaseShipyardProfile(stationKey);
         return [

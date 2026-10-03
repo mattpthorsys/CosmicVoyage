@@ -71,7 +71,7 @@ layout is not regenerated, and captured organisms do not return on reentry.
 | Escape        | Close a panel, or withdraw near the entry at X16 Y21    |
 
 The bottom menu includes Observe, Analyse, Stun, Sample, Collect, Shoot,
-Wait, Dossier, Species, Cargo and Withdraw. Left/Right (or Up/Down) select;
+Wait, Dossier, Species, Cargo, Missions and Withdraw. Left/Right (or Up/Down) select;
 Enter executes. Buttons also work directly with the mouse or their hotkeys.
 Escape leaves menu selection and restores driving.
 
@@ -179,6 +179,24 @@ take them to an inhabited port. Scientific data remains in **Research**.
 
 ## Live Reference Contracts
 
+Press `J` for the **Mission Journal** from travel, orbit or a field expedition.
+It is also available in **Ship Operations**, the regional rover and local field
+action menus, and **Missions > Ship mission journal** at a station. Escape
+returns to the menu you opened it from. Time is held while you read.
+
+Left/Right (or Tab) cycle accepted contracts; Up/Down and Page Up/Page Down
+scroll. The colour-coded terminal shows hyperspace X/Y, the resolved contact
+number, destination body, habitat X/Y, live/quality requirements, reward and
+delivery station. Any key finishes its initial text reveal before acting.
+
+While orbiting the destination planet or its parent, open `J`, select the
+contract and press Enter to put the landing cursor on the requested habitat.
+The correct moon is selected when necessary. The journal closes; **Enter again**
+confirms landing. No travel or landing occurs automatically. Survey contracts
+that allow any surface site say so rather than inventing coordinates. Older
+contracts without recorded navigation data resolve it when their system is
+revisited; habitat coordinates may need local terrain preparation.
+
 At an inhabited port, open **Missions** and look for **Habitat reference
 specimen**. Surface data may briefly prepare in the background before an offer
 appears. The board only requests an actually obtainable, scientifically
@@ -227,6 +245,9 @@ stays fixed even if a newly generated board offer would choose another species.
   whole-container delivery across mission, research, cargo and credit owners.
 - `core/mission_board.ts` and `core/mission_progress.ts`: typed scan/specimen
   objectives, fixed accepted targets, and cargo-derived delivery readiness.
+- `core/mission_navigation.ts` and `core/mission_journal.ts`: persisted typed
+  destinations, safe orbital-family matching and a paused, scrollable terminal
+  with contextual landing-site selection.
 - `core/modes/surface_encounter_controller.ts`: mutually exclusive driving,
   operations, weapon preparation, confirmation and dossiers. Its modals use the
   existing `InterfaceModeController`'s `xenobiology` owner.

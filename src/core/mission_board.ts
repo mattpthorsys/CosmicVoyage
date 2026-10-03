@@ -4,9 +4,22 @@ import { Starbase } from '../entities/starbase';
 import { StellarBody } from '../entities/stellar_body';
 import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
 import type { SpecimenContainer } from '../entities/biology/biology_types';
+import { resolveMissionNavigation } from './mission_navigation';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
 export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'READY' | 'COMPLETE';
+
+export interface MissionSystemAddress {
+  worldX: number;
+  worldY: number;
+  systemSlot: number;
+}
+
+export interface MissionBodyLocation {
+  bodyPath: string;
+  bodyName: string;
+  surface?: { x: number; y: number; siteId: string; label: string };
+}
 
 export interface StarbaseNotice {
   id: string;
@@ -24,6 +37,7 @@ export interface ScanMissionObjective {
   targetLabel: string;
   targetType: 'star' | 'planet' | 'system';
   requiredDiscoveryLevel: DiscoveryLevel;
+  location?: MissionBodyLocation;
 }
 
 export interface SpecimenMissionObjective {
@@ -35,6 +49,7 @@ export interface SpecimenMissionObjective {
   siteId: string;
   requiredKind: 'live';
   minimumQuality: number;
+  location?: MissionBodyLocation;
 }
 
 export type MissionObjective = ScanMissionObjective | SpecimenMissionObjective;
@@ -51,6 +66,7 @@ export interface StarbaseMission {
   originStarbaseId?: string;
   originStarbaseName: string;
   systemName: string;
+  systemAddress?: MissionSystemAddress;
   objectives: MissionObjective[];
 }
 
@@ -327,7 +343,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
     }
   }
 
-  return missions;
+  return missions.map((mission) => resolveMissionNavigation(mission, system));
 }
 
 /** Returns planets. */

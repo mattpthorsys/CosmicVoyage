@@ -146,8 +146,8 @@ export class InputManager {
     const lowerKey = key.toLowerCase(); // e.g., "arrowup", "shift", "=", "+", "numpadadd"
     const lowerCode = code.toLowerCase();
 
-    // Ignore repeats for already held keys
-    if (this.keysPressed.has(key)) {
+    // Closing a modal can clear held-key state; an OS repeat must not confirm the next screen.
+    if (e.repeat || this.keysPressed.has(key)) {
       return;
     }
     this.keysPressed.add(key);

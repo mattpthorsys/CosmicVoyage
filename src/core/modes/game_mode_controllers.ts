@@ -84,6 +84,7 @@ export type ActiveInterface<Quantity, Extraction, Confirmation> =
   | { readonly kind: 'galaxy-map' }
   | { readonly kind: 'target-menu' }
   | { readonly kind: 'ship-menu' }
+  | { readonly kind: 'mission-journal' }
   | { readonly kind: 'rover-cargo' }
   | { readonly kind: 'surface-legend' }
   | { readonly kind: 'xenobiology' }

@@ -75,6 +75,7 @@ export const CONFIG = {
     CYCLE_TARGET: 'Tab',
     TARGET_MENU: 'n',
     SHIP_MENU: 'o',
+    MISSION_JOURNAL: 'j',
     ORBIT_DOSSIER: 'd',
     BIOLOGY_SITE: 'b',
     BIOLOGY_COLLECT: 'c',

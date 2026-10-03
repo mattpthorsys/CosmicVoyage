@@ -79,6 +79,32 @@ export class OrbitModeController {
     this.alert = '';
   }
 
+  /** Selects an exact prepared landing site in this orbital family, leaving confirmation to the pilot. */
+  selectLandingSite(parent: Planet, body: Planet, x: number, y: number, label: string): boolean {
+    const index = this.getBodies(parent).indexOf(body);
+    const size = getPlanetMapSize(body);
+    if (
+      index < 0 ||
+      !body.isSurfaceReady() ||
+      ['GasGiant', 'IceGiant'].includes(body.type) ||
+      !Number.isInteger(x) ||
+      !Number.isInteger(y) ||
+      x < 0 ||
+      x >= size ||
+      y < 0 ||
+      y >= size
+    )
+      return false;
+    this.selectedBodyIndex = index;
+    this.mode = 'landing';
+    this.landingX = x;
+    this.landingY = y;
+    this.alert = `${label} / X${x} Y${y}. Enter confirms landing; Esc cancels.`;
+    this.dossier.close();
+    this.invalidateScreen();
+    return true;
+  }
+
   /** Returns the selected body and nearby candidates for surface prefetch. */
   getPrefetchWindow(parent: Planet): Planet[] {
     const bodies = this.getBodies(parent);

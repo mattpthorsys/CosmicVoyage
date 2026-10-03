@@ -10,6 +10,8 @@ import type { SpecimenContainer } from '../entities/biology/biology_types';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { StellarBody } from '../entities/stellar_body';
+import type { BiosphereDefinition } from '../entities/biology/biology_types';
+import { resolveMissionNavigation } from './mission_navigation';
 
 export interface MissionProgressSnapshot {
   acceptedMissionIds: string[];
@@ -124,6 +126,17 @@ export class MissionProgressService {
   /** Reads the accepted contract so changing generation or board readiness cannot change its target. */
   getMission(missionId: string): StarbaseMission | undefined {
     return this.activeMissions[missionId];
+  }
+
+  /** Returns all accepted contracts, including physical deliveries currently ready for return. */
+  getActiveMissions(): readonly StarbaseMission[] {
+    return Object.values(this.activeMissions);
+  }
+
+  /** Adds missing navigation metadata to older local contracts without changing their accepted objectives. */
+  resolveNavigation(system: SolarSystem, biospheres: readonly BiosphereDefinition[]): void {
+    for (const mission of this.getActiveMissions())
+      this.activeMissions[mission.id] = resolveMissionNavigation(mission, system, biospheres);
   }
 
   /** Retains accepted contracts on their issuing board even when targets are no longer in the field. */

@@ -48,6 +48,7 @@ async function main() {
       if (player.ship.stasisClass !== 1) throw new Error('Basic stasis missing from starting equipment.');
       return {
         station: { id: system.starbase.id, name: system.starbase.name },
+        systemName: system.name,
         biosphere,
         save: {
           version: SAVE_GAME_VERSION,
@@ -316,10 +317,20 @@ async function main() {
       const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
       const { createXenobiologySnapshot } = await import('/src/entities/biology/biology_types.ts');
       const station = { ...initial.station, kind: 'starbase' };
-      const mission = createBiologicalContract(station, 'Browser fixture', [initial.biosphere], {});
+      const mission = createBiologicalContract(station, initial.systemName, [initial.biosphere], {});
       if (!mission) throw new Error('No compatible real biological request in the starting colony.');
       const objective = mission.objectives[0];
       const site = initial.biosphere.sites.find((entry) => entry.id === objective.siteId);
+      mission.systemAddress = {
+        worldX: initial.save.location.worldX,
+        worldY: initial.save.location.worldY,
+        systemSlot: initial.save.location.systemSlot,
+      };
+      objective.location = {
+        bodyPath: initial.save.location.bodyPath,
+        bodyName: initial.biosphere.bodyName,
+        surface: { x: site.x, y: site.y, siteId: site.id, label: site.label },
+      };
       const field = createEncounter(initial.biosphere, site);
       const source = field.individuals.find((actor) => actor.speciesId === objective.speciesId);
       source.x = source.homeX = 16;
@@ -339,6 +350,37 @@ async function main() {
       save.missionObjectiveProgress = { [mission.id]: [] };
       return { save, mission };
     }, fixture);
+    // Selecting a journal destination must move only the landing cursor, not the ship or simulation clock.
+    const navigation = structuredClone(delivery.save);
+    navigation.location.kind = 'orbit';
+    navigation.player.terrainVehicle.deployed = false;
+    navigation.xenobiology.activeSiteId = null;
+    await load(navigation);
+    await press('j');
+    await page.waitForTimeout(1700);
+    metrics.missionJournal = await capture('desktop-mission-journal');
+    const pausedMission = await checkpoint();
+    await page.waitForTimeout(500);
+    assert.equal(
+      (await checkpoint()).gameClockElapsedSeconds,
+      pausedMission.gameClockElapsedSeconds,
+      'Mission journal did not pause time.'
+    );
+    await page.setViewportSize({ width: 600, height: 800 });
+    await capture('narrow-mission-journal');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await press('Enter');
+    assert.equal(
+      (await checkpoint()).location.kind,
+      'orbit',
+      'Mission selection landed without confirmation.'
+    );
+    await capture('mission-landing-target');
+    await press('Enter');
+    const landedMission = await checkpoint();
+    assert.equal(landedMission.location.kind, 'planet', 'Mission landing confirmation failed.');
+    assert.equal(landedMission.player.position.surfaceX, delivery.mission.objectives[0].location.surface.x);
+    assert.equal(landedMission.player.position.surfaceY, delivery.mission.objectives[0].location.surface.y);
     await load(delivery.save);
     await press('v');
     metrics.contractField = await capture('desktop-contract-field');

@@ -183,7 +183,28 @@ describe('save game persistence', () => {
     };
     save.missionObjectiveProgress = { 'biology-contract': [] };
     expect(() => parseGameSave(save)).not.toThrow();
-    const objective = save.activeMissions['biology-contract'].objectives[0];
+    const mission = save.activeMissions['biology-contract'];
+    mission.systemAddress = { worldX: -72, worldY: -73, systemSlot: 0 };
+    const objective = mission.objectives[0];
+    objective.location = {
+      bodyName: 'Fixture I',
+      bodyPath: 'planet:0',
+      surface: { x: 4, y: 4, siteId: 'fixture/site:4,4', label: 'Habitat 1' },
+    };
+    expect(parseGameSave(save).activeMissions['biology-contract']).toEqual(mission);
+    objective.location.surface!.x = -1;
+    expect(() => parseGameSave(save)).toThrow('landing coordinates');
+    objective.location.surface!.x = 4;
+    objective.location.surface!.siteId = 'wrong-habitat';
+    expect(() => parseGameSave(save)).toThrow('does not match');
+    objective.location.surface!.siteId = 'fixture/site:4,4';
+    mission.systemAddress.systemSlot = -1;
+    expect(() => parseGameSave(save)).toThrow('mission system slot');
+    mission.systemAddress.systemSlot = 0;
+    objective.location.bodyPath = 'not-a-body-path';
+    expect(() => parseGameSave(save)).toThrow('mission body path');
+    objective.location.bodyPath = 'planet:0';
+    delete objective.location;
     if (objective.kind !== 'specimen') throw new Error('Expected a specimen objective.');
     objective.minimumQuality = 1.5;
     expect(() => parseGameSave(save)).toThrow('specimen mission objective');

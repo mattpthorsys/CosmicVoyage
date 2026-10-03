@@ -467,7 +467,7 @@ describe('ship menu', () => {
 
     const main = game.createShipMenuModel();
     expect(main.rows.map((row: any) => row.id)).toEqual(
-      expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status', 'log'])
+      expect.arrayContaining(['deck', 'stations', 'cargo', 'crew', 'status', 'log', 'missions'])
     );
 
     game.shipMenuSection = 'deck';

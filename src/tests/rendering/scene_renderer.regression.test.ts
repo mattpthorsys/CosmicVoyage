@@ -7,6 +7,7 @@ import { NebulaRenderer } from '../../rendering/nebula_renderer';
 import { Player } from '../../core/player';
 import type { OrbitStellarSource } from '../../core/orbit_ui';
 import type { TextModalTableModel } from '../../core/text_ui';
+import { MissionJournal } from '../../core/mission_journal';
 import { Planet } from '../../entities/planet';
 import { Starbase } from '../../entities/starbase';
 import { SolarSystem } from '../../entities/solar_system';
@@ -1027,6 +1028,25 @@ describe('SceneRenderer visual regressions', () => {
     expect(renderedRows.join('\n')).not.toContain('VESSEL DIAGRAM');
     expect(drawCalls.some((call) => call.char === 'D' && call.fg === TEXT_PALETTE.green)).toBe(true);
     expect(drawCalls.some((call) => call.char === '[' && call.fg === TEXT_PALETTE.amber)).toBe(true);
+  });
+
+  it.each([
+    [30, 45],
+    [48, 20],
+    [104, 40],
+  ])('keeps the mission terminal inside a %s x %s viewport and masks underlying graphics', (cols, rows) => {
+    const { buffer, drawCalls } = createMockScreenBuffer(cols, rows);
+    const journal = new MissionJournal();
+    journal.reveal.complete();
+    const model = journal.createModel([], cols, rows, false);
+    createSceneRenderer(buffer).drawTextModalTable(model);
+    expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
+    expect(renderTextRows(drawCalls).join('\n')).toContain('MISSION JOURNAL');
+    expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < rows)).toBe(
+      true
+    );
+    expect(drawCalls.some((call) => call.font === 'thin')).toBe(true);
+    expect(fontsForText(drawCalls, ' MISSION JOURNAL ')).toEqual(Array(17).fill('thick'));
   });
 
   it('shows only the scrolled dossier page and a scroll indicator', () => {
