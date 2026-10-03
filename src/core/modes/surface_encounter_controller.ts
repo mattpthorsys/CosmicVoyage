@@ -7,7 +7,13 @@ import {
 import { TerminalTextReveal } from '../terminal_text_reveal';
 import { biologyDashboard, createBiologicalDossier } from '../xenobiology_ui';
 import type { XenobiologyService } from '../xenobiology_service';
-import { getDashboardVisibleRows, type TextModalTableModel } from '../text_ui';
+import {
+  getDashboardVisibleRows,
+  wrapDashboardLines,
+  type TextDashboardLine,
+  type TextModalTableModel,
+} from '../text_ui';
+import type { BiologicalFieldRequest } from '../biological_mission_guidance';
 import { ENCOUNTER_ACTIONS, type EncounterAction } from '../encounter_actions';
 import { commandButton, type CommandBarModel } from '../command_bar';
 
@@ -206,7 +212,8 @@ export class SurfaceEncounterController {
     rows: number,
     scanner: readonly string[],
     stasisClass = 1,
-    requests: readonly string[] = []
+    requests: readonly string[] = [],
+    guidance?: { requests: readonly BiologicalFieldRequest[]; scanner: readonly TextDashboardLine[] }
   ): TextModalTableModel | undefined {
     const state = this.interaction;
     if (state.kind === 'drive' || state.kind === 'menu') return;
@@ -232,11 +239,11 @@ export class SurfaceEncounterController {
       return {
         ...base,
         title: 'STUNNER / DOSE SELECTION',
-        dashboard: biologyDashboard(
+        dashboard: wrapDashboardLines(
           [
-            `POWER ${['LOW', 'STANDARD', 'HIGH'][this.power]}`,
-            ...scanner,
-            'Repeated exposure increases injury and mortality.',
+            ...biologyDashboard([`POWER ${['LOW', 'STANDARD', 'HIGH'][this.power]}`], cols - 12),
+            ...(guidance?.scanner ?? biologyDashboard(scanner, cols - 12)),
+            ...biologyDashboard(['Repeated exposure increases injury and mortality.'], cols - 12),
           ],
           cols - 12
         ),
@@ -257,6 +264,7 @@ export class SurfaceEncounterController {
               power: this.power,
               stasisClass,
               requests,
+              missionRequests: guidance?.requests,
             })
           : biologyDashboard(['No biological target'], width);
     if (!dashboard.length) dashboard.push(...biologyDashboard(['No biological records yet.'], width));

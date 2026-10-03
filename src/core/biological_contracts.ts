@@ -10,6 +10,7 @@ import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import { matchesSpecimenObjective, type StarbaseMission } from './mission_board';
 import type { MissionProgressService } from './mission_progress';
 import type { XenobiologyService } from './xenobiology_service';
+import { createBiologicalReference } from './biological_mission_guidance';
 
 export interface BiologicalDeliveryContext {
   readonly station: Pick<Starbase, 'id' | 'name' | 'kind'>;
@@ -99,6 +100,7 @@ export function createBiologicalContract(
           siteId: site.id,
           requiredKind: 'live',
           minimumQuality: 0.75,
+          reference: createBiologicalReference(species),
         },
       ],
     };
@@ -173,6 +175,7 @@ export function createBiologicalContracts(
                   targetName: species.name,
                   targetLabel: `Detailed analysis / ${species.name} / ${biosphere.bodyName} / X${site.x} Y${site.y}`,
                   requiredEvidenceLevel: 3,
+                  reference: createBiologicalReference(species),
                 }
               : {
                   id: 'tissue-reference',
@@ -183,6 +186,7 @@ export function createBiologicalContracts(
                   targetLabel: `Tissue / ${species.name} / ${biosphere.bodyName} / X${site.x} Y${site.y} / quality >=60%`,
                   requiredKind: 'tissue',
                   minimumQuality: 0.6,
+                  reference: createBiologicalReference(species),
                 },
           ],
         };

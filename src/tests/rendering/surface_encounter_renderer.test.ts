@@ -8,6 +8,9 @@ import { createEncounterView } from '../../core/xenobiology_ui';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { prepareEncounterSurface } from '../../core/encounter_surface';
 import { GLYPHS } from '../../constants/visual';
+import { createBiologicalReference } from '../../core/biological_mission_guidance';
+import type { StarbaseMission } from '../../core/mission_board';
+import { TEXT_PALETTE } from '../../rendering/text_palette';
 
 /** Records the final cell plane with the same string-to-cell semantics as the production buffer. */
 function display(cols: number, rows: number) {
@@ -50,6 +53,86 @@ function display(cols: number, rows: number) {
 }
 
 describe('field survey graphics contracts', () => {
+  it.each([
+    [120, 42],
+    [30, 45],
+  ])('keeps confirmed mission markers bounded and distinct from selection in a %sx%s view', (cols, rows) => {
+    const screen = display(cols, rows);
+    const field = createEncounter(generateBiosphere(biologyFixture())!, {
+      id: 'habitat',
+      x: 1,
+      y: 1,
+      label: 'Habitat',
+    });
+    const target = field.individuals[0];
+    target.x = field.roverX + 1;
+    target.y = field.roverY - 1;
+    const species = field.species.find((entry) => entry.id === target.speciesId)!;
+    const mission: StarbaseMission = {
+      id: 'live',
+      title: 'Live reference',
+      type: 'xenobiology',
+      issuer: 'Office',
+      summary: '',
+      detail: '',
+      rewardCredits: 900,
+      risk: 'Low',
+      originStarbaseName: 'Port',
+      systemName: 'Fixture',
+      objectives: [
+        {
+          id: 'live',
+          kind: 'specimen',
+          targetName: species.name,
+          targetLabel: 'Live',
+          speciesId: species.id,
+          siteId: field.site.id,
+          requiredKind: 'live',
+          minimumQuality: 0.75,
+          reference: createBiologicalReference(species),
+        },
+      ],
+    };
+    const service = new XenobiologyService();
+    const presentation = {
+      power: 1 as const,
+      stasisClass: 1,
+      integrity: 100,
+      cargo: { usedM3: 0, capacityM3: 50 },
+      message: '',
+      missionRequests: [{ mission, status: 'ACTIVE' as const }],
+    };
+    drawSurfaceEncounter(screen.buffer, createEncounterView(field, target.id, service, presentation));
+    expect(
+      [...screen.cells.values()].some((cell) => cell.char === '+' && cell.fg === TEXT_PALETTE.greenBright)
+    ).toBe(false);
+    const unmarkedPixels = [...screen.pixels];
+    screen.pixels.length = 0;
+    service.observe(species, 2);
+    drawSurfaceEncounter(screen.buffer, createEncounterView(field, target.id, service, presentation));
+    const layout = getEncounterLayout(cols, rows);
+    const fieldMarks = [...screen.cells].filter(([position, cell]) => {
+      const [x, y] = position.split(',').map(Number);
+      return (
+        x < layout.field.width &&
+        y >= layout.field.y &&
+        y < layout.field.y + layout.field.height &&
+        cell.char === '+' &&
+        cell.fg === TEXT_PALETTE.greenBright
+      );
+    });
+    expect(fieldMarks.length).toBeGreaterThan(0);
+    expect(
+      [...screen.cells.values()].some((cell) => cell.char === '[' && cell.fg === TEXT_PALETTE.cyanActive)
+    ).toBe(true);
+    expect(screen.pixels).toEqual(unmarkedPixels);
+    field.site = { ...field.site, id: 'wrong-habitat' };
+    drawSurfaceEncounter(screen.buffer, createEncounterView(field, target.id, service, presentation));
+    expect(
+      [...screen.cells.values()].some((cell) => cell.char === '+' && cell.fg === TEXT_PALETTE.greenBright)
+    ).toBe(false);
+    expect(screen.outside).toEqual([]);
+  });
   it.each([
     [120, 42],
     [76, 36],

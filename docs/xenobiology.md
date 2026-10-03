@@ -3,14 +3,14 @@
 Cosmic Voyage now has a bounded discovery, observation, sampling and research
 loop. It is an addition to ordinary surface travel, not a separate world mode.
 
-The first expansion's automated and browser verification passed. The next
-expansion adds a shipboard science log, ten species in five inherited groups,
-five habitat classes, individual size variation, and finite analysis/tissue
-requests alongside live references. Its verification is pending the requested
-Luna handoff. Automated depots do not issue scientific requests. Long-session
+The science log, habitat and individual variation, and analysis/tissue request
+expansion passed automated and browser verification. The latest additions
+highlight contract references, observed matching traits and confirmed suitable
+contacts; verification of these presentation changes awaits the requested
+testing handoff. Automated depots do not issue scientific requests. Long-session
 balance and enjoyment still need personal playtesting.
 See [the expansion verification handoff](xenobiology-expansion-verification.md)
-for a personal playthrough and the deferred automated/browser checks.
+for a personal playthrough and the automated/browser checks.
 
 ## First Expedition
 
@@ -100,6 +100,22 @@ any fresh key completes an unfinished reveal without also executing another
 action. Escape then returns to the field.
 
 ## Evidence And Collection
+
+Biological contracts show a blue reference description near the start of the
+Missions/Research detail area and in `J`. The office supplies body organisation,
+external form, locomotion and ecology for recognising the requested species.
+Observed matching traits are bright green in the biosensor, stunner readout and
+`D` dossier. Preliminary similarities show an amber possible-reference message;
+they do not establish identity or reveal unobserved physiology.
+
+Once observation establishes identity, a small green `+` beside an organism
+marks an outstanding accepted request it can satisfy at this habitat. Cyan
+brackets continue to identify the selected contact. A dead live-reference
+target, insufficient quality, an already sampled tissue source, or incompatible
+handling/stasis does not receive the marker; the dossier explains the condition.
+Analysis targets need no stasis. A fulfilled request stops marking additional
+organisms. The marker identifies a suitable contribution; cargo volume and
+available live slots still govern actual collection.
 
 Contacts begin unresolved. Observations beyond 40 m provide only preliminary
 evidence; observations within 40 m establish a catalogue match. Close analysis

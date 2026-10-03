@@ -10,8 +10,9 @@ import type { SpecimenContainer } from '../entities/biology/biology_types';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { StellarBody } from '../entities/stellar_body';
-import type { BiosphereDefinition } from '../entities/biology/biology_types';
+import type { BiosphereDefinition, EncounterField } from '../entities/biology/biology_types';
 import { resolveMissionNavigation } from './mission_navigation';
+import { createBiologicalReference } from './biological_mission_guidance';
 
 export interface MissionProgressSnapshot {
   acceptedMissionIds: string[];
@@ -155,6 +156,17 @@ export class MissionProgressService {
   resolveNavigation(system: SolarSystem, biospheres: readonly BiosphereDefinition[]): void {
     for (const mission of this.getActiveMissions())
       this.activeMissions[mission.id] = resolveMissionNavigation(mission, system, biospheres);
+  }
+
+  /** Supplies reference traits to older accepted contracts from already generated target fields. */
+  resolveBiologicalReferences(fields: Readonly<Record<string, EncounterField>>): void {
+    for (const mission of this.getActiveMissions()) {
+      mission.objectives = mission.objectives.map((objective) => {
+        if (objective.kind === 'scan' || objective.reference) return objective;
+        const species = fields[objective.siteId]?.species.find((entry) => entry.id === objective.speciesId);
+        return species ? { ...objective, reference: createBiologicalReference(species) } : objective;
+      });
+    }
   }
 
   /** Retains accepted contracts on their issuing board even when targets are no longer in the field. */

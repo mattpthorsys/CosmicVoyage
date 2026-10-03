@@ -810,6 +810,8 @@ function validateMissionProgress(save: GameSave): void {
         if (objective.requiredEvidenceLevel !== 3)
           throw new Error('Invalid biological evidence requirement.');
       } else throw new Error('Unsupported mission objective kind.');
+      if (objective.kind !== 'scan' && objective.reference !== undefined)
+        validateBiologicalReference(objective.reference);
     }
     if (new Set(mission.objectives.map((objective) => objective.id)).size !== mission.objectives.length)
       throw new Error('Duplicate mission objective identity.');
@@ -834,6 +836,36 @@ function validateMissionProgress(save: GameSave): void {
   if (save.readyMissionIds.some((missionId) => !save.activeMissions[missionId])) {
     throw new Error('Save ready mission state is inconsistent.');
   }
+}
+
+/** Validates optional office reference traits without requiring them in older accepted contracts. */
+function validateBiologicalReference(reference: unknown): void {
+  if (!isRecord(reference)) throw new Error('Invalid biological mission reference.');
+  for (const key of ['symmetry', 'locomotion', 'metabolism', 'role', 'behaviour']) {
+    const value = reference[key];
+    assertNonEmptyString(value, `biological reference ${key}`);
+    if (typeof value === 'string' && value.length > 160)
+      throw new Error('Biological mission reference is too long.');
+  }
+  if (
+    !['bilateral', 'radial', 'trilateral'].includes(String(reference.symmetry)) ||
+    !['autotroph', 'heterotroph', 'mixotroph'].includes(String(reference.metabolism)) ||
+    !['sessile', 'passive', 'skittish', 'territorial', 'ambush'].includes(String(reference.behaviour)) ||
+    (reference.bodyForm !== undefined &&
+      ![
+        'mat',
+        'frond',
+        'colony',
+        'fan',
+        'rosette',
+        'walker',
+        'tripod',
+        'radial',
+        'burrower',
+        'ambush',
+      ].includes(String(reference.bodyForm)))
+  )
+    throw new Error('Invalid biological mission reference traits.');
 }
 
 /** Validates every persistent planetary mutation. */

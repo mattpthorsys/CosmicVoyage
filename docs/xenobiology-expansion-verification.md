@@ -1,6 +1,8 @@
 # Xenobiology Expansion: Verification Handoff
 
 Implementation is checkpointed in stages. Verification completed 2026-10-03.
+The results below cover the four-step expansion through `c0e87d1`. Subsequent
+mission reference highlighting awaits the testing handoff described at the end.
 
 ## Verification Results
 
@@ -88,3 +90,25 @@ must still list zero-value specimens and must not complete acquisition requests.
 
 Automated success does not establish long-session economy balance or whether
 the expeditions are enjoyable.
+
+## Mission Highlighting: Pending Verification
+
+Implementation adds styled contract reference descriptions, acquired-trait
+highlights, exact habitat/condition checks and confirmed field markers. No
+tests or browser runs for these subsequent changes have been executed yet.
+
+Run `src/tests/core/biological_mission_guidance.test.ts` alongside the existing
+mission journal, biological contract, xenobiology UI, save validation, field
+renderer and scene renderer regression suites, then `npm run check`. Re-run the browser command above and
+inspect `contract-before-identification.png`, `desktop-contract-field.png`,
+`desktop-contract-dossier.png`, `research-live-contract.png`, and desktop/narrow mission journals. The script
+now asserts the terrain marker is absent before identification and present
+after a close observation.
+
+Personally compare a preliminary scan, a confirmed target, a similar unrelated
+organism and a target at the wrong habitat. Check live/tissue/analysis requests,
+damaged or dead individuals, previously sampled tissue sources, cargo-ready
+requests, and legacy accepted contracts. The blue reference description and
+green observed traits must wrap clearly; the small green `+` must follow the
+organism while cyan brackets retain selection. Scientific demand and rewards
+must remain unchanged by reading or highlighting.

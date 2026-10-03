@@ -9,7 +9,18 @@ import { estimateStun } from '../entities/biology/stun_model';
 import { encounterVisible, individualSpecies, individualProfile } from '../systems/surface_encounter_system';
 import { individualPhysicalProfile, individualSizeLabel } from '../entities/biology/biology_rules';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
-import { wrapDashboardLines, type TextDashboardLine, type TextTableRow, type TextTone } from './text_ui';
+import {
+  wrapDashboardLines,
+  type TextDashboardLine,
+  type TextDashboardSegment,
+  type TextTableRow,
+  type TextTone,
+} from './text_ui';
+import {
+  assessBiologicalRequests,
+  type BiologicalFieldRequest,
+  type BiologicalReferenceTrait,
+} from './biological_mission_guidance';
 import type { XenobiologyService } from './xenobiology_service';
 import type { CrewMember } from './crew';
 import type { EncounterSurface } from './encounter_surface';
@@ -28,6 +39,7 @@ export interface EncounterPresentation {
   readonly bodyName?: string;
   readonly menuActive?: boolean;
   readonly requests?: readonly string[];
+  readonly missionRequests?: readonly BiologicalFieldRequest[];
 }
 
 export interface EncounterViewModel {
@@ -45,8 +57,15 @@ export interface EncounterViewModel {
     dangerous: boolean;
     selected: boolean;
     sprite: PixelSprite;
+    missionTarget: boolean;
   }>[];
   readonly scanner: readonly string[];
+  readonly scannerDashboard: readonly TextDashboardLine[];
+  readonly briefSegments: readonly TextDashboardSegment[];
+  readonly targetMassSegments: readonly TextDashboardSegment[];
+  readonly targetNameTone: TextTone;
+  readonly missionGuidance: readonly TextDashboardLine[];
+  readonly missionRequests: readonly BiologicalFieldRequest[];
   readonly status: readonly string[];
   readonly message: string;
   readonly brief: string;
@@ -78,11 +97,46 @@ function organismSprite(species: SpeciesDefinition, sizeScale = 1): PixelSprite 
 
 /** Summarises only observed ecology, without exposing an unknown organism's hidden physiology. */
 export function organismBrief(species: SpeciesDefinition, level: number): string {
-  if (level < 1) return 'Unresolved biological contact. Observe to establish movement and ecology.';
-  if (level < 2) return `${species.locomotion}. Probable ${species.metabolism}; catalogue match unresolved.`;
+  return organismBriefSegments(species, level)
+    .map((span) => span.text)
+    .join('');
+}
+
+/** Builds the same description with emphasis limited to traits actually observed and matched. */
+function organismBriefSegments(
+  species: SpeciesDefinition,
+  level: number,
+  matches: readonly BiologicalReferenceTrait[] = []
+): TextDashboardSegment[] {
+  /** Applies mission emphasis to one acquired biological trait. */
+  const trait = (text: string, key: BiologicalReferenceTrait): TextDashboardSegment => ({
+    text,
+    tone: matches.includes(key) ? 'match' : 'normal',
+    font: 'thin',
+  });
+  if (level < 1)
+    return [
+      { text: 'Unresolved biological contact. Observe to establish movement and ecology.', font: 'thin' },
+    ];
+  if (level < 2)
+    return [
+      trait(species.locomotion, 'locomotion'),
+      { text: '. Probable ' },
+      trait(species.metabolism, 'metabolism'),
+      { text: '; catalogue match unresolved.' },
+    ];
   const movement = species.behaviour === 'sessile' ? 'anchored to the substrate' : species.locomotion;
   const social = species.socialBehaviour ? ' Withdraws with nearby group members.' : '';
-  return `${species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1)} ${species.role}; ${movement}. ${species.metabolism.charAt(0).toUpperCase() + species.metabolism.slice(1)}.${social}`;
+  return [
+    trait(species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1), 'behaviour'),
+    { text: ' ' },
+    trait(species.role, 'role'),
+    { text: '; ' },
+    trait(movement, 'locomotion'),
+    { text: '. ' },
+    trait(species.metabolism.charAt(0).toUpperCase() + species.metabolism.slice(1), 'metabolism'),
+    { text: `.${social}` },
+  ];
 }
 
 /** Keeps sub-kilogram estimates meaningful without producing reversed or zero-width mass ranges. */
@@ -183,6 +237,39 @@ export function createEncounterView(
   } else scanner.push('No contact selected', `${visible.length} visible biological contacts`);
   const species = target ? individualProfile(field, target) : undefined;
   const level = species ? (service.evidence(species.id)?.level ?? 0) : 0;
+  const missionRequests = presentation.missionRequests ?? [];
+  const guidance =
+    target && species
+      ? assessBiologicalRequests(species, level, missionRequests, { field, target, stasisClass })
+      : undefined;
+  const scannerDashboard = scanner.map(
+    (text): TextDashboardLine => ({ segments: [{ text, tone: 'normal', font: 'thin' }] })
+  );
+  if (species && target) {
+    scannerDashboard[0] = {
+      segments: [
+        {
+          text: level >= 2 ? species.name : 'Unresolved organism',
+          tone: guidance?.confirmed ? 'match' : 'normal',
+          font: 'thin',
+        },
+      ],
+    };
+    scannerDashboard[1] = {
+      segments: [
+        {
+          text: species.symmetry,
+          tone: guidance?.traits.includes('symmetry') ? 'match' : 'normal',
+          font: 'thin',
+        },
+        { text: `; ${massEstimate(species.massKg)}`, font: 'thin' },
+      ],
+    };
+    scannerDashboard.push(
+      { segments: organismBriefSegments(species, level, guidance?.traits) },
+      ...(guidance?.summary ? [guidance.summary] : [])
+    );
+  }
   return {
     title: `${presentation.bodyName ?? 'SURFACE'} / ${field.site.label.toUpperCase()}`,
     terrain: [...field.terrain],
@@ -202,9 +289,34 @@ export function createEncounterView(
           ['territorial', 'ambush'].includes(species.behaviour),
         selected: individual.id === targetId,
         sprite: organismSprite(species, individual.sizeScale),
+        missionTarget: assessBiologicalRequests(
+          species,
+          service.evidence(species.id)?.level ?? 0,
+          missionRequests,
+          { field, target: individual, stasisClass }
+        ).eligible,
       };
     }),
     scanner,
+    scannerDashboard,
+    briefSegments: species ? organismBriefSegments(species, level, guidance?.traits) : [],
+    targetMassSegments: species
+      ? [
+          {
+            text: `${massEstimate(species.massKg)} / ${individualSizeLabel(target?.sizeScale)} / `,
+            tone: 'muted',
+            font: 'thin',
+          },
+          {
+            text: species.symmetry,
+            tone: guidance?.traits.includes('symmetry') ? 'match' : 'muted',
+            font: 'thin',
+          },
+        ]
+      : [],
+    targetNameTone: guidance?.confirmed ? 'match' : 'bright',
+    missionGuidance: guidance?.summary ? [guidance.summary] : [],
+    missionRequests,
     status: [
       `LOCAL ${field.elapsedSeconds.toFixed(0)} s / 5 m per cell`,
       `ENTRY 16,21 / X${field.roverX} Y${field.roverY}`,
@@ -261,10 +373,17 @@ export function createBiologicalDossier(
     power: StunPower;
     stasisClass: number;
     requests?: readonly string[];
+    missionRequests?: readonly BiologicalFieldRequest[];
   }
 ): TextDashboardLine[] {
   const level = service.evidence(species.id)?.level ?? 0;
   const lines: TextDashboardLine[] = [];
+  const guidance = contact
+    ? assessBiologicalRequests(species, level, contact.missionRequests ?? [], contact)
+    : undefined;
+  /** Distinguishes confirmed reference traits from ordinary scientific colour coding. */
+  const matchTone = (key: BiologicalReferenceTrait, fallback: TextTone = 'normal'): TextTone =>
+    guidance?.traits.includes(key) ? 'match' : fallback;
   /** Separates report topics with a display-face heading and a restrained rule. */
   const section = (text: string): void => {
     lines.push(
@@ -290,7 +409,7 @@ export function createBiologicalDossier(
     segments: [
       {
         text: level >= 2 ? species.name.toUpperCase() : 'UNRESOLVED BIOLOGICAL CONTACT',
-        tone: 'bright',
+        tone: matchTone('name', 'bright'),
         font: 'thick',
       },
     ],
@@ -302,13 +421,17 @@ export function createBiologicalDossier(
     ['CONTACT ONLY', 'PRELIMINARY', 'OBSERVED', 'BIOCHEMICAL ANALYSIS'][level],
     level >= 2 ? 'green' : 'amber'
   );
+  if (guidance?.lines.length) {
+    section('Mission Identification');
+    lines.push(...guidance.lines);
+  }
   section('Field Identification');
-  lines.push({ segments: [{ text: organismBrief(species, level), tone: 'normal', font: 'thin' }] });
+  lines.push({ segments: organismBriefSegments(species, level, guidance?.traits) });
   entry('Mass estimate', massEstimate(species.massKg), 'amber');
-  entry('Body plan', species.symmetry);
+  entry('Body plan', species.symmetry, matchTone('symmetry'));
   if (contact?.target.sizeScale !== undefined)
     entry('Individual size', individualSizeLabel(contact.target.sizeScale), 'amber');
-  if (level >= 1 && species.bodyForm) entry('External form', species.bodyForm, 'cyan');
+  if (level >= 1 && species.bodyForm) entry('External form', species.bodyForm, matchTone('bodyForm', 'cyan'));
   if (contact)
     entry(
       'Contact',
@@ -321,13 +444,16 @@ export function createBiologicalDossier(
     entry('Substrate', contact.field.site.habitat.description);
   }
   if (level >= 2) {
-    entry('Trophic role', `${species.metabolism} / ${species.role}`, 'green');
+    entry('Metabolism', species.metabolism, matchTone('metabolism', 'green'));
+    entry('Trophic role', species.role, matchTone('role', 'green'));
     entry(
       'Behaviour',
       species.behaviour,
-      ['territorial', 'ambush'].includes(species.behaviour) ? 'amber' : 'normal'
+      matchTone('behaviour', ['territorial', 'ambush'].includes(species.behaviour) ? 'amber' : 'normal')
     );
-    entry('Locomotion', species.locomotion);
+    entry('Locomotion', species.locomotion, matchTone('locomotion'));
+    if (guidance?.confirmed && ['territorial', 'ambush'].includes(species.behaviour))
+      entry('Field hazard', 'Close approach can trigger a defensive or ambush response.', 'amber');
     if (species.socialBehaviour)
       entry('Social response', 'Loose group; local disturbance triggers coordinated retreat.', 'cyan');
     entry('Biochemistry', species.chemistry, 'green');

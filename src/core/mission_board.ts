@@ -3,7 +3,8 @@ import { SolarSystem } from '../entities/solar_system';
 import { Starbase } from '../entities/starbase';
 import { StellarBody } from '../entities/stellar_body';
 import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
-import type { SpecimenContainer } from '../entities/biology/biology_types';
+import type { SpeciesDefinition, SpecimenContainer } from '../entities/biology/biology_types';
+import type { TextDashboardSegment } from './text_ui';
 import { resolveMissionNavigation } from './mission_navigation';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
@@ -49,6 +50,7 @@ export interface SpecimenMissionObjective {
   siteId: string;
   requiredKind: 'live' | 'tissue';
   minimumQuality: number;
+  reference?: BiologicalReference;
   location?: MissionBodyLocation;
 }
 
@@ -60,8 +62,15 @@ export interface BiologicalDataObjective {
   speciesId: string;
   siteId: string;
   requiredEvidenceLevel: 3;
+  reference?: BiologicalReference;
   location?: MissionBodyLocation;
 }
+
+/** Public identifying traits supplied by a research office, distinct from acquired field evidence. */
+export type BiologicalReference = Pick<
+  SpeciesDefinition,
+  'symmetry' | 'bodyForm' | 'locomotion' | 'metabolism' | 'role' | 'behaviour'
+>;
 
 export type MissionObjective = ScanMissionObjective | SpecimenMissionObjective | BiologicalDataObjective;
 
@@ -97,16 +106,47 @@ export function getMissionStatus(mission: StarbaseMission, progress: MissionProg
 
 /** Formats mission detail. */
 export function formatMissionDetail(mission: StarbaseMission, status: MissionStatus): string {
+  return formatMissionDetailSegments(mission, status)
+    .map((segment) => segment.text)
+    .join('');
+}
+
+/** Puts the reference description first and retains its emphasis through terminal wrapping. */
+export function formatMissionDetailSegments(
+  mission: StarbaseMission,
+  status: MissionStatus
+): TextDashboardSegment[] {
   const objectiveText = mission.objectives.map((objective) => objective.targetLabel).join(' -> ');
-  return [
-    `CONTRACT: ${mission.title}`,
-    `ISSUER: ${mission.issuer}`,
-    `OBJECTIVES: ${objectiveText} -> Return to ${mission.originStarbaseName}`,
-    `PAYMENT: ${mission.rewardCredits.toLocaleString()} Cr`,
-    `RISK: ${mission.risk}`,
-    `STATUS: ${status}`,
-    mission.detail,
-  ].join(' | ');
+  const references = mission.objectives.filter((objective) => objective.kind !== 'scan');
+  const segments: TextDashboardSegment[] = references.flatMap((objective) => [
+    { text: 'CREATURE: ', tone: 'muted' as const, font: 'thin' as const },
+    { text: biologicalReferenceDescription(objective), tone: 'cyan' as const, font: 'thin' as const },
+    { text: ' | ', font: 'thin' as const },
+  ]);
+  segments.push({
+    text: [
+      `CONTRACT: ${mission.title}`,
+      `ISSUER: ${mission.issuer}`,
+      `OBJECTIVES: ${objectiveText} -> Return to ${mission.originStarbaseName}`,
+      `PAYMENT: ${mission.rewardCredits.toLocaleString()} Cr`,
+      `RISK: ${mission.risk}`,
+      `STATUS: ${status}`,
+      mission.detail,
+    ].join(' | '),
+    tone: references.length ? 'normal' : 'cyan',
+    font: 'thin',
+  });
+  return segments;
+}
+
+/** Describes the commissioned organism without implying that the player has identified a contact. */
+export function biologicalReferenceDescription(
+  objective: SpecimenMissionObjective | BiologicalDataObjective
+): string {
+  const reference = objective.reference;
+  return reference
+    ? `${objective.targetName} / ${reference.symmetry}${reference.bodyForm ? ` ${reference.bodyForm}` : ''} / ${reference.behaviour} ${reference.role} / ${reference.locomotion} / ${reference.metabolism}`
+    : objective.targetName;
 }
 
 /** Returns whether a mission objective is satisfied by target knowledge. */

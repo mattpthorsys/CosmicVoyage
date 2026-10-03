@@ -3,7 +3,8 @@ import { biologyDashboard } from '../core/xenobiology_ui';
 import { CONFIG } from '../config';
 import { GLYPHS } from '../constants/visual';
 import type { ScreenBuffer } from './screen_buffer';
-import { TEXT_PALETTE } from './text_palette';
+import { TEXT_PALETTE, textToneColour } from './text_palette';
+import { wrapDashboardLines, type TextDashboardSegment } from '../core/text_ui';
 import { drawShortcutText } from './shortcut_text';
 import { ROVER_SPRITE, type PixelSprite } from './encounter_sprites';
 
@@ -128,6 +129,15 @@ export function drawSurfaceEncounter(buffer: ScreenBuffer, model: EncounterViewM
   for (const actor of model.actors) {
     const p = point(actor.x, actor.y);
     drawSprite(buffer, actor.sprite, p[0], p[1], 0.5, model.turn, field, actor.state);
+    // The office marker follows this camera projection, while cyan brackets retain selection ownership.
+    if (
+      actor.missionTarget &&
+      p[0] + 3 >= field.x &&
+      p[0] + 4 <= field.x + field.width &&
+      p[1] >= field.y &&
+      p[1] < field.y + field.height
+    )
+      buffer.drawChar('+', p[0] + 3, p[1], TEXT_PALETTE.greenBright, null, 'thin');
     if (
       actor.selected &&
       p[0] - 1 >= field.x &&
@@ -173,6 +183,25 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
         bg,
         heading ? 'thick' : 'thin'
       );
+    }
+  };
+  /** Wraps semantic highlights without leaking text into the terrain or reserving extra panel space. */
+  const styled = (segments: readonly TextDashboardSegment[]): void => {
+    for (const line of wrapDashboardLines([{ segments: [...segments] }], width)) {
+      if (y >= limit) break;
+      let cursor = x;
+      for (const span of line.segments) {
+        buffer.drawString(
+          span.text,
+          cursor,
+          y,
+          textToneColour(span.tone ?? 'normal'),
+          bg,
+          span.font ?? 'thin'
+        );
+        cursor += span.text.length;
+      }
+      y++;
     }
   };
   /** Writes a fixed-width utilisation bar whose label and numeric value remain independent. */
@@ -226,6 +255,7 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
     [
       model.targetName,
       model.targetStatus,
+      ...model.missionGuidance.map((line) => line.segments.map((span) => span.text).join('')),
       model.brief,
       model.targetMass,
       model.targetRange,
@@ -249,13 +279,16 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
     );
     y += 6;
   }
-  text(model.targetName, TEXT_PALETTE.textBright, true);
+  text(model.targetName, textToneColour(model.targetNameTone), true);
   text(
     model.targetStatus,
     model.targetStatus.includes('UNKNOWN') ? TEXT_PALETTE.amber : TEXT_PALETTE.greenSoft
   );
-  text(model.brief);
-  text(model.targetMass, TEXT_PALETTE.textMuted);
+  for (const line of model.missionGuidance) styled(line.segments);
+  if (model.briefSegments.length) styled(model.briefSegments);
+  else text(model.brief);
+  if (model.targetMassSegments.length) styled(model.targetMassSegments);
+  else text(model.targetMass, TEXT_PALETTE.textMuted);
   text(model.targetRange, TEXT_PALETTE.cyan);
   if (quote) text(quote, TEXT_PALETTE.amber);
   for (const request of model.requests) text(request, TEXT_PALETTE.amber);

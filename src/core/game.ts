@@ -53,6 +53,7 @@ import { getPlanetMapSize, OrbitScreenModel } from './orbit_ui';
 import { OrbitModeController } from './modes/orbit_mode_controller';
 import {
   formatMissionDetail,
+  formatMissionDetailSegments,
   generateStarbaseMissions,
   generateStarbaseNotices,
   matchesSpecimenObjective,
@@ -73,6 +74,7 @@ import {
   deliverBiologicalContract,
   biologicalRequirement,
 } from './biological_contracts';
+import type { BiologicalFieldRequest } from './biological_mission_guidance';
 import { ScanService } from './scan_service';
 import { DiscoveryLevel, formatDiscoveryLevel } from './discovery';
 import {
@@ -427,6 +429,7 @@ export class Game {
     }
     const fields = this.xenobiology.snapshot.fields;
     const field = (fields[site.id] ??= createEncounter(biosphere, site));
+    this.missionProgress.resolveBiologicalReferences(fields);
     field.roverX = 16;
     field.roverY = 21;
     this.xenobiology.snapshot.activeSiteId = site.id;
@@ -545,6 +548,7 @@ export class Game {
       menuActive: this.encounterController.interaction.kind === 'menu',
       message: this.statusMessage,
       requests: this.getEncounterRequestLines(field),
+      missionRequests: this.getBiologicalFieldRequests(),
     });
   }
 
@@ -566,6 +570,15 @@ export class Game {
         (mission) =>
           `${biologicalRequirement(mission)} / ${mission.rewardCredits} Cr + research / return to ${mission.originStarbaseName}`
       );
+  }
+
+  /** Supplies accepted contract status so field guidance stops requesting material already aboard. */
+  private getBiologicalFieldRequests(): BiologicalFieldRequest[] {
+    const specimens = this.ownedSpecimens;
+    return this.missionProgress
+      .getActiveMissions()
+      .filter((mission) => mission.type === 'xenobiology')
+      .map((mission) => ({ mission, status: this.missionProgress.getStatus(mission, specimens) }));
   }
 
   /** Reconciles ship or rover specimen ownership before committing shared demand and payment. */
@@ -1234,6 +1247,7 @@ export class Game {
       activeMissions: isLegacyGalaxyMigration ? {} : save.activeMissions,
       missionObjectiveProgress: isLegacyGalaxyMigration ? {} : save.missionObjectiveProgress,
     });
+    this.missionProgress.resolveBiologicalReferences(this.xenobiology.snapshot.fields);
     this.scanService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.catalogueDiscoveries);
     this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
@@ -7065,7 +7079,8 @@ export class Game {
             this.renderer.getGridRows(),
             view.scanner,
             this.player.ship.stasisClass ?? 1,
-            view.requests
+            view.requests,
+            { requests: view.missionRequests, scanner: view.scannerDashboard }
           );
           if (modal) this.renderer.drawTextModalTable(modal);
         }
@@ -8670,6 +8685,16 @@ export class Game {
                 this.missionProgress.getStatus(mission, this.ownedSpecimens),
               ],
               detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter submits the requested field data or one eligible whole container.`,
+              detailSegments: [
+                ...formatMissionDetailSegments(
+                  mission,
+                  this.missionProgress.getStatus(mission, this.ownedSpecimens)
+                ),
+                {
+                  text: ' Enter submits the requested field data or one eligible whole container.',
+                  font: 'thin' as const,
+                },
+              ],
             })),
           ...researchRows(this.xenobiology, this.ownedSpecimens),
         ];
@@ -8817,6 +8842,7 @@ export class Game {
                 mission.summary,
               ],
               detail: formatMissionDetail(mission, status),
+              detailSegments: formatMissionDetailSegments(mission, status),
             };
           }),
         ];

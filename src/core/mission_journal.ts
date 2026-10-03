@@ -1,5 +1,6 @@
 import type { InputManager } from './input_manager';
 import type { MissionStatus, StarbaseMission } from './mission_board';
+import { biologicalReferenceDescription } from './mission_board';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import {
   clampIndex,
@@ -108,6 +109,11 @@ export class MissionJournal {
         status === 'READY' ? 'green' : 'amber'
       );
       line(mission.summary);
+      for (const objective of mission.objectives) {
+        if (objective.kind === 'scan') continue;
+        line('REFERENCE ORGANISM', 'cyan', true);
+        line(biologicalReferenceDescription(objective), 'cyan');
+      }
       line('');
       line('DESTINATION', 'cyan', true);
       line(`System: ${mission.systemName}`);

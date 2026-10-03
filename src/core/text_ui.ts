@@ -3,12 +3,14 @@ export interface TextMenuSection<Id extends string = string> {
   label: string;
 }
 
-export type TextTone = 'normal' | 'muted' | 'cyan' | 'green' | 'amber' | 'red' | 'bright';
+export type TextTone = 'normal' | 'muted' | 'cyan' | 'green' | 'amber' | 'red' | 'bright' | 'match';
 
 export interface TextTableRow {
   id: string;
   cells: string[];
   detail?: string;
+  /** Optional styled detail spans, wrapped with their colour and font intact. */
+  detailSegments?: TextDashboardSegment[];
   disabled?: boolean;
   skipSelection?: boolean;
   tone?: TextTone;

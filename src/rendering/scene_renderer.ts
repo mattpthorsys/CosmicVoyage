@@ -47,10 +47,11 @@ import {
   TextModalTableModel,
   TextTableModel,
   TextTone,
+  wrapDashboardLines,
 } from '../core/text_ui';
 import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyCell, HyperspaceSurveyService } from '../core/hyperspace_survey';
-import { TEXT_PALETTE } from './text_palette';
+import { TEXT_PALETTE, textToneColour } from './text_palette';
 import { drawShortcutText } from './shortcut_text';
 import { revealTerminalLines } from '../core/terminal_text_reveal';
 import { HyperspaceTileProvider } from './hyperspace_tile_provider';
@@ -1523,23 +1524,7 @@ export class SceneRenderer {
 
   /** Returns text tone colour. */
   private getTextToneColour(tone: TextTone): string {
-    switch (tone) {
-      case 'muted':
-        return TEXT_PALETTE.textMuted;
-      case 'cyan':
-        return TEXT_PALETTE.cyan;
-      case 'green':
-        return TEXT_PALETTE.green;
-      case 'amber':
-        return TEXT_PALETTE.amber;
-      case 'red':
-        return TEXT_PALETTE.red;
-      case 'bright':
-        return TEXT_PALETTE.textBright;
-      case 'normal':
-      default:
-        return TEXT_PALETTE.text;
-    }
+    return textToneColour(tone);
   }
 
   /** Draws orbit interface. */
@@ -2652,9 +2637,20 @@ export class SceneRenderer {
     });
     const selectedRow = model.rows[model.selectedIndex];
     const detailLineCount = this.getTextTableDetailLineCount(model);
-    if (selectedRow?.detail && detailLineCount > 0 && y + visibleRows + 1 < this.screenBuffer.getRows()) {
+    if (
+      (selectedRow?.detail || selectedRow?.detailSegments?.length) &&
+      detailLineCount > 0 &&
+      y + visibleRows + 1 < this.screenBuffer.getRows()
+    ) {
       const detailWidth = Math.max(1, tableWidth - 3);
-      const detailLines = this.wrapText(selectedRow.detail, detailWidth).slice(0, detailLineCount);
+      const detailLines: TextDashboardLine[] = selectedRow.detailSegments
+        ? wrapDashboardLines([{ segments: selectedRow.detailSegments }], detailWidth).slice(
+            0,
+            detailLineCount
+          )
+        : this.wrapText(selectedRow.detail ?? '', detailWidth)
+            .slice(0, detailLineCount)
+            .map((text) => ({ segments: [{ text, tone: selectedRow.detailTone ?? 'cyan', font: 'thin' }] }));
       const detailColour = this.getTextToneColour(selectedRow.detailTone ?? 'cyan');
       detailLines.forEach((line, index) => {
         const detailY = y + visibleRows + 1 + index;
@@ -2674,14 +2670,7 @@ export class SceneRenderer {
           CONFIG.DEFAULT_BG_COLOUR,
           'thin'
         );
-        this.screenBuffer.drawString(
-          line.slice(0, detailWidth),
-          x + 3,
-          detailY,
-          detailColour,
-          CONFIG.DEFAULT_BG_COLOUR,
-          'thin'
-        );
+        this.drawDashboardLine(line, x + 3, detailY, detailWidth);
       });
     }
   }

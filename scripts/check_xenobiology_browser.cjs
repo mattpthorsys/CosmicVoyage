@@ -152,6 +152,32 @@ async function main() {
       assert(pixels.lit > 500 && pixels.thick && pixels.thin, JSON.stringify({ ...pixels, errors }));
       return pixels;
     };
+    /** Counts the mission marker colour only inside the terrain, excluding highlighted panel text. */
+    const missionMarkerPixels = async () =>
+      page.evaluate(async () => {
+        const { CONFIG } = await import('/src/config.ts');
+        const { getEncounterLayout } = await import('/src/rendering/surface_encounter_renderer.ts');
+        const canvas = document.querySelector('#gameCanvas');
+        const cellHeight = CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE;
+        const cellWidth = cellHeight * CONFIG.CHAR_ASPECT_RATIO;
+        const field = getEncounterLayout(
+          Math.floor(canvas.width / cellWidth),
+          Math.floor(canvas.height / cellHeight)
+        ).field;
+        const data = canvas
+          .getContext('2d')
+          .getImageData(
+            field.x * cellWidth,
+            field.y * cellHeight,
+            field.width * cellWidth,
+            field.height * cellHeight
+          ).data;
+        let count = 0;
+        for (let index = 0; index < data.length; index += 4)
+          if (data[index] < 20 && data[index + 1] > 235 && data[index + 2] > 85 && data[index + 2] < 120)
+            count++;
+        return count;
+      });
     await load(fixture.save);
     await page.waitForTimeout(1500);
     await press('b');
@@ -397,8 +423,45 @@ async function main() {
     assert.equal(landedMission.player.position.surfaceX, delivery.mission.objectives[0].location.surface.x);
     assert.equal(landedMission.player.position.surfaceY, delivery.mission.objectives[0].location.surface.y);
     await load(delivery.save);
+    await page.waitForFunction(
+      async () => {
+        const { CONFIG } = await import('/src/config.ts');
+        const { getEncounterLayout } = await import('/src/rendering/surface_encounter_renderer.ts');
+        const canvas = document.querySelector('#gameCanvasOrbit');
+        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        if (!pixels.some((value, index) => index % 4 === 3 && value > 0)) return false;
+        const main = document.querySelector('#gameCanvas');
+        const height = CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE;
+        const width = height * CONFIG.CHAR_ASPECT_RATIO;
+        const field = getEncounterLayout(
+          Math.floor(main.width / width),
+          Math.floor(main.height / height)
+        ).field;
+        const ground = main
+          .getContext('2d')
+          .getImageData(field.x * width, field.y * height, field.width * width, field.height * height).data;
+        let lit = 0;
+        for (let index = 0; index < ground.length; index += 4)
+          if (ground[index] + ground[index + 1] + ground[index + 2] > 40) lit++;
+        return lit > (ground.length / 4) * 0.7;
+      },
+      undefined,
+      { timeout: 15000 }
+    );
+    await capture('contract-before-identification');
+    assert.equal(
+      await missionMarkerPixels(),
+      0,
+      'An unidentified organism received a confirmed mission marker.'
+    );
     await press('v');
     metrics.contractField = await capture('desktop-contract-field');
+    assert(
+      metrics.contractField.spritePixels > 20,
+      'Reference field was captured before its raster became ready.'
+    );
+    metrics.contractMarkerPixels = await missionMarkerPixels();
+    assert(metrics.contractMarkerPixels > 0, 'Confirmed compatible reference has no mission marker.');
     await press('d');
     await page.waitForTimeout(1700);
     await capture('desktop-contract-dossier');
@@ -413,9 +476,9 @@ async function main() {
     capturedReference.location = { ...docked.location };
     await load(capturedReference);
     for (let index = 0; index < 4; index++) await press('ArrowRight');
-    await capture('research-live-contract');
     const deliveryCredits = capturedReference.player.resources.credits;
     await press('ArrowDown');
+    await capture('research-live-contract');
     await press('Enter');
     const delivered = await checkpoint();
     assert(
@@ -504,8 +567,8 @@ async function main() {
     prepared.location = { ...docked.location };
     await load(prepared);
     for (let index = 0; index < 4; index++) await press('ArrowRight');
-    await capture('research-alternative-contracts');
     await press('ArrowDown');
+    await capture('research-alternative-contracts');
     await press('Enter');
     await press('Enter'); // The remaining tissue request moves into the same selected row.
     const alternativesDelivered = await checkpoint();

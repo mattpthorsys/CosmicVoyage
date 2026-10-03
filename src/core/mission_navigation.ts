@@ -3,6 +3,7 @@ import type { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import type { MissionBodyLocation, MissionSystemAddress, StarbaseMission } from './mission_board';
 import { findSystemPlanetByPath, getSystemPlanetPaths } from './save_game';
+import { createBiologicalReference } from './biological_mission_guidance';
 
 /** Compares the complete projected address, including crowded cells' resolved-system slots. */
 export function isMissionSystem(address: MissionSystemAddress, system: SolarSystem): boolean {
@@ -33,8 +34,8 @@ export function resolveMissionNavigation(
       systemSlot: system.systemSlot,
     },
     objectives: mission.objectives.map((objective) => {
-      if (objective.location) return objective;
       if (objective.kind === 'scan') {
+        if (objective.location) return objective;
         if (objective.targetType !== 'planet') return objective;
         const body = bodies.find(({ planet }) => planet.name === objective.targetName);
         return body
@@ -44,9 +45,13 @@ export function resolveMissionNavigation(
       const biosphere = biospheres.find((entry) => entry.sites.some((site) => site.id === objective.siteId));
       const site = biosphere?.sites.find((entry) => entry.id === objective.siteId);
       const body = biosphere && bodies.find(({ planet }) => planet.name === biosphere.bodyName);
+      const species = biosphere?.species.find((entry) => entry.id === objective.speciesId);
+      const reference = objective.reference ?? (species && createBiologicalReference(species));
+      if (objective.location) return reference ? { ...objective, reference } : objective;
       if (!site || !body) return objective;
       return {
         ...objective,
+        reference,
         location: {
           bodyPath: body.path,
           bodyName: body.planet.name,

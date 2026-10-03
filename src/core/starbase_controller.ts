@@ -108,7 +108,11 @@ export class StarbaseController {
       widths: meta.widths,
       title: meta.title,
       subtitle: meta.subtitle,
-      detailLineCount: ['overview', 'research', 'sell'].includes(this.sectionId) ? 2 : 1,
+      detailLineCount: ['missions', 'research'].includes(this.sectionId)
+        ? 3
+        : ['overview', 'sell'].includes(this.sectionId)
+          ? 2
+          : 1,
       alert: this.alert || context.statusMessage,
     });
   }

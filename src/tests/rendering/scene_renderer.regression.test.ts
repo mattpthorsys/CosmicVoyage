@@ -893,6 +893,53 @@ describe('SceneRenderer visual regressions', () => {
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
+  it.each([
+    [120, 54],
+    [70, 40],
+  ])('preserves styled contract references while wrapping detail rows in a %sx%s port', (cols, rows) => {
+    const { buffer, drawCalls } = createMockScreenBuffer(cols, rows);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+    const starbase = new Starbase('reference-port', new PRNG('reference-port'), 'Regression');
+    renderer.drawStarbaseInterface(player, starbase, {
+      stationName: starbase.name,
+      sectionId: 'missions',
+      sections: [{ id: 'missions', label: 'Missions' }],
+      title: 'Research',
+      subtitle: '',
+      columns: ['REQUEST'],
+      widths: [20],
+      rows: [
+        {
+          id: 'reference',
+          cells: ['Live reference'],
+          detailSegments: [
+            { text: 'CREATURE: ', tone: 'muted', font: 'thin' },
+            {
+              text: 'bilateral walker / skittish grazer / walking / heterotroph',
+              tone: 'cyan',
+              font: 'thin',
+            },
+            { text: ' | Return one live specimen to the issuing station.', tone: 'normal', font: 'thin' },
+          ],
+        },
+      ],
+      detailLineCount: 3,
+      selectedIndex: 0,
+      viewOffset: 0,
+      visibleRowCount: 1,
+      footer: ['Escape return'],
+    });
+    expect(
+      drawCalls.some((call) => call.char === 'w' && call.fg === TEXT_PALETTE.cyan && call.font === 'thin')
+    ).toBe(true);
+    expect(
+      drawCalls.some((call) => call.char === 'o' && call.fg === TEXT_PALETTE.text && call.font === 'thin')
+    ).toBe(true);
+    expect(Math.max(...drawCalls.map((call) => call.x))).toBeLessThan(cols);
+    expect(Math.max(...drawCalls.map((call) => call.y))).toBeLessThan(rows);
+  });
+
   it('autosizes starbase columns to fit long shipyard bay labels when space permits', () => {
     const { buffer, drawCalls } = createMockScreenBuffer(150, 54);
     const renderer = createSceneRenderer(buffer);

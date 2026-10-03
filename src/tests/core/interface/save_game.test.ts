@@ -191,6 +191,18 @@ describe('save game persistence', () => {
     expect(() => parseGameSave(migrated)).not.toThrow();
     const objective = mission.objectives[0];
     if (objective.kind !== 'biology-data') throw new Error('Expected biological data.');
+    objective.reference = {
+      symmetry: 'radial',
+      bodyForm: 'mat',
+      locomotion: 'rooted',
+      metabolism: 'autotroph',
+      role: 'primary producer',
+      behaviour: 'sessile',
+    };
+    expect(parseGameSave(migrated).activeMissions[mission.id].objectives[0]).toEqual(objective);
+    Object.assign(objective.reference, { symmetry: 'invalid' });
+    expect(() => parseGameSave(migrated)).toThrow('reference traits');
+    delete objective.reference;
     Object.assign(objective, { requiredEvidenceLevel: 99 });
     expect(() => parseGameSave(migrated)).toThrow('evidence requirement');
   });
