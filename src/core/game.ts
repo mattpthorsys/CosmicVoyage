@@ -60,9 +60,11 @@ import {
 } from './mission_board';
 import { MissionProgressService } from './mission_progress';
 import { MissionJournal, type MissionJournalEntry } from './mission_journal';
+import { ScienceLog } from './science_log';
 import {
   getMissionLandingBody,
   getMissionLandingLocation,
+  getRecordedLandingBody,
   resolveMissionNavigation,
 } from './mission_navigation';
 import { createBiologicalContract, deliverBiologicalContract } from './biological_contracts';
@@ -149,6 +151,7 @@ import {
   type BiosphereDefinition,
   type EncounterField,
   type SpecimenContainer,
+  type BiologyOrigin,
   createXenobiologySnapshot,
 } from '../entities/biology/biology_types';
 import {
@@ -164,6 +167,7 @@ import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coor
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
 type RoverActionId =
+  | 'science'
   | 'missions'
   | 'map'
   | 'move'
@@ -262,6 +266,7 @@ export class Game {
   private _scanService?: ScanService;
   private _missionProgress?: MissionProgressService;
   private _missionJournal?: MissionJournal;
+  private _scienceLog?: ScienceLog;
   private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
@@ -407,6 +412,7 @@ export class Game {
     else this.interfaceMode.close('xenobiology');
     if (intent?.kind === 'cargo') this.openRoverCargo();
     else if (intent?.kind === 'missions') this.openMissionJournal();
+    else if (intent?.kind === 'science') this.openScienceLog();
     else if (intent?.kind === 'leave') {
       if (Math.hypot(field.roverX - 16, field.roverY - 21) > 1.5 && this.player.terrainVehicle.fuel >= 0.02)
         this.statusMessage = 'Return to entry X16 Y21 to withdraw.';
@@ -440,7 +446,27 @@ export class Game {
         if (command.kind === 'move') rover.fuel = Math.max(0, rover.fuel - 0.02);
         rover.integrity = Math.max(0, (rover.integrity ?? 100) - result.damage);
         if (result.evidence) {
-          this.xenobiology.observe(result.evidence.species, result.evidence.level);
+          const system = this.stateManager.currentSystem;
+          const body = this.stateManager.currentPlanet;
+          const path = system && body ? findSystemPlanetPath(system, body) : null;
+          const origin: BiologyOrigin | undefined =
+            system && body && path
+              ? {
+                  systemName: system.name,
+                  worldX: system.starX,
+                  worldY: system.starY,
+                  systemSlot: system.systemSlot,
+                  bodyPath: path,
+                  bodyName: body.name,
+                  surface: {
+                    x: field.site.x,
+                    y: field.site.y,
+                    siteId: field.site.id,
+                    label: field.site.label,
+                  },
+                }
+              : undefined;
+          this.xenobiology.observe(result.evidence.species, result.evidence.level, origin);
           if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
         }
         if (rover.integrity === 0) {
@@ -499,6 +525,10 @@ export class Game {
 
   /** Reconciles ship or rover specimen ownership before committing shared demand and payment. */
   private submitBiologicalResearch(id: string, starbase: Starbase): void {
+    if (id === 'science-log') {
+      this.openScienceLog();
+      return;
+    }
     if (starbase.kind === 'automated-depot') {
       this.starbaseMode.alert = 'No scientific receiving staff at this depot.';
       return;
@@ -1354,6 +1384,14 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.interfaceMode.is('science-log')) {
+      this.inputManager.justPressedActions.add(data.action);
+      this.handleScienceLogInput();
+      this.inputManager.justPressedActions.delete(data.action);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('mission-journal')) {
       if (this.missionJournal.reveal.isActive) this.missionJournal.reveal.complete();
       else {
@@ -2511,6 +2549,9 @@ export class Game {
       case 'MISSION_JOURNAL':
         this.openMissionJournal();
         return;
+      case 'SCIENCE_LOG':
+        this.openScienceLog();
+        return;
       case 'ORBIT_DOSSIER':
         if (this.stateManager.state === 'orbit' && !this.orbitModeState.dossier.isOpen) {
           this.orbitModeState.dossier.open();
@@ -2978,6 +3019,101 @@ export class Game {
     this.forceFullRender = true;
   }
 
+  /** Returns the campaign science terminal, including lightweight non-canvas harnesses. */
+  private get scienceLog(): ScienceLog {
+    return (this._scienceLog ??= new ScienceLog());
+  }
+
+  /** Opens from a safe parent menu or travel, preserving the parent for Escape. */
+  private openScienceLog(): void {
+    const kind = this.interfaceMode.kind;
+    if (!['none', 'ship-menu', 'rover-cargo', 'xenobiology'].includes(kind) || this.popupState !== 'inactive')
+      return;
+    if (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) return;
+    if (this.activeEncounter && !['drive', 'menu'].includes(this.encounterController.interaction.kind))
+      return;
+    if (kind !== 'none' && kind !== 'ship-menu' && kind !== 'rover-cargo' && kind !== 'xenobiology') return;
+    this.scienceLog.open(kind);
+    this.interfaceMode.open('science-log');
+    this.forceFullRender = true;
+  }
+
+  /** Restores the previous interface and prevents a held Enter from confirming a landing. */
+  private closeScienceLog(): void {
+    const parent = this.scienceLog.returnTo;
+    if (parent === 'none') this.interfaceMode.close('science-log');
+    else this.interfaceMode.open(parent);
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Reads one saved discovery site without generating another system. */
+  private getScienceOrigin(): BiologyOrigin | undefined {
+    return this.scienceLog.origin(
+      this.scienceLog.selected(this.scienceLog.entries(this.xenobiology, this.ownedSpecimens))
+    );
+  }
+
+  /** Resolves a scientific return site only within the current orbital family. */
+  private getScienceLandingBody(): Planet | null {
+    const origin = this.getScienceOrigin();
+    const system = this.stateManager.currentSystem;
+    const parent = this.stateManager.currentOrbitReferencePlanet;
+    return origin && system && parent && this.stateManager.state === 'orbit'
+      ? getRecordedLandingBody(origin, origin, system, parent)
+      : null;
+  }
+
+  /** Builds a responsive science report from acquired evidence and actual cargo. */
+  private createScienceLogModel(): TextModalTableModel {
+    return this.scienceLog.createModel(
+      this.xenobiology,
+      this.ownedSpecimens,
+      this.player.ship.stasisClass ?? 1,
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows(),
+      !!this.getScienceLandingBody()
+    );
+  }
+
+  /** Handles paused browsing or places the orbital landing cursor at an explicitly recorded site. */
+  private handleScienceLogInput(): boolean {
+    if (!this.interfaceMode.is('science-log')) {
+      if (!this.inputManager.wasActionJustPressed('SCIENCE_LOG')) return false;
+      this.openScienceLog();
+      return this.interfaceMode.is('science-log');
+    }
+    const intent = this.scienceLog.input(
+      this.inputManager,
+      this.scienceLog.entries(this.xenobiology, this.ownedSpecimens),
+      this.createScienceLogModel()
+    );
+    if (intent === 'close') this.closeScienceLog();
+    else if (intent === 'landing') {
+      const origin = this.getScienceOrigin();
+      const body = this.getScienceLandingBody();
+      if (!origin || !body)
+        this.scienceLog.notice = 'Enter orbit at the recorded planet or its parent to select a habitat.';
+      else if (!body.isSurfaceReady()) {
+        this.requestSurfacePreparation(body);
+        this.scienceLog.notice = 'Preparing destination terrain. Press Enter again when ready.';
+      } else if (
+        this.orbitModeState.selectLandingSite(
+          this.stateManager.currentOrbitReferencePlanet!,
+          body,
+          origin.surface.x,
+          origin.surface.y,
+          origin.surface.label
+        )
+      ) {
+        this.statusMessage = this.orbitModeState.alert;
+        this.closeScienceLog();
+      } else this.scienceLog.notice = 'Recorded coordinates are invalid for this body.';
+    }
+    if (this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
+  }
+
   /** Resolves legacy local destinations from actual generated worlds before reading accepted contracts. */
   private getMissionJournalEntries(): MissionJournalEntry[] {
     if (!this.missionProgress.getActiveCount()) return [];
@@ -3117,7 +3253,7 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
-    if (this.handleMissionJournalInput()) {
+    if (this.handleScienceLogInput() || this.handleMissionJournalInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -3893,6 +4029,11 @@ export class Game {
   /** Updates. */
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
+    if (this.interfaceMode.is('science-log')) {
+      if (this.scienceLog.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     if (this.interfaceMode.is('mission-journal')) {
       if (this.missionJournal.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
@@ -4775,6 +4916,11 @@ export class Game {
       { id: 'shoot', label: 'Shoot', status: 'safe' },
       { id: 'icon', label: 'Icon', status: 'legend' },
       { id: 'missions', label: 'Missions', status: `${this.missionProgress.getActiveCount()} active` },
+      {
+        id: 'science',
+        label: 'Science log',
+        status: `${Object.keys(this.xenobiology.snapshot.evidence).length} records`,
+      },
     ];
     if (this.isAtParkedShip()) {
       items.splice(0, 0, { id: 'embark', label: 'Embark', status: 'board ship' });
@@ -5255,6 +5401,9 @@ export class Game {
       case 'missions':
         this.openMissionJournal();
         break;
+      case 'science':
+        this.openScienceLog();
+        break;
       case 'mine':
         this.openMiningQuantitySelector();
         break;
@@ -5487,6 +5636,10 @@ export class Game {
   /** Activates ship menu selection. */
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id === 'science') {
+      this.openScienceLog();
+      return;
+    }
     if (row.id === 'missions' || (this.shipOperations.section === 'log' && row.id === '007')) {
       this.openMissionJournal();
       return;
@@ -5813,6 +5966,17 @@ export class Game {
             id: 'missions',
             cells: ['Mission Journal', `${this.missionProgress.getActiveCount()} accepted contracts`],
             detail: 'Review destinations, objectives, habitat coordinates and delivery requirements.',
+            cellTones: ['cyan', 'green'],
+            detailTone: 'cyan',
+          },
+          {
+            id: 'science',
+            cells: [
+              'Science Log',
+              `${Object.keys(this.xenobiology.snapshot.evidence).length} biological records`,
+            ],
+            detail:
+              'Biological dossiers, return coordinates, remaining research demand and preservation requirements.',
             cellTones: ['cyan', 'green'],
             detailTone: 'cyan',
           },
@@ -6887,6 +7051,8 @@ export class Game {
         if (this.interfaceMode.is('mission-journal')) {
           this.renderer.drawTextModalTable(this.createMissionJournalModel());
         }
+        if (this.interfaceMode.is('science-log'))
+          this.renderer.drawTextModalTable(this.createScienceLogModel());
 
         if (this.quantitySelector) {
           this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
@@ -6968,6 +7134,7 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
       this.shipMenuOpen ||
@@ -7015,6 +7182,7 @@ export class Game {
   /** Returns whether game clock paused. */
   private isGameClockPaused(): boolean {
     return (
+      this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
       this.stateManager.state === 'starbase' ||
@@ -7054,6 +7222,18 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.interfaceMode.is('science-log'))
+      return [
+        'science-log',
+        this.scienceLog.selectedId,
+        this.scienceLog.filter,
+        this.scienceLog.originIndex,
+        this.scienceLog.viewOffset,
+        this.scienceLog.notice,
+        this.scienceLog.reveal.progress,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
     if (this.interfaceMode.is('mission-journal')) {
       return [
         'mission-journal',
@@ -7539,6 +7719,22 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.interfaceMode.is('science-log'))
+      return {
+        context: 'science log',
+        buttons: [
+          commandButton('previous', 'Previous species', 'MOVE_LEFT', { key: 'Left' }),
+          commandButton('next', 'Next species', 'MOVE_RIGHT', { key: 'Right' }),
+          commandButton('up', 'Scroll up', 'MOVE_UP', { key: 'Up' }),
+          commandButton('down', 'Scroll down', 'MOVE_DOWN', { key: 'Down' }),
+          commandButton('filter', 'Filter', 'SCAN_SYSTEM_OBJECT', { key: 'S' }),
+          commandButton('origin', 'Habitat', 'BIOLOGY_SITE', { key: 'B' }),
+          ...(this.getScienceLandingBody()
+            ? [commandButton('landing', 'Landing site', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' })]
+            : []),
+          commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
+        ],
+      };
     if (this.interfaceMode.is('mission-journal')) {
       const selected = this.missionJournal.selected(this.getMissionJournalEntries());
       return {
@@ -7662,6 +7858,7 @@ export class Game {
           key: 'J',
           detail: 'Review accepted contracts and destination coordinates.',
         }),
+        commandButton('science', 'Science log', 'SCIENCE_LOG', { key: 'X' }),
       ],
       rightButtons: [
         commandButton('red-reserved', 'Alert', 'RED_RESERVED', {
@@ -7724,6 +7921,7 @@ export class Game {
           key: 'J',
           detail: 'Review accepted contracts and destination coordinates.',
         }),
+        commandButton('science', 'Science log', 'SCIENCE_LOG', { key: 'X' }),
       ],
       rightButtons: [
         commandButton('red-reserved', 'Alert', 'RED_RESERVED', {
@@ -7825,6 +8023,7 @@ export class Game {
           key: 'J',
           detail: 'Review habitat coordinates and specimen requirements.',
         }),
+        commandButton('science', 'Science log', 'SCIENCE_LOG', { key: 'X' }),
       ],
       rightButtons: [
         commandButton('red-reserved', 'Alert', 'RED_RESERVED', {
@@ -8003,7 +8202,7 @@ export class Game {
               'Arrows site  Enter land  D dossier  J missions  Esc back',
               `${base.footer[1]}${biosphere ? '  B habitats' : ''}`,
             ]
-          : [base.footer[0], `J missions / landing targets${biosphere ? '  B habitats' : ''}`],
+          : [base.footer[0], `J missions  X science log${biosphere ? '  B habitats' : ''}`],
     };
     this.orbitModeState.dossier.biologyLines = biosphere
       ? [
@@ -8031,6 +8230,10 @@ export class Game {
     void planet
       .prepareSurfaceReady()
       .then(() => {
+        if (this.interfaceMode.is('science-log') && this.getScienceLandingBody() === planet) {
+          this.scienceLog.notice = 'Terrain ready. Enter selects the recorded habitat.';
+          this.forceFullRender = true;
+        }
         if (
           this.interfaceMode.is('mission-journal') &&
           this.getJournalLandingBody(
@@ -8045,6 +8248,10 @@ export class Game {
         }
       })
       .catch((error) => {
+        if (this.interfaceMode.is('science-log') && this.getScienceLandingBody() === planet) {
+          this.scienceLog.notice = 'Terrain preparation failed. Enter retries.';
+          this.forceFullRender = true;
+        }
         if (
           this.interfaceMode.is('mission-journal') &&
           this.getJournalLandingBody(
@@ -8391,6 +8598,11 @@ export class Game {
         return this.getCargoRows();
       case 'research':
         return [
+          {
+            id: 'science-log',
+            cells: ['Science Log', 'READ', '', 'Ship records'],
+            detail: 'Enter opens biological evidence, handling requirements and recorded return sites.',
+          },
           ...this.missionProgress
             .getStationMissions(starbase.name, starbase.id)
             .filter((mission) => mission.type === 'xenobiology')

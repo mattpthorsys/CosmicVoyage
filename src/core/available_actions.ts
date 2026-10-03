@@ -369,6 +369,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       break;
   }
   actions.push(
+    action('science-log', 'Science log', CONFIG.KEY_BINDINGS.SCIENCE_LOG, 'SCIENCE_LOG', 'utility', 92, true),
     action(
       'missions',
       'Missions',

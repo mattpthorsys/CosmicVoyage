@@ -121,6 +121,27 @@ export function validateXenobiology(
       throw new Error('Invalid biology evidence identity.');
     number(evidence.level, 0, 3, true);
     number(evidence.submittedLevel, 0, evidence.level as number, true);
+    if (evidence.origins !== undefined) {
+      if (!Array.isArray(evidence.origins) || evidence.origins.length > 32)
+        throw new Error('Invalid discovery origins.');
+      const sites = new Set<string>();
+      for (const origin of evidence.origins) {
+        record(origin);
+        for (const key of ['systemName', 'bodyPath', 'bodyName']) text(origin[key]);
+        if (typeof origin.bodyPath !== 'string' || !/^planet:\d+(?:\/moon:\d+)*$/.test(origin.bodyPath))
+          throw new Error('Invalid discovery body path.');
+        number(origin.worldX, -Number.MAX_SAFE_INTEGER);
+        number(origin.worldY, -Number.MAX_SAFE_INTEGER);
+        number(origin.systemSlot, 0, 1000, true);
+        record(origin.surface);
+        text(origin.surface.siteId);
+        text(origin.surface.label);
+        number(origin.surface.x, 0, 4096, true);
+        number(origin.surface.y, 0, 4096, true);
+        if (sites.has(origin.surface.siteId as string)) throw new Error('Duplicate discovery origin.');
+        sites.add(origin.surface.siteId as string);
+      }
+    }
   }
   for (const [id, demand] of Object.entries(value.demand)) {
     record(demand);

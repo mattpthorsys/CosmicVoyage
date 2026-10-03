@@ -6,6 +6,7 @@ import {
   type ResearchDemandRecord,
   type SpeciesEvidence,
   type XenobiologySnapshot,
+  type BiologyOrigin,
 } from '../entities/biology/biology_types';
 
 export interface ResearchQuote {
@@ -24,10 +25,17 @@ export class XenobiologyService {
   }
 
   /** Records stronger evidence once; identical scans do not increase quality or reward. */
-  observe(species: SpeciesDefinition, level: EvidenceLevel): SpeciesEvidence {
+  observe(species: SpeciesDefinition, level: EvidenceLevel, origin?: BiologyOrigin): SpeciesEvidence {
     const existing = this.state.evidence[species.id];
     if (!existing) this.state.evidence[species.id] = { species, level, collected: false, submittedLevel: 0 };
     else existing.level = Math.max(existing.level, level) as EvidenceLevel;
+    const evidence = this.state.evidence[species.id];
+    if (origin && !evidence.origins?.some((entry) => entry.surface.siteId === origin.surface.siteId)) {
+      // Bound campaign log growth while retaining the earliest discovery and recent return sites.
+      const origins = (evidence.origins ??= []);
+      if (origins.length >= 32) origins.splice(1, 1);
+      origins.push(structuredClone(origin));
+    }
     return this.state.evidence[species.id];
   }
 

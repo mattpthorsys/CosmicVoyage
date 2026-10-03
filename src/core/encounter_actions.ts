@@ -10,6 +10,7 @@ export const ENCOUNTER_ACTIONS = [
   { kind: 'catalogue', label: 'Species', key: 'N', action: 'TARGET_MENU' },
   { kind: 'cargo', label: 'Cargo', key: 'O', action: 'SHIP_MENU' },
   { kind: 'missions', label: 'Missions', key: 'J', action: 'MISSION_JOURNAL' },
+  { kind: 'science', label: 'Science log', key: 'X', action: 'SCIENCE_LOG' },
   { kind: 'leave', label: 'Withdraw', key: 'Esc', action: 'QUIT' },
 ] as const;
 

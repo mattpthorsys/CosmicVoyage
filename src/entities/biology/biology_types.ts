@@ -70,6 +70,18 @@ export interface SpeciesEvidence {
   level: EvidenceLevel;
   collected: boolean;
   submittedLevel: EvidenceLevel;
+  /** Only visited sites are recorded; reading the log never generates new worlds. */
+  origins?: BiologyOrigin[];
+}
+
+export interface BiologyOrigin {
+  systemName: string;
+  worldX: number;
+  worldY: number;
+  systemSlot: number;
+  bodyPath: string;
+  bodyName: string;
+  surface: { x: number; y: number; siteId: string; label: string };
 }
 
 export interface ResearchDemandRecord {

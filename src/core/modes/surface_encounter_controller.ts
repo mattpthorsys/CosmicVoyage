@@ -19,7 +19,7 @@ type EncounterInteraction =
   | { kind: 'dossier' | 'catalogue'; offset: number };
 export type EncounterIntent =
   | { kind: 'command'; command: EncounterCommand }
-  | { kind: 'leave' | 'cargo' | 'missions' };
+  | { kind: 'leave' | 'cargo' | 'missions' | 'science' };
 
 /** Owns mutually exclusive local driving, action menus, weapon preparation and scientific reading. */
 export class SurfaceEncounterController {
@@ -127,7 +127,8 @@ export class SurfaceEncounterController {
   /** Resolves an explicit menu choice without performing gameplay effects itself. */
   private choose(action: EncounterAction, targetId?: string): EncounterIntent | undefined {
     this.interaction = { kind: 'drive' };
-    if (action === 'leave' || action === 'cargo' || action === 'missions') return { kind: action };
+    if (action === 'leave' || action === 'cargo' || action === 'missions' || action === 'science')
+      return { kind: action };
     if (action === 'wait') return { kind: 'command', command: { kind: 'wait' } };
     if (action === 'catalogue' || (action === 'dossier' && targetId)) {
       this.interaction = { kind: action, offset: 0 };
@@ -189,7 +190,8 @@ export class SurfaceEncounterController {
       buttons: ENCOUNTER_ACTIONS.map((item) =>
         commandButton(item.kind, item.label, item.action, {
           key: item.key,
-          enabled: ['cargo', 'leave', 'wait', 'catalogue'].includes(item.kind) || !!target,
+          enabled:
+            ['cargo', 'leave', 'wait', 'catalogue', 'missions', 'science'].includes(item.kind) || !!target,
           tone: item.kind === 'shoot' ? 'red' : item.kind === 'collect' ? 'green' : 'normal',
         })
       ),

@@ -71,6 +71,17 @@ export function getMissionLandingBody(
   const location = getMissionLandingLocation(mission);
   if (!mission.systemAddress || !isMissionSystem(mission.systemAddress, system) || !location?.surface)
     return null;
+  return getRecordedLandingBody(mission.systemAddress, location, system, parent);
+}
+
+/** Resolves a recorded habitat within the current orbital family for missions or scientific records. */
+export function getRecordedLandingBody(
+  address: MissionSystemAddress,
+  location: MissionBodyLocation,
+  system: SolarSystem,
+  parent: Planet
+): Planet | null {
+  if (!isMissionSystem(address, system) || !location.surface) return null;
   const body = findSystemPlanetByPath(system, location.bodyPath);
   return body && [parent, ...parent.moons].includes(body) && body.name === location.bodyName ? body : null;
 }

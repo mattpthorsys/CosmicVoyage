@@ -76,6 +76,7 @@ export const CONFIG = {
     TARGET_MENU: 'n',
     SHIP_MENU: 'o',
     MISSION_JOURNAL: 'j',
+    SCIENCE_LOG: 'x',
     ORBIT_DOSSIER: 'd',
     BIOLOGY_SITE: 'b',
     BIOLOGY_COLLECT: 'c',
