@@ -14,7 +14,11 @@ import type { SolarSystem } from '../entities/solar_system';
 import { createDiscoveryRecord, DiscoveryRecord, isDiscoveryRecord, DISCOVERY_LEVELS } from './discovery';
 import type { EconomySnapshot } from './starbase_commerce';
 import { CONFIG } from '../config';
-import { createXenobiologySnapshot, type XenobiologySnapshot } from '../entities/biology/biology_types';
+import {
+  BIOLOGY_VERSION,
+  createXenobiologySnapshot,
+  type XenobiologySnapshot,
+} from '../entities/biology/biology_types';
 import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 
 export const SAVE_GAME_VERSION = 14;
@@ -355,8 +359,10 @@ export function parseGameSave(value: string | unknown): GameSave {
       location.kind !== 'planet' ||
       !save.player.terrainVehicle.deployed ||
       save.player.terrainVehicle.onFoot ||
-      field.bodyId !==
-        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio1`
+      ![
+        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio1`,
+        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio${BIOLOGY_VERSION}`,
+      ].includes(field.bodyId)
     )
       throw new Error('Active encounter does not match saved location.');
   }

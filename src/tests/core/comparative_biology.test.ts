@@ -38,6 +38,7 @@ function fixture() {
   const fields = biosphere.sites.map((site) => createEncounter(biosphere, site));
   for (const field of fields) research.snapshot.fields[field.site.id] = field;
   const station = { id: 'station:comparison', name: 'Comparison Port', kind: 'starbase' as const };
+  /** Rebuilds offers from current records and the contents of both cargo holds. */
   const offers = () =>
     createComparativeBiologicalContracts(
       station,

@@ -1,10 +1,9 @@
 # Xenobiology Expansion: Verification Handoff
 
-Implementation is checkpointed in stages. Verification completed 2026-10-03.
-The results below include mission reference and confirmed-target highlighting.
-They do not cover the subsequent native-family/anatomy/behaviour/comparative
-extension; its verification is pending in
-[the new handoff](xenobiology-native-expansion.md).
+This report covers the initial mission-reference and confirmed-target
+highlighting work. The subsequent native-family, anatomy, behaviour and
+comparative-expedition work was also verified; see the
+[native expansion report](xenobiology-native-expansion.md).
 
 ## Verification Results
 
@@ -92,9 +91,12 @@ sprite leakage, overlapping menu/footer text and unreadable small contacts.
 Fix failures in their actual owner. In particular, preserve unrelated visual
 regressions, atomic refusal/transaction tests and source lifecycle validation.
 New source size must agree with container size; species evidence stays
-canonical. Version-12 storage migrates into version 13. A scan at another
-colony cannot establish a requested site's detailed evidence. Ordinary sales
-must still list zero-value specimens and must not complete acquisition requests.
+canonical. At the time of this report, version-12 storage migrated into version
+13. The later schema-14 migration and active biology-field save compatibility
+are covered in the [native expansion report](xenobiology-native-expansion.md).
+A scan at another colony cannot establish a requested site's detailed evidence.
+Ordinary sales must still list zero-value specimens and must not complete
+acquisition requests.
 
 Automated success does not establish long-session economy balance or whether
 the expeditions are enjoyable.

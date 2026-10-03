@@ -14,6 +14,10 @@ import { ScanService } from '../../../core/scan_service';
 import { createDiscoveryRecord } from '../../../core/discovery';
 import { CONFIG } from '../../../config';
 import { createXenobiologySnapshot } from '../../../entities/biology/biology_types';
+import { BIOLOGY_VERSION } from '../../../entities/biology/biology_types';
+import { generateBiosphere } from '../../../entities/biology/biosphere_generator';
+import { biologyFixture } from '../../fixtures/biology';
+import { createEncounter } from '../../../systems/surface_encounter_system';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -143,6 +147,40 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('restores active fields at the current biology version and retains version-one field IDs', () => {
+    const save = createSave();
+    const location = { worldX: 3, worldY: -2, systemSlot: 0, bodyPath: 'planet:0' };
+    /** Builds a valid field snapshot with either the persisted or current generated body suffix. */
+    const makeField = (version: number) => {
+      const bodyId = `3,-2,0/planet:0/bio${version}`;
+      const biosphere = generateBiosphere(biologyFixture({ bodyId }))!;
+      return createEncounter(biosphere, {
+        id: `${bodyId}/site:12,15`,
+        x: 12,
+        y: 15,
+        label: 'Restoration site',
+      });
+    };
+    const currentField = makeField(BIOLOGY_VERSION);
+    save.location = { ...location, kind: 'planet', orbitReferencePath: 'planet:0' };
+    save.player.position.surfaceX = 12;
+    save.player.position.surfaceY = 15;
+    save.player.terrainVehicle.deployed = true;
+    save.xenobiology.fields[currentField.site.id] = currentField;
+    save.xenobiology.activeSiteId = currentField.site.id;
+    expect(parseGameSave(save).xenobiology.fields[currentField.site.id].bodyId).toContain(
+      `/bio${BIOLOGY_VERSION}`
+    );
+    expect(() => parseGameSave({ ...save, location: { ...save.location, worldX: 4 } })).toThrow(
+      'Active encounter does not match saved location'
+    );
+
+    const legacyField = makeField(1);
+    save.xenobiology.fields = { [legacyField.site.id]: legacyField };
+    save.xenobiology.activeSiteId = legacyField.site.id;
+    expect(parseGameSave(save).xenobiology.fields[legacyField.site.id].bodyId).toContain('/bio1');
+  });
+
   it('migrates version-thirteen storage without losing evidence or accepted contract packets', () => {
     const legacy = { ...createSave(), version: 13 };
     const session = new MemoryStorage();

@@ -140,7 +140,7 @@ describe('mission journal Game integration', () => {
     if (objective.kind !== 'specimen') throw new Error('Expected specimen.');
     objective.id = 'second';
     objective.siteId = 'second-habitat';
-    objective.location!.surface = { x: 700, y: 800, siteId: objective.siteId, label: 'Open ground' };
+    objective.location!.surface = { x: 300, y: 400, siteId: objective.siteId, label: 'Open ground' };
     accepted.objectives.push(objective);
     game.openMissionJournal();
     journal.reveal.complete();
@@ -157,7 +157,7 @@ describe('mission journal Game integration', () => {
     game._processInput();
     expect(owner.kind).toBe('none');
     expect(orbit.getSelectedBody(parent)).toBe(moon);
-    expect([orbit.landingX, orbit.landingY]).toEqual([700, 800]);
+    expect([orbit.landingX, orbit.landingY]).toEqual([300, 400]);
     expect(effects.land).not.toHaveBeenCalled();
     accepted.objectives[1].location = structuredClone(accepted.objectives[0].location);
     game.openMissionJournal();

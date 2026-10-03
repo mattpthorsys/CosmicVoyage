@@ -89,12 +89,31 @@ async function main() {
     });
     /** Uses the real shared import picker, never assigning state into a running Game. */
     const load = async (save) => {
+      const originalSavedAt = save.savedAt;
       await page.locator('#saveImportInput').setInputFiles({
         name: 'xeno-fixture.json',
         mimeType: 'application/json',
         buffer: Buffer.from(JSON.stringify(save)),
       });
-      await page.waitForFunction(() => document.querySelector('#splashScreen').hidden);
+      await page.waitForFunction(
+        ({ seed, originalSavedAt }) => {
+          const saveKey = Object.keys(sessionStorage).find((key) =>
+            key.startsWith('cosmic-voyage.session.v')
+          );
+          const imported = saveKey && JSON.parse(sessionStorage.getItem(saveKey));
+          const failed = document.querySelector('#splashMessage').textContent.startsWith('Import failed:');
+          return (
+            failed ||
+            (document.querySelector('#splashScreen').hidden &&
+              imported?.seed === seed &&
+              imported.savedAt !== originalSavedAt)
+          );
+        },
+        { seed: save.seed, originalSavedAt },
+        { timeout: 15000 }
+      );
+      const importFailure = await page.locator('#splashMessage').textContent();
+      assert(!importFailure.startsWith('Import failed:'), importFailure);
       await page.waitForTimeout(500);
     };
     /** Sends a complete physical key press with enough time for the game frame to consume it. */
@@ -423,18 +442,34 @@ async function main() {
     assert.equal(landedMission.player.position.surfaceX, delivery.mission.objectives[0].location.surface.x);
     assert.equal(landedMission.player.position.surfaceY, delivery.mission.objectives[0].location.surface.y);
     await load(delivery.save);
-    await page.waitForFunction(
-      () => {
-        const canvas = document.querySelector('#gameCanvasOrbit');
-        const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-        let lit = 0;
-        for (let index = 0; index < pixels.length; index += 4)
-          if (pixels[index + 3] > 0 && pixels[index] + pixels[index + 1] + pixels[index + 2] > 60) lit++;
-        return lit > 20;
-      },
-      undefined,
-      { timeout: 15000 }
-    );
+    try {
+      await page.waitForFunction(
+        () => {
+          const canvas = document.querySelector('#gameCanvasOrbit');
+          const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          let lit = 0;
+          for (let index = 0; index < pixels.length; index += 4)
+            if (pixels[index + 3] > 0 && pixels[index] + pixels[index + 1] + pixels[index + 2] > 60) lit++;
+          return lit > 20;
+        },
+        undefined,
+        { timeout: 15000 }
+      );
+    } catch (error) {
+      const canvases = await page.evaluate(() =>
+        [...document.querySelectorAll('canvas')].map((canvas) => {
+          const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          let lit = 0;
+          for (let index = 0; index < pixels.length; index += 4)
+            if (pixels[index] + pixels[index + 1] + pixels[index + 2] > 60) lit++;
+          return { id: canvas.id, width: canvas.width, height: canvas.height, lit };
+        })
+      );
+      await page.screenshot({ path: path.join(output, 'contract-render-timeout.png') });
+      throw new Error(
+        `${error.message}; canvases=${JSON.stringify(canvases)}; browserErrors=${JSON.stringify(errors)}`
+      );
+    }
     await capture('contract-before-identification');
     assert.equal(
       await missionMarkerPixels(),
@@ -520,6 +555,10 @@ async function main() {
         throw new Error('Representative alternative requests must share an obtainable producer.');
       // Keep one real generated organism next to the rover to isolate interface/delivery from travel.
       field.individuals = [source];
+      field.species.find((species) => species.id === source.speciesId).behaviour = 'sessile';
+      for (const mission of offers)
+        for (const requirement of mission.objectives)
+          if (requirement.kind !== 'scan') requirement.reference.behaviour = 'sessile';
       source.x = source.homeX = 16;
       source.y = source.homeY = 20;
       field.terrain[20] = field.terrain[20].slice(0, 16) + '.' + field.terrain[20].slice(17);
@@ -541,6 +580,29 @@ async function main() {
     await press('a');
     await press('s');
     const prepared = await checkpoint();
+    if (!prepared.player.terrainVehicle.cargoHold.specimens.length) {
+      await capture('alternative-sampling-debug');
+      const field = prepared.xenobiology.fields[prepared.xenobiology.activeSiteId];
+      throw new Error(
+        JSON.stringify({
+          location: prepared.location,
+          activeSiteId: prepared.xenobiology.activeSiteId,
+          field: field && {
+            rover: [field.roverX, field.roverY],
+            organisms: field.individuals.map((actor) => ({
+              id: actor.id,
+              x: actor.x,
+              y: actor.y,
+              state: actor.state,
+              sampled: actor.sampled,
+              speciesId: actor.speciesId,
+            })),
+          },
+          missionProgress: prepared.missionObjectiveProgress,
+          browserErrors: errors,
+        })
+      );
+    }
     assert.equal(prepared.player.terrainVehicle.cargoHold.specimens[0].kind, 'tissue');
     assert(
       prepared.readyMissionIds.includes(alternatives.missionIds[0]),
