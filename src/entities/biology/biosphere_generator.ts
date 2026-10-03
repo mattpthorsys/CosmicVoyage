@@ -3,7 +3,13 @@ import type { Planet } from '../planet';
 import type { SolarSystem } from '../solar_system';
 import { getManagedSurfaceWaterPhase, getSurfaceLiquidProfile } from '../planet/surface_liquid';
 import { readReadySurfaceData } from '../planet/surface_data';
-import { BIOLOGY_VERSION, type BiosphereDefinition, type SpeciesDefinition } from './biology_types';
+import {
+  BIOLOGY_VERSION,
+  type BiologySite,
+  type BiosphereDefinition,
+  type SpeciesDefinition,
+} from './biology_types';
+import { classifyHabitat } from './habitat';
 
 export interface BiologyEnvironment {
   readonly bodyId: string;
@@ -88,7 +94,7 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
     const producer = index % 2 === 0;
     const symmetry =
       ancestor.choice<SpeciesDefinition['symmetry']>(['bilateral', 'radial', 'trilateral']) ?? 'radial';
-    const behaviour = producer
+    const sampledBehaviour = producer
       ? 'sessile'
       : (individual.choice<SpeciesDefinition['behaviour']>([
           'passive',
@@ -96,6 +102,13 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
           'territorial',
           'ambush',
         ]) ?? 'passive');
+    // A grazing lineage retreats together; detritus consumers are not generated as predators.
+    const behaviour =
+      index === 1 && aerobic
+        ? 'skittish'
+        : index === 3 && sampledBehaviour === 'ambush'
+          ? 'passive'
+          : sampledBehaviour;
     const massKg = Number(
       (producer
         ? individual.random(0.1, 3)
@@ -154,6 +167,17 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
       recognised,
       baselineSamples: recognised ? individual.randomInt(0, e.origin === 'introduced' ? 12 : 6) : 0,
       remoteness: e.origin === 'introduced' ? 0 : Math.min(1, e.distanceLy / 5000),
+      habitatAffinity:
+        index <= 1
+          ? ['moist-margin']
+          : index === 2
+            ? ['sheltered-ground']
+            : index === 3
+              ? ['moist-margin', 'sheltered-ground', 'exposed-ground']
+              : index === 4
+                ? ['exposed-ground']
+                : ['sheltered-ground', 'exposed-ground'],
+      socialBehaviour: index === 1 && aerobic ? 'group-retreat' : undefined,
     });
   }
   return { id: e.bodyId, bodyName: e.bodyName, origin: e.origin, species, sites: [] };
@@ -171,15 +195,31 @@ export function prepareBiosphere(
   if (!biosphere || !surface?.heightmap) return biosphere;
   const map = surface.heightmap;
   const prng = new PRNG(environment.seed).seedNew('biology-sites', BIOLOGY_VERSION);
-  const sites = [];
+  const sites: BiologySite[] = [];
   const used = new Set<string>();
-  for (let attempt = 0; attempt < 256 && sites.length < 6; attempt++) {
+  for (
+    let attempt = 0;
+    attempt < 768 && (sites.length < 6 || !sites.some((site) => site.habitat?.kind === 'moist-margin'));
+    attempt++
+  ) {
     const x = prng.randomInt(0, map.length - 1);
     const y = prng.randomInt(Math.floor(map.length * 0.25), Math.floor(map.length * 0.75));
     const height = map[y]?.[x] ?? 0;
     if (height <= (surface.liquidOverlay?.seaLevel ?? -1) || used.has(`${x},${y}`)) continue;
+    const habitat = classifyHabitat(surface, x, y, environment.waterCoverage > 0);
+    if (!habitat) continue;
+    if (sites.length === 6 && habitat.kind !== 'moist-margin') continue;
     used.add(`${x},${y}`);
-    sites.push({ id: `${biosphere.id}/site:${x},${y}`, x, y, label: `Habitat ${sites.length + 1}` });
+    const site: BiologySite = {
+      id: `${biosphere.id}/site:${x},${y}`,
+      x,
+      y,
+      habitat,
+      label: `${habitat.kind === 'moist-margin' ? 'Water margin' : habitat.kind === 'sheltered-ground' ? 'Sheltered outcrops' : 'Open substrate'} ${Math.min(6, sites.length + 1)}`,
+    };
+    // Prefer one real water margin when found; never manufacture a coast for the encounter feature.
+    if (sites.length === 6) sites[5] = site;
+    else sites.push(site);
   }
   return { ...biosphere, sites };
 }

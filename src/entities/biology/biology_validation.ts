@@ -1,6 +1,8 @@
 import {
   ENCOUNTER_HEIGHT,
   ENCOUNTER_WIDTH,
+  HABITAT_VERSION,
+  type HabitatProfile,
   type SpeciesDefinition,
   type SpecimenContainer,
   type XenobiologySnapshot,
@@ -35,6 +37,18 @@ function choice(value: unknown, choices: readonly unknown[]): void {
   if (!choices.includes(value)) throw new Error('Invalid biology classification.');
 }
 
+/** Validates numeric habitat metadata without assuming colour implies moisture or shelter. */
+export function validateHabitat(value: unknown): asserts value is HabitatProfile {
+  record(value);
+  if (value.version !== HABITAT_VERSION) throw new Error('Unsupported habitat version.');
+  choice(value.kind, ['moist-margin', 'sheltered-ground', 'exposed-ground']);
+  text(value.description);
+  number(value.relief, 0, 1);
+  if (value.waterDistanceCells !== null) number(value.waterDistanceCells, 1, 2, true);
+  if ((value.kind === 'moist-margin') !== (value.waterDistanceCells !== null))
+    throw new Error('Invalid habitat water proximity.');
+}
+
 /** Validates authoritative species traits before any scanner, quote or actor can use them. */
 export function validateSpecies(value: unknown): asserts value is SpeciesDefinition {
   record(value);
@@ -67,6 +81,18 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
   number(value.rarity, 0.01, 10);
   number(value.baselineSamples, 0, 100, true);
   number(value.remoteness, 0, 1);
+  if (value.habitatAffinity !== undefined) {
+    if (
+      !Array.isArray(value.habitatAffinity) ||
+      !value.habitatAffinity.length ||
+      new Set(value.habitatAffinity).size !== value.habitatAffinity.length
+    )
+      throw new Error('Invalid habitat affinity.');
+    value.habitatAffinity.forEach((kind) =>
+      choice(kind, ['moist-margin', 'sheltered-ground', 'exposed-ground'])
+    );
+  }
+  if (value.socialBehaviour !== undefined) choice(value.socialBehaviour, ['group-retreat']);
 }
 
 /** Validates a complete biological container, never interpreting it as a divisible trade lot. */
@@ -117,6 +143,16 @@ export function validateXenobiology(
     text(field.site.label);
     number(field.site.x, 0, 4096, true);
     number(field.site.y, 0, 4096, true);
+    if (field.site.habitat !== undefined) validateHabitat(field.site.habitat);
+    if (
+      field.patches !== undefined &&
+      (!Array.isArray(field.patches) ||
+        field.patches.length !== ENCOUNTER_HEIGHT ||
+        field.patches.some(
+          (row) => typeof row !== 'string' || row.length !== ENCOUNTER_WIDTH || !/^[mos]+$/.test(row)
+        ))
+    )
+      throw new Error('Invalid habitat patches.');
     if (
       !Array.isArray(field.terrain) ||
       field.terrain.length !== ENCOUNTER_HEIGHT ||
@@ -141,6 +177,7 @@ export function validateXenobiology(
     const speciesIds = new Set(field.species.map((species) => species.id));
     const individualIds = new Set<string>();
     const positions = new Set<string>();
+    const groupSpecies = new Map<string, string>();
     for (const individual of field.individuals) {
       record(individual);
       text(individual.id);
@@ -153,6 +190,18 @@ export function validateXenobiology(
       number(individual.exposure, 0, Number.MAX_SAFE_INTEGER, true);
       number(individual.injury, 0);
       number(individual.recoveryAt, 0);
+      if (individual.groupId !== undefined) {
+        text(individual.groupId);
+        number(individual.retreatUntil, 0);
+        const species = field.species.find((entry) => entry.id === individual.speciesId)!;
+        const groupId = individual.groupId as string;
+        if (
+          species.socialBehaviour !== 'group-retreat' ||
+          (groupSpecies.has(groupId) && groupSpecies.get(groupId) !== individual.speciesId)
+        )
+          throw new Error('Invalid biological group.');
+        groupSpecies.set(groupId, individual.speciesId as string);
+      } else if (individual.retreatUntil !== undefined) throw new Error('Retreat timer without group.');
       if (typeof individual.sampled !== 'boolean' || typeof individual.alerted !== 'boolean')
         throw new Error('Invalid individual history.');
       const position = `${individual.x},${individual.y}`;

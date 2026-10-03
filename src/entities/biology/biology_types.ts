@@ -1,4 +1,5 @@
 export const BIOLOGY_VERSION = 1;
+export const HABITAT_VERSION = 1;
 export const ENCOUNTER_WIDTH = 32;
 export const ENCOUNTER_HEIGHT = 24;
 export const ENCOUNTER_CELL_METRES = 5;
@@ -7,6 +8,15 @@ export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territor
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
 export type EvidenceLevel = 0 | 1 | 2 | 3;
 export type StunPower = 0 | 1 | 2;
+export type HabitatKind = 'moist-margin' | 'sheltered-ground' | 'exposed-ground';
+
+export interface HabitatProfile {
+  readonly version: number;
+  readonly kind: HabitatKind;
+  readonly description: string;
+  readonly relief: number;
+  readonly waterDistanceCells: number | null;
+}
 
 export interface SpeciesDefinition {
   readonly id: string;
@@ -35,6 +45,8 @@ export interface SpeciesDefinition {
   readonly recognised: boolean;
   readonly baselineSamples: number;
   readonly remoteness: number;
+  readonly habitatAffinity?: readonly HabitatKind[];
+  readonly socialBehaviour?: 'group-retreat';
 }
 
 export interface BiologySite {
@@ -42,6 +54,7 @@ export interface BiologySite {
   readonly x: number;
   readonly y: number;
   readonly label: string;
+  readonly habitat?: HabitatProfile;
 }
 
 export interface BiosphereDefinition {
@@ -88,6 +101,8 @@ export interface EncounterIndividual {
   recoveryAt: number;
   sampled: boolean;
   alerted: boolean;
+  groupId?: string;
+  retreatUntil?: number;
 }
 
 export interface EncounterField {
@@ -96,6 +111,8 @@ export interface EncounterField {
   seed: string;
   species: SpeciesDefinition[];
   terrain: string[];
+  /** Local ecological patches: moist substrate, sheltered substrate, and open ground. */
+  patches?: string[];
   individuals: EncounterIndividual[];
   roverX: number;
   roverY: number;

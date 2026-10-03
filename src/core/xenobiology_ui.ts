@@ -76,7 +76,8 @@ export function organismBrief(species: SpeciesDefinition, level: number): string
   if (level < 1) return 'Unresolved biological contact. Observe to establish movement and ecology.';
   if (level < 2) return `${species.locomotion}. Probable ${species.metabolism}; catalogue match unresolved.`;
   const movement = species.behaviour === 'sessile' ? 'anchored to the substrate' : species.locomotion;
-  return `${species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1)} ${species.role}; ${movement}. ${species.metabolism.charAt(0).toUpperCase() + species.metabolism.slice(1)}.`;
+  const social = species.socialBehaviour ? ' Withdraws with nearby group members.' : '';
+  return `${species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1)} ${species.role}; ${movement}. ${species.metabolism.charAt(0).toUpperCase() + species.metabolism.slice(1)}.${social}`;
 }
 
 /** Projects only acquired evidence; raw hidden traits never enter distant scanner text. */
@@ -164,6 +165,8 @@ export function createEncounterView(
       );
     }
     scanner.push(`Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`);
+    if (target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds)
+      scanner.push('Observed activity: coordinated group withdrawal');
   } else scanner.push('No contact selected', `${visible.length} visible biological contacts`);
   const species = target ? individualSpecies(field, target) : undefined;
   const level = species ? (service.evidence(species.id)?.level ?? 0) : 0;
@@ -198,7 +201,7 @@ export function createEncounterView(
     targetName: species && level >= 2 ? species.name : 'Unresolved organism',
     targetStatus: species ? service.status(species) : 'NO CONTACT',
     targetRange: target
-      ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.state}`
+      ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds && target.state === 'active' ? 'withdrawing' : target.state}`
       : '--',
     targetMass: species
       ? `${(species.massKg * 0.8).toFixed(1)}-${(species.massKg * 1.2).toFixed(1)} kg / ${species.symmetry}`
@@ -294,6 +297,10 @@ export function createBiologicalDossier(
       contact.target.state === 'dead' ? 'red' : 'normal'
     );
   section('Ecology & Chemistry');
+  if (contact?.field.site.habitat) {
+    entry('Habitat', contact.field.site.label, 'cyan');
+    entry('Substrate', contact.field.site.habitat.description);
+  }
   if (level >= 2) {
     entry('Trophic role', `${species.metabolism} / ${species.role}`, 'green');
     entry(
@@ -302,6 +309,8 @@ export function createBiologicalDossier(
       ['territorial', 'ambush'].includes(species.behaviour) ? 'amber' : 'normal'
     );
     entry('Locomotion', species.locomotion);
+    if (species.socialBehaviour)
+      entry('Social response', 'Loose group; local disturbance triggers coordinated retreat.', 'cyan');
     entry('Biochemistry', species.chemistry, 'green');
   } else entry('Assessment', 'Observe at <=40 m to resolve ecology and catalogue identity.', 'amber');
   section('Structure & Lineage');

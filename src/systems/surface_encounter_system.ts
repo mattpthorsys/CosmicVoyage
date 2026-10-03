@@ -4,6 +4,7 @@ import type { CargoComponent } from '../core/components';
 import { SpecimenCargoSystem } from './specimen_cargo_system';
 import { stunOutcome } from '../entities/biology/stun_model';
 import { canShareRoverCell } from '../entities/biology/biology_rules';
+import { createHabitatPatches, habitatCommunity } from '../entities/biology/habitat';
 import {
   ENCOUNTER_HEIGHT,
   ENCOUNTER_WIDTH,
@@ -32,6 +33,7 @@ export interface EncounterResult {
 /** Creates a bounded, connected local patch independently of regional terrain/resource random streams. */
 export function createEncounter(biosphere: BiosphereDefinition, site: BiologySite): EncounterField {
   const prng = new PRNG(site.id).seedNew('field');
+  const patches = site.habitat ? createHabitatPatches(site.id, site.habitat.kind) : undefined;
   // Keep the central/entry corridor clear so every expedition has a reachable return route.
   const terrain = Array.from({ length: ENCOUNTER_HEIGHT }, (_, y) =>
     Array.from({ length: ENCOUNTER_WIDTH }, (_, x) =>
@@ -39,11 +41,27 @@ export function createEncounter(biosphere: BiosphereDefinition, site: BiologySit
         ? '#'
         : x === 16 || y === 21
           ? '.'
-          : prng.random() < 0.055
+          : prng.random() < (patches ? (patches[y][x] === 's' ? 0.13 : 0.035) : 0.055)
             ? '#'
             : '.'
     ).join('')
   );
+  // Fields without a habitat profile retain their original composition and save semantics.
+  if (site.habitat && patches) {
+    return {
+      site,
+      bodyId: biosphere.id,
+      seed: site.id,
+      species: [...biosphere.species],
+      terrain,
+      patches,
+      individuals: createHabitatPopulation(biosphere, site, terrain, patches),
+      roverX: 16,
+      roverY: 21,
+      elapsedSeconds: 0,
+      turn: 0,
+    };
+  }
   const individuals: EncounterIndividual[] = [];
   for (let index = 0; index < 10; index++) {
     const x = 4 + ((index * 5) % 24);
@@ -79,6 +97,73 @@ export function createEncounter(biosphere: BiosphereDefinition, site: BiologySit
     elapsedSeconds: 0,
     turn: 0,
   };
+}
+
+/** Places a sparse producer-dominated community in reachable, ecologically appropriate local patches. */
+function createHabitatPopulation(
+  biosphere: BiosphereDefinition,
+  site: BiologySite,
+  terrain: string[],
+  patches: string[]
+): EncounterIndividual[] {
+  if (!site.habitat) return [];
+  const community = habitatCommunity(biosphere, site.habitat.kind);
+  const producer = community.find((species) => species.metabolism !== 'heterotroph');
+  const consumers = community.filter((species) => species.metabolism === 'heterotroph');
+  if (!producer) return [];
+  const sparse = site.habitat.kind === 'exposed-ground';
+  const population = [
+    ...Array.from({ length: sparse ? 3 : 4 }, () => producer),
+    ...Array.from({ length: sparse ? 1 : 3 }, () => consumers[0]).filter((species) => !!species),
+    ...consumers.slice(1, 2),
+  ];
+  const individuals: EncounterIndividual[] = [];
+  for (const [index, species] of population.entries()) {
+    const prng = new PRNG(site.id).seedNew('community', index);
+    const patch =
+      site.habitat.kind === 'moist-margin' && species !== consumers[1]
+        ? 'm'
+        : site.habitat.kind === 'exposed-ground'
+          ? 'o'
+          : 's';
+    const cells: Array<{ x: number; y: number }> = [];
+    for (let y = 3; y < 19; y++)
+      for (let x = 3; x < ENCOUNTER_WIDTH - 3; x++) {
+        if (patches[y][x] !== patch || individuals.some((actor) => actor.x === x && actor.y === y)) continue;
+        if (
+          species.socialBehaviour &&
+          individuals.some((actor) => actor.speciesId === species.id) &&
+          !individuals.some(
+            (actor) => actor.speciesId === species.id && Math.hypot(actor.x - x, actor.y - y) <= 4
+          )
+        )
+          continue;
+        cells.push({ x, y });
+      }
+    const cell = prng.choice(cells);
+    if (!cell) continue;
+    const { x, y } = cell;
+    // Join each contact to the observation corridor, regardless of illustrative outcrop placement.
+    for (let cx = Math.min(x, 16); cx <= Math.max(x, 16); cx++)
+      terrain[y] = terrain[y].substring(0, cx) + '.' + terrain[y].substring(cx + 1);
+    individuals.push({
+      id: `${site.id}/individual:${index}`,
+      speciesId: species.id,
+      x,
+      y,
+      homeX: x,
+      homeY: y,
+      state: 'active',
+      exposure: 0,
+      injury: 0,
+      recoveryAt: 0,
+      sampled: false,
+      alerted: false,
+      groupId: species.socialBehaviour ? `${site.id}/group:${species.id}` : undefined,
+      retreatUntil: species.socialBehaviour ? 0 : undefined,
+    });
+  }
+  return individuals;
 }
 
 /** Returns a field's immutable species definition for one individual. */
@@ -237,6 +322,7 @@ export class SurfaceEncounterSystem {
     field.elapsedSeconds += result.elapsedSeconds;
     field.turn++;
     for (let tick = Math.floor(previous / 5) + 1; tick <= Math.floor(field.elapsedSeconds / 5); tick++) {
+      this.alertGroups(field, tick * 5, result);
       for (const individual of [...field.individuals].sort((a, b) => a.id.localeCompare(b.id))) {
         if (individual.state === 'stunned' && individual.recoveryAt <= tick * 5) individual.state = 'active';
         if (individual.state !== 'active') continue;
@@ -263,16 +349,31 @@ export class SurfaceEncounterSystem {
         const prng = new PRNG(field.seed).seedNew(individual.id, 'behaviour', tick);
         let gx = individual.x + prng.randomInt(-1, 1),
           gy = individual.y + prng.randomInt(-1, 1);
-        if (species.behaviour === 'skittish' && distance < 7) {
+        const retreating = individual.groupId && (individual.retreatUntil ?? 0) > tick * 5;
+        if (retreating || (species.behaviour === 'skittish' && distance < 7)) {
           gx = individual.x + Math.sign(individual.x - field.roverX) * 4;
           gy = individual.y + Math.sign(individual.y - field.roverY) * 4;
         } else if (dangerous && individual.alerted && distance < 6) {
           gx = field.roverX;
           gy = field.roverY;
+        } else if (individual.groupId) {
+          const neighbours = field.individuals.filter(
+            (other) =>
+              other.id !== individual.id && other.state === 'active' && other.groupId === individual.groupId
+          );
+          if (neighbours.length) {
+            const centreX = neighbours.reduce((sum, actor) => sum + actor.x, 0) / neighbours.length;
+            const centreY = neighbours.reduce((sum, actor) => sum + actor.y, 0) / neighbours.length;
+            if (Math.hypot(centreX - individual.x, centreY - individual.y) > 4) {
+              gx = Math.round(centreX);
+              gy = Math.round(centreY);
+            }
+          }
         }
         if (
           Math.hypot(individual.x - individual.homeX, individual.y - individual.homeY) > 7 &&
-          distance > 6
+          distance > 6 &&
+          !retreating
         ) {
           gx = individual.homeX;
           gy = individual.homeY;
@@ -310,5 +411,32 @@ export class SurfaceEncounterSystem {
     for (const individual of field.individuals)
       if (individual.state === 'stunned' && individual.recoveryAt <= field.elapsedSeconds)
         individual.state = 'active';
+  }
+
+  /** Shares a nearby sensed disturbance before any member moves, keeping actor order irrelevant. */
+  private alertGroups(field: EncounterField, timeSeconds: number, result: EncounterResult): void {
+    const sentinels = field.individuals.filter(
+      (actor) =>
+        actor.state === 'active' &&
+        actor.groupId &&
+        Math.hypot(actor.x - field.roverX, actor.y - field.roverY) < 6 &&
+        encounterVisible(field, actor)
+    );
+    let newlyRetreating = false;
+    for (const actor of field.individuals) {
+      if (
+        actor.state !== 'active' ||
+        !actor.groupId ||
+        !sentinels.some(
+          (sentinel) =>
+            sentinel.groupId === actor.groupId && Math.hypot(sentinel.x - actor.x, sentinel.y - actor.y) <= 8
+        )
+      )
+        continue;
+      newlyRetreating ||= (actor.retreatUntil ?? 0) <= timeSeconds;
+      actor.retreatUntil = timeSeconds + 15;
+    }
+    if (newlyRetreating && !result.message.includes('Group withdrawal'))
+      result.message += ' Group withdrawal: nearby grazers retreat together.';
   }
 }

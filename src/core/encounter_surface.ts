@@ -36,7 +36,9 @@ export function prepareEncounterSurface(field: EncounterField, planet?: Planet):
   const colours = field.terrain.map((row, cy) =>
     [...row].map((_cell, cx) => {
       const variation = noise.get(cx / 8, cy / 8) * 0.24 + noise.get(cx / 2, cy / 2) * 0.07;
-      const factor = cx === 16 && cy === 21 ? 1 : 1 + variation;
+      const patch = field.patches?.[cy][cx];
+      const substrate = patch === 'm' ? 0.88 : patch === 's' ? 0.94 : 1;
+      const factor = cx === 16 && cy === 21 ? 1 : (1 + variation) * substrate;
       return rgbToHex(rgb.r * factor, rgb.g * factor, rgb.b * factor);
     })
   );
