@@ -149,6 +149,7 @@ describe('xenobiology interface', () => {
       'D',
       'N',
       'O',
+      'P',
       'J',
       'X',
       'Esc',

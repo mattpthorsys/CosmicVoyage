@@ -177,6 +177,7 @@ import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coor
 type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | StellarBody;
 type RoverActionId =
+  | 'operations'
   | 'science'
   | 'missions'
   | 'map'
@@ -472,6 +473,7 @@ export class Game {
     if (this.encounterController.interaction.kind !== 'drive') this.interfaceMode.open('xenobiology');
     else this.interfaceMode.close('xenobiology');
     if (intent?.kind === 'cargo') this.openRoverCargo();
+    else if (intent?.kind === 'operations') this.openShipMenu();
     else if (intent?.kind === 'missions') this.openMissionJournal();
     else if (intent?.kind === 'science') this.openScienceLog();
     else if (intent?.kind === 'leave') {
@@ -1484,6 +1486,14 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
+    if (this.shipMenuOpen) {
+      this.inputManager.justPressedActions.add(data.action);
+      this._handleShipMenuInput();
+      this.inputManager.justPressedActions.delete(data.action);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.activeEncounter) {
       this.inputManager.justPressedActions.add(data.action);
       if (this.jettisonConfirmation) this._handleJettisonConfirmationInput();
@@ -2237,6 +2247,10 @@ export class Game {
       this.forceFullRender = true;
       return true;
     }
+    if (this.inputManager.wasActionJustPressed('OPEN_SHIP_MENU')) {
+      this.openShipMenu();
+      return true;
+    }
 
     if (this.surfaceMode.mapExpanded) {
       if (
@@ -2347,6 +2361,13 @@ export class Game {
   private _handleTravelCommandInput(): boolean {
     const state = this.stateManager.state;
     if (state !== 'hyperspace' && state !== 'system') return false;
+    if (
+      this.inputManager.wasActionJustPressed('OPEN_SHIP_MENU') ||
+      this.inputManager.wasActionJustPressed('SHIP_MENU')
+    ) {
+      this.openShipMenu();
+      return true;
+    }
 
     if (this.travelMode.commandMoving) {
       if (
@@ -2479,6 +2500,7 @@ export class Game {
       'CYCLE_TARGET',
       'TARGET_MENU',
       'SHIP_MENU',
+      'OPEN_SHIP_MENU',
       'HELP',
       'TOGGLE_PROFILER',
       'APPROACH_TARGET',
@@ -2513,7 +2535,7 @@ export class Game {
           this.openTargetMenu();
           return true;
         }
-        if (action === 'SHIP_MENU') {
+        if (action === 'SHIP_MENU' || action === 'OPEN_SHIP_MENU') {
           this.openShipMenu();
           return true;
         }
@@ -4554,6 +4576,10 @@ export class Game {
       return;
     }
     this.shipMenuOpen = true;
+    if (this.stateManager.state === 'planet') {
+      this.player.terrainVehicle.moving = false;
+      this.surfaceMode.closeTransientInterfaces();
+    }
     this.shipOperations.selectionBySection = {};
     this.shipOperations.offsetBySection = {};
     this.openShipMenuSection('main');
@@ -4572,7 +4598,8 @@ export class Game {
       !this.surfaceLegendOpen &&
       !this.quantitySelector &&
       !this.surfaceExtractionSelector &&
-      !this.jettisonConfirmation
+      !this.jettisonConfirmation &&
+      (!this.activeEncounter || ['drive', 'menu'].includes(this.encounterController.interaction.kind))
     );
   }
 
@@ -5007,6 +5034,7 @@ export class Game {
       { id: 'map', label: 'Map', status: this.surfaceMode.mapExpanded ? 'expanded' : 'local' },
       { id: 'move', label: 'Move', status: fuel > 0 ? 'ready' : 'no fuel' },
       { id: 'cargo', label: 'Cargo', status: `${cargoLoad} m^3` },
+      { id: 'operations', label: 'Operations', status: 'ship link' },
       { id: 'pickup', label: 'Pick up', status: 'no local items' },
       { id: 'mine', label: 'Mine', status: `${cargoLoad} m^3` },
       { id: 'scan', label: 'Scan', status: 'local sweep' },
@@ -5497,6 +5525,9 @@ export class Game {
       case 'cargo':
         this.openRoverCargo();
         break;
+      case 'operations':
+        this.openShipMenu();
+        break;
       case 'missions':
         this.openMissionJournal();
         break;
@@ -5616,6 +5647,7 @@ export class Game {
   /** Returns whether at parked ship. */
   private isAtParkedShip(): boolean {
     return (
+      !this.activeEncounter &&
       Math.floor(this.player.position.surfaceX) === Math.floor(this.player.terrainVehicle.shipSurfaceX) &&
       Math.floor(this.player.position.surfaceY) === Math.floor(this.player.terrainVehicle.shipSurfaceY)
     );
@@ -7820,6 +7852,18 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.shipMenuOpen)
+      return {
+        context: 'ship operations',
+        buttons: [
+          commandButton('up', 'Previous', 'MOVE_UP', { key: 'Up' }),
+          commandButton('down', 'Next', 'MOVE_DOWN', { key: 'Down' }),
+          commandButton('page-up', 'Previous page', 'PAGE_UP', { key: 'PgUp' }),
+          commandButton('page-down', 'Next page', 'PAGE_DOWN', { key: 'PgDn' }),
+          commandButton('use', 'Use selected', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' }),
+          commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
+        ],
+      };
     if (this.interfaceMode.is('science-log'))
       return {
         context: 'science log',
@@ -7952,7 +7996,7 @@ export class Game {
           detail: 'Scan the stellar or planemo contact at current coordinates.',
         }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-          key: CONFIG.KEY_BINDINGS.SHIP_MENU,
+          key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
           detail: 'Open ship operations.',
         }),
         commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', {
@@ -8011,7 +8055,7 @@ export class Game {
           detail: 'Scan a nearby star, planet, starbase, or selected close target.',
         }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-          key: CONFIG.KEY_BINDINGS.SHIP_MENU,
+          key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
           detail: 'Open ship operations.',
         }),
         commandButton('observe', 'Observe', 'OBSERVE_SYSTEM_TARGET', {
@@ -8067,7 +8111,7 @@ export class Game {
         targetName: this.stateManager.currentPlanet?.name,
         buttons: [
           commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-            key: CONFIG.KEY_BINDINGS.SHIP_MENU,
+            key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
             detail: 'Open landed ship operations.',
           }),
           commandButton('scan-surface', 'Scan', 'SCAN', {
@@ -8109,6 +8153,10 @@ export class Game {
         }),
         commandButton('cargo', 'Cargo', 'ROVER_CARGO', {
           detail: `Terrain vehicle cargo ${this.formatCargoLoad(cargo, rover.cargoHold.capacity)} m^3.`,
+        }),
+        commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
+          key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+          detail: 'Open ship operations through the rover link.',
         }),
         commandButton('mine', 'Mine', 'ROVER_MINE', {
           key: CONFIG.KEY_BINDINGS.MINE,

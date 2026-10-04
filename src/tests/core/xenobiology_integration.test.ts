@@ -26,6 +26,8 @@ interface BiologyGameHarness {
   encounterController: SurfaceEncounterController;
   gameClockElapsedSeconds: number;
   handleEncounterInput(): boolean;
+  _handleShipMenuInput(): boolean;
+  shipMenuOpen: boolean;
   getBiosphere(): BiosphereDefinition | null;
   isGameClockPaused(): boolean;
   _update(delta: number): void;
@@ -121,6 +123,40 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('opens Operations from a field and returns to the same actors, target and local time', () => {
+    const { game, keys, field, player } = harness();
+    Object.assign(game, {
+      popupState: 'inactive',
+      getShipMenuRows: () => [{ id: 'cargo', cells: ['Cargo', 'Empty'] }],
+      getShipMenuVisibleRows: () => 8,
+    });
+    const target = game.encounterController.target(field)?.id;
+    const before = structuredClone(field);
+    keys.add('OPEN_SHIP_MENU');
+    game.handleEncounterInput();
+    expect(game.shipMenuOpen).toBe(true);
+    expect(game.encounterController.targetId).toBe(target);
+    expect(field).toEqual(before);
+    expect(player.terrainVehicle.moving).toBe(false);
+    keys.clear();
+    keys.add('QUIT');
+    Object.assign(game, {
+      inputManager: {
+        justPressedActions: keys,
+        wasActionJustPressed: (action: string) => keys.has(action),
+        wasAnyKeyJustPressed: () => keys.size > 0,
+      },
+    });
+    expect(game._handleShipMenuInput()).toBe(true);
+    expect(game.shipMenuOpen).toBe(false);
+    expect(field).toEqual(before);
+    expect(game.encounterController.targetId).toBe(target);
+    keys.clear();
+    keys.add('SHIP_MENU');
+    game.handleEncounterInput();
+    expect(game.shipMenuOpen).toBe(false);
+    expect(game.createRoverCargoModel().title).toBe('Terrain Vehicle Cargo');
+  });
   it('keeps a visited habitat accessible if new biology generation finds no new biosphere', () => {
     const { game, field } = harness();
     const planet = { name: 'Retained field', mapSeed: 'retained', moons: [], isSurfaceReady: () => true };
