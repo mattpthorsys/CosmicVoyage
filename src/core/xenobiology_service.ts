@@ -7,6 +7,9 @@ import {
   type SpeciesEvidence,
   type XenobiologySnapshot,
   type BiologyOrigin,
+  type BehaviourWitness,
+  type BehaviourObservationKind,
+  BEHAVIOUR_OBSERVATION_KINDS,
 } from '../entities/biology/biology_types';
 
 export interface ResearchQuote {
@@ -44,6 +47,48 @@ export class XenobiologyService {
   /** Returns only previously observed knowledge, without creating a catalogue entry. */
   evidence(speciesId: string): SpeciesEvidence | undefined {
     return this.state.evidence[speciesId];
+  }
+
+  /** Retains one witnessed episode per site/type after identification, without changing scan grade or price. */
+  recordBehaviour(witness: BehaviourWitness, origin?: BiologyOrigin): boolean {
+    const { species, observation } = witness;
+    const evidence = this.evidence(species.id);
+    const field = this.state.fields[observation.siteId];
+    if (
+      !evidence ||
+      evidence.level < 2 ||
+      !field ||
+      !BEHAVIOUR_OBSERVATION_KINDS.includes(observation.kind) ||
+      !Number.isFinite(observation.elapsedSeconds) ||
+      observation.elapsedSeconds < 0 ||
+      observation.elapsedSeconds > field.elapsedSeconds ||
+      !observation.individualIds.length ||
+      observation.individualIds.length > 24 ||
+      new Set(observation.individualIds).size !== observation.individualIds.length ||
+      (observation.kind === 'group-retreat' && observation.individualIds.length < 2) ||
+      observation.individualIds.some(
+        (id) => !field.individuals.some((actor) => actor.id === id && actor.speciesId === species.id)
+      ) ||
+      !field.species.some((entry) => entry.id === species.id && entry.bodyId === species.bodyId) ||
+      evidence.behaviourObservations?.some(
+        (entry) => entry.siteId === observation.siteId && entry.kind === observation.kind
+      )
+    )
+      return false;
+    if (origin) this.observe(species, 2, origin);
+    const observations = (evidence.behaviourObservations ??= []);
+    if (observations.length === 128) observations.shift();
+    observations.push(structuredClone(observation));
+    return true;
+  }
+
+  /** Checks a specific field episode, independently of general physiology or analysis evidence. */
+  hasBehaviour(speciesId: string, siteId: string, kind: BehaviourObservationKind): boolean {
+    return (
+      this.evidence(speciesId)?.behaviourObservations?.some(
+        (entry) => entry.siteId === siteId && entry.kind === kind
+      ) ?? false
+    );
   }
 
   /** Records personal sampling independently of scientific submission. */

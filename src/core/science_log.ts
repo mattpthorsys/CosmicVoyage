@@ -196,6 +196,9 @@ export class ScienceLog {
       );
       const demand = service.snapshot.demand[entry.species.id];
       line(`Physical submissions: ${demand?.samples ?? 0}`, 'muted');
+      const episodes =
+        entry.behaviourObservations?.filter((record) => record.siteId === origin?.surface.siteId) ?? [];
+      line(`Field episodes at this habitat: ${episodes.length}`, episodes.length ? 'green' : 'muted');
       for (const mission of missions)
         if (
           mission.objectives.some(

@@ -16,6 +16,8 @@ import {
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import { preservationRequirementDescription } from '../entities/biology/preservation';
 import { organismActivity } from '../systems/organism_behaviour';
+import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
+import { BEHAVIOUR_OBSERVATION_KINDS } from '../entities/biology/biology_types';
 import {
   wrapDashboardLines,
   type TextDashboardLine,
@@ -506,6 +508,29 @@ export function createBiologicalDossier(
       entry('Social response', 'Loose group; local disturbance triggers coordinated retreat.', 'cyan');
     entry('Biochemistry', species.chemistry, 'green');
   } else entry('Assessment', 'Observe at <=40 m to resolve ecology and catalogue identity.', 'amber');
+  if (level >= 2) {
+    section('Field Ethology');
+    const observations = service.evidence(species.id)?.behaviourObservations ?? [];
+    if (!observations.length) entry('Episodes', 'No resolved field observations.', 'muted');
+    for (const kind of BEHAVIOUR_OBSERVATION_KINDS) {
+      const records = observations.filter((record) => record.kind === kind);
+      const local = contact && records.find((record) => record.siteId === contact.field.site.id);
+      if (!records.length) continue;
+      entry(
+        BEHAVIOUR_OBSERVATION_LABELS[kind],
+        local
+          ? `Witnessed here / local ${local.elapsedSeconds.toFixed(0)} s`
+          : `${new Set(records.map((record) => record.siteId)).size} recorded habitats`,
+        local ? 'green' : 'cyan'
+      );
+    }
+    if (observations.length)
+      entry(
+        'Interpretation',
+        'Witnessed episodes, not proof of habitual behaviour or evolutionary cause.',
+        'muted'
+      );
+  }
   section('Structure & Lineage');
   if (level >= 3) {
     entry(

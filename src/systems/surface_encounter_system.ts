@@ -17,6 +17,8 @@ import {
   type EvidenceLevel,
   type SpeciesDefinition,
   type StunPower,
+  type BehaviourWitness,
+  type BehaviourObservationKind,
 } from '../entities/biology/biology_types';
 
 export type EncounterCommand =
@@ -26,6 +28,7 @@ export type EncounterCommand =
   | { kind: 'wait' };
 
 export interface EncounterResult {
+  behaviourWitnesses?: BehaviourWitness[];
   message: string;
   elapsedSeconds: number;
   damage: number;
@@ -361,17 +364,19 @@ export class SurfaceEncounterSystem {
         result.elapsedSeconds = 2;
       }
     }
-    if (result.elapsedSeconds > 0) this.advance(field, result);
+    if (result.elapsedSeconds > 0)
+      this.advance(field, result, ['move', 'wait', 'observe', 'analyse'].includes(command.kind));
     return result;
   }
 
   /** Updates bounded local behaviour in stable identity order, never using render or travel-clock time. */
-  private advance(field: EncounterField, result: EncounterResult): void {
+  private advance(field: EncounterField, result: EncounterResult, passiveObservation: boolean): void {
     const previous = field.elapsedSeconds;
     const newlyAlerted = new Set<string>();
     field.elapsedSeconds += result.elapsedSeconds;
     field.turn++;
     for (let tick = Math.floor(previous / 5) + 1; tick <= Math.floor(field.elapsedSeconds / 5); tick++) {
+      const moved = new Set<string>();
       this.alertGroups(field, tick * 5, result);
       for (const individual of [...field.individuals].sort((a, b) => a.id.localeCompare(b.id))) {
         if (individual.state === 'stunned' && individual.recoveryAt <= tick * 5) {
@@ -459,7 +464,13 @@ export class SurfaceEncounterSystem {
         const path = new Path.AStar(
           gx,
           gy,
-          (x, y) => field.terrain[y]?.[x] === '.' && !(x === 16 && y === 21),
+          (x, y) =>
+            field.terrain[y]?.[x] === '.' &&
+            !(x === 16 && y === 21) &&
+            !field.individuals.some(
+              (other) =>
+                other.id !== individual.id && other.state !== 'collected' && other.x === x && other.y === y
+            ),
           { topology: 4 }
         );
         path.compute(individual.x, individual.y, (x, y) => route.push([x, y]));
@@ -479,8 +490,10 @@ export class SurfaceEncounterSystem {
         ) {
           individual.x = next[0];
           individual.y = next[1];
+          moved.add(individual.id);
         }
       }
+      if (passiveObservation) this.recordVisibleActivity(field, result, moved, tick * 5);
     }
     // Evaluate exact recovery deadlines even when a short command does not cross a behaviour tick.
     for (const individual of field.individuals)
@@ -489,6 +502,52 @@ export class SurfaceEncounterSystem {
         individual.alerted = false;
         individual.displayUntil = undefined;
       }
+  }
+
+  /** Records actual uninjured activity in the instrument's 40 m sightline, never inferred AI intentions. */
+  private recordVisibleActivity(
+    field: EncounterField,
+    result: EncounterResult,
+    moved: ReadonlySet<string>,
+    elapsedSeconds: number
+  ): void {
+    const visible = field.individuals.filter(
+      (actor) =>
+        actor.state === 'active' &&
+        actor.injury === 0 &&
+        actor.exposure === 0 &&
+        !actor.sampled &&
+        Math.hypot(actor.x - field.roverX, actor.y - field.roverY) <= 8 &&
+        encounterVisible(field, actor)
+    );
+    for (const actor of visible) {
+      let kind: BehaviourObservationKind | undefined;
+      let individualIds = [actor.id];
+      if (actor.activity === 'feeding') kind = 'feeding';
+      else if (actor.activity === 'sheltering') kind = 'shelter-use';
+      else if (actor.activity === 'displaying') kind = 'defensive-display';
+      else if (actor.activity === 'withdrawing' && actor.groupId && moved.has(actor.id)) {
+        individualIds = visible
+          .filter(
+            (other) =>
+              other.groupId === actor.groupId && other.activity === 'withdrawing' && moved.has(other.id)
+          )
+          .map((other) => other.id)
+          .sort();
+        if (individualIds.length >= 2) kind = 'group-retreat';
+      }
+      if (
+        !kind ||
+        result.behaviourWitnesses?.some(
+          (entry) => entry.species.id === actor.speciesId && entry.observation.kind === kind
+        )
+      )
+        continue;
+      (result.behaviourWitnesses ??= []).push({
+        species: individualSpecies(field, actor),
+        observation: { kind, siteId: field.site.id, individualIds, elapsedSeconds },
+      });
+    }
   }
 
   /** Shares a nearby sensed disturbance before any member moves, keeping actor order irrelevant. */

@@ -106,6 +106,7 @@ import {
   ROVER_REPAIR_COST_PER_POINT,
 } from './ship_modifications';
 import { ShipRepairConsole, createRepairQuotes, purchaseRepairs } from './ship_repair_console';
+import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 import { createShipStatusDashboard } from './ship_status_dashboard';
@@ -511,7 +512,7 @@ export class Game {
         this.gameClockElapsedSeconds += result.elapsedSeconds;
         if (command.kind === 'move') rover.fuel = Math.max(0, rover.fuel - 0.02);
         rover.integrity = Math.max(0, (rover.integrity ?? 100) - result.damage);
-        if (result.evidence) {
+        if (result.evidence || result.behaviourWitnesses?.length) {
           const system = this.stateManager.currentSystem;
           const body = this.stateManager.currentPlanet;
           const path = system && body ? findSystemPlanetPath(system, body) : null;
@@ -532,13 +533,20 @@ export class Game {
                   },
                 }
               : undefined;
-          this.xenobiology.observe(result.evidence.species, result.evidence.level, origin);
-          this.missionProgress.recordBiologicalEvidence(
-            result.evidence.species.id,
-            field.site.id,
-            result.evidence.level
-          );
-          if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
+          if (result.evidence) {
+            this.xenobiology.observe(result.evidence.species, result.evidence.level, origin);
+            this.missionProgress.recordBiologicalEvidence(
+              result.evidence.species.id,
+              field.site.id,
+              result.evidence.level
+            );
+            if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
+          }
+          const recorded = new Set<string>();
+          for (const witness of result.behaviourWitnesses ?? [])
+            if (this.xenobiology.recordBehaviour(witness, origin))
+              recorded.add(BEHAVIOUR_OBSERVATION_LABELS[witness.observation.kind]);
+          if (recorded.size) this.statusMessage += ` Field record: ${[...recorded].join(' / ')}.`;
         }
         if (rover.integrity === 0) {
           rover.integrity = 15;

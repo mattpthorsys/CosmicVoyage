@@ -18,6 +18,10 @@ import { BIOLOGY_VERSION } from '../../../entities/biology/biology_types';
 import { generateBiosphere } from '../../../entities/biology/biosphere_generator';
 import { biologyFixture } from '../../fixtures/biology';
 import { createEncounter } from '../../../systems/surface_encounter_system';
+import { ethologyFixture } from '../../fixtures/ethology';
+import { XenobiologyService } from '../../../core/xenobiology_service';
+import { SurfaceEncounterSystem } from '../../../systems/surface_encounter_system';
+import { createDefaultCargo } from '../../../core/components';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -147,6 +151,26 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('retains witnessed episodes and restores version-15 saves without inventing behaviour records', () => {
+    const f = ethologyFixture();
+    const research = new XenobiologyService();
+    research.snapshot.fields[f.field.site.id] = f.field;
+    research.observe(f.consumer, 2);
+    const result = new SurfaceEncounterSystem().act(f.field, { kind: 'wait' }, createDefaultCargo(50), 1);
+    research.recordBehaviour(result.behaviourWitnesses![0]);
+    const save = createSave();
+    save.xenobiology = research.createSnapshot();
+    expect(parseGameSave(JSON.stringify(save)).xenobiology).toEqual(save.xenobiology);
+    const legacy = { ...createSave(), version: 15 };
+    expect(parseGameSave(legacy).version).toBe(SAVE_GAME_VERSION);
+    expect(parseGameSave(legacy).xenobiology).toEqual(createXenobiologySnapshot());
+    const session = new MemoryStorage();
+    session.setItem('cosmic-voyage.session.v15', JSON.stringify(legacy));
+    const storage = new SaveGameStorage(session, new MemoryStorage());
+    expect(storage.loadSession()?.version).toBe(SAVE_GAME_VERSION);
+    storage.clearSession();
+    expect(session.length).toBe(0);
+  });
   it('restores active fields at the current biology version and retains older field IDs', () => {
     const save = createSave();
     const location = { worldX: 3, worldY: -2, systemSlot: 0, bodyPath: 'planet:0' };

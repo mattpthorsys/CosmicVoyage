@@ -5,6 +5,25 @@ export const ENCOUNTER_HEIGHT = 24;
 export const ENCOUNTER_CELL_METRES = 5;
 
 export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territorial' | 'ambush';
+export const BEHAVIOUR_OBSERVATION_KINDS = [
+  'feeding',
+  'shelter-use',
+  'group-retreat',
+  'defensive-display',
+] as const;
+export type BehaviourObservationKind = (typeof BEHAVIOUR_OBSERVATION_KINDS)[number];
+
+export interface BehaviourObservation {
+  readonly kind: BehaviourObservationKind;
+  readonly siteId: string;
+  readonly individualIds: readonly string[];
+  readonly elapsedSeconds: number;
+}
+
+export interface BehaviourWitness {
+  readonly species: SpeciesDefinition;
+  readonly observation: BehaviourObservation;
+}
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
 export type IndividualSizeClass = 'small' | 'typical' | 'large';
 export type IndividualMineralisation = 'standard' | 'reinforced';
@@ -122,6 +141,8 @@ export interface SpeciesEvidence {
   submittedLevel: EvidenceLevel;
   /** Only visited sites are recorded; reading the log never generates new worlds. */
   origins?: BiologyOrigin[];
+  /** Site-specific, witnessed episodes; inferred behaviour and scan strength do not supply these. */
+  behaviourObservations?: BehaviourObservation[];
 }
 
 export interface BiologyOrigin {

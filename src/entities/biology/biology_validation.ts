@@ -2,6 +2,7 @@ import {
   ENCOUNTER_HEIGHT,
   ENCOUNTER_WIDTH,
   HABITAT_VERSION,
+  BEHAVIOUR_OBSERVATION_KINDS,
   type HabitatProfile,
   type SpeciesDefinition,
   type SpecimenContainer,
@@ -164,6 +165,49 @@ export function validateXenobiology(
       throw new Error('Invalid biology evidence identity.');
     number(evidence.level, 0, 3, true);
     number(evidence.submittedLevel, 0, evidence.level as number, true);
+    if (evidence.behaviourObservations !== undefined) {
+      if (
+        !Array.isArray(evidence.behaviourObservations) ||
+        evidence.behaviourObservations.length > 128 ||
+        (evidence.level as number) < 2
+      )
+        throw new Error('Invalid field behaviour evidence.');
+      const episodes = new Set<string>();
+      for (const episode of evidence.behaviourObservations) {
+        record(episode);
+        choice(episode.kind, BEHAVIOUR_OBSERVATION_KINDS);
+        text(episode.siteId);
+        const key = `${episode.siteId}:${episode.kind}`;
+        if (episodes.has(key)) throw new Error('Duplicate field behaviour evidence.');
+        episodes.add(key);
+        const field = value.fields[episode.siteId as string];
+        record(field);
+        number(episode.elapsedSeconds, 0, field.elapsedSeconds as number);
+        if (
+          !Array.isArray(episode.individualIds) ||
+          !episode.individualIds.length ||
+          episode.individualIds.length > 24 ||
+          new Set(episode.individualIds).size !== episode.individualIds.length ||
+          !Array.isArray(field.individuals)
+        )
+          throw new Error('Invalid behaviour source identities.');
+        const sources = episode.individualIds.map((sourceId) => {
+          text(sourceId);
+          const source = (field.individuals as Record<string, unknown>[]).find(
+            (actor) => actor?.id === sourceId && actor.speciesId === id
+          );
+          if (!source) throw new Error('Field behaviour source not recorded.');
+          return source;
+        });
+        if (
+          episode.kind === 'group-retreat' &&
+          (sources.length < 2 ||
+            !sources[0].groupId ||
+            sources.some((source) => source.groupId !== sources[0].groupId))
+        )
+          throw new Error('Coordinated retreat requires a witnessed group.');
+      }
+    }
     if (evidence.origins !== undefined) {
       if (!Array.isArray(evidence.origins) || evidence.origins.length > 32)
         throw new Error('Invalid discovery origins.');
