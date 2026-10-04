@@ -18,6 +18,7 @@ function fixture() {
   field.terrain = field.terrain.map((row) => row.replaceAll('#', '.'));
   field.species[0] = {
     ...field.species[0],
+    reproduction: undefined,
     behaviour: 'territorial',
     massKg: 20,
     sizeM: 0.7,
