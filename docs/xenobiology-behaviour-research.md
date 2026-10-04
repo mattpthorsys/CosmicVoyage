@@ -134,9 +134,12 @@ also contains the previously pending lethal-confirmation, stunned-contact,
 field Operations and shipyard-repair checks. Announce results separately;
 this document is an implementation handoff, not a test report.
 
-## Reminder: Step Four
+## Step Four
 
-Reproductive material/propagules remain **deferred**. A sensible next prototype
-is one sessile family with explicitly distinct scientific demand, provenance
-and preservation requirements. Do not add breeding, population growth or a
-general reproductive simulation as part of these three stages.
+The three stages above passed full automated and browser verification in
+`8822852` (840 tests). The user also completed a successful personal expedition.
+
+Step four now implements finite viable buds from one sessile mat family,
+with distinct demand, provenance and preservation. It is pending Luna
+verification. See [the propagule guide and checkpoints](xenobiology-propagules.md).
+Breeding, population growth and a general reproductive simulation remain deferred.

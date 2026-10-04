@@ -90,7 +90,7 @@ describe('habitat specimen contracts', () => {
       [],
       f.research
     );
-    expect(offers.filter((mission) => mission.objectives[0].kind !== 'biology-behaviour')).toHaveLength(4);
+    expect(offers.filter((mission) => mission.objectives[0].kind !== 'biology-behaviour')).toHaveLength(5);
     expect(
       offers.filter((mission) => mission.objectives[0].kind === 'biology-behaviour').length
     ).toBeLessThanOrEqual(3);

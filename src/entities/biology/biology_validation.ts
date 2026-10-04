@@ -7,6 +7,7 @@ import {
   type SpeciesDefinition,
   type SpecimenContainer,
   type XenobiologySnapshot,
+  type EncounterField,
 } from './biology_types';
 import { canShareRoverCell, individualPhysicalProfile } from './biology_rules';
 import { supportsPropagules, PROPAGULE_VOLUME_M3 } from './propagules';
@@ -417,7 +418,7 @@ export function validateXenobiology(
       throw new Error('Specimen size does not match its source.');
     if (container.mineralisation !== individual.mineralisation)
       throw new Error('Specimen covering does not match its source.');
-    if (!hasSpecimenProvenance(container, field as unknown as import('./biology_types').EncounterField))
+    if (!hasSpecimenProvenance(container, field as unknown as EncounterField))
       throw new Error('Specimen preservation does not match its source.');
   }
 }

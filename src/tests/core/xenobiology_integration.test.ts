@@ -126,6 +126,49 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('offers verified adjacent propagules through Cargo, preserves the parent and refuses a stale pickup', () => {
+    const { game, keys, field, player, service } = harness();
+    expect(game.getRoverCargoRows().some((row) => row.id.startsWith('harvest-propagules:'))).toBe(false);
+    keys.add('APPROACH_TARGET');
+    game.handleEncounterInput();
+    keys.clear();
+    const pickup = game.getRoverCargoRows().find((row) => row.id.startsWith('harvest-propagules:'))!;
+    expect(pickup.disabled).toBe(false);
+    game.dropSelectedRoverCargo(pickup);
+    expect(game.gameClockElapsedSeconds).toBe(115);
+    expect(field.individuals[0]).toMatchObject({
+      state: 'active',
+      sampled: false,
+      propagulesHarvested: true,
+    });
+    expect(player.terrainVehicle.cargoHold.specimens![0]).toMatchObject({ kind: 'propagule', volumeM3: 0.1 });
+    expect(service.evidence(field.species[0].id)?.level).toBe(3);
+    expect(game.getRoverCargoRows().find((row) => row.id === pickup.id)?.disabled).toBe(true);
+    game.dropSelectedRoverCargo(pickup);
+    expect(game.gameClockElapsedSeconds).toBe(115);
+    expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
+    expect(() => parseGameSave(saveFixture(player, service))).not.toThrow();
+    const model = game.createRoverCargoModel();
+    expect(model.dashboard).toBeDefined();
+    expect(
+      model.dashboard!.every((line) => line.segments.reduce((sum, span) => sum + span.text.length, 0) <= 18)
+    ).toBe(true);
+  });
+
+  it('makes no viable-batch pickup offer with incompatible preservation or a harmed source', () => {
+    const { game, field, service } = harness();
+    service.observe(field.species[0], 3);
+    field.individuals[0].injury = 0.1;
+    expect(game.getRoverCargoRows().find((row) => row.id.startsWith('harvest-propagules:'))?.disabled).toBe(
+      true
+    );
+    field.individuals[0].injury = 0;
+    field.species[0] = { ...field.species[0], temperatureK: 330 };
+    expect(game.getRoverCargoRows().find((row) => row.id.startsWith('harvest-propagules:'))?.disabled).toBe(
+      true
+    );
+    expect(game.gameClockElapsedSeconds).toBe(100);
+  });
   it('credits a prior witnessed episode when a field survey is accepted later', () => {
     const { game, keys, service } = harness();
     const f = ethologyFixture();

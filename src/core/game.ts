@@ -157,7 +157,8 @@ import {
   encounterVisible,
 } from '../systems/surface_encounter_system';
 import { prepareEncounterSurface } from './encounter_surface';
-import { SpecimenCargoSystem } from '../systems/specimen_cargo_system';
+import { SpecimenCargoSystem, propaguleCompatibility } from '../systems/specimen_cargo_system';
+import { propaguleAvailability, supportsPropagules } from '../entities/biology/propagules';
 import { prepareBiosphere } from '../entities/biology/biosphere_generator';
 import {
   type BiosphereDefinition,
@@ -500,6 +501,13 @@ export class Game {
     const rover = this.player.terrainVehicle;
     if (command.kind === 'move' && rover.fuel < 0.02)
       this.statusMessage = 'Local fuel reserve exhausted; select Leave for emergency withdrawal.';
+    else if (
+      command.kind === 'harvest' &&
+      (this.xenobiology.evidence(
+        field.individuals.find((actor) => actor.id === command.targetId)?.speciesId ?? ''
+      )?.level ?? 0) < 3
+    )
+      this.statusMessage = 'Analyse the organism to verify viable reproductive structures first.';
     else {
       const result = (this._encounterSystem ??= new SurfaceEncounterSystem()).act(
         field,
@@ -5340,6 +5348,19 @@ export class Game {
       : [];
     for (const target of nearby) {
       const species = individualProfile(field!, target);
+      const level = this.xenobiology.evidence(species.id)?.level ?? 0;
+      if (supportsPropagules(species) && level >= 3) {
+        const refusal =
+          propaguleAvailability(species, target) ??
+          propaguleCompatibility(species, this.player.ship.stasisClass ?? 1);
+        pickup.push({
+          id: `harvest-propagules:${target.id}`,
+          cells: ['Harvest viable propagules', '1 batch', '--', refusal ?? 'Preserve dormant buds'],
+          detail: `${species.name} / detachable dormant buds / 0.1 m^3 / one stasis slot. ${refusal ?? 'Parent remains intact. One finite batch; reproductive demand is separate from adult and tissue sampling.'}`,
+          disabled: !!refusal,
+          tone: refusal ? 'amber' : 'green',
+        });
+      }
       pickup.push({
         id: `collect-organism:${target.id}`,
         cells: [
@@ -5378,6 +5399,13 @@ export class Game {
   /** Drops the selected rover cargo item onto the current surface cell. */
   private dropSelectedRoverCargo(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id.startsWith('harvest-propagules:') && this.activeEncounter) {
+      this.applyEncounterCommand(this.activeEncounter, {
+        kind: 'harvest',
+        targetId: row.id.slice('harvest-propagules:'.length),
+      });
+      return;
+    }
     if (row.id.startsWith('collect-organism:') && this.activeEncounter) {
       this.applyEncounterCommand(this.activeEncounter, {
         kind: 'collect',

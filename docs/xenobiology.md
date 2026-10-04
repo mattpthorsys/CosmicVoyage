@@ -22,9 +22,15 @@ pressure-preservation expedition are implemented, with verification pending
 the requested Luna handoff. See [the survey expansion handoff](xenobiology-survey-expansion.md).
 
 Habitat-directed feeding/shelter trips, persistent witnessed behaviour and finite
-observation-only surveys are also implemented, pending Luna verification. See
+observation-only surveys passed automated and browser verification. See
 [the field-research guide](xenobiology-behaviour-research.md) for controls,
-personal checkpoints, payment rules and the deferred propagule reminder.
+personal checkpoints and payment rules.
+
+Finite viable propagules from sessile mats are now implemented, pending Luna
+verification. Analyse an unharmed mat, approach it and use `I` Cargo to harvest
+its dormant buds while leaving the parent intact. See
+[the reproductive-material guide](xenobiology-propagules.md) for the contract,
+preservation limits, distinct demand and personal expedition.
 
 ## First Expedition
 
@@ -471,8 +477,9 @@ controls, reloads a specimen, verifies scientific payment and writes desktop/
 narrow screenshots plus canvas/font checks. No development shortcuts are added
 to normal gameplay.
 
-Version one deliberately omits ecosystem simulation, exotic solvents,
-reproductive-material commodities, rare adaptation variants, articulated
+The original version-one slice deliberately omitted reproductive commodities;
+the later mat-propagule prototype is documented above. Ecosystem simulation,
+exotic solvents, rare adaptation variants, articulated
 body construction, personal ground combat and a full phylogeny
 browser. Small inherited groups and five behavioural archetypes establish
 the loop. Long-session economy balance and player enjoyment still need

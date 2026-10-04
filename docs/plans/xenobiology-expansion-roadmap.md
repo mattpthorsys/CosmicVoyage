@@ -16,9 +16,12 @@ implemented, with verification pending the requested Luna handoff. See
 Later waves remain exploratory, not implementation commitments.
 The latest authorised steps add habitat-directed foraging/shelter activity,
 persistent witnessed episodes, and finite non-destructive field studies. They
-are implemented with verification pending Luna. See the
+passed automated and browser verification, followed by a successful personal
+expedition. See the
 [field-research guide and checkpoints](../xenobiology-behaviour-research.md).
-Reproductive material/propagules (step four) remain deferred.
+Reproductive material/propagules (step four) are now implemented for one sessile
+mat family, pending Luna verification. See the
+[propagule guide and checkpoints](../xenobiology-propagules.md).
 Codebase baseline inspected: 2026-10-04. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
 view and specimen listings in Sell. See the [implementation plan](xenobiology-first-version.md)

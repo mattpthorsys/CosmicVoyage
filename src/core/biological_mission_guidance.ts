@@ -4,7 +4,8 @@ import type {
   SpeciesDefinition,
 } from '../entities/biology/biology_types';
 import { individualPhysicalProfile, individualSizeClass } from '../entities/biology/biology_rules';
-import { stasisCompatibility } from '../systems/specimen_cargo_system';
+import { stasisCompatibility, propaguleCompatibility } from '../systems/specimen_cargo_system';
+import { propaguleAvailability } from '../entities/biology/propagules';
 import type { BiologicalReference, MissionStatus, StarbaseMission } from './mission_board';
 import type { TextDashboardLine } from './text_ui';
 import { behaviourSources } from '../systems/organism_behaviour';
@@ -126,7 +127,13 @@ export function assessBiologicalRequests(
           reason = `Quality ${Math.round(quality * 100)}%; minimum ${Math.round(objective.minimumQuality * 100)}%`;
         else if (objective.requiredKind === 'tissue' && contact.target.sampled)
           reason = 'This individual has already been sampled';
-        else if (objective.requiredKind === 'live') {
+        else if (objective.requiredKind === 'propagule') {
+          reason =
+            propaguleAvailability(canonical, contact.target) ??
+            propaguleCompatibility(canonical, contact.stasisClass);
+          if (!reason && level < 3)
+            reason = 'Analyse reproductive structures before harvesting through Cargo';
+        } else if (objective.requiredKind === 'live') {
           if (contact.target.state === 'dead') reason = 'Dead organism; live reference required';
           else
             reason = stasisCompatibility(

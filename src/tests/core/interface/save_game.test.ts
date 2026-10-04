@@ -23,6 +23,7 @@ import { XenobiologyService } from '../../../core/xenobiology_service';
 import { SurfaceEncounterSystem } from '../../../systems/surface_encounter_system';
 import { createDefaultCargo } from '../../../core/components';
 import { createBehaviourContracts } from '../../../core/behaviour_research';
+import { createPropaguleContract } from '../../../core/propagule_research';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -152,6 +153,95 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('round-trips viable batches, source depletion, reproductive demand and typed accepted requests', () => {
+    const save = createSave();
+    const f = ethologyFixture();
+    f.field.individuals = [f.field.individuals[0]];
+    const source = f.field.individuals[0];
+    f.field.roverX = source.x + 1;
+    f.field.roverY = source.y;
+    const research = new XenobiologyService();
+    research.snapshot.fields[f.field.site.id] = f.field;
+    research.observe(f.field.species[0], 3);
+    const biosphere = {
+      id: f.field.bodyId,
+      bodyName: 'Fixture',
+      origin: 'introduced' as const,
+      species: f.field.species,
+      sites: [f.field.site],
+    };
+    const mission = createPropaguleContract(
+      { id: 'buds-port', name: 'Buds Port', kind: 'starbase' },
+      'Fixture',
+      [biosphere],
+      research.snapshot.fields,
+      [],
+      research
+    )[0];
+    const progress = new MissionProgressService();
+    progress.accept(mission);
+    const cargo = createDefaultCargo(10);
+    const result = new SurfaceEncounterSystem().act(
+      f.field,
+      { kind: 'harvest', targetId: source.id },
+      cargo,
+      1
+    );
+    expect(result.elapsedSeconds).toBe(5);
+    // Prior accepted reproductive references survive alongside a new, unsold batch.
+    research.submit(f.field.species[0], { ...cargo.specimens![0], sourceId: 'prior-source' });
+    save.player.terrainVehicle.cargoHold = cargo;
+    save.player.ship.stasisClass = 1;
+    save.xenobiology = research.createSnapshot();
+    Object.assign(save, progress.createSnapshot());
+    const restored = parseGameSave(JSON.stringify(save));
+    expect(restored.xenobiology).toEqual(save.xenobiology);
+    expect(restored.activeMissions[mission.id]).toEqual(mission);
+    expect(restored.player.terrainVehicle.cargoHold.specimens![0].kind).toBe('propagule');
+    const falseHistory = structuredClone(restored);
+    falseHistory.xenobiology.fields[f.field.site.id].individuals[0].propagulesHarvested = false;
+    expect(() => parseGameSave(falseHistory)).toThrow('lifecycle');
+    const negativeDemand = structuredClone(restored);
+    negativeDemand.xenobiology.demand[f.field.species[0].id].propaguleSamples = -1;
+    expect(() => parseGameSave(negativeDemand)).toThrow('biology number');
+  });
+
+  it('migrates version-16 storage and mat capability without changing identities, history or submitted rewards', () => {
+    const save = createSave();
+    const biosphere = generateBiosphere(biologyFixture())!;
+    const field = createEncounter(biosphere, {
+      id: `${biosphere.id}/site:1,1`,
+      label: 'Visited habitat',
+      x: 1,
+      y: 1,
+    });
+    field.species = field.species.map((species) => ({ ...species, reproduction: undefined }));
+    field.individuals[0].sampled = true;
+    save.xenobiology.fields[field.site.id] = field;
+    const legacy = { ...save, version: 16 };
+    const before = structuredClone(legacy);
+    const migrated = parseGameSave(JSON.stringify(legacy));
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
+    expect(migrated.xenobiology.fields[field.site.id].species[0].reproduction).toEqual({
+      kind: 'dormant-buds',
+      baselineSamples: 2,
+    });
+    expect(migrated.xenobiology.fields[field.site.id].individuals).toEqual(field.individuals);
+    expect(migrated.xenobiology.demand).toEqual(save.xenobiology.demand);
+    expect(legacy).toEqual(before);
+    const session = new MemoryStorage(),
+      manual = new MemoryStorage();
+    session.setItem('cosmic-voyage.session.v16', JSON.stringify(legacy));
+    manual.setItem('cosmic-voyage.manual.v16', JSON.stringify(legacy));
+    const storage = new SaveGameStorage(session, manual);
+    expect(storage.loadSession()).toEqual(migrated);
+    expect(storage.loadManual()).toEqual(migrated);
+    expect(session.getItem('cosmic-voyage.session.v16')).toBeNull();
+    expect(manual.getItem('cosmic-voyage.manual.v16')).toBeNull();
+    storage.clearSession();
+    storage.clearManual();
+    expect(session.length + manual.length).toBe(0);
+  });
   it('round-trips field-study packets but rejects unsupported requirements and progress without a real episode', () => {
     const f = ethologyFixture();
     const research = new XenobiologyService();

@@ -55,7 +55,7 @@ export interface SpecimenMissionObjective {
   targetLabel: string;
   speciesId: string;
   siteId: string;
-  requiredKind: 'live' | 'tissue';
+  requiredKind: 'live' | 'tissue' | 'propagule';
   minimumQuality: number;
   sizeClass?: IndividualSizeClass;
   mineralisation?: IndividualMineralisation;

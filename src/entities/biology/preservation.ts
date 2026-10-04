@@ -52,7 +52,7 @@ export function preservationKit(id: number): PreservationKit | undefined {
 
 /** Formats the same physical capabilities used by capture and transfer, including native-substrate isolation. */
 export function preservationKitDescription(kit: PreservationKit): string {
-  return `${kit.liveSlots} live slots per carrier; ${kit.temperatureK.join('-')} K, ${kit.pressureBar.join('-')} bar${kit.retainsSubstrate ? '; native substrate isolation' : ''}`;
+  return `${kit.liveSlots} live slots per carrier (organisms or viable buds); ${kit.temperatureK.join('-')} K, ${kit.pressureBar.join('-')} bar${kit.retainsSubstrate ? '; native substrate isolation' : ''}`;
 }
 
 /** Explains a physiological containment requirement without guessing chemistry from descriptive text. */

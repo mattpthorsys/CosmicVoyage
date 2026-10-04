@@ -297,7 +297,7 @@ async function main() {
         actor.state !== 'collected' &&
         Math.hypot(actor.x - currentField.roverX, actor.y - currentField.roverY) <= 1.5
     ).length;
-    for (let index = 0; index < nearby; index++) {
+    for (let index = 0; index < nearby * 2; index++) {
       await press('Enter');
       save = await checkpoint();
       if (save.player.terrainVehicle.cargoHold.specimens.some((container) => container.kind === 'live'))
@@ -823,6 +823,142 @@ async function main() {
     );
     metrics.behaviourSurvey = true;
     metrics.behaviourSurveyAward = ethology.mission.rewardCredits;
+    // Use a generated mat and real Cargo action; this is reproductive material, not a live adult shortcut.
+    const propagules = await page.evaluate(async (initial) => {
+      const { createPropaguleContract } = await import('/src/core/propagule_research.ts');
+      const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+      const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const site = initial.biosphere.sites.find((entry) => entry.habitat?.kind === 'moist-margin');
+      if (!site) throw new Error('No managed mat habitat for the propagule walkthrough.');
+      const field = createEncounter(initial.biosphere, site);
+      const source = field.individuals.find(
+        (actor) =>
+          field.species.find((species) => species.id === actor.speciesId)?.reproduction?.kind ===
+          'dormant-buds'
+      );
+      if (!source) throw new Error('No generated reproductive mat source.');
+      field.individuals = [source];
+      source.x = source.homeX = 10;
+      source.y = source.homeY = 10;
+      field.roverX = 11;
+      field.roverY = 10;
+      field.terrain = field.terrain.map((row) => row.replaceAll('#', '.'));
+      const research = new XenobiologyService();
+      research.snapshot.fields[site.id] = field;
+      research.snapshot.activeSiteId = site.id;
+      const offer = createPropaguleContract(
+        { ...initial.station, kind: 'starbase' },
+        initial.systemName,
+        [{ ...initial.biosphere, sites: [site] }],
+        research.snapshot.fields,
+        [],
+        research
+      )[0];
+      if (!offer) throw new Error('No obtainable reproductive reference request.');
+      const prng = new PRNG(initial.save.seed);
+      const system = new SolarSystem(
+        new SystemDataGenerator(prng).getSystemProperties(
+          initial.save.location.worldX,
+          initial.save.location.worldY
+        ),
+        initial.save.location.worldX,
+        initial.save.location.worldY,
+        prng
+      );
+      const mission = resolveMissionNavigation(offer, system, [initial.biosphere]);
+      const progress = new MissionProgressService();
+      progress.accept(mission);
+      const save = structuredClone(initial.save);
+      save.location.kind = 'planet';
+      save.player.terrainVehicle.deployed = true;
+      save.player.position.surfaceX = site.x;
+      save.player.position.surfaceY = site.y;
+      save.xenobiology = research.createSnapshot();
+      Object.assign(save, progress.createSnapshot());
+      return { save, mission, sourceId: source.id, speciesId: source.speciesId, siteId: site.id };
+    }, fixture);
+    await load(propagules.save);
+    await press('v');
+    await press('a');
+    await press('d');
+    await page.waitForTimeout(1700);
+    await press('PageDown');
+    const propaguleDossier = await capture('desktop-propagule-dossier');
+    assert.equal(propaguleDossier.spritePixels, 0, 'Mat sprites leaked into reproductive dossier.');
+    await page.setViewportSize({ width: 480, height: 800 });
+    assert.equal((await capture('narrow-propagule-dossier')).spritePixels, 0);
+    await press('Escape');
+    await press('i');
+    await capture('narrow-propagule-harvest');
+    await press('Enter');
+    const harvested = await checkpoint();
+    const batch = harvested.player.terrainVehicle.cargoHold.specimens[0];
+    assert.equal(batch.kind, 'propagule', 'Cargo did not harvest the reproductive batch.');
+    assert.equal(batch.volumeM3, 0.1);
+    const parent = harvested.xenobiology.fields[propagules.siteId].individuals[0];
+    assert.equal(parent.state, 'active', 'Harvest removed the parent organism.');
+    assert.equal(parent.propagulesHarvested, true);
+    assert.equal(parent.sampled, false);
+    await press('Enter');
+    const noRepeat = await checkpoint();
+    assert.equal(noRepeat.player.terrainVehicle.cargoHold.specimens.length, 1);
+    assert.equal(
+      noRepeat.gameClockElapsedSeconds,
+      harvested.gameClockElapsedSeconds,
+      'Depleted batch consumed another action.'
+    );
+    await press('Escape');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await load(harvested);
+    const reloadedBatch = await checkpoint();
+    assert.deepEqual(
+      reloadedBatch.player.terrainVehicle.cargoHold.specimens,
+      harvested.player.terrainVehicle.cargoHold.specimens
+    );
+    assert.equal(
+      reloadedBatch.xenobiology.fields[propagules.siteId].individuals[0].propagulesHarvested,
+      true
+    );
+    const reproductiveValue = await page.evaluate(
+      async ({ saved, speciesId }) => {
+        const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+        const research = new XenobiologyService();
+        research.restoreSnapshot(saved.xenobiology);
+        return research.quote(
+          research.evidence(speciesId).species,
+          saved.player.terrainVehicle.cargoHold.specimens[0]
+        ).credits;
+      },
+      { saved: harvested, speciesId: propagules.speciesId }
+    );
+    const dockedBatch = structuredClone(harvested);
+    dockedBatch.xenobiology.activeSiteId = null;
+    dockedBatch.player.terrainVehicle.deployed = false;
+    dockedBatch.location = { ...docked.location };
+    await load(dockedBatch);
+    for (let index = 0; index < 3; index++) await press('ArrowRight');
+    await capture('sell-viable-propagules');
+    await press('ArrowRight');
+    await press('ArrowDown');
+    await capture('research-propagules-ready');
+    await press('Enter');
+    const deliveredBatch = await checkpoint();
+    assert(deliveredBatch.completedMissionIds.includes(propagules.mission.id));
+    assert.equal(deliveredBatch.player.terrainVehicle.cargoHold.specimens.length, 0);
+    assert.equal(
+      deliveredBatch.player.resources.credits,
+      dockedBatch.player.resources.credits + 750 + reproductiveValue
+    );
+    assert.equal(deliveredBatch.xenobiology.demand[propagules.speciesId].propaguleSamples, 1);
+    assert.equal(deliveredBatch.xenobiology.demand[propagules.speciesId].samples, 0);
+    await capture('research-propagules-settled');
+    metrics.propaguleReference = true;
+    metrics.propaguleAward = 750 + reproductiveValue;
     // Keep real generated size classes and source identities, positioning only the two contacts for a short walkthrough.
     const comparative = await page.evaluate(async (initial) => {
       const { createComparativeBiologicalContracts } = await import('/src/core/comparative_biology.ts');

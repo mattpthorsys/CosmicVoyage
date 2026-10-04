@@ -13,7 +13,8 @@ import type { XenobiologyService } from './xenobiology_service';
 import { createBiologicalReference } from './biological_mission_guidance';
 import { createComparativeBiologicalContracts, createMineralisationComparison } from './comparative_biology';
 import { createPressureExpedition } from './pressure_expedition';
-import { samePreservationRequirements } from '../entities/biology/preservation';
+import { hasSpecimenProvenance } from '../entities/biology/specimen_provenance';
+import { createPropaguleContract } from './propagule_research';
 import { createBehaviourContracts } from './behaviour_research';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
 
@@ -228,6 +229,7 @@ export function createBiologicalContracts(
     ...createMineralisationComparison(station, systemName, biospheres, fields, owned, research),
     ...createPressureExpedition(station, systemName, biospheres, fields, owned, research),
     ...createBehaviourContracts(station, systemName, biospheres, fields, research),
+    ...createPropaguleContract(station, systemName, biospheres, fields, owned, research),
   ];
 }
 
@@ -293,17 +295,9 @@ export function deliverBiologicalContract(
     )
       return { ok: false, message: 'Specimen ownership is ambiguous; delivery refused.' };
     const field = research.snapshot.fields[container.siteId];
-    const source = field?.individuals.find((actor) => actor.id === container.sourceId);
-    const canonical = field?.species.find((species) => species.id === source?.speciesId);
     if (
-      !source ||
-      !canonical ||
-      !samePreservationRequirements(container.species, canonical) ||
-      (container.kind === 'tissue' ? !source.sampled : source.state !== 'collected') ||
-      container.sizeScale !== source.sizeScale ||
-      container.mineralisation !== source.mineralisation ||
-      source.speciesId !== container.species.id ||
-      field.bodyId !== container.species.bodyId ||
+      !field ||
+      !hasSpecimenProvenance(container, field) ||
       (research.evidence(container.species.id)?.level ?? 0) < 2
     )
       return { ok: false, message: 'Specimen collection provenance cannot be confirmed.' };
@@ -333,6 +327,6 @@ export function deliverBiologicalContract(
     credits,
     containerId: selected.length === 1 ? selected[0].id : undefined,
     containerIds: selected.map((container) => container.id),
-    message: `${mission.objectives.length > 1 ? `Comparative study accepted (${mission.objectives.length} contributions)` : selected.length ? `${selected[0].kind === 'live' ? 'Live' : 'Tissue'} reference accepted: ${selected[0].species.name}` : mission.objectives[0].kind === 'biology-behaviour' ? 'Field behaviour record accepted' : 'Field analysis accepted'}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
+    message: `${mission.objectives.length > 1 ? `Comparative study accepted (${mission.objectives.length} contributions)` : selected.length ? `${selected[0].kind === 'propagule' ? 'Viable propagule' : selected[0].kind === 'live' ? 'Live' : 'Tissue'} reference accepted: ${selected[0].species.name}` : mission.objectives[0].kind === 'biology-behaviour' ? 'Field behaviour record accepted' : 'Field analysis accepted'}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
   };
 }

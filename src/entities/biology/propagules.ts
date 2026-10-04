@@ -3,6 +3,25 @@ import type { EncounterIndividual, SpeciesDefinition } from './biology_types';
 export const PROPAGULE_VOLUME_M3 = 0.1;
 export const PROPAGULE_MASS_KG = 0.005;
 
+/** Adds the prototype capability to existing compatible mat taxa without changing identities or harvest history. */
+export function withMatReproduction(species: SpeciesDefinition): SpeciesDefinition {
+  if (
+    species.reproduction ||
+    species.bodyForm !== 'mat' ||
+    species.behaviour !== 'sessile' ||
+    species.metabolism === 'heterotroph' ||
+    (species.preservation?.solvent ?? 'water') !== 'water'
+  )
+    return species;
+  return {
+    ...species,
+    reproduction: {
+      kind: 'dormant-buds',
+      baselineSamples: species.origin === 'introduced' ? 2 : species.recognised ? 1 : 0,
+    },
+  };
+}
+
 /** Restricts the first reproductive commodity to one water-based, sessile mat body family. */
 export function supportsPropagules(species: SpeciesDefinition): boolean {
   return (

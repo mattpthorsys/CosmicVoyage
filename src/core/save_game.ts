@@ -22,10 +22,13 @@ import {
 } from '../entities/biology/biology_types';
 import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 import { preservationKit } from '../entities/biology/preservation';
+import { withMatReproduction } from '../entities/biology/propagules';
 
-export const SAVE_GAME_VERSION = 16;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v16';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v16';
+export const SAVE_GAME_VERSION = 17;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v17';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v17';
+const VERSION_SIXTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v16';
+const VERSION_SIXTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v16';
 const VERSION_FIFTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v15';
 const VERSION_FIFTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v15';
 const VERSION_FOURTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v14';
@@ -215,7 +218,11 @@ export interface GameSaveV16 extends Omit<GameSaveV15, 'version'> {
   version: 16;
 }
 
-export type GameSave = GameSaveV16;
+export interface GameSaveV17 extends Omit<GameSaveV16, 'version'> {
+  version: 17;
+}
+
+export type GameSave = GameSaveV17;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -263,6 +270,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV14
     | GameSaveV15
     | GameSaveV16
+    | GameSaveV17
   >;
   if (
     record.version !== 1 &&
@@ -280,6 +288,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 13 &&
     record.version !== 14 &&
     record.version !== 15 &&
+    record.version !== 16 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -350,10 +359,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 13:
     case 14:
     case 15:
+    case 16:
       save = { ...(candidate as unknown as GameSaveV12), version: SAVE_GAME_VERSION };
       break;
     default:
-      save = candidate as unknown as GameSaveV16;
+      save = candidate as unknown as GameSaveV17;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -410,7 +420,19 @@ export function parseGameSave(value: string | unknown): GameSave {
   validateMissionProgress(save);
   validatePlanetMutations(save.planetMutations);
   validateEconomy(save.economy);
-  return save;
+  return record.version !== SAVE_GAME_VERSION ? migrateMatReproduction(save) : save;
+}
+
+/** Enriches validated legacy mat profiles so visited habitats work, without replenishing sources or changing rewards. */
+function migrateMatReproduction(save: GameSave): GameSave {
+  const migrated = structuredClone(save);
+  for (const field of Object.values(migrated.xenobiology.fields))
+    field.species = field.species.map(withMatReproduction);
+  for (const evidence of Object.values(migrated.xenobiology.evidence))
+    evidence.species = withMatReproduction(evidence.species);
+  for (const hold of [migrated.player.cargoHold, migrated.player.terrainVehicle.cargoHold])
+    for (const container of hold.specimens ?? []) container.species = withMatReproduction(container.species);
+  return migrated;
 }
 
 /** Validates mutable stellar and station orbit snapshots before restoration. */
@@ -838,7 +860,7 @@ function validateMissionProgress(save: GameSave): void {
         assertNonEmptyString(objective.siteId, 'mission habitat id');
         assertFiniteNumber(objective.minimumQuality, 'mission specimen quality');
         if (
-          !['live', 'tissue'].includes(objective.requiredKind) ||
+          !['live', 'tissue', 'propagule'].includes(objective.requiredKind) ||
           (objective.sizeClass !== undefined &&
             !['small', 'typical', 'large'].includes(objective.sizeClass)) ||
           (objective.mineralisation !== undefined &&
@@ -1043,6 +1065,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_SIXTEEN_SESSION_SAVE_KEY,
       VERSION_FIFTEEN_SESSION_SAVE_KEY,
       VERSION_FOURTEEN_SESSION_SAVE_KEY,
       VERSION_THIRTEEN_SESSION_SAVE_KEY,
@@ -1069,6 +1092,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_SIXTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FIFTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FOURTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_THIRTEEN_SESSION_SAVE_KEY);
@@ -1091,6 +1115,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_SIXTEEN_MANUAL_SAVE_KEY,
       VERSION_FIFTEEN_MANUAL_SAVE_KEY,
       VERSION_FOURTEEN_MANUAL_SAVE_KEY,
       VERSION_THIRTEEN_MANUAL_SAVE_KEY,
@@ -1117,6 +1142,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_SIXTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FIFTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FOURTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_THIRTEEN_MANUAL_SAVE_KEY);

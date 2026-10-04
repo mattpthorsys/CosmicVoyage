@@ -11,6 +11,8 @@ import {
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { createBiologicalDossier } from './xenobiology_ui';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
+import { supportsPropagules } from '../entities/biology/propagules';
+import type { SpecimenKind } from '../entities/biology/biology_types';
 import type { XenobiologyService } from './xenobiology_service';
 import { comparisonCandidates, speciesComparisonLines } from './species_comparison';
 import {
@@ -236,7 +238,7 @@ export class ScienceLog {
               const container = allocated.get(objective.id);
               if (container && complete)
                 line(
-                  `${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}%`,
+                  `${container.kind === 'propagule' ? 'Viable dormant buds / 5 g material' : `${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg`} / quality ${Math.round(container.quality * 100)}%`,
                   'cyan'
                 );
               if (objective.kind === 'biology-data' && complete) {
@@ -260,7 +262,9 @@ export class ScienceLog {
           'amber'
         );
         line('Individual size and available cargo/stasis slots can change capture feasibility.', 'muted');
-        for (const kind of ['tissue', 'dead', 'live'] as const) {
+        const kinds: SpecimenKind[] = ['tissue', 'dead', 'live'];
+        if (entry.level >= 3 && supportsPropagules(species)) kinds.push('propagule');
+        for (const kind of kinds) {
           const value = service.quote(species, {
             id: 'estimate',
             sourceId: 'uncollected-estimate',

@@ -5,6 +5,7 @@ import type {
   SpecimenContainer,
   StunPower,
   IndividualMineralisation,
+  SpecimenKind,
 } from '../entities/biology/biology_types';
 import { estimateStun } from '../entities/biology/stun_model';
 import { encounterVisible, individualSpecies, individualProfile } from '../systems/surface_encounter_system';
@@ -13,7 +14,8 @@ import {
   individualSizeLabel,
   mineralisationLabel,
 } from '../entities/biology/biology_rules';
-import { stasisCompatibility } from '../systems/specimen_cargo_system';
+import { stasisCompatibility, propaguleCompatibility, needsStasis } from '../systems/specimen_cargo_system';
+import { propaguleAvailability, supportsPropagules, PROPAGULE_MASS_KG } from '../entities/biology/propagules';
 import { preservationRequirementDescription } from '../entities/biology/preservation';
 import { organismActivity } from '../systems/organism_behaviour';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
@@ -186,9 +188,12 @@ function specimenEstimates(
   field: EncounterField,
   target: EncounterIndividual,
   service: XenobiologyService
-): { kind: 'tissue' | 'dead' | 'live'; credits: number }[] {
+): { kind: SpecimenKind; credits: number }[] {
   const species = individualSpecies(field, target);
-  return (['tissue', 'dead', 'live'] as const).map((kind) => ({
+  const kinds: SpecimenKind[] = ['tissue', 'dead', 'live'];
+  if ((service.evidence(species.id)?.level ?? 0) >= 3 && !propaguleAvailability(species, target))
+    kinds.push('propagule');
+  return kinds.map((kind) => ({
     kind,
     credits: service.quote(species, {
       id: `${target.id}/${kind}`,
@@ -237,6 +242,10 @@ export function createEncounterView(
       `${range.toFixed(0)} m / ${organismActivity(target)}${target.sampled ? ' / sampled' : ''}`,
       targetQuotes(field, target, service)
     );
+    if (level >= 3 && supportsPropagules(species))
+      scanner.push(
+        `Viable buds: ${propaguleAvailability(species, target) ?? propaguleCompatibility(species, stasisClass) ?? 'available / Cargo harvest'}`
+      );
     if (target.state === 'stunned')
       scanner.push(`Recovery in ${Math.max(0, target.recoveryAt - field.elapsedSeconds).toFixed(0)} s`);
     if (species.susceptibility > 0) {
@@ -552,6 +561,52 @@ export function createBiologicalDossier(
     entry('Preservation', preservationRequirementDescription(species), 'amber');
   } else
     entry('Assessment', 'Close analysis or a specimen is needed to resolve structural details.', 'muted');
+  if (level >= 3 && supportsPropagules(species)) {
+    section('Reproductive Material');
+    entry('Dispersal form', 'Detachable dormant buds / viable propagules', 'green');
+    entry(
+      'Interpretation',
+      'A compact reproductive reference, not an intact adult or a tissue biopsy.',
+      'muted'
+    );
+    entry(
+      'Containment',
+      `0.1 m^3 / ${(PROPAGULE_MASS_KG * 1000).toFixed(0)} g material / one live stasis slot`,
+      'cyan'
+    );
+    entry(
+      'Environment',
+      `${species.temperatureK.toFixed(0)} K / ${species.pressureBar.toFixed(2)} bar / water solvent; no parent substrate required`,
+      'amber'
+    );
+    entry(
+      'Demand',
+      `${(species.reproduction?.baselineSamples ?? 0) + (service.snapshot.demand[species.id]?.propaguleSamples ?? 0)} reproductive batches catalogued; separate from adult sampling`,
+      'cyan'
+    );
+    if (contact) {
+      const refusal =
+        propaguleAvailability(species, contact.target) ??
+        propaguleCompatibility(species, contact.stasisClass);
+      entry(
+        'Availability',
+        refusal ?? 'Verified viable batch; parent remains intact',
+        refusal ? 'amber' : 'green'
+      );
+      entry(
+        'Field collection',
+        'Approach within 7.5 m; Cargo / Harvest viable propagules. One batch per source, no regrowth.',
+        'cyan'
+      );
+    }
+  } else if (level === 2 && supportsPropagules(species)) {
+    section('Reproductive Material');
+    entry(
+      'Assessment',
+      'Possible dispersal structures; close analysis required to verify viable material.',
+      'amber'
+    );
+  }
   section('Scientific Demand');
   if (level >= 2) {
     entry('Scan data', `${service.quote(species).credits.toLocaleString()} Cr`, 'amber');
@@ -626,8 +681,8 @@ export function specimenRows(
       `${service.quote(container.species, container).credits}`,
       container.kind,
     ],
-    detail: `${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
-    tone: container.kind === 'live' ? 'green' : 'normal',
+    detail: `${container.kind.toUpperCase()} / ${container.kind === 'propagule' ? 'detachable dormant buds / 5 g material / one stasis slot / parent retained at source' : `${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg`} / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
+    tone: needsStasis(container) ? 'green' : 'normal',
   }));
 }
 
@@ -648,7 +703,7 @@ export function specimenSaleRows(
     return {
       id: `sample:${container.id}`,
       cells: [container.species.name, '1', String(credits), `${container.kind} specimen`],
-      detail: `${availability} ${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
+      detail: `${availability} ${container.kind.toUpperCase()} / ${container.kind === 'propagule' ? 'viable dormant buds / reproductive research demand' : `${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)}`} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
       disabled: credits <= 0,
       tone: credits > 0 ? 'green' : 'normal',
       cellTones: ['normal', 'normal', 'amber', 'cyan'],
