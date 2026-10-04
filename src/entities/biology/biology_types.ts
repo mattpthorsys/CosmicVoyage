@@ -1,10 +1,14 @@
-export const BIOLOGY_VERSION = 3;
+export const BIOLOGY_VERSION = 4;
 export const HABITAT_VERSION = 1;
 export const ENCOUNTER_WIDTH = 32;
 export const ENCOUNTER_HEIGHT = 24;
 export const ENCOUNTER_CELL_METRES = 5;
 
 export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territorial' | 'ambush';
+export type BiosphereComplexity = 'microbial-only' | 'simple-multicellular' | 'complex-multicellular';
+export type BiologicalCellularity = 'unicellular' | 'simple-multicellular' | 'complex-multicellular';
+export type BiologicalContact = 'individual' | 'colony-patch';
+export type BiologicalEnergySource = 'light' | 'chemical' | 'organic';
 export const BEHAVIOUR_OBSERVATION_KINDS = [
   'feeding',
   'shelter-use',
@@ -75,6 +79,12 @@ export interface HabitatProfile {
 }
 
 export interface SpeciesDefinition {
+  /** Optional only for legacy saves; patch biomass and dimensions never describe a single cell. */
+  readonly cellularity?: BiologicalCellularity;
+  readonly contactRepresentation?: BiologicalContact;
+  readonly energySource?: BiologicalEnergySource;
+  /** A visible pigment film or a close-range scanner contact, not a microscopic animal sprite. */
+  readonly surfaceExpression?: 'pigmented-film' | 'subtle-colony';
   /** A bounded prototype for detachable dormant buds; never inferred from appearance alone. */
   readonly reproduction?: { readonly kind: 'dormant-buds'; readonly baselineSamples: number };
   readonly id: string;
@@ -132,6 +142,10 @@ export interface BiosphereDefinition {
   readonly id: string;
   readonly bodyName: string;
   readonly origin: 'native' | 'introduced';
+  /** Generator knowledge, not a claim available to an orbital scanner. */
+  readonly complexity?: BiosphereComplexity;
+  /** Bounded exposed pigment coverage; independent of oxygen abundance and community complexity. */
+  readonly pigmentCover?: number;
   readonly species: readonly SpeciesDefinition[];
   readonly sites: readonly BiologySite[];
 }

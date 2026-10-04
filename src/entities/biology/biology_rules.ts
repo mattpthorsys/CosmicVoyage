@@ -1,5 +1,17 @@
 import type { IndividualSizeClass, IndividualMineralisation, SpeciesDefinition } from './biology_types';
 
+/** Identifies a microbial sampling site by typed biology, never by a mat sprite or description string. */
+export function isMicrobialPatch(species: SpeciesDefinition): boolean {
+  return species.cellularity === 'unicellular' && species.contactRepresentation === 'colony-patch';
+}
+
+/** Names measured size without mistaking aggregate microbial biomass for an individual organism. */
+export function contactSizeLabel(species: SpeciesDefinition, sizeScale = 1): string {
+  return isMicrobialPatch(species)
+    ? `${individualSizeClass(sizeScale)} patch`
+    : individualSizeLabel(sizeScale);
+}
+
 /** Converts a stored mass scale into one consistent physical profile without changing species identity. */
 export function individualPhysicalProfile(
   species: SpeciesDefinition,
