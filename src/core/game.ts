@@ -62,6 +62,7 @@ import {
 import { MissionProgressService } from './mission_progress';
 import { MissionJournal, type MissionJournalEntry } from './mission_journal';
 import { ScienceLog } from './science_log';
+import { biologySurveyReport, biologySurveySummary, habitatLandingPreview } from './biology_survey';
 import {
   getMissionLandingBody,
   getMissionLandingLocation,
@@ -77,7 +78,7 @@ import {
 } from './biological_contracts';
 import type { BiologicalFieldRequest } from './biological_mission_guidance';
 import { ScanService } from './scan_service';
-import { DiscoveryLevel, formatDiscoveryLevel } from './discovery';
+import { DiscoveryLevel, formatDiscoveryLevel, hasDiscoveryLevel } from './discovery';
 import {
   CREW_SKILL_LABELS,
   CREW_SKILLS,
@@ -3370,6 +3371,11 @@ export class Game {
       const parent = this.stateManager.currentOrbitReferencePlanet;
       if (parent) {
         const body = this.orbitModeState.getSelectedBody(parent);
+        if (!hasDiscoveryLevel(body.discovery.level, 'surveyed')) {
+          this.statusMessage = 'Orbital survey required to resolve habitat landing coordinates.';
+          this.forceFullRender = true;
+          return;
+        }
         const biosphere = this.getBiosphere(body);
         const sites = biosphere?.sites ?? [];
         if (sites.length) {
@@ -3378,8 +3384,9 @@ export class Game {
           this.orbitModeState.mode = 'landing';
           this.orbitModeState.landingX = site.x;
           this.orbitModeState.landingY = site.y;
+          const preview = habitatLandingPreview(site, this.xenobiology.snapshot);
           this.orbitModeState.alert =
-            this.statusMessage = `${site.label} X${site.x} Y${site.y}. Enter lands; B cycles habitats.`;
+            this.statusMessage = `${preview[0]}. ${preview[1]}. D dossier; Enter lands.`;
           this.orbitModeState.invalidateScreen();
         } else {
           if (biosphere && !body.isSurfaceReady()) this.requestSurfacePreparation(body);
@@ -8274,6 +8281,11 @@ export class Game {
       Game.SIMULATED_SECONDS_PER_REAL_SECOND
     );
     const biosphere = this.getBiosphere(base.selectedBody);
+    const surveyedBiosphere = hasDiscoveryLevel(base.selectedBody.discovery.level, 'surveyed') && biosphere;
+    const landingSite =
+      base.mode === 'landing' && surveyedBiosphere
+        ? biosphere?.sites.find((site) => site.x === base.landingCursorX && site.y === base.landingCursorY)
+        : undefined;
     // The orbital frame reserves two footer rows; keep habitat and mission hints inside it.
     const screen = {
       ...base,
@@ -8281,27 +8293,30 @@ export class Game {
         base.mode === 'landing'
           ? [
               'Arrows site  Enter land  D dossier  J missions  Esc back',
-              `${base.footer[1]}${biosphere ? '  B habitats' : ''}`,
+              `${base.footer[1]}${surveyedBiosphere ? '  B habitats' : ''}`,
             ]
-          : [base.footer[0], `J missions  X science log${biosphere ? '  B habitats' : ''}`],
+          : [base.footer[0], `J missions  X science log${surveyedBiosphere ? '  B habitats' : ''}`],
     };
-    this.orbitModeState.dossier.biologyLines = biosphere
-      ? [
-          `${biosphere.origin === 'introduced' ? 'Managed introduced' : 'Probable native'} carbon-water biosphere. Surface observations required for species identification.`,
-          ...biosphere.sites.map((site) => `${site.label}: X${site.x} Y${site.y}`),
-          biosphere.sites.length
-            ? 'B cycles accessible habitat landing coordinates.'
-            : 'Accessible habitat coordinates pending terrain preparation.',
-        ]
-      : [];
-    return biosphere
-      ? {
-          ...screen,
-          summary: screen.summary.map((line, index) =>
-            index === 4 ? 'Biological signatures / B habitats' : line
-          ),
-        }
-      : screen;
+    this.orbitModeState.dossier.biologyLines = biologySurveyReport(
+      base.selectedBody.discovery,
+      biosphere,
+      this.xenobiology.snapshot,
+      {
+        temperatureK: base.selectedBody.effectiveSurfaceTemp,
+        pressureBar: base.selectedBody.effectiveAtmosphere.pressure,
+      },
+      base.mode === 'landing' ? { x: base.landingCursorX, y: base.landingCursorY } : undefined
+    );
+    return {
+      ...screen,
+      summary: screen.summary.map((line, index) =>
+        index === 4
+          ? biologySurveySummary(base.selectedBody.discovery, biosphere)
+          : index === 5 && landingSite
+            ? habitatLandingPreview(landingSite, this.xenobiology.snapshot)[0]
+            : line
+      ),
+    };
   }
 
   /** Starts worker-backed surface preparation and redraws when the current planet becomes ready. */
