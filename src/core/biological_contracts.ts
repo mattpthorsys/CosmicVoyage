@@ -14,6 +14,8 @@ import { createBiologicalReference } from './biological_mission_guidance';
 import { createComparativeBiologicalContracts, createMineralisationComparison } from './comparative_biology';
 import { createPressureExpedition } from './pressure_expedition';
 import { samePreservationRequirements } from '../entities/biology/preservation';
+import { createBehaviourContracts } from './behaviour_research';
+import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
 
 export interface BiologicalDeliveryContext {
   readonly station: Pick<Starbase, 'id' | 'name' | 'kind'>;
@@ -40,7 +42,9 @@ export function biologicalRequirement(mission: StarbaseMission): string {
       .map((objective) =>
         objective.kind === 'specimen'
           ? `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
-          : 'ANALYSIS'
+          : objective.kind === 'biology-behaviour'
+            ? BEHAVIOUR_OBSERVATION_LABELS[objective.requiredBehaviour].toUpperCase()
+            : 'ANALYSIS'
       )
       .join(' + ');
   }
@@ -49,7 +53,9 @@ export function biologicalRequirement(mission: StarbaseMission): string {
     ? `${objective.requiredKind.toUpperCase()} / quality >=${Math.round(objective.minimumQuality * 100)}%`
     : objective?.kind === 'biology-data'
       ? 'DETAILED FIELD ANALYSIS / no cargo required'
-      : 'Biological contribution';
+      : objective?.kind === 'biology-behaviour'
+        ? `${BEHAVIOUR_OBSERVATION_LABELS[objective.requiredBehaviour].toUpperCase()} / no cargo required`
+        : 'Biological contribution';
 }
 
 /** Offers one finite habitat-reference request only when a real compatible specimen remains obtainable. */
@@ -221,6 +227,7 @@ export function createBiologicalContracts(
     ...createComparativeBiologicalContracts(station, systemName, biospheres, fields, owned, research),
     ...createMineralisationComparison(station, systemName, biospheres, fields, owned, research),
     ...createPressureExpedition(station, systemName, biospheres, fields, owned, research),
+    ...createBehaviourContracts(station, systemName, biospheres, fields, research),
   ];
 }
 
@@ -255,6 +262,14 @@ export function deliverBiologicalContract(
   const completed = progress.getCompletedObjectiveIds(mission, containers);
   for (const objective of mission.objectives) {
     if (objective.kind === 'scan') return { ok: false, message: 'Unsupported biological objective.' };
+    if (objective.kind === 'biology-behaviour') {
+      if (
+        !completed.includes(objective.id) ||
+        !research.hasBehaviour(objective.speciesId, objective.siteId, objective.requiredBehaviour)
+      )
+        return { ok: false, message: `Field episode not recorded: ${objective.targetLabel}.` };
+      continue;
+    }
     if (objective.kind === 'biology-data') {
       if (
         !completed.includes(objective.id) ||
@@ -318,6 +333,6 @@ export function deliverBiologicalContract(
     credits,
     containerId: selected.length === 1 ? selected[0].id : undefined,
     containerIds: selected.map((container) => container.id),
-    message: `${mission.objectives.length > 1 ? `Comparative study accepted (${mission.objectives.length} contributions)` : selected.length ? `${selected[0].kind === 'live' ? 'Live' : 'Tissue'} reference accepted: ${selected[0].species.name}` : 'Field analysis accepted'}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
+    message: `${mission.objectives.length > 1 ? `Comparative study accepted (${mission.objectives.length} contributions)` : selected.length ? `${selected[0].kind === 'live' ? 'Live' : 'Tissue'} reference accepted: ${selected[0].species.name}` : mission.objectives[0].kind === 'biology-behaviour' ? 'Field behaviour record accepted' : 'Field analysis accepted'}. Contract ${settled.rewardCredits} Cr + research ${researchCredits} Cr.`,
   };
 }

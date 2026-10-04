@@ -9,6 +9,11 @@ import type { OrbitStellarSource } from '../../core/orbit_ui';
 import type { TextModalTableModel } from '../../core/text_ui';
 import { MissionJournal } from '../../core/mission_journal';
 import { ShipRepairConsole } from '../../core/ship_repair_console';
+import { SurfaceEncounterController } from '../../core/modes/surface_encounter_controller';
+import { XenobiologyService } from '../../core/xenobiology_service';
+import { SurfaceEncounterSystem } from '../../systems/surface_encounter_system';
+import { createDefaultCargo } from '../../core/components';
+import { ethologyFixture } from '../fixtures/ethology';
 import { getStarbaseShipyardProfile } from '../../core/ship_modifications';
 import { Planet } from '../../entities/planet';
 import { Starbase } from '../../entities/starbase';
@@ -1132,6 +1137,42 @@ describe('SceneRenderer visual regressions', () => {
     );
     expect(fontsForText(drawCalls, ' REPAIR CONTROL ')).toEqual(Array(16).fill('thick'));
     expect(fontsForText(drawCalls, '75% integrity')).toEqual(Array(13).fill('thin'));
+  });
+
+  it.each([
+    [120, 42],
+    [48, 20],
+    [30, 45],
+  ])('keeps witnessed field ethology readable and masks sprites in a %sx%s dossier', (cols, rows) => {
+    const f = ethologyFixture();
+    const service = new XenobiologyService();
+    service.snapshot.fields[f.field.site.id] = f.field;
+    service.observe(f.consumer, 2);
+    const result = new SurfaceEncounterSystem().act(f.field, { kind: 'wait' }, createDefaultCargo(50), 1);
+    service.recordBehaviour(
+      result.behaviourWitnesses!.find((entry) => entry.observation.kind === 'feeding')!
+    );
+    const controller = new SurfaceEncounterController();
+    controller.targetId = f.actor.id;
+    controller.interaction = { kind: 'dossier', offset: 0 };
+    controller.reveal.complete();
+    const first = controller.createModal(f.field, service, cols, rows, [])!;
+    controller.interaction.offset = first.dashboard!.findIndex((line) =>
+      line.segments.some((span) => span.text === 'FIELD ETHOLOGY')
+    );
+    const model = controller.createModal(f.field, service, cols, rows, [])!;
+    const { buffer, drawCalls } = createMockScreenBuffer(cols, rows);
+    const before = service.createSnapshot();
+    createSceneRenderer(buffer).drawTextModalTable(model);
+    expect(renderTextRows(drawCalls).join('\n')).toContain('FIELD ETHOLOGY');
+    expect(buffer.clear).toHaveBeenCalledWith(false);
+    expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
+    expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < rows)).toBe(
+      true
+    );
+    expect(fontsForText(drawCalls, 'FIELD ETHOLOGY')).toEqual(Array(13).fill('thick'));
+    expect(drawCalls.some((call) => call.font === 'thin' && call.fg === TEXT_PALETTE.green)).toBe(true);
+    expect(service.createSnapshot()).toEqual(before);
   });
 
   it('shows only the scrolled dossier page and a scroll indicator', () => {

@@ -7,6 +7,7 @@ import {
   allocateSpecimenObjectives,
 } from './mission_board';
 import type { SpecimenContainer } from '../entities/biology/biology_types';
+import type { BehaviourObservationKind } from '../entities/biology/biology_types';
 import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { StellarBody } from '../entities/stellar_body';
@@ -98,6 +99,24 @@ export class MissionProgressService {
           objective.speciesId === speciesId &&
           objective.siteId === siteId &&
           level >= objective.requiredEvidenceLevel
+        )
+          completed.add(objective.id);
+      this.missionObjectiveProgress[mission.id] = [...completed];
+      if (mission.objectives.every((objective) => completed.has(objective.id)))
+        this.readyMissionIds.add(mission.id);
+    }
+  }
+
+  /** Records a witnessed episode at its actual site; scan strength alone never completes ethology work. */
+  recordBehaviourEvidence(speciesId: string, siteId: string, kind: BehaviourObservationKind): void {
+    for (const mission of Object.values(this.activeMissions)) {
+      const completed = new Set(this.missionObjectiveProgress[mission.id] ?? []);
+      for (const objective of mission.objectives)
+        if (
+          objective.kind === 'biology-behaviour' &&
+          objective.speciesId === speciesId &&
+          objective.siteId === siteId &&
+          objective.requiredBehaviour === kind
         )
           completed.add(objective.id);
       this.missionObjectiveProgress[mission.id] = [...completed];

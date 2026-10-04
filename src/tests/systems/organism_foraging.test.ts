@@ -91,6 +91,26 @@ describe('habitat-directed foraging', () => {
     f.field.patches = f.field.patches!.map((row) => row.replaceAll('s', 'o'));
     expect(habitatForagingIntent(f.field, f.actor, consumer, f.feedingTick)?.activity).toBe('resting');
   });
+  it('finishes distant resource trips across phase changes and witnesses arrival rather than endlessly reversing', () => {
+    const f = fixture();
+    f.field.patches = f.field.patches!.map((row) => 'o'.repeat(row.length));
+    f.field.patches[10] = f.field.patches[10].slice(0, 18) + 's' + f.field.patches[10].slice(19);
+    f.actor.activity = 'returning';
+    expect(habitatForagingIntent(f.field, f.actor, f.consumer, f.feedingTick)?.activity).toBe('returning');
+    f.actor.activity = 'foraging';
+    expect(habitatForagingIntent(f.field, f.actor, f.consumer, f.restingTick)?.activity).toBe('foraging');
+    f.actor.activity = undefined;
+    f.field.elapsedSeconds = (f.restingTick + 6 - 1) * 5;
+    f.field.roverX = 24;
+    f.field.roverY = 10;
+    const seen = new Set<string>();
+    for (let step = 0; step < 15; step++) {
+      const result = new SurfaceEncounterSystem().act(f.field, { kind: 'wait' }, createDefaultCargo(50), 1);
+      for (const witness of result.behaviourWitnesses ?? []) seen.add(witness.observation.kind);
+    }
+    expect(seen.has('shelter-use')).toBe(true);
+    expect(f.source.state).toBe('active');
+  });
   it('resumes resource-directed behaviour identically and never consumes food or cargo', () => {
     const f = fixture();
     const restored = structuredClone(f.field);

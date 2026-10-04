@@ -19,6 +19,8 @@ import type { StarbaseSectionId } from '../../core/starbase_ui';
 import type { StarbaseController } from '../../core/starbase_controller';
 import type { StarbaseMission } from '../../core/mission_board';
 import type { MissionProgressService } from '../../core/mission_progress';
+import { ethologyFixture } from '../fixtures/ethology';
+import { createBehaviourContracts } from '../../core/behaviour_research';
 
 interface BiologyGameHarness {
   player: Player;
@@ -42,6 +44,7 @@ interface BiologyGameHarness {
   quantitySelector: { context: { type: string; itemKey?: string }; max: number } | null;
   getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): TextTableRow[];
   activateStarbaseSelection(starbase: Starbase, row: TextTableRow): void;
+  activateMissionSelection(starbase: Starbase, row: TextTableRow): void;
 }
 
 /** Connects production Game orchestration to a bounded test field without a canvas or generated universe. */
@@ -123,6 +126,69 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('credits a prior witnessed episode when a field survey is accepted later', () => {
+    const { game, keys, service } = harness();
+    const f = ethologyFixture();
+    service.snapshot.fields = { [f.field.site.id]: f.field };
+    service.snapshot.activeSiteId = f.field.site.id;
+    service.observe(f.consumer, 2);
+    keys.add('BIOLOGY_WAIT');
+    game.handleEncounterInput();
+    expect(service.hasBehaviour(f.consumer.id, f.field.site.id, 'feeding')).toBe(true);
+    const station = { id: 'field-port', name: 'Field Port', kind: 'starbase' } as Starbase;
+    const mission = createBehaviourContracts(
+      station,
+      'Fixture',
+      [f.biosphere],
+      service.snapshot.fields,
+      service
+    )[0];
+    Object.assign(game, {
+      stateManager: { currentSystem: { name: 'Fixture' } },
+      getCurrentStarbaseMissions: () => [mission],
+    });
+    game.activateMissionSelection(station, { id: mission.id, cells: [mission.title] });
+    expect(game.missionProgress.getStatus(mission)).toBe('READY');
+  });
+  it('records real passive activity through Watch, updates the mission and freezes episodes while reading', () => {
+    const { game, keys, service, player } = harness();
+    const f = ethologyFixture();
+    service.snapshot.fields = { [f.field.site.id]: f.field };
+    service.snapshot.activeSiteId = f.field.site.id;
+    service.observe(f.consumer, 2);
+    game.encounterController.targetId = f.actor.id;
+    const mission = createBehaviourContracts(
+      { id: 'field-port', name: 'Field Port', kind: 'starbase' },
+      'Fixture',
+      [f.biosphere],
+      service.snapshot.fields,
+      service
+    )[0];
+    game.missionProgress.accept(mission);
+    const credits = player.resources.credits,
+      time = game.gameClockElapsedSeconds;
+    keys.add('BIOLOGY_WAIT');
+    game.handleEncounterInput();
+    expect(service.hasBehaviour(f.consumer.id, f.field.site.id, 'feeding')).toBe(true);
+    expect(game.missionProgress.getStatus(mission)).toBe('READY');
+    expect(game.gameClockElapsedSeconds).toBe(time + 10);
+    expect(player.resources.credits).toBe(credits);
+    expect(player.terrainVehicle.cargoHold.specimens).toEqual([]);
+    const before = service.createSnapshot();
+    keys.clear();
+    keys.add('ORBIT_DOSSIER');
+    game.handleEncounterInput();
+    expect(game.encounterController.interaction.kind).toBe('dossier');
+    keys.clear();
+    for (let frame = 0; frame < 5; frame++) game.handleEncounterInput();
+    expect(service.createSnapshot()).toEqual(before);
+    expect(game.gameClockElapsedSeconds).toBe(time + 10);
+    const saved = parseGameSave({
+      ...saveFixture(player, service),
+      ...game.missionProgress.createSnapshot(),
+    });
+    expect(saved.missionObjectiveProgress[mission.id]).toEqual([mission.objectives[0].id]);
+  });
   it('opens Operations from a field and returns to the same actors, target and local time', () => {
     const { game, keys, field, player } = harness();
     Object.assign(game, {

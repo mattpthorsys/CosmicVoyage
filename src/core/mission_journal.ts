@@ -3,6 +3,7 @@ import type { MissionStatus, StarbaseMission } from './mission_board';
 import { biologicalReferenceDescription } from './mission_board';
 import { getMissionLandingObjectiveIndices } from './mission_navigation';
 import { TerminalTextReveal } from './terminal_text_reveal';
+import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
 import {
   clampIndex,
   getDashboardVisibleRows,
@@ -185,13 +186,18 @@ export class MissionJournal {
           );
         else if (objective.kind === 'biology-data')
           line('Required: detailed biochemical field analysis at this habitat; no capture needed.', 'green');
+        else if (objective.kind === 'biology-behaviour')
+          line(
+            `Required: witnessed ${BEHAVIOUR_OBSERVATION_LABELS[objective.requiredBehaviour].toLowerCase()} at this habitat / passive instruments / no capture.`,
+            'green'
+          );
       }
       line('');
       line('DELIVERY', 'cyan', true);
       line(`Return to: ${mission.originStarbaseName}`, 'green');
       line(`Issuer: ${mission.issuer}`, 'muted');
       line(
-        `Payment: ${mission.rewardCredits.toLocaleString()} Cr${mission.type === 'xenobiology' ? ' + remaining research value' : ''}`,
+        `Payment: ${mission.rewardCredits.toLocaleString()} Cr${mission.objectives.every((objective) => objective.kind === 'biology-behaviour') ? ' / fixed field-study fee' : mission.type === 'xenobiology' ? ' + remaining research value' : ''}`,
         'amber'
       );
       line(`Risk: ${mission.risk}`, mission.risk === 'High' ? 'red' : 'muted');

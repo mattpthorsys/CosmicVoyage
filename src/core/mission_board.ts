@@ -8,6 +8,7 @@ import type {
   IndividualMineralisation,
   SpeciesDefinition,
   SpecimenContainer,
+  BehaviourObservationKind,
 } from '../entities/biology/biology_types';
 import { individualSizeClass } from '../entities/biology/biology_rules';
 import type { TextDashboardSegment } from './text_ui';
@@ -74,13 +75,29 @@ export interface BiologicalDataObjective {
   location?: MissionBodyLocation;
 }
 
+export interface BiologicalBehaviourObjective {
+  id: string;
+  kind: 'biology-behaviour';
+  targetName: string;
+  targetLabel: string;
+  speciesId: string;
+  siteId: string;
+  requiredBehaviour: BehaviourObservationKind;
+  reference?: BiologicalReference;
+  location?: MissionBodyLocation;
+}
+
 /** Public identifying traits supplied by a research office, distinct from acquired field evidence. */
 export type BiologicalReference = Pick<
   SpeciesDefinition,
   'symmetry' | 'bodyForm' | 'locomotion' | 'metabolism' | 'role' | 'behaviour'
 >;
 
-export type MissionObjective = ScanMissionObjective | SpecimenMissionObjective | BiologicalDataObjective;
+export type MissionObjective =
+  | ScanMissionObjective
+  | SpecimenMissionObjective
+  | BiologicalDataObjective
+  | BiologicalBehaviourObjective;
 
 export interface StarbaseMission {
   id: string;
@@ -127,7 +144,7 @@ export function formatMissionDetailSegments(
   const objectiveText = mission.objectives.map((objective) => objective.targetLabel).join(' -> ');
   const species = new Set<string>();
   const references = mission.objectives.filter(
-    (objective): objective is SpecimenMissionObjective | BiologicalDataObjective => {
+    (objective): objective is Exclude<MissionObjective, ScanMissionObjective> => {
       if (objective.kind === 'scan' || species.has(objective.speciesId)) return false;
       species.add(objective.speciesId);
       return true;
@@ -156,7 +173,7 @@ export function formatMissionDetailSegments(
 
 /** Describes the commissioned organism without implying that the player has identified a contact. */
 export function biologicalReferenceDescription(
-  objective: SpecimenMissionObjective | BiologicalDataObjective
+  objective: Exclude<MissionObjective, ScanMissionObjective>
 ): string {
   const reference = objective.reference;
   return reference

@@ -2,12 +2,57 @@ import type {
   EncounterField,
   EncounterIndividual,
   SpeciesDefinition,
+  BehaviourObservationKind,
 } from '../entities/biology/biology_types';
 
 interface DefensiveIntent {
   readonly goal: readonly [number, number] | null;
   readonly damage: number;
   readonly warning?: string;
+}
+
+/** Identifies undamaged source contacts without mistaking physiology or an AI timer for witnessed evidence. */
+export function behaviourSources(
+  field: EncounterField,
+  species: SpeciesDefinition,
+  kind: BehaviourObservationKind
+): EncounterIndividual[] {
+  const sources = field.individuals.filter(
+    (actor) =>
+      actor.speciesId === species.id &&
+      actor.state === 'active' &&
+      actor.injury === 0 &&
+      actor.exposure === 0 &&
+      !actor.sampled
+  );
+  if (kind === 'defensive-display')
+    return ['territorial', 'ambush'].includes(species.behaviour) ? sources : [];
+  if (kind === 'group-retreat')
+    return species.socialBehaviour === 'group-retreat'
+      ? sources.filter(
+          (actor) =>
+            actor.groupId &&
+            sources.some(
+              (other) =>
+                other.id !== actor.id &&
+                other.groupId === actor.groupId &&
+                Math.hypot(other.x - actor.x, other.y - actor.y) <= 5
+            )
+        )
+      : [];
+  if (!field.patches || !species.foragingGuild || !['passive', 'skittish'].includes(species.behaviour))
+    return [];
+  if (kind === 'shelter-use')
+    return species.seeksShelter && field.patches.some((row) => row.includes('s')) ? sources : [];
+  const producers = field.individuals.filter(
+    (actor) =>
+      actor.state !== 'collected' &&
+      actor.state !== 'dead' &&
+      field.species.some((entry) => entry.id === actor.speciesId && entry.metabolism !== 'heterotroph')
+  );
+  return sources.filter((actor) =>
+    producers.some((producer) => Math.hypot(producer.x - actor.homeX, producer.y - actor.homeY) <= 13)
+  );
 }
 
 /** Chooses a bounded threat response, leaving obstacle routing and the explicit action clock to the encounter. */

@@ -13,6 +13,8 @@ import { createBiologicalDossier, createEncounterView } from '../../core/xenobio
 import { MissionJournal } from '../../core/mission_journal';
 import { MissionProgressService } from '../../core/mission_progress';
 import { wrapDashboardLines } from '../../core/text_ui';
+import { ethologyFixture } from '../fixtures/ethology';
+import { createBehaviourContracts } from '../../core/behaviour_research';
 
 /** Creates a genuine generated contact with an explicit finite request and no acquired evidence. */
 function fixture() {
@@ -61,6 +63,39 @@ function fixture() {
 }
 
 describe('biological mission guidance', () => {
+  it('marks identified uninjured field-study sources without stasis and removes markers after the episode is supplied', () => {
+    const f = ethologyFixture();
+    const service = new XenobiologyService();
+    const mission = createBehaviourContracts(
+      { id: 'ethology-port', name: 'Ethology Port', kind: 'starbase' },
+      'Fixture',
+      [f.biosphere],
+      { [f.field.site.id]: f.field },
+      service
+    )[0];
+    const request: BiologicalFieldRequest = { mission, status: 'ACTIVE', completedObjectiveIds: [] };
+    const contact = { field: f.field, target: f.actor, stasisClass: 0 };
+    expect(assessBiologicalRequests(f.consumer, 1, [request], contact).eligible).toBe(false);
+    const identified = assessBiologicalRequests(f.consumer, 2, [request], contact);
+    expect(identified.eligible).toBe(true);
+    expect(identified.summary!.segments.map((span) => span.text).join(' ')).toContain('PASSIVE RECORD');
+    f.actor.sampled = true;
+    expect(assessBiologicalRequests(f.consumer, 2, [request], contact).eligible).toBe(false);
+    f.actor.sampled = false;
+    f.actor.state = 'stunned';
+    expect(assessBiologicalRequests(f.consumer, 2, [request], contact).eligible).toBe(false);
+    f.actor.state = 'active';
+    const completed = { ...request, completedObjectiveIds: [mission.objectives[0].id] };
+    expect(assessBiologicalRequests(f.consumer, 2, [completed], contact).eligible).toBe(false);
+    const ready = assessBiologicalRequests(f.consumer, 2, [{ ...completed, status: 'READY' }], contact);
+    expect(ready.eligible).toBe(false);
+    expect(
+      ready.lines
+        .flatMap((line) => line.segments)
+        .map((span) => span.text)
+        .join(' ')
+    ).toContain('return to issuer');
+  });
   it('marks only the missing size contribution, not an already supplied small individual', () => {
     const f = fixture();
     const template = f.mission.objectives[0];

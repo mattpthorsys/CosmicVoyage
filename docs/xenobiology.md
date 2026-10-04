@@ -21,6 +21,11 @@ The latest survey previews, evidence comparisons, reinforced coverings and
 pressure-preservation expedition are implemented, with verification pending
 the requested Luna handoff. See [the survey expansion handoff](xenobiology-survey-expansion.md).
 
+Habitat-directed feeding/shelter trips, persistent witnessed behaviour and finite
+observation-only surveys are also implemented, pending Luna verification. See
+[the field-research guide](xenobiology-behaviour-research.md) for controls,
+personal checkpoints, payment rules and the deferred propagule reminder.
+
 ## First Expedition
 
 1. Visit the colony in the guaranteed starting hub, one cell east of the new
@@ -88,7 +93,7 @@ a predictive model of alien evolution. Introduced colony taxa remain familiar.
 | S             | Take a tissue sample                                    |
 | C             | Collect the selected nearby organism                    |
 | K             | Prepare a confirmed lethal shot                         |
-| W             | Wait ten local seconds                                  |
+| W             | Watch activity for ten local seconds                     |
 | D             | Scrollable dossier for the selected species             |
 | N             | Personal species/evidence record                        |
 | I             | Rover cargo manifest                                    |
@@ -97,7 +102,7 @@ a predictive model of alien evolution. Introduced colony taxa remain familiar.
 | Escape        | Close a panel, or withdraw near the entry at X16 Y21    |
 
 The bottom menu includes Observe, Analyse, Stun, Sample, Collect, Shoot,
-Wait, Dossier, Species, Cargo, Missions, Science log and Withdraw. Left/Right (or Up/Down) select;
+Watch, Dossier, Species, Cargo, Missions, Science log and Withdraw. Left/Right (or Up/Down) select;
 Enter executes. Buttons also work directly with the mouse or their hotkeys.
 Escape leaves menu selection and restores driving.
 
@@ -247,7 +252,7 @@ injury and mortality. Estimates narrow with better evidence.
 While a field is active, accelerated planetary/orbital time is suspended. Only
 successful operations advance local time and NPC behaviour: a step costs five
 seconds, observation five, analysis ten, collection five, a weapon discharge two
-and Wait ten. Menus, reading, target selection, idling and refused actions cost
+and Watch ten. Menus, reading, target selection, idling and refused actions cost
 no time. Actors remain frozen while the expedition is away.
 
 Return to entry to withdraw. Exhausted local fuel permits emergency withdrawal

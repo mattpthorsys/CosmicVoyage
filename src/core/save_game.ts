@@ -16,6 +16,7 @@ import type { EconomySnapshot } from './starbase_commerce';
 import { CONFIG } from '../config';
 import {
   BIOLOGY_VERSION,
+  BEHAVIOUR_OBSERVATION_KINDS,
   createXenobiologySnapshot,
   type XenobiologySnapshot,
 } from '../entities/biology/biology_types';
@@ -851,6 +852,14 @@ function validateMissionProgress(save: GameSave): void {
         assertNonEmptyString(objective.siteId, 'mission habitat id');
         if (objective.requiredEvidenceLevel !== 3)
           throw new Error('Invalid biological evidence requirement.');
+      } else if (objective.kind === 'biology-behaviour') {
+        assertNonEmptyString(objective.speciesId, 'mission species id');
+        assertNonEmptyString(objective.siteId, 'mission habitat id');
+        if (
+          !BEHAVIOUR_OBSERVATION_KINDS.includes(objective.requiredBehaviour) ||
+          objective.requiredBehaviour === 'defensive-display'
+        )
+          throw new Error('Invalid non-destructive field-study requirement.');
       } else throw new Error('Unsupported mission objective kind.');
       if (objective.kind !== 'scan' && objective.reference !== undefined)
         validateBiologicalReference(objective.reference);
@@ -877,10 +886,28 @@ function validateMissionProgress(save: GameSave): void {
     if (objectiveIds.some((objectiveId) => !validObjectives.has(objectiveId))) {
       throw new Error('Save mission objective progress references an unknown objective.');
     }
+    for (const objective of save.activeMissions[missionId].objectives)
+      if (
+        objective.kind === 'biology-behaviour' &&
+        objectiveIds.includes(objective.id) &&
+        !save.xenobiology.evidence[objective.speciesId]?.behaviourObservations?.some(
+          (episode) => episode.kind === objective.requiredBehaviour && episode.siteId === objective.siteId
+        )
+      )
+        throw new Error('Field study progress has no witnessed episode.');
   }
   if (save.readyMissionIds.some((missionId) => !save.activeMissions[missionId])) {
     throw new Error('Save ready mission state is inconsistent.');
   }
+  for (const missionId of save.readyMissionIds)
+    if (
+      save.activeMissions[missionId].objectives.some(
+        (objective) =>
+          objective.kind === 'biology-behaviour' &&
+          !save.missionObjectiveProgress[missionId]?.includes(objective.id)
+      )
+    )
+      throw new Error('Ready field study is missing an observation packet.');
 }
 
 /** Validates optional office reference traits without requiring them in older accepted contracts. */

@@ -70,14 +70,21 @@ export class XenobiologyService {
         (id) => !field.individuals.some((actor) => actor.id === id && actor.speciesId === species.id)
       ) ||
       !field.species.some((entry) => entry.id === species.id && entry.bodyId === species.bodyId) ||
+      (evidence.behaviourObservations?.length ?? 0) >= 128 ||
       evidence.behaviourObservations?.some(
         (entry) => entry.siteId === observation.siteId && entry.kind === observation.kind
       )
     )
       return false;
+    if (observation.kind === 'group-retreat') {
+      const sources = observation.individualIds.map(
+        (id) => field.individuals.find((actor) => actor.id === id)!
+      );
+      if (!sources[0].groupId || sources.some((actor) => actor.groupId !== sources[0].groupId)) return false;
+    }
     if (origin) this.observe(species, 2, origin);
     const observations = (evidence.behaviourObservations ??= []);
-    if (observations.length === 128) observations.shift();
+    // Historical records can back accepted contracts: never evict them to admit a new episode.
     observations.push(structuredClone(observation));
     return true;
   }

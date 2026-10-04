@@ -7,6 +7,8 @@ import { individualPhysicalProfile, individualSizeClass } from '../entities/biol
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import type { BiologicalReference, MissionStatus, StarbaseMission } from './mission_board';
 import type { TextDashboardLine } from './text_ui';
+import { behaviourSources } from '../systems/organism_behaviour';
+import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
 
 export type BiologicalReferenceTrait = keyof BiologicalReference | 'name';
 
@@ -92,13 +94,25 @@ export function assessBiologicalRequests(
         reason =
           objective.kind === 'biology-data'
             ? 'Analysis recorded; return to issuer'
-            : 'Reference aboard; return to issuer';
+            : objective.kind === 'biology-behaviour'
+              ? 'Field episode recorded; return to issuer'
+              : 'Reference aboard; return to issuer';
       else if (completedObjectiveIds?.includes(objective.id))
         reason =
           objective.kind === 'biology-data'
             ? 'Analysis recorded; other contributions still needed'
-            : 'Contribution aboard; other contributions still needed';
+            : objective.kind === 'biology-behaviour'
+              ? 'Field episode recorded; other habitats still needed'
+              : 'Contribution aboard; other contributions still needed';
       else if (contact.target.state === 'collected') reason = 'Individual already collected';
+      else if (
+        objective.kind === 'biology-behaviour' &&
+        !behaviourSources(contact.field, canonical, objective.requiredBehaviour).some(
+          (actor) => actor.id === contact.target.id
+        )
+      )
+        reason =
+          'Needs an active, uninjured, unsampled source with no prior weapon exposure and a habitat opportunity';
       else if (objective.kind === 'specimen') {
         const quality = Math.max(0.2, 1 - contact.target.injury * 0.35);
         if (objective.sizeClass && individualSizeClass(contact.target.sizeScale) !== objective.sizeClass)
@@ -126,12 +140,16 @@ export function assessBiologicalRequests(
       const requirement =
         objective.kind === 'biology-data'
           ? 'FIELD ANALYSIS'
-          : `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()} REFERENCE`;
+          : objective.kind === 'biology-behaviour'
+            ? `${BEHAVIOUR_OBSERVATION_LABELS[objective.requiredBehaviour].toUpperCase()} / PASSIVE RECORD`
+            : `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()} REFERENCE`;
       if (canContribute)
         requirements.add(
           objective.kind === 'biology-data'
             ? 'ANALYSIS'
-            : `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
+            : objective.kind === 'biology-behaviour'
+              ? BEHAVIOUR_OBSERVATION_LABELS[objective.requiredBehaviour].toUpperCase()
+              : `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
         );
       lines.push({
         segments: [

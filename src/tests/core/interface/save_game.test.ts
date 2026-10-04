@@ -22,6 +22,7 @@ import { ethologyFixture } from '../../fixtures/ethology';
 import { XenobiologyService } from '../../../core/xenobiology_service';
 import { SurfaceEncounterSystem } from '../../../systems/surface_encounter_system';
 import { createDefaultCargo } from '../../../core/components';
+import { createBehaviourContracts } from '../../../core/behaviour_research';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -151,6 +152,38 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('round-trips field-study packets but rejects unsupported requirements and progress without a real episode', () => {
+    const f = ethologyFixture();
+    const research = new XenobiologyService();
+    research.snapshot.fields[f.field.site.id] = f.field;
+    research.observe(f.consumer, 2);
+    const mission = createBehaviourContracts(
+      { id: 'ethology-port', name: 'Ethology Port', kind: 'starbase' },
+      'Fixture',
+      [f.biosphere],
+      research.snapshot.fields,
+      research
+    )[0];
+    const progress = new MissionProgressService();
+    progress.accept(mission);
+    const result = new SurfaceEncounterSystem().act(f.field, { kind: 'wait' }, createDefaultCargo(50), 1);
+    const witness = result.behaviourWitnesses!.find((entry) => entry.observation.kind === 'feeding')!;
+    research.recordBehaviour(witness);
+    progress.recordBehaviourEvidence(f.consumer.id, f.field.site.id, 'feeding');
+    const save = { ...createSave(), ...progress.createSnapshot(), xenobiology: research.createSnapshot() };
+    expect(parseGameSave(JSON.stringify(save)).activeMissions[mission.id]).toEqual(mission);
+    const unsupported = structuredClone(save);
+    const requirement = unsupported.activeMissions[mission.id].objectives[0];
+    if (requirement.kind !== 'biology-behaviour') throw new Error('Expected a field-study objective.');
+    requirement.requiredBehaviour = 'defensive-display';
+    expect(() => parseGameSave(unsupported)).toThrow('Invalid non-destructive field-study requirement');
+    const fabricated = structuredClone(save);
+    fabricated.xenobiology.evidence[f.consumer.id].behaviourObservations = [];
+    expect(() => parseGameSave(fabricated)).toThrow('Field study progress has no witnessed episode');
+    const falseReady = structuredClone(save);
+    falseReady.missionObjectiveProgress[mission.id] = [];
+    expect(() => parseGameSave(falseReady)).toThrow('Ready field study is missing an observation packet');
+  });
   it('retains witnessed episodes and restores version-15 saves without inventing behaviour records', () => {
     const f = ethologyFixture();
     const research = new XenobiologyService();

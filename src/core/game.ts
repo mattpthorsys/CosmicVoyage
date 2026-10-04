@@ -543,9 +543,16 @@ export class Game {
             if (result.evidence.collected) this.xenobiology.collected(result.evidence.species);
           }
           const recorded = new Set<string>();
-          for (const witness of result.behaviourWitnesses ?? [])
+          for (const witness of result.behaviourWitnesses ?? []) {
             if (this.xenobiology.recordBehaviour(witness, origin))
               recorded.add(BEHAVIOUR_OBSERVATION_LABELS[witness.observation.kind]);
+            if (this.xenobiology.hasBehaviour(witness.species.id, field.site.id, witness.observation.kind))
+              this.missionProgress.recordBehaviourEvidence(
+                witness.species.id,
+                field.site.id,
+                witness.observation.kind
+              );
+          }
           if (recorded.size) this.statusMessage += ` Field record: ${[...recorded].join(' / ')}.`;
         }
         if (rover.integrity === 0) {
@@ -8793,7 +8800,7 @@ export class Game {
     }
 
     this.missionProgress.accept(mission);
-    for (const evidence of Object.values(this.xenobiology.snapshot.evidence))
+    for (const evidence of Object.values(this.xenobiology.snapshot.evidence)) {
       for (const origin of evidence.origins ?? [])
         if (origin.level !== undefined)
           this.missionProgress.recordBiologicalEvidence(
@@ -8801,6 +8808,9 @@ export class Game {
             origin.surface.siteId,
             origin.level
           );
+      for (const episode of evidence.behaviourObservations ?? [])
+        this.missionProgress.recordBehaviourEvidence(evidence.species.id, episode.siteId, episode.kind);
+    }
     this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objectives[0]?.targetLabel ?? 'Review contract objectives'}.`;
     this.statusMessage = this.starbaseMode.alert;
   }

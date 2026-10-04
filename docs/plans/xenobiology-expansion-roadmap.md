@@ -14,6 +14,11 @@ reinforced covering variation and one pressure-preservation expedition. It is
 implemented, with verification pending the requested Luna handoff. See
 [survey expansion checkpoints](../xenobiology-survey-expansion.md).
 Later waves remain exploratory, not implementation commitments.
+The latest authorised steps add habitat-directed foraging/shelter activity,
+persistent witnessed episodes, and finite non-destructive field studies. They
+are implemented with verification pending Luna. See the
+[field-research guide and checkpoints](../xenobiology-behaviour-research.md).
+Reproductive material/propagules (step four) remain deferred.
 Codebase baseline inspected: 2026-10-04. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
 view and specimen listings in Sell. See the [implementation plan](xenobiology-first-version.md)
@@ -109,7 +114,7 @@ Preserve established contracts and distinguish them from unfinished extensions:
 | Explicit encounter time and modal pausing | Successful commands advance local time; reading and inactive fields are suspended | Extra behaviour must not silently use accelerated travel or rendering time. |
 | Whole-container transactions and shared occupied volume | Ship and rover specimens share ordinary cargo capacity | New material/carriers must not permit partial organisms, duplicate ownership, or duplicate sales. |
 | Typed commands, bounded actors, and readonly scene models | Implemented with controller/system/renderer separation | Add concrete domain rules rather than more formulas in Game or SceneRenderer. |
-| Versioned snapshots | Schema 15 retains recorded fields/cargo, typed biological objectives and preservation requirements; current wave verification pending | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
+| Versioned snapshots | Schema 16 also retains source-specific behavioural episodes and field-study objectives; current wave verification pending | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
 | Evidence-filtered descriptions and handling checks | Explicit solvent, temperature/pressure, substrate isolation, mass and live-slot capabilities; current wave verification pending | Current kits support water only; new chemistry must not be unlocked by an arbitrary class number. |
 | Terrain-integrated field UI and pixel silhouettes | Implemented with cached surface appearance and two-frame sprites | Appearance is not detailed local geology, habitat simulation, or continuous traversal. |
 

@@ -207,7 +207,13 @@ export class ScienceLog {
         ) {
           line(`Accepted request: ${mission.title} / return to ${mission.originStarbaseName}`, 'green');
           if (mission.objectives.length > 1) {
-            line('COMPARATIVE EVIDENCE', 'cyan', true);
+            line(
+              mission.objectives.some((objective) => objective.kind === 'biology-behaviour')
+                ? 'FIELD STUDY EVIDENCE'
+                : 'COMPARATIVE EVIDENCE',
+              'cyan',
+              true
+            );
             const allocated = allocateSpecimenObjectives(
               mission.objectives.filter((objective) => objective.kind === 'specimen'),
               cargo
@@ -218,9 +224,11 @@ export class ScienceLog {
                 objectiveProgress[mission.id]?.includes(objective.id) ??
                 (objective.kind === 'specimen'
                   ? allocated.has(objective.id)
-                  : entry.origins?.some(
-                      (record) => record.surface.siteId === objective.siteId && record.level === 3
-                    ));
+                  : objective.kind === 'biology-behaviour'
+                    ? service.hasBehaviour(species.id, objective.siteId, objective.requiredBehaviour)
+                    : entry.origins?.some(
+                        (record) => record.surface.siteId === objective.siteId && record.level === 3
+                      ));
               line(
                 `${complete ? 'COMPLETE' : 'NEEDED'} / ${objective.targetLabel}`,
                 complete ? 'green' : 'amber'

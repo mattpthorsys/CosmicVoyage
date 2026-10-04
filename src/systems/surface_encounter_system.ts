@@ -410,6 +410,7 @@ export class SurfaceEncounterSystem {
         const prng = new PRNG(field.seed).seedNew(individual.id, 'behaviour', tick);
         let gx = individual.x + prng.randomInt(-1, 1),
           gy = individual.y + prng.randomInt(-1, 1);
+        let arrivedActivity: 'feeding' | 'sheltering' | undefined;
         const retreating = individual.groupId && (individual.retreatUntil ?? 0) > tick * 5;
         if (defense?.goal) {
           [gx, gy] = defense.goal;
@@ -423,6 +424,7 @@ export class SurfaceEncounterSystem {
             individual.activity = foraging.activity;
             if (!foraging.goal) continue;
             [gx, gy] = foraging.goal;
+            arrivedActivity = foraging.activity === 'returning' ? 'sheltering' : 'feeding';
           } else {
             const phase = new PRNG(field.seed).seedNew(individual.id, 'activity-phase').randomInt(0, 5);
             individual.activity = (tick + phase) % 6 < 2 ? 'resting' : 'foraging';
@@ -457,6 +459,7 @@ export class SurfaceEncounterSystem {
         ) {
           gx = individual.homeX;
           gy = individual.homeY;
+          arrivedActivity = undefined;
         }
         gx = Math.max(1, Math.min(ENCOUNTER_WIDTH - 2, gx));
         gy = Math.max(1, Math.min(ENCOUNTER_HEIGHT - 2, gy));
@@ -490,6 +493,8 @@ export class SurfaceEncounterSystem {
         ) {
           individual.x = next[0];
           individual.y = next[1];
+          if (arrivedActivity && individual.x === gx && individual.y === gy)
+            individual.activity = arrivedActivity;
           moved.add(individual.id);
         }
       }

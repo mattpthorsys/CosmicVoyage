@@ -638,6 +638,174 @@ async function main() {
       'Repeated alternative delivery paid again.'
     );
     await capture('research-alternatives-settled');
+    // A passive field-study fixture retains real species and resource rules; only local positions are controlled.
+    const ethology = await page.evaluate(async (initial) => {
+      const { createBehaviourContracts } = await import('/src/core/behaviour_research.ts');
+      const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+      const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const prng = new PRNG(initial.save.seed),
+        generator = new SystemDataGenerator(prng);
+      const system = new SolarSystem(
+        generator.getSystemProperties(initial.save.location.worldX, initial.save.location.worldY),
+        initial.save.location.worldX,
+        initial.save.location.worldY,
+        prng
+      );
+      const site = initial.biosphere.sites.find((entry) => entry.habitat?.kind === 'moist-margin');
+      if (!site) throw new Error('No genuine moist-margin habitat for the feeding walkthrough.');
+      const field = createEncounter(initial.biosphere, site);
+      const consumer = field.species.find(
+        (entry) => entry.foragingGuild === 'grazer' && entry.behaviour === 'skittish'
+      );
+      const actor = field.individuals.find((entry) => entry.speciesId === consumer?.id);
+      const source = field.individuals.find((entry) =>
+        field.species.some((species) => species.id === entry.speciesId && species.metabolism === 'autotroph')
+      );
+      if (!actor || !source) throw new Error('No generated grazer/producer pair.');
+      source.x = source.homeX = 10;
+      source.y = source.homeY = 10;
+      actor.x = actor.homeX = 11;
+      actor.y = actor.homeY = 10;
+      field.individuals = [source, actor];
+      field.terrain = field.terrain.map((row) => row.replaceAll('#', '.'));
+      field.roverX = 18;
+      field.roverY = 10;
+      const phase = new PRNG(field.seed).seedNew(actor.id, 'activity-phase').randomInt(0, 5);
+      // Observe identifies during rest; Watch then spans the first genuine feeding tick.
+      const restTick = ((6 - phase) % 6) + 6;
+      field.elapsedSeconds = (restTick - 1) * 5;
+      const research = new XenobiologyService();
+      research.snapshot.fields[site.id] = field;
+      research.snapshot.activeSiteId = site.id;
+      const offered = createBehaviourContracts(
+        { ...initial.station, kind: 'starbase' },
+        initial.systemName,
+        [initial.biosphere],
+        research.snapshot.fields,
+        research
+      ).find((mission) => mission.id.endsWith('-feeding'));
+      if (
+        !offered ||
+        offered.objectives[0].speciesId !== consumer.id ||
+        offered.objectives[0].siteId !== site.id
+      )
+        throw new Error('Feeding contract does not target the real test population.');
+      const mission = resolveMissionNavigation(offered, system, [initial.biosphere]);
+      const save = structuredClone(initial.save);
+      save.location.kind = 'planet';
+      save.player.position.surfaceX = site.x;
+      save.player.position.surfaceY = site.y;
+      save.player.terrainVehicle.deployed = true;
+      save.xenobiology = research.createSnapshot();
+      const progress = new MissionProgressService();
+      progress.accept(mission);
+      Object.assign(save, progress.createSnapshot());
+      return { save, mission, speciesId: consumer.id, sourceId: actor.id, siteId: site.id };
+    }, fixture);
+    await load(ethology.save);
+    assert.equal(await missionMarkerPixels(), 0, 'Unidentified ethology source has a confirmed marker.');
+    await press('v');
+    const identifiedEthology = await checkpoint();
+    assert.equal(identifiedEthology.xenobiology.evidence[ethology.speciesId].level, 2);
+    assert(
+      !identifiedEthology.readyMissionIds.includes(ethology.mission.id),
+      'Identity alone completed a field-study contract.'
+    );
+    assert((await missionMarkerPixels()) > 0, 'Identified feeding-survey source has no marker.');
+    await capture('ethology-identified-source');
+    await press('w');
+    const witnessed = await checkpoint();
+    assert(
+      witnessed.readyMissionIds.includes(ethology.mission.id),
+      'Witnessed feeding did not make the survey ready.'
+    );
+    assert.equal(
+      witnessed.xenobiology.evidence[ethology.speciesId].behaviourObservations.filter(
+        (entry) => entry.kind === 'feeding' && entry.siteId === ethology.siteId
+      ).length,
+      1
+    );
+    assert.equal(await missionMarkerPixels(), 0, 'Already recorded field-study source is still marked.');
+    assert.equal(witnessed.player.terrainVehicle.cargoHold.specimens.length, 0);
+    await capture('ethology-feeding-recorded');
+    await load(witnessed);
+    const restoredEthology = await checkpoint();
+    assert.deepEqual(
+      restoredEthology.xenobiology.evidence[ethology.speciesId],
+      witnessed.xenobiology.evidence[ethology.speciesId]
+    );
+    await press('d');
+    await page.waitForTimeout(1700);
+    await press('PageDown');
+    const desktopEthology = await capture('desktop-ethology-dossier');
+    assert.equal(desktopEthology.spritePixels, 0, 'Sprites leaked into ethology report.');
+    await page.waitForTimeout(750);
+    const readingEthology = await checkpoint();
+    assert.deepEqual(
+      readingEthology.xenobiology.fields[ethology.siteId],
+      restoredEthology.xenobiology.fields[ethology.siteId]
+    );
+    assert.equal(readingEthology.gameClockElapsedSeconds, restoredEthology.gameClockElapsedSeconds);
+    await page.setViewportSize({ width: 480, height: 800 });
+    assert.equal((await capture('narrow-ethology-dossier')).spritePixels, 0);
+    await press('Escape');
+    await press('x');
+    await page.waitForTimeout(1700);
+    await capture('narrow-ethology-science-log');
+    await press('Escape');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    witnessed.xenobiology.activeSiteId = null;
+    witnessed.player.terrainVehicle.deployed = false;
+    witnessed.location = { ...docked.location };
+    await load(witnessed);
+    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    await press('ArrowDown');
+    await capture('research-field-study-ready');
+    await press('Enter');
+    const ethologyDelivered = await checkpoint();
+    assert(ethologyDelivered.completedMissionIds.includes(ethology.mission.id));
+    assert.equal(
+      ethologyDelivered.player.resources.credits,
+      witnessed.player.resources.credits + ethology.mission.rewardCredits
+    );
+    assert.deepEqual(ethologyDelivered.xenobiology.demand, witnessed.xenobiology.demand);
+    assert.deepEqual(
+      ethologyDelivered.player.terrainVehicle.cargoHold,
+      witnessed.player.terrainVehicle.cargoHold
+    );
+    assert.deepEqual(ethologyDelivered.player.cargoHold, witnessed.player.cargoHold);
+    const repeatedEthology = await page.evaluate(
+      async ({ saved, station, missionId }) => {
+        const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+        const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+        const { deliverBiologicalContract } = await import('/src/core/biological_contracts.ts');
+        const progress = new MissionProgressService(),
+          research = new XenobiologyService();
+        progress.restoreSnapshot(saved);
+        research.restoreSnapshot(saved.xenobiology);
+        const context = {
+          station: { ...station, kind: 'starbase' },
+          resources: { credits: saved.player.resources.credits },
+          holds: [saved.player.cargoHold, saved.player.terrainVehicle.cargoHold],
+        };
+        const result = deliverBiologicalContract(progress, research, context, missionId);
+        return { ok: result.ok, credits: context.resources.credits };
+      },
+      { saved: ethologyDelivered, station: fixture.station, missionId: ethology.mission.id }
+    );
+    assert.equal(repeatedEthology.ok, false);
+    assert.equal(
+      repeatedEthology.credits,
+      ethologyDelivered.player.resources.credits,
+      'Field-study payment repeated.'
+    );
+    metrics.behaviourSurvey = true;
+    metrics.behaviourSurveyAward = ethology.mission.rewardCredits;
     // Keep real generated size classes and source identities, positioning only the two contacts for a short walkthrough.
     const comparative = await page.evaluate(async (initial) => {
       const { createComparativeBiologicalContracts } = await import('/src/core/comparative_biology.ts');

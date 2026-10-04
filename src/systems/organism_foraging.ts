@@ -21,7 +21,10 @@ export function habitatForagingIntent(
 ): ForagingIntent | null {
   if (!species.foragingGuild || !field.patches) return null;
   const phase = new PRNG(field.seed).seedNew(actor.id, 'activity-phase').randomInt(0, 5);
-  const resting = (tick + phase) % 6 < 2;
+  // Complete a resource trip before switching phase; distant shelter must not cause endless back-and-forth.
+  const resting =
+    (actor.activity === 'returning' && !!species.seeksShelter) ||
+    (actor.activity !== 'foraging' && (tick + phase) % 6 < 2);
   if (resting && !species.seeksShelter) return { goal: null, activity: 'resting' };
   const producers = field.individuals.filter(
     (other) =>

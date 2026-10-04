@@ -90,8 +90,11 @@ describe('habitat specimen contracts', () => {
       [],
       f.research
     );
-    expect(offers).toHaveLength(4);
-    expect(new Set(offers.map((mission) => mission.id)).size).toBe(4);
+    expect(offers.filter((mission) => mission.objectives[0].kind !== 'biology-behaviour')).toHaveLength(4);
+    expect(
+      offers.filter((mission) => mission.objectives[0].kind === 'biology-behaviour').length
+    ).toBeLessThanOrEqual(3);
+    expect(new Set(offers.map((mission) => mission.id)).size).toBe(offers.length);
     expect(offers.some((mission) => mission.id.endsWith('size-comparison'))).toBe(true);
     expect(offers.some((mission) => mission.objectives[0].kind === 'biology-data')).toBe(true);
     expect(

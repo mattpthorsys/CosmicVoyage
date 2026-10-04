@@ -1,14 +1,18 @@
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
-import { HABITAT_VERSION, type BiosphereDefinition } from '../../entities/biology/biology_types';
+import {
+  HABITAT_VERSION,
+  type BiosphereDefinition,
+  type SpeciesDefinition,
+} from '../../entities/biology/biology_types';
 import { createEncounter } from '../../systems/surface_encounter_system';
 import { PRNG } from '../../utils/prng';
 import { biologyFixture } from './biology';
 
 /** Supplies a canonical, nonaggressive consumer already at a real feeding resource within instrument range. */
 export function ethologyFixture(siteId = 'ethology/site:4,4') {
-  const generated = generateBiosphere(biologyFixture())!;
+  const generated = generateBiosphere(biologyFixture({ bodyId: '0,0,0/planet:0/bio3' }))!;
   const producer = generated.species[0];
-  const consumer = {
+  const consumer: SpeciesDefinition = {
     ...generated.species[1],
     behaviour: 'passive' as const,
     socialBehaviour: undefined,
