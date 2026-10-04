@@ -94,7 +94,7 @@ describe('field visual assets', () => {
   });
   it('bakes reproducible four-colour pixel silhouettes with consistent six-by-four frames', () => {
     const species = generateBiosphere(biologyFixture())!.species;
-    for (const sprite of [...species.map(createOrganismSprite), ROVER_SPRITE]) {
+    for (const sprite of [...species.map((entry) => createOrganismSprite(entry)), ROVER_SPRITE]) {
       expect(sprite.palette.length).toBeLessThanOrEqual(4);
       for (const frame of sprite.frames) {
         expect(frame).toHaveLength(4);
@@ -106,7 +106,9 @@ describe('field visual assets', () => {
         ).toBe(true);
       }
     }
-    expect(species.map(createOrganismSprite)).toEqual(species.map(createOrganismSprite));
+    expect(species.map((entry) => createOrganismSprite(entry))).toEqual(
+      species.map((entry) => createOrganismSprite(entry))
+    );
   });
   it('uses native surface colours, caches texture and leaves generation/collision data unchanged', () => {
     const field = createEncounter(generateBiosphere(biologyFixture())!, {
