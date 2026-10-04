@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Starbase } from '../../../entities/starbase';
 import { CargoSystem } from '../../../systems/cargo_systems';
 import { Game } from '../../../core/game';
@@ -351,6 +351,77 @@ describe('ship menu', () => {
     expect(game.shipMenuOpen).toBe(true);
     expect(main.rows[game.shipMenuSelection].id).toBe('rover');
     expect(main.rows.find((row: any) => row.id === 'launch')).toMatchObject({ disabled: false });
+  });
+
+  it.each(['main', 'rover', 'hotkey'])(
+    'auto-embarks at the ship before launching through %s, keeping overflow aboard',
+    (route) => {
+      const game = createShipMenuHarness('planet');
+      const rover = game.player.terrainVehicle;
+      rover.shipSurfaceX = game.player.position.surfaceX = 4;
+      rover.shipSurfaceY = game.player.position.surfaceY = 7;
+      rover.deployed = true;
+      rover.moving = true;
+      game.player.cargoHold.capacity = 5;
+      game.cargoSystem.addItem(game.player.cargoHold, 'COPPER', 4);
+      game.cargoSystem.addItem(rover.cargoHold, 'IRON', 4);
+      const launch = vi.fn(() => {
+        expect(rover.deployed).toBe(false);
+        expect(rover.moving).toBe(false);
+        expect(rover.onFoot).toBe(false);
+        expect(game.player.cargoHold.items.IRON).toBe(1);
+        expect(rover.cargoHold.items.IRON).toBe(3);
+        game.stateManager.state = 'orbit';
+        game.stateManager.statusMessage = 'Launched to orbit of Test Planet.';
+        return true;
+      });
+      game.stateManager.launchFromSurfaceToOrbit = launch;
+      game.shipMenuOpen = true;
+      game.shipMenuSection = route === 'rover' ? 'rover' : 'main';
+      const row = game
+        .createShipMenuModel()
+        .rows.find((item: any) => item.id === (route === 'rover' ? 'rover:launch' : 'launch'));
+      expect(row.disabled).toBe(false);
+      expect(row.cells[1]).toBe('auto-embark');
+      if (route === 'hotkey') {
+        game.inputState.pressed = 'ACTIVATE_LAND_LIFTOFF';
+        expect(game._handleShipMenuInput()).toBe(true);
+      } else game.activateShipMenuSelection(row);
+      expect(launch).toHaveBeenCalledOnce();
+      expect(game.stateManager.state).toBe('orbit');
+      expect(game.shipMenuOpen).toBe(false);
+      expect(game.shipMenuSection).toBe('main');
+      expect(game.statusMessage).toContain('Terrain vehicle auto-embarked.');
+      expect(game.statusMessage).toContain('Launched to orbit');
+      expect(game.player.cargoHold.items.COPPER).toBe(4);
+      expect(
+        game.cargoSystem.getTotalUnits(game.player.cargoHold) +
+          game.cargoSystem.getTotalUnits(rover.cargoHold)
+      ).toBe(8);
+    }
+  );
+
+  it('refuses launch away from the ship without embarking or transferring cargo', () => {
+    const game = createShipMenuHarness('planet');
+    const rover = game.player.terrainVehicle;
+    rover.shipSurfaceX = 4;
+    rover.shipSurfaceY = game.player.position.surfaceY = 7;
+    game.player.position.surfaceX = 5;
+    rover.deployed = true;
+    game.cargoSystem.addItem(rover.cargoHold, 'IRON', 4);
+    const before = structuredClone(rover);
+    game.stateManager.launchFromSurfaceToOrbit = vi.fn();
+    const rootLaunch = game.createShipMenuModel().rows.find((row: any) => row.id === 'launch');
+    expect(rootLaunch.disabled).toBe(true);
+    game.shipMenuSection = 'rover';
+    const vehicleLaunch = game.createShipMenuModel().rows.find((row: any) => row.id === 'rover:launch');
+    expect(vehicleLaunch.disabled).toBe(true);
+    game.launchFromParkedShip();
+    expect(game.stateManager.launchFromSurfaceToOrbit).not.toHaveBeenCalled();
+    expect(game.stateManager.state).toBe('planet');
+    expect(rover).toEqual(before);
+    expect(game.player.cargoHold.items).toEqual({});
+    expect(game.statusMessage).toContain('parked ship');
   });
 
   it('keeps landed ship operations open while embarked planetside', () => {

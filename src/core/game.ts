@@ -5875,17 +5875,25 @@ export class Game {
 
   /** Launches the parked ship from the surface into orbit. */
   private launchFromParkedShip(): void {
-    if (!this.isAtParkedShip() || this.player.terrainVehicle.deployed || this.player.terrainVehicle.onFoot) {
+    if (this.stateManager.state !== 'planet' || !this.isAtParkedShip() || this.player.terrainVehicle.onFoot) {
       this.statusMessage = 'Launch requires being aboard the parked ship.';
+      this.forceFullRender = true;
       return;
+    }
+    const autoEmbarked = this.player.terrainVehicle.deployed;
+    if (autoEmbarked) {
+      // Intentional convenience: launching at the ship recovers a disembarked rover first,
+      // using normal embark rules so cargo overflow and sealed specimens remain aboard.
+      this.dockTerrainVehicle();
     }
     this.shipMenuOpen = false;
     this.shipOperations.section = 'main';
-    this.stateManager.launchFromSurfaceToOrbit();
+    const launched = this.stateManager.launchFromSurfaceToOrbit();
     if (this.stateManager.statusMessage) {
       this.statusMessage = this.stateManager.statusMessage;
       this.stateManager.statusMessage = '';
     }
+    if (launched && autoEmbarked) this.statusMessage = `Terrain vehicle auto-embarked. ${this.statusMessage}`;
     this.forceFullRender = true;
   }
 
@@ -6294,6 +6302,7 @@ export class Game {
       default:
         const cargoTotal = this.cargoSystem.getTotalUnits(this.player.cargoHold);
         const roverTotal = this.cargoSystem.getTotalUnits(this.player.terrainVehicle.cargoHold);
+        const canLaunch = this.isAtParkedShip() && !this.player.terrainVehicle.onFoot;
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         const focus = getShipCompartment(this.currentShipCompartmentId);
         const rows: TextTableRow[] = [
@@ -6387,25 +6396,15 @@ export class Game {
             id: 'launch',
             cells: [
               'Launch To Orbit',
-              this.isAtParkedShip() &&
-              !this.player.terrainVehicle.deployed &&
-              !this.player.terrainVehicle.onFoot
-                ? 'ready'
+              canLaunch
+                ? this.player.terrainVehicle.deployed
+                  ? 'auto-embark'
+                  : 'ready'
                 : 'parked ship req.',
             ],
             detail: 'Lift from the landed ship to orbital view.',
-            disabled:
-              !this.isAtParkedShip() ||
-              this.player.terrainVehicle.deployed ||
-              this.player.terrainVehicle.onFoot,
-            cellTones: [
-              'cyan',
-              this.isAtParkedShip() &&
-              !this.player.terrainVehicle.deployed &&
-              !this.player.terrainVehicle.onFoot
-                ? 'green'
-                : 'amber',
-            ],
+            disabled: !canLaunch,
+            cellTones: ['cyan', canLaunch ? 'green' : 'amber'],
             detailTone: 'cyan',
           });
         }
@@ -6546,6 +6545,7 @@ export class Game {
     const cargoTotal = this.cargoSystem.getTotalUnits(rover.cargoHold);
     const onSurface = this.stateManager.state === 'planet';
     const atShip = this.isAtParkedShip();
+    const canLaunch = onSurface && atShip && !rover.onFoot;
     return [
       {
         id: rover.deployed || rover.onFoot ? 'rover:embark' : 'rover:deploy',
@@ -6570,17 +6570,12 @@ export class Game {
         id: 'rover:launch',
         cells: [
           'Launch',
-          atShip && !rover.deployed && !rover.onFoot ? 'ready' : 'parked ship req.',
+          canLaunch ? (rover.deployed ? 'auto-embark' : 'ready') : 'parked ship req.',
           onSurface ? 'orbit' : 'locked',
           'Launch from landed ship to orbital view.',
         ],
-        disabled: !onSurface || !atShip || rover.deployed || rover.onFoot,
-        cellTones: [
-          'cyan',
-          atShip && !rover.deployed && !rover.onFoot ? 'green' : 'amber',
-          onSurface ? 'bright' : 'muted',
-          'cyan',
-        ],
+        disabled: !canLaunch,
+        cellTones: ['cyan', canLaunch ? 'green' : 'amber', onSurface ? 'bright' : 'muted', 'cyan'],
         detailTone: atShip ? 'cyan' : 'amber',
       },
       {
