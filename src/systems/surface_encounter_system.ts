@@ -17,6 +17,8 @@ import {
   type EncounterIndividual,
   type EvidenceLevel,
   type SpeciesDefinition,
+  type SpecimenContainer,
+  type SpecimenKind,
   type StunPower,
   type BehaviourWitness,
   type BehaviourObservationKind,
@@ -224,6 +226,31 @@ export function individualProfile(field: EncounterField, individual: EncounterIn
   );
 }
 
+/** Builds the same sealed contribution for cargo previews and the actual collection transaction. */
+export function createCollectionContainer(
+  field: EncounterField,
+  target: EncounterIndividual,
+  kind: SpecimenKind
+): SpecimenContainer {
+  const profile = individualProfile(field, target);
+  return {
+    id: `${target.id}/${kind}`,
+    sourceId: target.id,
+    siteId: field.site.id,
+    species: individualSpecies(field, target),
+    kind,
+    quality: Math.max(0.2, 1 - target.injury * 0.35),
+    volumeM3:
+      kind === 'propagule'
+        ? PROPAGULE_VOLUME_M3
+        : kind === 'tissue'
+          ? 0.1
+          : Math.ceil((0.2 + profile.massKg / 250) * 10) / 10,
+    sizeScale: target.sizeScale,
+    mineralisation: target.mineralisation,
+  };
+}
+
 /** Determines sensor/weapon visibility along a short obstacle-tested ray. */
 export function encounterVisible(field: EncounterField, individual: EncounterIndividual): boolean {
   if (
@@ -328,22 +355,7 @@ export class SurfaceEncounterSystem {
               : target.state === 'dead'
                 ? 'dead'
                 : 'live';
-        const container = {
-          id: `${target.id}/${kind}`,
-          sourceId: target.id,
-          siteId: field.site.id,
-          species,
-          kind,
-          quality: Math.max(0.2, 1 - target.injury * 0.35),
-          volumeM3:
-            kind === 'propagule'
-              ? PROPAGULE_VOLUME_M3
-              : kind === 'tissue'
-                ? 0.1
-                : Math.ceil((0.2 + profile.massKg / 250) * 10) / 10,
-          sizeScale: target.sizeScale,
-          mineralisation: target.mineralisation,
-        } as const;
+        const container = createCollectionContainer(field, target, kind);
         const refusal = this.specimens.add(cargo, container, stasisClass);
         if (refusal) return { ...result, message: refusal };
         if (command.kind === 'harvest') target.propagulesHarvested = true;

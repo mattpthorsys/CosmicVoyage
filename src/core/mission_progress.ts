@@ -5,6 +5,7 @@ import {
   MissionStatus,
   StarbaseMission,
   allocateSpecimenObjectives,
+  specimenObjectiveShortfall,
 } from './mission_board';
 import type { SpecimenContainer } from '../entities/biology/biology_types';
 import type { BehaviourObservationKind } from '../entities/biology/biology_types';
@@ -78,6 +79,28 @@ export class MissionProgressService {
           : this.missionObjectiveProgress[mission.id]?.includes(objective.id)
       )
       .map((objective) => objective.id);
+  }
+
+  /** Gives journal and station readouts the same actionable reasons for each incomplete objective. */
+  getObjectiveShortfalls(
+    mission: StarbaseMission,
+    specimens: readonly SpecimenContainer[] = []
+  ): Record<string, string> {
+    const completed = new Set(this.getCompletedObjectiveIds(mission, specimens));
+    return Object.fromEntries(
+      mission.objectives
+        .filter((objective) => !completed.has(objective.id))
+        .map((objective) => [
+          objective.id,
+          objective.kind === 'specimen'
+            ? specimenObjectiveShortfall(objective, specimens)
+            : objective.kind === 'biology-data'
+              ? `Detailed analysis not recorded: ${objective.targetLabel}.`
+              : objective.kind === 'biology-behaviour'
+                ? `Field episode not recorded: ${objective.targetLabel}.`
+                : `Survey incomplete: ${objective.targetLabel}.`,
+        ])
+    );
   }
 
   /** Accepts an available mission and returns whether state changed. */

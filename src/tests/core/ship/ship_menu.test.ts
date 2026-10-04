@@ -35,6 +35,7 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
       getCanvas: () => ({ height: 600 }),
       getCharHeightPx: () => 12,
       getGridCols: () => 100,
+      getGridRows: () => 50,
     },
     popupState: 'inactive',
     targetMenuOpen: false,

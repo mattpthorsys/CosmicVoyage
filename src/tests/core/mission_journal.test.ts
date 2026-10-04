@@ -64,6 +64,35 @@ function text(journal: MissionJournal, entries: MissionJournalEntry[], cols = 10
 }
 
 describe('mission terminal', () => {
+  it('shows the current collection shortfall near the top, then replaces it with a clear ready-for-payment readout', () => {
+    const contract = entry();
+    contract.objectiveShortfalls = { live: 'Cargo is from another habitat. Collect at X 123, Y 456.' };
+    const journal = new MissionJournal();
+    let model = journal.createModel([contract], 32, 24, true);
+    expect(
+      model
+        .dashboard!.flatMap((line) => line.segments)
+        .some((span) => span.tone === 'amber' && span.text.includes('Cargo'))
+    ).toBe(true);
+    expect(text(journal, [contract]).indexOf('Cargo is from another habitat')).toBeLessThan(
+      text(journal, [contract]).indexOf('DESTINATION')
+    );
+    expect(text(journal, [contract])).toContain('NEEDED / Live reference');
+    contract.status = 'READY';
+    contract.completed = 1;
+    contract.completedObjectiveIds = ['live'];
+    contract.objectiveShortfalls = {};
+    model = journal.createModel([contract], 32, 24, true);
+    const content = text(journal, [contract]);
+    expect(content).toContain('Claim payment at Sol Relay through Missions or Research');
+    expect(content).toContain('COMPLETE / Live reference');
+    expect(content).not.toContain('Cargo is from another habitat');
+    expect(
+      model.dashboard!.every((line) => line.segments.reduce((sum, span) => sum + span.text.length, 0) <= 20)
+    ).toBe(true);
+    expect(model.footer!.every((line) => line.length <= 20)).toBe(true);
+  });
+
   it('cycles unique destinations, highlights individual progress and resets when changing contracts', () => {
     const first = entry();
     const objective = first.mission.objectives[0];

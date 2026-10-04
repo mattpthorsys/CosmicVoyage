@@ -28,16 +28,28 @@ physiology of extraterrestrial reproduction.
 3. The coloured **REPRODUCTIVE MATERIAL** section describes the buds, scientific
    demand and containment requirements. Preliminary observations do not reveal
    verified viability or reproductive prices. Full analysis unlocks them.
-4. Move adjacent to the mat, within 7.5 metres. Press `I` for Cargo. Select
+4. Move adjacent to the mat, within 7.5 metres. Press `I` for Cargo; this only
+   opens the menu and does not harvest anything. Select
    **Harvest viable propagules**, then `Enter`. The parent remains visible and
-   intact; one sealed batch enters rover cargo. No stun is required.
-5. Open Cargo again. The harvest entry now explains that the source is depleted.
+   intact; one sealed batch enters rover cargo. No stun is required. A matching
+   accepted request reports **CONTRACT READY** and names the return station.
+5. Open Cargo again. A cyan **Viable batch collected / ABOARD** entry confirms
+   that this parent's batch is in the rover or ship hold; the manifest also lists
+   **Viable propagule batch**. A yellow unavailable action explains its refusal
+   when selected or when you press Enter; no cargo or time is consumed. Full
+   cargo and occupied stasis slots are included in the availability preview.
    You may still collect the adult separately or take tissue, but sampling
    tissue _before_ harvesting makes that source ineligible for a viable batch.
 6. Return to the issuing port and deliver through Research or Missions. The
    request pays **750 Cr plus remaining reproductive research value**, consumes
    exactly its assigned batch, and completes once. Selling through Sell awards
    ordinary scientific value but does not fulfil a contract.
+
+The journal (`J`) shows whether the contribution is aboard or what is missing:
+wrong habitat, adult/tissue instead of propagules, or insufficient quality. The
+same reasons appear when an incomplete delivery is selected at the station.
+On compact Cargo screens, long feedback and details scroll with PageUp/PageDown;
+Up/Down selects an action and the controls remain fixed at the bottom.
 
 Check that the identified eligible mat receives the existing mission marker,
 and that the scanner/dossier explain analysis, harm, preservation and depletion

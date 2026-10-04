@@ -40,8 +40,10 @@ export function propaguleAvailability(
 ): string | null {
   if (!supportsPropagules(species)) return 'No verified detachable propagules for this organism';
   if (source.propagulesHarvested) return 'This source has already supplied its viable batch';
-  if (source.state !== 'active' || source.injury > 0 || source.exposure > 0 || source.sampled)
-    return 'Viable buds require an active, unharmed, unsampled source';
+  if (source.state !== 'active') return 'Viable buds require a living, active parent; find another mat';
+  if (source.sampled) return 'Tissue was already taken from this mat; harvest buds from an unsampled mat';
+  if (source.exposure > 0) return 'Weapon exposure invalidated this batch; find an unexposed mat';
+  if (source.injury > 0) return 'This mat is injured; harvest buds from an unharmed mat';
   return null;
 }
 

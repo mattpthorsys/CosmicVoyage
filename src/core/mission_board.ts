@@ -213,6 +213,44 @@ export function matchesSpecimenObjective(
   );
 }
 
+/** Explains a missing allocated contribution using actual cargo, including similar but unsuitable specimens. */
+export function specimenObjectiveShortfall(
+  objective: SpecimenMissionObjective,
+  specimens: readonly SpecimenContainer[]
+): string {
+  const surface = objective.location?.surface;
+  const habitat = surface ? `${surface.label} (X ${surface.x}, Y ${surface.y})` : 'the requested habitat';
+  const material =
+    objective.requiredKind === 'propagule' ? 'viable propagule batch' : `${objective.requiredKind} specimen`;
+  const acquisition =
+    objective.requiredKind === 'propagule'
+      ? `Analyse an unharmed, unsampled mat at ${habitat}; I opens Cargo, then select Harvest viable propagules and press Enter.`
+      : `Collect a ${material} at ${habitat}.`;
+  let candidates = specimens.filter((container) => container.species.id === objective.speciesId);
+  if (!candidates.length) return `No ${material} of ${objective.targetName} aboard. ${acquisition}`;
+  candidates = candidates.filter((container) => container.siteId === objective.siteId);
+  if (!candidates.length)
+    return `Same-species cargo is from another habitat. Collect the ${material} at ${habitat}.`;
+  const kinds = [...new Set(candidates.map((container) => container.kind.toUpperCase()))];
+  candidates = candidates.filter((container) => container.kind === objective.requiredKind);
+  if (!candidates.length)
+    return `Cargo contains ${kinds.join(' / ')}, but this contract requires a ${material}. ${acquisition}`;
+  candidates = candidates.filter(
+    (container) => !objective.sizeClass || individualSizeClass(container.sizeScale) === objective.sizeClass
+  );
+  if (!candidates.length)
+    return `Cargo is the wrong size class. Collect a ${objective.sizeClass} ${material} at ${habitat}.`;
+  candidates = candidates.filter(
+    (container) =>
+      !objective.mineralisation || (container.mineralisation ?? 'standard') === objective.mineralisation
+  );
+  if (!candidates.length)
+    return `Cargo has the wrong mineralisation. Collect a ${objective.mineralisation} ${material} at ${habitat}.`;
+  if (!candidates.some((container) => container.quality >= objective.minimumQuality))
+    return `Cargo quality is too low. Required: at least ${Math.round(objective.minimumQuality * 100)}%. Collect a healthier source.`;
+  return `A matching container is already assigned to another objective; collect an additional ${material}.`;
+}
+
 /** Assigns distinct containers to objectives, including overlapping requirements, without mutating cargo. */
 export function allocateSpecimenObjectives(
   objectives: readonly SpecimenMissionObjective[],

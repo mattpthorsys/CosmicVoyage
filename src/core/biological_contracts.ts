@@ -7,7 +7,11 @@ import type { Starbase } from '../entities/starbase';
 import type { CargoComponent, ResourceComponent } from './components';
 import { createEncounter, individualProfile } from '../systems/surface_encounter_system';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
-import { allocateSpecimenObjectives, type StarbaseMission } from './mission_board';
+import {
+  allocateSpecimenObjectives,
+  specimenObjectiveShortfall,
+  type StarbaseMission,
+} from './mission_board';
 import type { MissionProgressService } from './mission_progress';
 import type { XenobiologyService } from './xenobiology_service';
 import { createBiologicalReference } from './biological_mission_guidance';
@@ -284,7 +288,7 @@ export function deliverBiologicalContract(
     if (!container)
       return {
         ok: false,
-        message: `Contribution missing: ${objective.targetLabel}. Cargo, size and quality must match.`,
+        message: `Contribution missing: ${objective.targetLabel}. ${specimenObjectiveShortfall(objective, containers)}`,
       };
     if (
       containers.filter(

@@ -676,12 +676,12 @@ export function specimenRows(
   return containers.map((container) => ({
     id: `${prefix}${container.id}`,
     cells: [
-      container.species.name,
+      container.kind === 'propagule' ? 'Viable propagule batch' : container.species.name,
       container.volumeM3.toFixed(1),
       `${service.quote(container.species, container).credits}`,
-      container.kind,
+      `ABOARD / ${container.kind}`,
     ],
-    detail: `${container.kind.toUpperCase()} / ${container.kind === 'propagule' ? 'detachable dormant buds / 5 g material / one stasis slot / parent retained at source' : `${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg`} / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
+    detail: `${container.species.name} / ${container.kind.toUpperCase()} / ${container.kind === 'propagule' ? 'detachable dormant buds / 5 g material / one stasis slot / parent retained at source' : `${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg`} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
     tone: needsStasis(container) ? 'green' : 'normal',
   }));
 }

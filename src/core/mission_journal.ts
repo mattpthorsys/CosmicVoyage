@@ -19,6 +19,7 @@ export interface MissionJournalEntry {
   completed: number;
   total: number;
   completedObjectiveIds?: readonly string[];
+  objectiveShortfalls?: Readonly<Record<string, string>>;
 }
 
 export type MissionJournalReturn = 'none' | 'ship-menu' | 'rover-cargo' | 'xenobiology';
@@ -131,6 +132,14 @@ export class MissionJournal {
         `${status} / objectives ${entry.completed}/${entry.total}`,
         status === 'READY' ? 'green' : 'amber'
       );
+      if (status === 'READY')
+        line(
+          `All contributions ready. Claim payment at ${mission.originStarbaseName} through ${mission.type === 'xenobiology' ? 'Missions or Research' : 'Missions'}.`,
+          'green'
+        );
+      else if (status === 'ACTIVE') {
+        for (const reason of Object.values(entry.objectiveShortfalls ?? {})) line(reason, 'amber');
+      }
       line(mission.summary);
       const references = new Set<string>();
       for (const objective of mission.objectives) {
@@ -159,11 +168,10 @@ export class MissionJournal {
       );
       for (const [index, objective] of mission.objectives.entries()) {
         line('');
-        const complete = entry.completedObjectiveIds?.includes(objective.id);
-        const prefix =
-          mission.objectives.length > 1
-            ? `${index === landingIndex ? '> ' : ''}${complete ? 'COMPLETE' : 'NEEDED'} / `
-            : '';
+        const complete = entry.completedObjectiveIds
+          ? entry.completedObjectiveIds.includes(objective.id)
+          : status === 'READY' || status === 'COMPLETE';
+        const prefix = `${mission.objectives.length > 1 && index === landingIndex ? '> ' : ''}${complete ? 'COMPLETE' : 'NEEDED'} / `;
         line(`${prefix}${objective.targetLabel}`, complete ? 'green' : 'amber');
         const location = objective.location;
         if (location) line(`Body: ${location.bodyName}`, 'cyan');

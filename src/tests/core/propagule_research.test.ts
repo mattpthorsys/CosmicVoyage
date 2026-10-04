@@ -109,17 +109,30 @@ describe('reproductive reference requests', () => {
   it('requires the correct material, site and real parent history and settles only once', () => {
     const f = fixture();
     expect(f.progress.getStatus(f.mission, [])).toBe('ACTIVE');
+    expect(Object.values(f.progress.getObjectiveShortfalls(f.mission, [])).join(' ')).toContain(
+      'No viable propagule batch'
+    );
     f.harvest();
     const container = f.cargo.specimens![0];
     expect(f.progress.getStatus(f.mission, [container])).toBe('READY');
-    for (const altered of [
-      { ...container, kind: 'live' as const },
-      { ...container, kind: 'tissue' as const },
-      { ...container, siteId: 'other' },
-    ]) {
+    expect(f.progress.getObjectiveShortfalls(f.mission, [container])).toEqual({});
+    for (const [altered, reason] of [
+      [{ ...container, kind: 'live' as const }, 'Cargo contains LIVE'],
+      [{ ...container, kind: 'tissue' as const }, 'Cargo contains TISSUE'],
+      [{ ...container, siteId: 'other' }, 'another habitat'],
+      [{ ...container, quality: 0.5 }, 'quality is too low'],
+    ] as const) {
       f.cargo.specimens = [altered];
-      expect(deliverBiologicalContract(f.progress, f.research, f.context, f.mission.id).ok).toBe(false);
+      const before = f.progress.createSnapshot();
+      const result = deliverBiologicalContract(f.progress, f.research, f.context, f.mission.id);
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain(reason);
+      expect(Object.values(f.progress.getObjectiveShortfalls(f.mission, [altered])).join(' ')).toContain(
+        reason
+      );
       expect(f.context.resources.credits).toBe(1000);
+      expect(f.cargo.specimens).toEqual([altered]);
+      expect(f.progress.createSnapshot()).toEqual(before);
     }
     f.cargo.specimens = [container];
     f.source.propagulesHarvested = false;

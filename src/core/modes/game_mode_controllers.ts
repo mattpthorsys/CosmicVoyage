@@ -40,6 +40,7 @@ export class SurfaceModeController {
   roverMenuSelection = 0;
   roverCargoSelection = 0;
   roverCargoOffset = 0;
+  roverCargoTextOffset: number | null = null;
   mapExpanded = false;
   legendSelection = 0;
   legendOffset = 0;

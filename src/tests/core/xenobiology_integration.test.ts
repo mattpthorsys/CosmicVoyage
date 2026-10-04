@@ -3,9 +3,9 @@ import { Game } from '../../core/game';
 import { Player } from '../../core/player';
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
 import * as biologyGeneration from '../../entities/biology/biosphere_generator';
-import type { BiosphereDefinition } from '../../entities/biology/biology_types';
+import type { BiosphereDefinition, EncounterField } from '../../entities/biology/biology_types';
 import { biologyFixture } from '../fixtures/biology';
-import { createEncounter } from '../../systems/surface_encounter_system';
+import { createEncounter, createCollectionContainer } from '../../systems/surface_encounter_system';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { CargoSystem } from '../../systems/cargo_systems';
 import { SurfaceEncounterController } from '../../core/modes/surface_encounter_controller';
@@ -21,6 +21,7 @@ import type { StarbaseMission } from '../../core/mission_board';
 import type { MissionProgressService } from '../../core/mission_progress';
 import { ethologyFixture } from '../fixtures/ethology';
 import { createBehaviourContracts } from '../../core/behaviour_research';
+import type { MissionJournalEntry } from '../../core/mission_journal';
 
 interface BiologyGameHarness {
   player: Player;
@@ -37,6 +38,11 @@ interface BiologyGameHarness {
   submitBiologicalResearch(id: string, starbase: Starbase): void;
   getRoverCargoRows(): TextTableRow[];
   dropSelectedRoverCargo(row: TextTableRow): void;
+  openRoverCargo(): void;
+  _handleRoverCargoInput(): boolean;
+  getMissionJournalEntries(): MissionJournalEntry[];
+  statusMessage: string;
+  forceFullRender: boolean;
   createRoverCargoModel(): TextModalTableModel;
   surfaceMode: { roverCargoSelection: number };
   starbaseMode: StarbaseController;
@@ -78,12 +84,50 @@ function harness() {
       currentStarbase: null as Starbase | null,
     },
     gameSeedPRNG: new PRNG('biology-fixture'),
-    inputManager: { justPressedActions: keys, wasAnyKeyJustPressed: () => keys.size > 0 },
-    renderer: { getGridCols: () => 30 },
+    inputManager: {
+      justPressedActions: keys,
+      wasActionJustPressed: (action: string) => keys.has(action),
+      wasAnyKeyJustPressed: () => keys.size > 0,
+    },
+    renderer: { getGridCols: () => 30, getGridRows: () => 50 },
     statusMessage: '',
     forceFullRender: false,
   });
   return { game, keys, field, player, service };
+}
+
+/** Targets the actual test habitat, so UI readiness and station payment require real collected cargo. */
+function propaguleRequest(field: EncounterField): StarbaseMission {
+  return {
+    id: 'field-port:propagules',
+    title: 'Viable mat propagules',
+    type: 'xenobiology',
+    issuer: 'Survey Office',
+    summary: 'One viable mat batch from the specified habitat.',
+    detail: 'Harvest dormant buds and return the sealed batch.',
+    rewardCredits: 750,
+    risk: 'Low',
+    originStarbaseId: 'field-port',
+    originStarbaseName: 'Field Port',
+    systemName: 'Fixture',
+    objectives: [
+      {
+        id: 'buds',
+        kind: 'specimen',
+        targetName: field.species[0].name,
+        targetLabel: 'Viable mat propagules',
+        speciesId: field.species[0].id,
+        siteId: field.site.id,
+        requiredKind: 'propagule',
+        minimumQuality: 0.8,
+        location: {
+          bodyPath: 'planet:0',
+          bodyName: 'Fixture Colony',
+          surface: { x: field.site.x, y: field.site.y, siteId: field.site.id, label: field.site.label },
+        },
+      },
+    ],
+  };
 }
 
 /** Serializes all biology-bearing components through the actual versioned save boundary. */
@@ -126,6 +170,140 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('makes Cargo opening, blocked Enter, collection readiness and actual station payment unambiguous', () => {
+    const { game, keys, field, player, service } = harness();
+    const mission = propaguleRequest(field);
+    game.missionProgress.accept(mission);
+    service.observe(field.species[0], 3);
+    game.openRoverCargo();
+    expect(player.terrainVehicle.cargoHold.specimens).toEqual([]);
+    expect(game.statusMessage).toContain('opening this menu collects nothing');
+
+    field.individuals[0].sampled = true;
+    const before = service.createSnapshot();
+    game.forceFullRender = false;
+    keys.add('ENTER_SYSTEM');
+    game._handleRoverCargoInput();
+    expect(game.statusMessage).toContain('Tissue was already taken');
+    expect(game.forceFullRender).toBe(true);
+    expect(
+      game
+        .createRoverCargoModel()
+        .dashboard!.some((line) => line.segments.some((span) => span.tone === 'amber'))
+    ).toBe(true);
+    expect(game.gameClockElapsedSeconds).toBe(100);
+    expect(service.createSnapshot()).toEqual(before);
+    expect(game.getMissionJournalEntries()[0].objectiveShortfalls?.buds).toContain(
+      'No viable propagule batch'
+    );
+
+    // A separate untouched source would be needed in play; reset only this test fixture's condition.
+    field.individuals[0].sampled = false;
+    game._handleRoverCargoInput();
+    expect(game.gameClockElapsedSeconds).toBe(105);
+    expect(game.statusMessage).toContain('CONTRACT READY');
+    expect(game.statusMessage).toContain('Field Port');
+    expect(game.getMissionJournalEntries()[0]).toMatchObject({ status: 'READY', objectiveShortfalls: {} });
+    const rows = game.getRoverCargoRows();
+    expect(rows[0]).toMatchObject({ disabled: true, tone: 'cyan' });
+    expect(rows[0].cells[3]).toBe('ABOARD / rover hold');
+    expect(rows.find((row) => row.id.startsWith('specimen:'))?.cells[0]).toBe('Viable propagule batch');
+    game._handleRoverCargoInput();
+    expect(game.statusMessage).toContain('Viable batch already aboard');
+    expect(game.gameClockElapsedSeconds).toBe(105);
+    expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
+    game.openRoverCargo();
+    expect(game.statusMessage).toContain('1 viable batch aboard');
+    expect(game.statusMessage).toContain('CONTRACT READY');
+
+    const station = { id: 'field-port', name: 'Field Port', kind: 'starbase' } as Starbase;
+    Object.assign(game, {
+      stateManager: { currentSystem: { name: 'Fixture' } },
+      getCurrentStarbaseMissions: () => [mission],
+    });
+    const credits = player.resources.credits;
+    const expectedResearch = service.quote(
+      field.species[0],
+      player.terrainVehicle.cargoHold.specimens![0]
+    ).credits;
+    game.activateMissionSelection(station, { id: mission.id, cells: [mission.title] });
+    expect(player.resources.credits).toBe(credits + 750 + expectedResearch);
+    expect(player.terrainVehicle.cargoHold.specimens).toEqual([]);
+    expect(game.missionProgress.getStatus(mission)).toBe('COMPLETE');
+    game.activateMissionSelection(station, { id: mission.id, cells: [mission.title] });
+    expect(player.resources.credits).toBe(credits + 750 + expectedResearch);
+  });
+
+  it.each(['volume', 'slots'] as const)(
+    'previews blocked %s before a harvest without depleting its source',
+    (constraint) => {
+      const { game, field, player, service } = harness();
+      service.observe(field.species[0], 3);
+      if (constraint === 'volume') player.terrainVehicle.cargoHold.capacity = 0.05;
+      else {
+        const container = createCollectionContainer(field, field.individuals[0], 'live');
+        player.terrainVehicle.cargoHold.specimens = [1, 2].map((index) => ({
+          ...container,
+          id: `occupied:${index}`,
+          sourceId: `occupied:${index}`,
+        }));
+      }
+      const before = service.createSnapshot();
+      const hold = structuredClone(player.terrainVehicle.cargoHold);
+      const pickup = game.getRoverCargoRows()[0];
+      expect(pickup.disabled).toBe(true);
+      expect(pickup.cells[3]).toContain(constraint === 'volume' ? 'cargo volume' : 'stasis slots occupied');
+      game.dropSelectedRoverCargo(pickup);
+      expect(game.statusMessage).toContain('No collection:');
+      expect(player.terrainVehicle.cargoHold).toEqual(hold);
+      expect(service.createSnapshot()).toEqual(before);
+      expect(game.gameClockElapsedSeconds).toBe(100);
+    }
+  );
+
+  it('explains an incomplete propagule contract on the mission board without charging or consuming cargo', () => {
+    const { game, field, player } = harness();
+    const mission = propaguleRequest(field);
+    game.missionProgress.accept(mission);
+    const station = { id: 'field-port', name: 'Field Port', kind: 'starbase' } as Starbase;
+    Object.assign(game, {
+      stateManager: { currentSystem: { name: 'Fixture' } },
+      getCurrentStarbaseMissions: () => [mission],
+    });
+    const before = game.missionProgress.createSnapshot();
+    const credits = player.resources.credits;
+    game.activateMissionSelection(station, { id: mission.id, cells: [mission.title] });
+    expect(game.starbaseMode.alert).toContain('No viable propagule batch');
+    expect(game.starbaseMode.alert).toContain('press Enter');
+    expect(game.forceFullRender).toBe(true);
+    expect(player.resources.credits).toBe(credits);
+    expect(player.terrainVehicle.cargoHold.specimens).toEqual([]);
+    expect(game.missionProgress.createSnapshot()).toEqual(before);
+  });
+
+  it('keeps long cargo feedback scrollable above fixed controls on a short, narrow viewport', () => {
+    const { game, keys, field, service } = harness();
+    Object.assign(game, { renderer: { getGridCols: () => 30, getGridRows: () => 24 } });
+    game.missionProgress.accept(propaguleRequest(field));
+    service.observe(field.species[0], 3);
+    game.openRoverCargo();
+    keys.add('ENTER_SYSTEM');
+    game._handleRoverCargoInput();
+    keys.clear();
+    const model = game.createRoverCargoModel();
+    expect(model.dashboard).toBeDefined();
+    expect(model.visibleRowCount + model.footer!.length + 10).toBeLessThanOrEqual(24);
+    expect(
+      model.dashboard!.every((line) => line.segments.reduce((sum, span) => sum + span.text.length, 0) <= 18)
+    ).toBe(true);
+    expect(model.footer!.join(' ')).toContain('PgUp/PgDn read');
+    expect(model.footer!.join(' ')).not.toContain('CONTRACT READY');
+    keys.add('PAGE_DOWN');
+    game._handleRoverCargoInput();
+    expect(game.createRoverCargoModel().viewOffset).toBeGreaterThan(model.viewOffset);
+    expect(game.gameClockElapsedSeconds).toBe(105);
+  });
+
   it('offers verified adjacent propagules through Cargo, preserves the parent and refuses a stale pickup', () => {
     const { game, keys, field, player, service } = harness();
     expect(game.getRoverCargoRows().some((row) => row.id.startsWith('harvest-propagules:'))).toBe(false);
@@ -505,9 +683,13 @@ describe('xenobiology Game integration', () => {
     expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(0);
     expect(game.gameClockElapsedSeconds).toBe(100);
     expect(field.individuals[0].state).toBe('active');
-    expect(game.createRoverCargoModel().footer?.join(' ')).toContain(
-      'Temperature outside preservation envelope'
-    );
+    expect(
+      game
+        .createRoverCargoModel()
+        .dashboard?.flatMap((line) => line.segments)
+        .map((span) => span.text)
+        .join(' ')
+    ).toContain('Temperature outside preservation envelope');
   });
   it('freezes accelerated orbital time and actors between explicit field commands', () => {
     const { game, field } = harness();

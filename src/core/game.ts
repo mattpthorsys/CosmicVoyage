@@ -37,6 +37,9 @@ import {
   clampIndex,
   moveSelection,
   moveSelectionInRows,
+  getDashboardVisibleRows,
+  wrapDashboardLines,
+  type TextDashboardSegment,
   TextModalTableModel,
   TextTableRow,
   TextTone,
@@ -57,6 +60,7 @@ import {
   generateStarbaseMissions,
   generateStarbaseNotices,
   matchesSpecimenObjective,
+  type MissionStatus,
   type StarbaseMission,
 } from './mission_board';
 import { MissionProgressService } from './mission_progress';
@@ -151,13 +155,14 @@ import { XenobiologyService } from './xenobiology_service';
 import { SurfaceEncounterController } from './modes/surface_encounter_controller';
 import {
   createEncounter,
+  createCollectionContainer,
   SurfaceEncounterSystem,
   type EncounterCommand,
   individualProfile,
   encounterVisible,
 } from '../systems/surface_encounter_system';
 import { prepareEncounterSurface } from './encounter_surface';
-import { SpecimenCargoSystem, propaguleCompatibility } from '../systems/specimen_cargo_system';
+import { SpecimenCargoSystem } from '../systems/specimen_cargo_system';
 import { propaguleAvailability, supportsPropagules } from '../entities/biology/propagules';
 import { prepareBiosphere } from '../entities/biology/biosphere_generator';
 import {
@@ -563,6 +568,18 @@ export class Game {
           }
           if (recorded.size) this.statusMessage += ` Field record: ${[...recorded].join(' / ')}.`;
         }
+        if (result.evidence?.collected && 'targetId' in command) {
+          const container = rover.cargoHold.specimens?.find(
+            (item) =>
+              item.sourceId === command.targetId &&
+              (command.kind === 'harvest'
+                ? item.kind === 'propagule'
+                : command.kind === 'sample'
+                  ? item.kind === 'tissue'
+                  : item.kind === 'live' || item.kind === 'dead')
+          );
+          if (container) this.statusMessage += ` ${this.getSpecimenContractMessage(container)}`;
+        }
         if (rover.integrity === 0) {
           rover.integrity = 15;
           this.xenobiology.snapshot.activeSiteId = null;
@@ -604,6 +621,32 @@ export class Game {
       ...(this.player.cargoHold.specimens ?? []),
       ...(this.player.terrainVehicle.cargoHold.specimens ?? []),
     ];
+  }
+
+  /** Reports whether a newly sealed or inspected container actually fulfils an accepted delivery request. */
+  private getSpecimenContractMessage(container: SpecimenContainer): string {
+    const missions = this.missionProgress.getActiveMissions();
+    const matching = missions.find((mission) =>
+      mission.objectives.some(
+        (objective) => objective.kind === 'specimen' && matchesSpecimenObjective(objective, container)
+      )
+    );
+    if (matching) {
+      if (this.missionProgress.getStatus(matching, this.ownedSpecimens) === 'READY')
+        return `CONTRACT READY: ${matching.title}. Claim ${matching.rewardCredits} Cr + research at ${matching.originStarbaseName} through Missions or Research.`;
+      const counts = this.missionProgress.getObjectiveCounts(matching, this.ownedSpecimens);
+      return `Contract contribution aboard: ${matching.title} (${counts.completed}/${counts.total}). J lists remaining objectives.`;
+    }
+    for (const mission of missions) {
+      const related = mission.objectives.filter(
+        (item) => item.kind === 'specimen' && item.speciesId === container.species.id
+      );
+      if (!related.length) continue;
+      const shortfalls = this.missionProgress.getObjectiveShortfalls(mission, this.ownedSpecimens);
+      const objective = related.find((item) => shortfalls[item.id]);
+      if (objective) return `Contract not ready: ${shortfalls[objective.id]}`;
+    }
+    return 'No outstanding specimen contract matches this container; ordinary research value only.';
   }
 
   /** Projects only accepted requests matching the selected contact's actual habitat. */
@@ -2126,6 +2169,7 @@ export class Game {
       );
       this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
       this.surfaceMode.roverCargoOffset = viewport.viewOffset;
+      this.surfaceMode.roverCargoTextOffset = null;
       this.forceFullRender = true;
       return true;
     }
@@ -2139,10 +2183,17 @@ export class Game {
       );
       this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
       this.surfaceMode.roverCargoOffset = viewport.viewOffset;
+      this.surfaceMode.roverCargoTextOffset = null;
       this.forceFullRender = true;
       return true;
     }
     if (this.inputManager.wasActionJustPressed('PAGE_UP')) {
+      const model = this.createRoverCargoModel();
+      if (model.dashboard) {
+        this.surfaceMode.roverCargoTextOffset = Math.max(0, model.viewOffset - model.visibleRowCount);
+        this.forceFullRender = true;
+        return true;
+      }
       const viewport = moveSelection(
         this.surfaceMode.roverCargoSelection,
         -visibleRows,
@@ -2156,6 +2207,15 @@ export class Game {
       return true;
     }
     if (this.inputManager.wasActionJustPressed('PAGE_DOWN')) {
+      const model = this.createRoverCargoModel();
+      if (model.dashboard) {
+        this.surfaceMode.roverCargoTextOffset = Math.min(
+          Math.max(0, model.dashboard.length - model.visibleRowCount),
+          model.viewOffset + model.visibleRowCount
+        );
+        this.forceFullRender = true;
+        return true;
+      }
       const viewport = moveSelection(
         this.surfaceMode.roverCargoSelection,
         visibleRows,
@@ -3348,6 +3408,7 @@ export class Game {
       status: this.missionProgress.getStatus(mission, specimens),
       ...this.missionProgress.getObjectiveCounts(mission, specimens),
       completedObjectiveIds: this.missionProgress.getCompletedObjectiveIds(mission, specimens),
+      objectiveShortfalls: this.missionProgress.getObjectiveShortfalls(mission, specimens),
     }));
   }
 
@@ -5261,8 +5322,15 @@ export class Game {
     this.roverCargoOpen = true;
     this.surfaceMode.roverCargoSelection = 0;
     this.surfaceMode.roverCargoOffset = 0;
+    this.surfaceMode.roverCargoTextOffset = 0;
     this.player.terrainVehicle.moving = false;
-    this.statusMessage = 'Terrain vehicle cargo opened.';
+    const batches =
+      this.player.terrainVehicle.cargoHold.specimens?.filter((item) => item.kind === 'propagule') ?? [];
+    this.statusMessage = batches.length
+      ? `${batches.length} viable ${batches.length === 1 ? 'batch' : 'batches'} aboard in rover stasis. ${this.getSpecimenContractMessage(batches[batches.length - 1])}`
+      : this.activeEncounter
+        ? 'I opens Cargo. Select a collection action and press Enter to collect; opening this menu collects nothing.'
+        : 'Terrain vehicle cargo opened.';
     this.forceFullRender = true;
   }
 
@@ -5280,47 +5348,67 @@ export class Game {
     this.surfaceMode.roverCargoSelection = viewport.selectedIndex;
     this.surfaceMode.roverCargoOffset = viewport.viewOffset;
     const cols = this.renderer.getGridCols();
+    const gridRows = this.renderer.getGridRows();
     const field = this.activeEncounter;
-    const footer = biologyDashboard(
+    const wideFooter = biologyDashboard(
       field
         ? [this.statusMessage, 'Up/Down select  Enter use', 'Esc/Left close']
         : ['Up/Down select  Enter drop stack  Esc/Left close'],
-      cols - 10
+      Math.min(cols - 12, 82)
     ).map((line) => line.segments.map((span) => span.text).join(''));
-    const groups =
-      cols < 42
-        ? rows.map((row, index) =>
-            biologyDashboard(
-              [
-                `${index === viewport.selectedIndex ? '>' : ' '} ${row.cells[0]}`,
-                row.cells.slice(1).join(' / '),
-                row.detail ?? '',
-                '',
-              ],
-              cols - 12
-            )
-          )
-        : undefined;
+    // Long notices become scrollable content rather than squeezing the cargo list beneath a tall footer.
+    const compact = cols < 42 || gridRows - wideFooter.length - 15 < 3;
+    const footer = compact
+      ? biologyDashboard(['Up/Down select  Enter use', 'PgUp/PgDn read', 'Esc/Left close'], cols - 12).map(
+          (line) => line.segments.map((span) => span.text).join('')
+        )
+      : wideFooter;
+    const notice = compact
+      ? wrapDashboardLines(
+          [{ segments: [{ text: this.statusMessage, tone: 'cyan', font: 'thin' }] }, { segments: [] }],
+          cols - 12
+        )
+      : [];
+    const groups = compact
+      ? rows.map((row, index) =>
+          biologyDashboard(
+            [
+              `${index === viewport.selectedIndex ? '>' : ' '} ${row.cells[0]}`,
+              row.cells.slice(1).join(' / '),
+              row.detail ?? '',
+              '',
+            ],
+            cols - 12
+          ).map((line) => ({
+            segments: line.segments.map((span) => ({ ...span, tone: row.tone ?? span.tone })),
+          }))
+        )
+      : undefined;
+    const dashboard = groups ? [...notice, ...groups.flat()] : undefined;
     return {
       title: 'Terrain Vehicle Cargo',
-      subtitle:
-        cols < 42
-          ? field
-            ? 'Contacts / hold'
-            : 'Sealed hold'
-          : field
-            ? 'Collect a nearby contact or inspect sealed containers.'
-            : 'Rover hold only. Enter drops selected cargo onto the planet surface.',
+      subtitle: compact
+        ? field
+          ? 'Contacts / hold'
+          : 'Sealed hold'
+        : field
+          ? 'Collect a nearby contact or inspect sealed containers.'
+          : 'Rover hold only. Enter drops selected cargo onto the planet surface.',
       columns: ['CARGO', 'QTY', 'VALUE', 'ACTION'],
       widths: [26, 7, 10, 36],
       rows,
       selectedIndex: this.surfaceMode.roverCargoSelection,
       // Compact cargo uses wrapped text lines, not the wide table's item-row offset.
       viewOffset: groups
-        ? groups.slice(0, viewport.selectedIndex).reduce((count, group) => count + group.length, 0)
+        ? (this.surfaceMode.roverCargoTextOffset ??
+          notice.length +
+            groups.slice(0, viewport.selectedIndex).reduce((count, group) => count + group.length, 0))
         : this.surfaceMode.roverCargoOffset,
-      visibleRowCount: visibleRows,
-      dashboard: groups?.flat(),
+      visibleRowCount: dashboard
+        ? getDashboardVisibleRows(dashboard.length, gridRows, footer.length)
+        : visibleRows,
+      detailLineCount: 3,
+      dashboard,
       footer,
     };
   }
@@ -5330,7 +5418,11 @@ export class Game {
     const entries = Object.entries(this.player.terrainVehicle.cargoHold.items).filter(
       ([, amount]) => amount > 0
     );
-    const specimens = specimenRows(this.player.terrainVehicle.cargoHold.specimens ?? [], this.xenobiology);
+    const held = this.player.terrainVehicle.cargoHold.specimens ?? [];
+    const specimens = specimenRows(held, this.xenobiology).map((row, index) => ({
+      ...row,
+      detail: `${this.getSpecimenContractMessage(held[index])} ${row.detail}`,
+    }));
     const pickup: TextTableRow[] = [];
     const field = this.activeEncounter;
     const selected = field ? this.encounterController.target(field) : undefined;
@@ -5350,15 +5442,30 @@ export class Game {
       const species = individualProfile(field!, target);
       const level = this.xenobiology.evidence(species.id)?.level ?? 0;
       if (supportsPropagules(species) && level >= 3) {
+        const batch = this.ownedSpecimens.find(
+          (item) => item.sourceId === target.id && item.kind === 'propagule'
+        );
+        const carrier = batch && held.includes(batch) ? 'rover hold' : 'ship hold';
         const refusal =
           propaguleAvailability(species, target) ??
-          propaguleCompatibility(species, this.player.ship.stasisClass ?? 1);
+          new SpecimenCargoSystem().canAdd(
+            this.player.terrainVehicle.cargoHold,
+            createCollectionContainer(field!, target, 'propagule'),
+            this.player.ship.stasisClass ?? 1
+          );
         pickup.push({
           id: `harvest-propagules:${target.id}`,
-          cells: ['Harvest viable propagules', '1 batch', '--', refusal ?? 'Preserve dormant buds'],
-          detail: `${species.name} / detachable dormant buds / 0.1 m^3 / one stasis slot. ${refusal ?? 'Parent remains intact. One finite batch; reproductive demand is separate from adult and tissue sampling.'}`,
+          cells: [
+            batch ? 'Viable batch collected' : 'Harvest viable propagules',
+            '1 batch',
+            '--',
+            batch ? `ABOARD / ${carrier}` : (refusal ?? 'Enter harvests / 0.1 m^3'),
+          ],
+          detail: batch
+            ? `Batch sealed in ${carrier}; this parent cannot supply another. ${this.getSpecimenContractMessage(batch)}`
+            : `${refusal ? `${refusal}. ` : ''}${species.name} / detachable dormant buds / 0.1 m^3 / one stasis slot. ${refusal ? 'No batch was collected from this action.' : 'Enter seals one batch; parent remains intact.'}`,
           disabled: !!refusal,
-          tone: refusal ? 'amber' : 'green',
+          tone: batch ? 'cyan' : refusal ? 'amber' : 'green',
         });
       }
       pickup.push({
@@ -5398,7 +5505,21 @@ export class Game {
 
   /** Drops the selected rover cargo item onto the current surface cell. */
   private dropSelectedRoverCargo(row: TextTableRow | undefined): void {
-    if (!row || row.disabled) return;
+    if (!row) return;
+    this.surfaceMode.roverCargoTextOffset = 0;
+    if (row.disabled) {
+      const batch = row.id.startsWith('harvest-propagules:')
+        ? this.ownedSpecimens.find(
+            (item) =>
+              item.sourceId === row.id.slice('harvest-propagules:'.length) && item.kind === 'propagule'
+          )
+        : undefined;
+      this.statusMessage = batch
+        ? `Viable batch already aboard; no second harvest. ${this.getSpecimenContractMessage(batch)}`
+        : `No collection: ${row.cells[3] ?? row.detail ?? 'Selected entry is unavailable'}.`;
+      this.forceFullRender = true;
+      return;
+    }
     if (row.id.startsWith('harvest-propagules:') && this.activeEncounter) {
       this.applyEncounterCommand(this.activeEncounter, {
         kind: 'harvest',
@@ -8823,7 +8944,8 @@ export class Game {
       return;
     }
     if (status === 'ACTIVE') {
-      this.starbaseMode.alert = formatMissionDetail(mission, status);
+      if (mission.type === 'xenobiology') this.settleBiologicalDelivery(mission.id, starbase);
+      else this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
     }
 
@@ -8892,6 +9014,7 @@ export class Game {
       missionId
     );
     this.statusMessage = this.starbaseMode.alert = result.message;
+    this.forceFullRender = true;
     if (!result.ok) return;
     this.player.awardCrewExperience('communication', 12);
     this.player.awardCrewExperience('astroscience', 8);
@@ -8899,7 +9022,32 @@ export class Game {
       newCredits: this.player.resources.credits,
       amountChanged: result.credits,
     });
-    this.forceFullRender = true;
+  }
+
+  /** Puts current cargo readiness before the longer briefing on both station contract panels. */
+  private getMissionDetailSegments(mission: StarbaseMission, status: MissionStatus): TextDashboardSegment[] {
+    const reasons =
+      status === 'ACTIVE'
+        ? Object.values(this.missionProgress.getObjectiveShortfalls(mission, this.ownedSpecimens))
+        : [];
+    const readiness =
+      status === 'READY'
+        ? `READY: all contributions aboard or recorded. Enter claims payment at ${mission.originStarbaseName}. `
+        : reasons.length
+          ? `OUTSTANDING: ${reasons.join(' ')} `
+          : '';
+    return [
+      ...(readiness
+        ? [
+            {
+              text: readiness,
+              tone: status === 'READY' ? ('green' as const) : ('amber' as const),
+              font: 'thin' as const,
+            },
+          ]
+        : []),
+      ...formatMissionDetailSegments(mission, status),
+    ];
   }
 
   /** Returns starbase rows. */
@@ -8937,7 +9085,7 @@ export class Game {
               ],
               detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter submits all required contributions together; incomplete requests consume nothing.`,
               detailSegments: [
-                ...formatMissionDetailSegments(
+                ...this.getMissionDetailSegments(
                   mission,
                   this.missionProgress.getStatus(mission, this.ownedSpecimens)
                 ),
@@ -9089,11 +9237,11 @@ export class Game {
                 mission.title,
                 `${mission.rewardCredits} Cr`,
                 mission.risk,
-                status === 'ACTIVE' ? `${progress.completed}/${progress.total}` : status,
+                status === 'ACTIVE' ? `ACTIVE ${progress.completed}/${progress.total}` : status,
                 mission.summary,
               ],
               detail: formatMissionDetail(mission, status),
-              detailSegments: formatMissionDetailSegments(mission, status),
+              detailSegments: this.getMissionDetailSegments(mission, status),
             };
           }),
         ];

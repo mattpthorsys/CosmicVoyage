@@ -904,6 +904,10 @@ async function main() {
     assert.equal(parent.state, 'active', 'Harvest removed the parent organism.');
     assert.equal(parent.propagulesHarvested, true);
     assert.equal(parent.sampled, false);
+    await capture('narrow-propagule-collected');
+    await press('PageDown');
+    await capture('narrow-propagule-collection-details');
+    await press('PageUp');
     await press('Enter');
     const noRepeat = await checkpoint();
     assert.equal(noRepeat.player.terrainVehicle.cargoHold.specimens.length, 1);
@@ -912,6 +916,7 @@ async function main() {
       harvested.gameClockElapsedSeconds,
       'Depleted batch consumed another action.'
     );
+    await capture('narrow-propagule-repeat-feedback');
     await press('Escape');
     await page.setViewportSize({ width: 1400, height: 900 });
     await load(harvested);
