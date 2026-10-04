@@ -32,7 +32,7 @@ physiology of extraterrestrial reproduction.
    opens the menu and does not harvest anything. Select
    **Harvest viable propagules**, then `Enter`. The parent remains visible and
    intact; one sealed batch enters rover cargo. No stun is required. A matching
-   accepted request reports **CONTRACT READY** and names the return station.
+   accepted request reports **CONTRACT CLAIMABLE** and names the return station.
 5. Open Cargo again. A cyan **Viable batch collected / ABOARD** entry confirms
    that this parent's batch is in the rover or ship hold; the manifest also lists
    **Viable propagule batch**. A yellow unavailable action explains its refusal
@@ -48,6 +48,8 @@ physiology of extraterrestrial reproduction.
 The journal (`J`) shows whether the contribution is aboard or what is missing:
 wrong habitat, adult/tissue instead of propagules, or insufficient quality. The
 same reasons appear when an incomplete delivery is selected at the station.
+The Missions and Research tabs label finished, unpaid requests **CLAIMABLE** in
+amber; payment changes the mission status to **COMPLETE**.
 On compact Cargo screens, long feedback and details scroll with PageUp/PageDown;
 Up/Down selects an action and the controls remain fixed at the bottom.
 

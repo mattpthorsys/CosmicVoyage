@@ -59,6 +59,7 @@ import {
   formatMissionDetailSegments,
   generateStarbaseMissions,
   generateStarbaseNotices,
+  getMissionStatusLabel,
   matchesSpecimenObjective,
   type MissionStatus,
   type StarbaseMission,
@@ -633,7 +634,7 @@ export class Game {
     );
     if (matching) {
       if (this.missionProgress.getStatus(matching, this.ownedSpecimens) === 'READY')
-        return `CONTRACT READY: ${matching.title}. Claim ${matching.rewardCredits} Cr + research at ${matching.originStarbaseName} through Missions or Research.`;
+        return `CONTRACT CLAIMABLE: ${matching.title}. Claim ${matching.rewardCredits} Cr + research at ${matching.originStarbaseName} through Missions or Research.`;
       const counts = this.missionProgress.getObjectiveCounts(matching, this.ownedSpecimens);
       return `Contract contribution aboard: ${matching.title} (${counts.completed}/${counts.total}). J lists remaining objectives.`;
     }
@@ -9032,7 +9033,7 @@ export class Game {
         : [];
     const readiness =
       status === 'READY'
-        ? `READY: all contributions aboard or recorded. Enter claims payment at ${mission.originStarbaseName}. `
+        ? `CLAIMABLE: all contributions aboard or recorded. Enter claims payment at ${mission.originStarbaseName}. `
         : reasons.length
           ? `OUTSTANDING: ${reasons.join(' ')} `
           : '';
@@ -9041,7 +9042,7 @@ export class Game {
         ? [
             {
               text: readiness,
-              tone: status === 'READY' ? ('green' as const) : ('amber' as const),
+              tone: 'amber' as const,
               font: 'thin' as const,
             },
           ]
@@ -9081,8 +9082,12 @@ export class Game {
                 mission.title,
                 biologicalRequirement(mission),
                 `${mission.rewardCredits} Cr + research`,
-                this.missionProgress.getStatus(mission, this.ownedSpecimens),
+                getMissionStatusLabel(this.missionProgress.getStatus(mission, this.ownedSpecimens)),
               ],
+              cellTones:
+                this.missionProgress.getStatus(mission, this.ownedSpecimens) === 'READY'
+                  ? (['green', 'green', 'green', 'amber'] as TextTone[])
+                  : undefined,
               detail: `${formatMissionDetail(mission, this.missionProgress.getStatus(mission, this.ownedSpecimens))} Enter submits all required contributions together; incomplete requests consume nothing.`,
               detailSegments: [
                 ...this.getMissionDetailSegments(
@@ -9237,11 +9242,17 @@ export class Game {
                 mission.title,
                 `${mission.rewardCredits} Cr`,
                 mission.risk,
-                status === 'ACTIVE' ? `ACTIVE ${progress.completed}/${progress.total}` : status,
+                status === 'ACTIVE'
+                  ? `ACTIVE ${progress.completed}/${progress.total}`
+                  : getMissionStatusLabel(status),
                 mission.summary,
               ],
               detail: formatMissionDetail(mission, status),
               detailSegments: this.getMissionDetailSegments(mission, status),
+              cellTones:
+                status === 'READY'
+                  ? (['green', 'green', 'green', 'amber', 'green'] as TextTone[])
+                  : undefined,
             };
           }),
         ];

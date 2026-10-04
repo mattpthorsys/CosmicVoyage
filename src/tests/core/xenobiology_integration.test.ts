@@ -201,7 +201,7 @@ describe('xenobiology Game integration', () => {
     field.individuals[0].sampled = false;
     game._handleRoverCargoInput();
     expect(game.gameClockElapsedSeconds).toBe(105);
-    expect(game.statusMessage).toContain('CONTRACT READY');
+    expect(game.statusMessage).toContain('CONTRACT CLAIMABLE');
     expect(game.statusMessage).toContain('Field Port');
     expect(game.getMissionJournalEntries()[0]).toMatchObject({ status: 'READY', objectiveShortfalls: {} });
     const rows = game.getRoverCargoRows();
@@ -214,13 +214,22 @@ describe('xenobiology Game integration', () => {
     expect(player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
     game.openRoverCargo();
     expect(game.statusMessage).toContain('1 viable batch aboard');
-    expect(game.statusMessage).toContain('CONTRACT READY');
+    expect(game.statusMessage).toContain('CONTRACT CLAIMABLE');
 
     const station = { id: 'field-port', name: 'Field Port', kind: 'starbase' } as Starbase;
     Object.assign(game, {
       stateManager: { currentSystem: { name: 'Fixture' } },
       getCurrentStarbaseMissions: () => [mission],
     });
+    const boardRow = game.getStarbaseRows(station, 'missions').find((row) => row.id === mission.id)!;
+    expect(boardRow.cells[3]).toBe('CLAIMABLE');
+    expect(boardRow.cellTones?.[3]).toBe('amber');
+    expect(boardRow.detail).toContain('STATUS: CLAIMABLE');
+    const researchRow = game
+      .getStarbaseRows(station, 'research')
+      .find((row) => row.id === `contract:${mission.id}`)!;
+    expect(researchRow.cells[3]).toBe('CLAIMABLE');
+    expect(researchRow.cellTones?.[3]).toBe('amber');
     const credits = player.resources.credits;
     const expectedResearch = service.quote(
       field.species[0],
@@ -230,6 +239,9 @@ describe('xenobiology Game integration', () => {
     expect(player.resources.credits).toBe(credits + 750 + expectedResearch);
     expect(player.terrainVehicle.cargoHold.specimens).toEqual([]);
     expect(game.missionProgress.getStatus(mission)).toBe('COMPLETE');
+    const paidRow = game.getStarbaseRows(station, 'missions').find((row) => row.id === mission.id)!;
+    expect(paidRow.cells[3]).toBe('COMPLETE');
+    expect(paidRow.cellTones?.[3]).not.toBe('amber');
     game.activateMissionSelection(station, { id: mission.id, cells: [mission.title] });
     expect(player.resources.credits).toBe(credits + 750 + expectedResearch);
   });
@@ -297,7 +309,7 @@ describe('xenobiology Game integration', () => {
       model.dashboard!.every((line) => line.segments.reduce((sum, span) => sum + span.text.length, 0) <= 18)
     ).toBe(true);
     expect(model.footer!.join(' ')).toContain('PgUp/PgDn read');
-    expect(model.footer!.join(' ')).not.toContain('CONTRACT READY');
+    expect(model.footer!.join(' ')).not.toContain('CONTRACT CLAIMABLE');
     keys.add('PAGE_DOWN');
     game._handleRoverCargoInput();
     expect(game.createRoverCargoModel().viewOffset).toBeGreaterThan(model.viewOffset);
@@ -552,7 +564,7 @@ describe('xenobiology Game integration', () => {
     const row = game
       .getStarbaseRows(station, 'research')
       .find((entry) => entry.id === `contract:${mission.id}`)!;
-    expect(row.cells[3]).toBe('READY');
+    expect(row.cells[3]).toBe('CLAIMABLE');
     const credits = player.resources.credits;
     const publish = vi.spyOn(eventManager, 'publish').mockImplementation(() => undefined);
     try {

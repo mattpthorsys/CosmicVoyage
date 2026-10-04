@@ -129,6 +129,11 @@ export function getMissionStatus(mission: StarbaseMission, progress: MissionProg
   return 'AVAILABLE';
 }
 
+/** Names unclaimed rewards clearly without changing persisted mission progression states. */
+export function getMissionStatusLabel(status: MissionStatus): string {
+  return status === 'READY' ? 'CLAIMABLE' : status;
+}
+
 /** Formats mission detail. */
 export function formatMissionDetail(mission: StarbaseMission, status: MissionStatus): string {
   return formatMissionDetailSegments(mission, status)
@@ -162,7 +167,7 @@ export function formatMissionDetailSegments(
       `OBJECTIVES: ${objectiveText} -> Return to ${mission.originStarbaseName}`,
       `PAYMENT: ${mission.rewardCredits.toLocaleString()} Cr`,
       `RISK: ${mission.risk}`,
-      `STATUS: ${status}`,
+      `STATUS: ${getMissionStatusLabel(status)}`,
       mission.detail,
     ].join(' | '),
     tone: references.length ? 'normal' : 'cyan',

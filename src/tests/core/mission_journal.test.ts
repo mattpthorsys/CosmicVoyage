@@ -84,6 +84,7 @@ describe('mission terminal', () => {
     contract.objectiveShortfalls = {};
     model = journal.createModel([contract], 32, 24, true);
     const content = text(journal, [contract]);
+    expect(content).toContain('CLAIMABLE / objectives 1/1');
     expect(content).toContain('Claim payment at Sol Relay through Missions or Research');
     expect(content).toContain('COMPLETE / Live reference');
     expect(content).not.toContain('Cargo is from another habitat');

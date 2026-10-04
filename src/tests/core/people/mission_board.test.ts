@@ -58,6 +58,8 @@ describe('mission board generation', () => {
 
     expect(status).toBe('ACTIVE');
     expect(formatMissionDetail(mission, status)).toContain(mission.title);
+    expect(formatMissionDetail(mission, 'READY')).toContain('STATUS: CLAIMABLE');
+    expect(formatMissionDetail(mission, 'COMPLETE')).toContain('STATUS: COMPLETE');
   });
 
   it('matches scan completion against the mission target only', () => {

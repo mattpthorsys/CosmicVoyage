@@ -1,6 +1,6 @@
 import type { InputManager } from './input_manager';
 import type { MissionStatus, StarbaseMission } from './mission_board';
-import { biologicalReferenceDescription } from './mission_board';
+import { biologicalReferenceDescription, getMissionStatusLabel } from './mission_board';
 import { getMissionLandingObjectiveIndices } from './mission_navigation';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
@@ -129,7 +129,7 @@ export class MissionJournal {
       const { mission, status } = entry;
       line(mission.title, 'cyan', true);
       line(
-        `${status} / objectives ${entry.completed}/${entry.total}`,
+        `${getMissionStatusLabel(status)} / objectives ${entry.completed}/${entry.total}`,
         status === 'READY' ? 'green' : 'amber'
       );
       if (status === 'READY')
