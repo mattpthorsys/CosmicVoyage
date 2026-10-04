@@ -54,6 +54,8 @@ export interface ShipModificationState {
   probeBaysOccupied: number;
   specialBaysOccupied: number;
   surveyEquipmentClass: number;
+  /** Distant astrometry occupies its own bay; later classes replace the same installation. */
+  observatoryClass?: number;
   /** Basic stasis shares the included survey bay; specialised kits upgrade that installation. */
   stasisClass?: number;
   damage: ShipDamageState;
@@ -156,6 +158,7 @@ export function createDefaultShipModifications(): ShipModificationState {
     probeBaysOccupied: 0,
     specialBaysOccupied: 1,
     surveyEquipmentClass: 1,
+    observatoryClass: 0,
     // Basic carbon-water stasis shares the standard survey bay; no paid refit is needed to begin collecting.
     stasisClass: 1,
     damage: {
@@ -304,7 +307,8 @@ export function getShipDerivedStats(ship: ShipModificationState): ShipDerivedSta
       Math.max(65, Math.min(125, 100 + engineBonus - payloadDrag)),
       driveDamage
     ),
-    sensorRating: Math.max(0, ship.surveyEquipmentClass ?? 0) * 25,
+    sensorRating:
+      Math.max(0, ship.surveyEquipmentClass ?? 0) * 25 + Math.max(0, ship.observatoryClass ?? 0) * 15,
     fittedLoadPercent,
     hullIntegrityPercent:
       ship.damage.maxHullIntegrity > 0
@@ -380,6 +384,20 @@ export function createShipyardUpgradeOptions(
 ): ShipyardUpgradeOption[] {
   const repairCost = getShipRepairCost(ship);
   const options: ShipyardUpgradeOption[] = [
+    ...[1, 2, 3].map(
+      (equipmentClass): ShipyardUpgradeOption => ({
+        id: `shipyard:observatory:${equipmentClass}`,
+        label: `Observatory Suite Class ${equipmentClass}`,
+        cost: [0, 3600, 9200, 19800][equipmentClass],
+        eta: `${equipmentClass + 1}h`,
+        workOrder: 'Long-range contact survey, planetary spectroscopy and narrowband signal analysis.',
+        detail: `Starlight-suppressed telescope and radio array. One dedicated special-purpose bay; upgrades retain that bay. Current class ${ship.observatoryClass ?? 0}.`,
+        disabled:
+          equipmentClass <= (ship.observatoryClass ?? 0) ||
+          (!(ship.observatoryClass ?? 0) &&
+            ship.specialBaysOccupied >= ship.superstructure.specialPurposeBays),
+      })
+    ),
     ...PRESERVATION_KITS.map(
       (kit): ShipyardUpgradeOption => ({
         id: `shipyard:stasis:${kit.id}`,
@@ -492,6 +510,19 @@ export function createShipyardUpgradeOptions(
 
 /** Applies a purchased shipyard upgrade to the ship. */
 export function installShipyardUpgrade(ship: ShipModificationState, optionId: string): string {
+  const observatoryMatch = optionId.match(/^shipyard:observatory:([1-3])$/);
+  if (observatoryMatch) {
+    const equipmentClass = Number(observatoryMatch[1]);
+    if (equipmentClass <= (ship.observatoryClass ?? 0))
+      return 'Observatory suite already installed or superseded.';
+    if (!(ship.observatoryClass ?? 0)) {
+      if (ship.specialBaysOccupied >= ship.superstructure.specialPurposeBays)
+        return 'No free special-purpose bay.';
+      ship.specialBaysOccupied++;
+    }
+    ship.observatoryClass = equipmentClass;
+    return `Installed Observatory Suite Class ${equipmentClass}.`;
+  }
   const stasisMatch = optionId.match(/^shipyard:stasis:(\d+)$/);
   if (stasisMatch) {
     const equipmentClass = Number(stasisMatch[1]);
