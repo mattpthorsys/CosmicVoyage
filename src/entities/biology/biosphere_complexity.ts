@@ -16,10 +16,12 @@ export function biosphereComplexityWeights(e: BiologyEnvironment): ComplexityWei
   // Oxygen favours the existing energetic fauna; it is not a prerequisite for all multicellularity.
   const oxygen = 0.2 + 0.8 * Math.max(0, Math.min(1, e.oxygenBar / 0.15));
   const pressure = e.pressureBar > 8 ? 0.25 : 1;
+  const surfaceProduction =
+    (e.stellarFluxWm2 ?? 1361) >= 20 && (e.carbonDioxideBar ?? 0.0004) >= 1e-8 ? 1 : 0;
   return {
     microbial: 0.62,
-    simple: 0.28 * maturity * temperate,
-    complex: 0.1 * maturity * temperate * energy * oxygen * pressure,
+    simple: 0.28 * maturity * temperate * surfaceProduction,
+    complex: 0.1 * maturity * temperate * energy * oxygen * pressure * surfaceProduction,
   };
 }
 

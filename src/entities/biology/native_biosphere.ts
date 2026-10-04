@@ -2,6 +2,7 @@ import { PRNG } from '../../utils/prng';
 import type { BiologyEnvironment } from './biosphere_generator';
 import type {
   BiologicalBehaviour,
+  BiosphereComplexity,
   HabitatKind,
   OrganismAnatomy,
   OrganismBodyForm,
@@ -40,32 +41,42 @@ const AFFINITIES: Record<Guild, readonly (readonly HabitatKind[])[]> = {
 };
 
 /** Constructs a shallow inherited history; ecological and occurrence coefficients are gameplay priors. */
-export function generateNativeSpecies(environment: BiologyEnvironment, prng: PRNG): SpeciesDefinition[] {
+export function generateNativeSpecies(
+  environment: BiologyEnvironment,
+  prng: PRNG,
+  complexity: Exclude<BiosphereComplexity, 'microbial-only'> = 'complex-multicellular'
+): SpeciesDefinition[] {
+  const simple = complexity === 'simple-multicellular';
   const aerobic = environment.oxygenBar >= 0.035;
   const guilds: Guild[] = ['producer', aerobic ? 'grazer' : 'detritivore', 'detritivore'];
   if (prng.seedNew('diversity').random() < 0.6) guilds.push('producer');
-  if (environment.oxygenBar >= 0.1 && environment.ageGyr >= 1 && prng.seedNew('predators').random() < 0.55)
+  if (
+    !simple &&
+    environment.oxygenBar >= 0.1 &&
+    environment.ageGyr >= 1 &&
+    prng.seedNew('predators').random() < 0.55
+  )
     guilds.push('predator');
   const names = new Set<string>();
   return guilds.flatMap((guild, index) => {
-    const generated = createFamily(guild, prng.seedNew('family', index));
+    const generated = createFamily(guild, prng.seedNew('family', index), simple);
     const family = {
       ...generated,
       name: names.has(generated.name) ? `${generated.name}${index + 1}` : generated.name,
     };
     names.add(family.name);
-    return [0, 1].map((variant) => createSpecies(environment, family, index, variant, prng));
+    return [0, 1].map((variant) => createSpecies(environment, family, index, variant, prng, simple));
   });
 }
 
 /** Shares structural characters within each family while permitting multiple unrelated body plans. */
-function createFamily(guild: Guild, prng: PRNG): Family {
+function createFamily(guild: Guild, prng: PRNG, simple: boolean): Family {
   const producer = guild === 'producer';
   const symmetry = producer
     ? 'radial'
     : prng.choice<SpeciesDefinition['symmetry']>(['bilateral', 'bilateral', 'trilateral', 'radial'])!;
   const appendages =
-    producer || guild === 'detritivore'
+    simple || producer || guild === 'detritivore'
       ? 0
       : symmetry === 'trilateral'
         ? 3
@@ -73,8 +84,10 @@ function createFamily(guild: Guild, prng: PRNG): Family {
           ? 6
           : prng.choice([4, 6])!;
   const form: OrganismBodyForm = producer
-    ? prng.choice<OrganismBodyForm>(['mat', 'colony', 'frond', 'fan', 'rosette'])!
-    : guild === 'detritivore'
+    ? prng.choice<OrganismBodyForm>(
+        simple ? ['mat', 'colony', 'frond'] : ['mat', 'colony', 'frond', 'fan', 'rosette']
+      )!
+    : simple || guild === 'detritivore'
       ? 'burrower'
       : guild === 'predator'
         ? 'ambush'
@@ -89,17 +102,19 @@ function createFamily(guild: Guild, prng: PRNG): Family {
     guild,
     symmetry,
     covering: prng.choice(['hydrated organic sheath', 'silica-reinforced cuticle', 'thin mineral shell'])!,
-    senses: producer
-      ? 'distributed light and chemical receptors'
-      : prng.choice([
-          'chemical and vibration sensing',
-          'paired light and chemical receptors',
-          'distributed light receptors',
-        ])!,
+    senses: simple
+      ? 'distributed light and chemical response'
+      : producer
+        ? 'distributed light and chemical receptors'
+        : prng.choice([
+            'chemical and vibration sensing',
+            'paired light and chemical receptors',
+            'distributed light receptors',
+          ])!,
     form,
     anatomy: {
       appendages,
-      segments: producer ? 1 : symmetry === 'bilateral' ? prng.randomInt(2, 4) : 1,
+      segments: simple || producer ? 1 : symmetry === 'bilateral' ? prng.randomInt(2, 4) : 1,
       profile: producer || !appendages ? 'low' : prng.choice(['low', 'raised'])!,
       pigment: prng.choice<OrganismAnatomy['pigment']>(['green', 'blue', 'ochre', 'red', 'violet', 'pale'])!,
     },
@@ -112,23 +127,28 @@ function createSpecies(
   family: Family,
   familyIndex: number,
   variant: number,
-  root: PRNG
+  root: PRNG,
+  simple: boolean
 ): SpeciesDefinition {
   const prng = root.seedNew('family-species', familyIndex, variant);
   const producer = family.guild === 'producer';
   const aerobic = e.oxygenBar >= 0.035;
   const oxygenBudget = Math.max(0.12, Math.min(1.2, e.oxygenBar / 0.18));
   const heatBudget = Math.max(0.25, 1 - Math.abs(e.temperatureK - 294) / 70);
-  const maximumMass = aerobic ? Math.min(65, (65 * oxygenBudget * heatBudget) / Math.max(1, e.gravity)) : 1.7;
+  const maximumMass = simple
+    ? 0.45
+    : aerobic
+      ? Math.min(65, (65 * oxygenBudget * heatBudget) / Math.max(1, e.gravity))
+      : 1.7;
   const massKg = Number(
     (producer
-      ? prng.random(0.12, 2.5)
+      ? prng.random(0.12, simple ? 0.8 : 2.5)
       : prng.random(0.15, Math.max(0.16, maximumMass * (family.guild === 'detritivore' ? 0.12 : 1)))
     ).toFixed(2)
   );
   const behaviour: BiologicalBehaviour = producer
     ? 'sessile'
-    : !aerobic
+    : !aerobic || simple
       ? 'passive'
       : family.guild === 'predator'
         ? 'ambush'
@@ -153,12 +173,17 @@ function createSpecies(
     name: `${family.name} ${variant === 0 ? 'margin' : 'shelter'} ${producer ? family.form : family.guild === 'grazer' ? 'grazer' : family.guild === 'predator' ? 'stalker' : 'crawler'}`,
     lineage: `${family.name} structural group`,
     origin: 'native',
+    cellularity: simple || producer ? 'simple-multicellular' : 'complex-multicellular',
+    contactRepresentation: 'individual',
+    energySource: producer ? 'light' : 'organic',
     symmetry: family.symmetry,
-    organisation: producer
-      ? 'modular colonial'
-      : family.anatomy.segments > 1
-        ? 'segmented multicellular'
-        : 'unsegmented multicellular',
+    organisation: simple
+      ? 'simple multicellular tissue / distributed coordination'
+      : producer
+        ? 'modular colonial'
+        : family.anatomy.segments > 1
+          ? 'segmented multicellular'
+          : 'unsegmented multicellular',
     covering: family.covering,
     structuralMaterial:
       family.covering === 'thin mineral shell'

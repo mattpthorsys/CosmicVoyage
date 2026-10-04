@@ -12,6 +12,8 @@ import {
 import { classifyHabitat } from './habitat';
 import { generateNativeSpecies } from './native_biosphere';
 import { supportsPressureCommunity, generatePressureCommunity } from './pressure_biosphere';
+import { selectBiosphereComplexity } from './biosphere_complexity';
+import { generateMicrobialCommunity, microbialPigmentCover } from './microbial_biosphere';
 
 export interface BiologyEnvironment {
   readonly bodyId: string;
@@ -98,17 +100,30 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
       id: e.bodyId,
       bodyName: e.bodyName,
       origin: 'native',
+      complexity: 'microbial-only',
+      pigmentCover: microbialPigmentCover(e, prng),
       species: generatePressureCommunity(e, prng),
       sites: [],
     };
-  if (e.origin === 'native')
+  if (e.origin === 'native') {
+    const complexity = selectBiosphereComplexity(e);
+    const microbes = generateMicrobialCommunity(e, prng);
     return {
       id: e.bodyId,
       bodyName: e.bodyName,
       origin: e.origin,
-      species: generateNativeSpecies(e, prng),
+      complexity,
+      pigmentCover:
+        complexity === 'microbial-only'
+          ? microbialPigmentCover(e, prng)
+          : Math.min(0.8, 0.15 + e.waterCoverage * 0.5),
+      species:
+        complexity === 'microbial-only'
+          ? microbes
+          : [...generateNativeSpecies(e, prng, complexity), ...microbes],
       sites: [],
     };
+  }
   const aerobic = e.origin === 'introduced' || e.oxygenBar >= 0.035;
   const species: SpeciesDefinition[] = [];
   // Keep the original six identities and inherited streams; new content uses additional indices.
@@ -172,6 +187,9 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
           : `${['Veil mat', 'Margin grazer', 'Substrate colony', 'Litter crawler', 'Ribbon frond', 'Shelter forager', 'Crevice fan', 'Rock detritivore', 'Upland rosette', 'Crust browser'][index]} ${lineage + 1}.${(index % 2) + 1}`,
       lineage: `Clade ${lineage + 1}`,
       origin: e.origin,
+      cellularity: producer ? 'simple-multicellular' : 'complex-multicellular',
+      contactRepresentation: 'individual',
+      energySource: producer ? 'light' : 'organic',
       symmetry,
       organisation: producer ? 'modular colonial' : organisation,
       covering,
@@ -238,7 +256,14 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
       reproduction: index === 0 ? { kind: 'dormant-buds', baselineSamples: 2 } : undefined,
     });
   }
-  return { id: e.bodyId, bodyName: e.bodyName, origin: e.origin, species, sites: [] };
+  return {
+    id: e.bodyId,
+    bodyName: e.bodyName,
+    origin: e.origin,
+    complexity: 'complex-multicellular',
+    species,
+    sites: [],
+  };
 }
 
 /** Resolves a bounded set of reproducible accessible sites from already-prepared terrain. */
@@ -254,6 +279,7 @@ export function prepareBiosphere(
   const map = surface.heightmap;
   const prng = new PRNG(environment.seed).seedNew('biology-sites', BIOLOGY_VERSION);
   const sites: BiologySite[] = [];
+  const siteLimit = biosphere.complexity === 'microbial-only' ? 4 : 6;
   const used = new Set<string>();
   const habitatTarget = Math.min(
     3,
@@ -266,7 +292,7 @@ export function prepareBiosphere(
   for (
     let attempt = 0;
     attempt < 768 &&
-    (sites.length < 6 ||
+    (sites.length < siteLimit ||
       new Set(sites.map((site) => site.habitat?.kind)).size < habitatTarget ||
       !sites.some((site) => site.habitat?.waterDistanceCells !== null));
     attempt++
@@ -284,16 +310,16 @@ export function prepareBiosphere(
     )
       continue;
     // Retain representative habitats when they actually occur in the prepared regional terrain.
-    if (sites.length === 6 && sites.some((site) => site.habitat?.kind === habitat.kind)) continue;
+    if (sites.length === siteLimit && sites.some((site) => site.habitat?.kind === habitat.kind)) continue;
     used.add(`${x},${y}`);
     const site: BiologySite = {
       id: `${biosphere.id}/site:${x},${y}`,
       x,
       y,
       habitat,
-      label: `${{ 'moist-margin': 'Water margin', 'rocky-margin': 'Rocky water margin', 'sheltered-ground': 'Sheltered outcrops', 'exposed-ground': 'Open substrate', 'upland-ground': 'Elevated substrate' }[habitat.kind]} ${Math.min(6, sites.length + 1)}`,
+      label: `${{ 'moist-margin': 'Water margin', 'rocky-margin': 'Rocky water margin', 'sheltered-ground': 'Sheltered outcrops', 'exposed-ground': 'Open substrate', 'upland-ground': 'Elevated substrate' }[habitat.kind]} ${Math.min(siteLimit, sites.length + 1)}`,
     };
-    if (sites.length === 6) {
+    if (sites.length === siteLimit) {
       const duplicate = sites.findIndex((entry, index) =>
         sites.some((other, otherIndex) => index !== otherIndex && other.habitat?.kind === entry.habitat?.kind)
       );
