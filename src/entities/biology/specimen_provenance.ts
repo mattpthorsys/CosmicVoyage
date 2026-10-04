@@ -16,6 +16,8 @@ export function hasSpecimenProvenance(container: SpecimenContainer, field: Encou
     samePreservationRequirements(container.species, canonical) &&
     container.species.cellularity === canonical.cellularity &&
     container.species.contactRepresentation === canonical.contactRepresentation &&
+    container.species.energySource === canonical.energySource &&
+    container.species.surfaceExpression === canonical.surfaceExpression &&
     (!isMicrobialPatch(canonical) ||
       (container.materialMassKg === MICROBIAL_SAMPLE_MASS_KG &&
         container.volumeM3 === MICROBIAL_CASSETTE_VOLUME_M3)) &&

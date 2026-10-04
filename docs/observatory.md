@@ -66,6 +66,10 @@ Atmospheric gas features come from the actual effective atmosphere. Surface refl
 uses a modest producer-cover proxy derived from the same biosphere generator as surface
 encounters. Mineral surfaces can mimic that feature. Thick atmospheres suppress the
 surface contribution; gas-giant chemistry is not treated as a terrestrial biosignature.
+Only light-powered producers contribute biological pigment coverage. Microbial-only
+communities can supply that signature without atmospheric oxygen; chemical producers
+do not automatically create an edge. Spectral strength never establishes community
+complexity. See [Microbial Worlds](xenobiology-microbial-worlds.md).
 Stellar output, close-in glare, companion contamination, distance and exposure affect
 measurement quality. No unrelated distant-life roll is introduced.
 

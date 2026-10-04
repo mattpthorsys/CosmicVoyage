@@ -20,7 +20,7 @@ export function generateMicrobialCommunity(
     const variant = index % 2;
     const family = root.seedNew('microbial-family', producer ? 0 : 1);
     const prng = root.seedNew('microbial-species', index);
-    const aerobic = !pressurePreserving && e.oxygenBar >= 0.035 && !producer;
+    const aerobic = !pressurePreserving && e.oxygenBar >= 0.035;
     const lightFilm = producer && phototrophic;
     const prefix = `${family.choice(['Iri', 'Saru', 'Velen', 'Thami'])}`;
     const massKg = Number(prng.random(0.04, producer ? 0.45 : 0.18).toFixed(2));

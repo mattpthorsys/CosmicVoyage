@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { drawSurfaceEncounter, getEncounterLayout } from '../../rendering/surface_encounter_renderer';
 import type { CellFont, ScreenBuffer } from '../../rendering/screen_buffer';
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
-import { biologyFixture } from '../fixtures/biology';
+import { biologyFixture, microbialBiosphereFixture } from '../fixtures/biology';
 import { createEncounter } from '../../systems/surface_encounter_system';
 import { createEncounterView } from '../../core/xenobiology_ui';
 import { XenobiologyService } from '../../core/xenobiology_service';
@@ -53,6 +53,54 @@ function display(cols: number, rows: number) {
 }
 
 describe('field survey graphics contracts', () => {
+  it.each([
+    [120, 42],
+    [30, 45],
+  ])(
+    'renders stationary microbial patches without terrain or bounds changes in a %sx%s field',
+    (cols, rows) => {
+      const biosphere = microbialBiosphereFixture();
+      const field = createEncounter(biosphere, biosphere.sites[0]);
+      const target = field.individuals[0];
+      field.individuals = [target];
+      target.x = field.roverX + 1;
+      target.y = field.roverY - 1;
+      const before = structuredClone(field);
+      const surface = prepareEncounterSurface(field);
+      const view = createEncounterView(field, target.id, new XenobiologyService(), {
+        power: 1,
+        stasisClass: 1,
+        integrity: 100,
+        cargo: { usedM3: 0, capacityM3: 50 },
+        message: '',
+        surface,
+      });
+      expect(view.actors).toHaveLength(1);
+      const first = display(cols, rows);
+      const second = display(cols, rows);
+      drawSurfaceEncounter(first.buffer, { ...view, turn: 0 });
+      drawSurfaceEncounter(second.buffer, { ...view, turn: 1 });
+      expect(first.pixels.length).toBeGreaterThan(10);
+      expect(first.pixels).toEqual(second.pixels);
+      expect(first.outside).toEqual([]);
+      expect(second.outside).toEqual([]);
+      expect(field).toEqual(before);
+      const bare = display(cols, rows);
+      drawSurfaceEncounter(bare.buffer, { ...view, actors: [], targetSprite: undefined });
+      const region = getEncounterLayout(cols, rows).field;
+      for (const [position, cell] of first.cells) {
+        const [x, y] = position.split(',').map(Number);
+        if (
+          x >= region.x &&
+          x < region.x + region.width &&
+          y >= region.y &&
+          y < region.y + region.height &&
+          cell.char === GLYPHS.BLOCK
+        )
+          expect(bare.cells.get(position)?.fg).toBe(cell.fg);
+      }
+    }
+  );
   it.each([
     [120, 42],
     [30, 45],

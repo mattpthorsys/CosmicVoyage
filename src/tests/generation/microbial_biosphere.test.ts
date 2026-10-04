@@ -5,6 +5,9 @@ import { generateNativeSpecies } from '../../entities/biology/native_biosphere';
 import { isMicrobialPatch } from '../../entities/biology/biology_rules';
 import { biologyFixture } from '../fixtures/biology';
 import { PRNG } from '../../utils/prng';
+import { createEncounter } from '../../systems/surface_encounter_system';
+import { validateXenobiology } from '../../entities/biology/biology_validation';
+import { createXenobiologySnapshot } from '../../entities/biology/biology_types';
 
 describe('native microbial communities', () => {
   it('generates inherited, stationary sampling patches with no giant cells or stun profiles', () => {
@@ -67,6 +70,15 @@ describe('native microbial communities', () => {
       if (biosphere.complexity === 'microbial-only')
         expect(biosphere.species.every(isMicrobialPatch)).toBe(true);
       else expect(biosphere.species.some((member) => !isMicrobialPatch(member))).toBe(true);
+      const field = createEncounter(biosphere, {
+        id: `${biosphere.id}/site:1,1`,
+        x: 1,
+        y: 1,
+        label: 'Population fixture',
+      });
+      const snapshot = createXenobiologySnapshot();
+      snapshot.fields[field.site.id] = field;
+      expect(() => validateXenobiology(snapshot, [])).not.toThrow();
     }
     expect(complexities.size).toBe(3);
     expect(generateBiosphere(biologyFixture())?.species).toHaveLength(10);

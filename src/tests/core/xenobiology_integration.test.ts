@@ -4,7 +4,7 @@ import { Player } from '../../core/player';
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
 import * as biologyGeneration from '../../entities/biology/biosphere_generator';
 import type { BiosphereDefinition, EncounterField } from '../../entities/biology/biology_types';
-import { biologyFixture } from '../fixtures/biology';
+import { biologyFixture, microbialBiosphereFixture } from '../fixtures/biology';
 import { createEncounter, createCollectionContainer } from '../../systems/surface_encounter_system';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { CargoSystem } from '../../systems/cargo_systems';
@@ -170,6 +170,42 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('continues to accept active biology-version-three fields after microbial generation advances to version four', () => {
+    const { player } = harness();
+    const biosphere = generateBiosphere(biologyFixture({ bodyId: '0,0,0/planet:0/bio3' }))!;
+    const field = createEncounter(biosphere, {
+      id: `${biosphere.id}/site:1,1`,
+      x: 1,
+      y: 1,
+      label: 'Retained field',
+    });
+    const service = new XenobiologyService();
+    service.snapshot.fields[field.site.id] = field;
+    service.snapshot.activeSiteId = field.site.id;
+    expect(parseGameSave(saveFixture(player, service)).xenobiology!.activeSiteId).toBe(field.site.id);
+  });
+  it('collects a representative microbial cassette through nearby Cargo and round-trips its finite source history', () => {
+    const { game, field, player, service } = harness();
+    const microbes = microbialBiosphereFixture({ bodyId: field.bodyId });
+    field.species = [...microbes.species];
+    field.individuals[0].speciesId = field.species[0].id;
+    const before = service.createSnapshot();
+    const row = game.getRoverCargoRows().find((entry) => entry.id.startsWith('collect-organism:'))!;
+    expect(row.cells[0]).toBe('Preserve microbial sample');
+    expect(row.detail).toContain('5 g representative material');
+    game.openRoverCargo();
+    expect(service.createSnapshot()).toEqual(before);
+    game.dropSelectedRoverCargo(row);
+    expect(player.terrainVehicle.cargoHold.specimens![0]).toMatchObject({
+      kind: 'live',
+      volumeM3: 0.1,
+      materialMassKg: 0.005,
+    });
+    const restored = parseGameSave(saveFixture(player, service));
+    expect(restored.player.terrainVehicle.cargoHold.specimens![0].materialMassKg).toBe(0.005);
+    expect(restored.xenobiology!.fields[field.site.id].individuals[0].state).toBe('collected');
+    expect(restored.xenobiology!.fields[field.site.id].species[0].reproduction).toBeUndefined();
+  });
   it('makes Cargo opening, blocked Enter, collection readiness and actual station payment unambiguous', () => {
     const { game, keys, field, player, service } = harness();
     const mission = propaguleRequest(field);
@@ -494,6 +530,8 @@ describe('xenobiology Game integration', () => {
     });
     try {
       expect(game.getBiosphere()?.sites).toEqual([field.site]);
+      expect(game.getBiosphere()?.id).toBe(field.bodyId);
+      expect(game.getBiosphere()?.species).toEqual(field.species);
     } finally {
       prepare.mockRestore();
     }
