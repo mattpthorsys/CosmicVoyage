@@ -66,6 +66,7 @@ describe('bounded biological encounters', () => {
     field.species[0] = {
       ...field.species[0],
       behaviour: 'passive',
+      reproduction: undefined,
       massKg: 4,
       sizeM: 0.3,
       respiration: 'anaerobic',
@@ -107,7 +108,7 @@ describe('bounded biological encounters', () => {
   });
   it('issues a warning without dealing damage during the same multi-tick action', () => {
     const { field, target, system, cargo } = fixture();
-    field.species[0] = { ...field.species[0], behaviour: 'territorial', massKg: 20 };
+    field.species[0] = { ...field.species[0], reproduction: undefined, behaviour: 'territorial', massKg: 20 };
     expect(system.act(field, { kind: 'wait' }, cargo, 0).damage).toBe(0);
     expect(target.alerted).toBe(true);
     expect(system.act(field, { kind: 'wait' }, cargo, 0).damage).toBeGreaterThan(0);
@@ -123,7 +124,13 @@ describe('bounded biological encounters', () => {
   });
   it('captures a stunned mobile organism whole and suspends its recovery in cargo', () => {
     const { field, target, system, cargo } = fixture();
-    field.species[0] = { ...field.species[0], behaviour: 'passive', massKg: 20, sizeM: 1 };
+    field.species[0] = {
+      ...field.species[0],
+      reproduction: undefined,
+      behaviour: 'passive',
+      massKg: 20,
+      sizeM: 1,
+    };
     expect(system.act(field, { kind: 'collect', targetId: target.id }, cargo, 1).elapsedSeconds).toBe(0);
     target.state = 'stunned';
     target.recoveryAt = 20;

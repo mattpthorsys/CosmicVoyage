@@ -235,6 +235,7 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
             ? 'detritivore'
             : 'grazer',
       seeksShelter: !producer && behaviour !== 'ambush' && (lineage === 1 || lineage >= 3),
+      reproduction: index === 0 ? { kind: 'dormant-buds', baselineSamples: 2 } : undefined,
     });
   }
   return { id: e.bodyId, bodyName: e.bodyName, origin: e.origin, species, sites: [] };

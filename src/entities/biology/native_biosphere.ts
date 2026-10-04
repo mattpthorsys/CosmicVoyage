@@ -191,5 +191,9 @@ function createSpecies(
     bodyForm: family.form,
     anatomy: family.anatomy,
     relativeAbundance: { producer: 1, grazer: 0.65, detritivore: 0.45, predator: 0.12 }[family.guild],
+    reproduction:
+      producer && family.form === 'mat'
+        ? { kind: 'dormant-buds', baselineSamples: recognised ? 1 : 0 }
+        : undefined,
   };
 }

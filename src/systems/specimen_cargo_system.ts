@@ -7,6 +7,18 @@ import type {
 } from '../entities/biology/biology_types';
 import { individualPhysicalProfile } from '../entities/biology/biology_rules';
 import { preservationKit } from '../entities/biology/preservation';
+import { propagulePreservationProfile, supportsPropagules } from '../entities/biology/propagules';
+
+/** Checks the reproductive batch rather than applying whole-parent mass/substrate requirements. */
+export function propaguleCompatibility(species: SpeciesDefinition, equipmentClass: number): string | null {
+  if (!supportsPropagules(species)) return 'No verified viable propagule profile';
+  return stasisCompatibility(propagulePreservationProfile(species), equipmentClass);
+}
+
+/** Both live organisms and viable reproductive batches occupy one finite preservation slot. */
+export function needsStasis(container: SpecimenContainer): boolean {
+  return container.kind === 'live' || container.kind === 'propagule';
+}
 
 /** Returns the visible capability envelope of the fitted ship/portable preservation kit. */
 export function stasisCompatibility(
@@ -40,23 +52,25 @@ export class SpecimenCargoSystem {
     if (this.cargo.getTotalUnits(hold) + container.volumeM3 > hold.capacity + 1e-8)
       return 'Insufficient cargo volume';
     if (
-      container.kind !== 'tissue' &&
+      (container.kind === 'live' || container.kind === 'dead') &&
       individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg > 80
     )
       return 'Whole specimen exceeds rover handling mass (80 kg); tissue remains obtainable';
-    if (container.kind === 'live') {
-      const incompatibility = stasisCompatibility(
-        container.species,
-        equipmentClass,
-        container.sizeScale,
-        container.mineralisation
-      );
+    if (needsStasis(container)) {
+      const incompatibility =
+        container.kind === 'propagule'
+          ? propaguleCompatibility(container.species, equipmentClass)
+          : stasisCompatibility(
+              container.species,
+              equipmentClass,
+              container.sizeScale,
+              container.mineralisation
+            );
       if (incompatibility) return incompatibility;
       if (
-        (hold.specimens ?? []).filter((item) => item.kind === 'live').length >=
-        (preservationKit(equipmentClass)?.liveSlots ?? 0)
+        (hold.specimens ?? []).filter(needsStasis).length >= (preservationKit(equipmentClass)?.liveSlots ?? 0)
       )
-        return 'All live stasis slots occupied';
+        return 'All live stasis slots occupied (organisms and viable propagules)';
     }
     return null;
   }

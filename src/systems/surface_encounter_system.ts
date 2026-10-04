@@ -7,6 +7,7 @@ import { canShareRoverCell, individualPhysicalProfile } from '../entities/biolog
 import { defensiveIntent } from './organism_behaviour';
 import { habitatForagingIntent } from './organism_foraging';
 import { createHabitatPatches, habitatCommunity } from '../entities/biology/habitat';
+import { propaguleAvailability, PROPAGULE_VOLUME_M3 } from '../entities/biology/propagules';
 import {
   ENCOUNTER_HEIGHT,
   ENCOUNTER_WIDTH,
@@ -23,7 +24,7 @@ import {
 
 export type EncounterCommand =
   | { kind: 'move'; dx: number; dy: number }
-  | { kind: 'observe' | 'analyse' | 'sample' | 'collect' | 'shoot'; targetId: string }
+  | { kind: 'observe' | 'analyse' | 'sample' | 'collect' | 'shoot' | 'harvest'; targetId: string }
   | { kind: 'stun'; targetId: string; power: StunPower }
   | { kind: 'wait' };
 
@@ -304,8 +305,12 @@ export class SurfaceEncounterSystem {
         result.message =
           command.kind === 'analyse' ? 'Biochemical analysis resolved.' : 'Biological observation recorded.';
         result.elapsedSeconds = command.kind === 'analyse' ? 10 : 5;
-      } else if (command.kind === 'collect' || command.kind === 'sample') {
+      } else if (command.kind === 'collect' || command.kind === 'sample' || command.kind === 'harvest') {
         if (range > 1.5) return { ...result, message: 'Approach within 7.5 m for physical sampling.' };
+        if (command.kind === 'harvest') {
+          const refusal = propaguleAvailability(species, target);
+          if (refusal) return { ...result, message: refusal };
+        }
         if (command.kind === 'sample' && target.sampled)
           return { ...result, message: 'This individual has already supplied a tissue sample.' };
         if (
@@ -315,7 +320,14 @@ export class SurfaceEncounterSystem {
           !canShareRoverCell(profile)
         )
           return { ...result, message: 'Organism must be incapacitated before collection.' };
-        const kind = command.kind === 'sample' ? 'tissue' : target.state === 'dead' ? 'dead' : 'live';
+        const kind =
+          command.kind === 'harvest'
+            ? 'propagule'
+            : command.kind === 'sample'
+              ? 'tissue'
+              : target.state === 'dead'
+                ? 'dead'
+                : 'live';
         const container = {
           id: `${target.id}/${kind}`,
           sourceId: target.id,
@@ -323,16 +335,22 @@ export class SurfaceEncounterSystem {
           species,
           kind,
           quality: Math.max(0.2, 1 - target.injury * 0.35),
-          volumeM3: kind === 'tissue' ? 0.1 : Math.ceil((0.2 + profile.massKg / 250) * 10) / 10,
+          volumeM3:
+            kind === 'propagule'
+              ? PROPAGULE_VOLUME_M3
+              : kind === 'tissue'
+                ? 0.1
+                : Math.ceil((0.2 + profile.massKg / 250) * 10) / 10,
           sizeScale: target.sizeScale,
           mineralisation: target.mineralisation,
         } as const;
         const refusal = this.specimens.add(cargo, container, stasisClass);
         if (refusal) return { ...result, message: refusal };
-        if (command.kind === 'sample') target.sampled = true;
+        if (command.kind === 'harvest') target.propagulesHarvested = true;
+        else if (command.kind === 'sample') target.sampled = true;
         else target.state = 'collected';
         result.evidence = { species, level: 3, collected: true };
-        result.message = `${kind === 'live' ? 'Live organism sealed in stasis' : kind === 'dead' ? 'Intact remains secured' : 'Tissue sample sealed'}.`;
+        result.message = `${kind === 'propagule' ? 'Viable buds sealed in stasis; parent left intact' : kind === 'live' ? 'Live organism sealed in stasis' : kind === 'dead' ? 'Intact remains secured' : 'Tissue sample sealed'}.`;
         result.elapsedSeconds = 5;
       } else {
         if (range > 8) return { ...result, message: 'Weapon range <=40 m.' };

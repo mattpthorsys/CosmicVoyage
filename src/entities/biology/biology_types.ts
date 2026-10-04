@@ -24,7 +24,7 @@ export interface BehaviourWitness {
   readonly species: SpeciesDefinition;
   readonly observation: BehaviourObservation;
 }
-export type SpecimenKind = 'tissue' | 'dead' | 'live';
+export type SpecimenKind = 'tissue' | 'dead' | 'live' | 'propagule';
 export type IndividualSizeClass = 'small' | 'typical' | 'large';
 export type IndividualMineralisation = 'standard' | 'reinforced';
 export type BiologicalSolvent = 'water' | 'ammonia' | 'hydrocarbon';
@@ -75,6 +75,8 @@ export interface HabitatProfile {
 }
 
 export interface SpeciesDefinition {
+  /** A bounded prototype for detachable dormant buds; never inferred from appearance alone. */
+  readonly reproduction?: { readonly kind: 'dormant-buds'; readonly baselineSamples: number };
   readonly id: string;
   readonly bodyId: string;
   readonly name: string;
@@ -160,6 +162,8 @@ export interface BiologyOrigin {
 export interface ResearchDemandRecord {
   entitlementPaid: number;
   samples: number;
+  /** Reproductive reference demand is independent of adult/tissue sampling, but shares novelty. */
+  propaguleSamples?: number;
   contributions: string[];
 }
 
@@ -188,6 +192,8 @@ export interface EncounterIndividual {
   injury: number;
   recoveryAt: number;
   sampled: boolean;
+  /** One finite viable batch per source, retained after sale, disposal and site re-entry. */
+  propagulesHarvested?: boolean;
   alerted: boolean;
   groupId?: string;
   retreatUntil?: number;

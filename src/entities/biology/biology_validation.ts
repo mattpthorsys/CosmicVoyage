@@ -9,7 +9,8 @@ import {
   type XenobiologySnapshot,
 } from './biology_types';
 import { canShareRoverCell, individualPhysicalProfile } from './biology_rules';
-import { samePreservationRequirements } from './preservation';
+import { supportsPropagules, PROPAGULE_VOLUME_M3 } from './propagules';
+import { hasSpecimenProvenance } from './specimen_provenance';
 
 /** Requires a structured save value without trusting a cast of imported JSON. */
 function record(value: unknown): asserts value is Record<string, unknown> {
@@ -131,6 +132,13 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
       'burrower',
       'ambush',
     ]);
+  if (value.reproduction !== undefined) {
+    record(value.reproduction);
+    choice(value.reproduction.kind, ['dormant-buds']);
+    number(value.reproduction.baselineSamples, 0, 6, true);
+    if (!supportsPropagules(value as unknown as SpeciesDefinition))
+      throw new Error('Reproductive profile on an incompatible organism.');
+  }
 }
 
 /** Validates a complete biological container, never interpreting it as a divisible trade lot. */
@@ -138,9 +146,14 @@ export function validateSpecimen(value: unknown): asserts value is SpecimenConta
   record(value);
   for (const key of ['id', 'sourceId', 'siteId']) text(value[key]);
   validateSpecies(value.species);
-  choice(value.kind, ['live', 'dead', 'tissue']);
+  choice(value.kind, ['live', 'dead', 'tissue', 'propagule']);
   number(value.quality, 0, 1);
   number(value.volumeM3, 0.1, 100);
+  if (
+    value.kind === 'propagule' &&
+    (!supportsPropagules(value.species) || value.volumeM3 !== PROPAGULE_VOLUME_M3 || value.quality !== 1)
+  )
+    throw new Error('Invalid viable propagule batch.');
   if (value.sizeScale !== undefined) number(value.sizeScale, 0.3, 1.8);
   if (value.mineralisation !== undefined) {
     choice(value.mineralisation, ['standard', 'reinforced']);
@@ -236,6 +249,11 @@ export function validateXenobiology(
     if (!value.evidence[id]) throw new Error('Research demand has no species evidence.');
     number(demand.entitlementPaid, 0);
     number(demand.samples, 0, Number.MAX_SAFE_INTEGER, true);
+    if (demand.propaguleSamples !== undefined) {
+      number(demand.propaguleSamples, 0, Number.MAX_SAFE_INTEGER, true);
+      if (!supportsPropagules((value.evidence[id] as { species: SpeciesDefinition }).species))
+        throw new Error('Reproductive demand without a compatible species.');
+    }
     if (
       !Array.isArray(demand.contributions) ||
       demand.contributions.some((item) => typeof item !== 'string') ||
@@ -338,6 +356,12 @@ export function validateXenobiology(
       } else if (individual.retreatUntil !== undefined) throw new Error('Retreat timer without group.');
       if (typeof individual.sampled !== 'boolean' || typeof individual.alerted !== 'boolean')
         throw new Error('Invalid individual history.');
+      if (
+        individual.propagulesHarvested !== undefined &&
+        (typeof individual.propagulesHarvested !== 'boolean' ||
+          !supportsPropagules(field.species.find((species) => species.id === individual.speciesId)!))
+      )
+        throw new Error('Invalid reproductive collection history.');
       const position = `${individual.x},${individual.y}`;
       if (individual.state !== 'collected') {
         if (
@@ -366,10 +390,14 @@ export function validateXenobiology(
   )
     throw new Error('Invalid active biological site.');
   const owned = new Set<string>();
+  const sources = new Set<string>();
   for (const container of containers) {
     validateSpecimen(container);
     if (owned.has(container.id)) throw new Error('Duplicate specimen ownership.');
     owned.add(container.id);
+    const sourceKey = `${container.sourceId}:${container.kind}`;
+    if (sources.has(sourceKey)) throw new Error('Duplicate specimen source contribution.');
+    sources.add(sourceKey);
     const field = value.fields[container.siteId];
     record(field);
     const individual = (field.individuals as Record<string, unknown>[]).find(
@@ -378,17 +406,18 @@ export function validateXenobiology(
     if (
       !individual ||
       individual.speciesId !== container.species.id ||
-      (container.kind === 'tissue' ? !individual.sampled : individual.state !== 'collected')
+      (container.kind === 'propagule'
+        ? !individual.propagulesHarvested
+        : container.kind === 'tissue'
+          ? !individual.sampled
+          : individual.state !== 'collected')
     )
       throw new Error('Specimen source lifecycle inconsistent.');
     if (container.sizeScale !== individual.sizeScale)
       throw new Error('Specimen size does not match its source.');
     if (container.mineralisation !== individual.mineralisation)
       throw new Error('Specimen covering does not match its source.');
-    const canonical = (field.species as SpeciesDefinition[]).find(
-      (species) => species.id === individual.speciesId
-    );
-    if (!canonical || !samePreservationRequirements(container.species, canonical))
+    if (!hasSpecimenProvenance(container, field as unknown as import('./biology_types').EncounterField))
       throw new Error('Specimen preservation does not match its source.');
   }
 }

@@ -11,6 +11,7 @@ import {
   type BehaviourObservationKind,
   BEHAVIOUR_OBSERVATION_KINDS,
 } from '../entities/biology/biology_types';
+import { supportsPropagules } from '../entities/biology/propagules';
 
 export interface ResearchQuote {
   readonly credits: number;
@@ -120,6 +121,8 @@ export class XenobiologyService {
   quote(species: SpeciesDefinition, container?: SpecimenContainer): ResearchQuote {
     const evidence = this.evidence(species.id);
     if (!evidence || evidence.level < 2) return { credits: 0, entitlement: 0, contribution: '' };
+    if (container?.kind === 'propagule' && !supportsPropagules(species))
+      return { credits: 0, entitlement: 0, contribution: '' };
     const ledger = this.state.demand[species.id];
     const level = container ? 3 : evidence.level;
     const contribution = container
@@ -128,14 +131,18 @@ export class XenobiologyService {
     if (ledger?.contributions.includes(contribution) || (!container && evidence.submittedLevel >= level))
       return { credits: 0, entitlement: ledger?.entitlementPaid ?? 0, contribution };
     const grade = container
-      ? { tissue: 0.32, dead: 0.6, live: 1 }[container.kind] * container.quality
+      ? { tissue: 0.32, dead: 0.6, live: 1, propagule: 0.75 }[container.kind] * container.quality
       : level === 3
         ? 0.2
         : 0.08;
     const value = Math.round(4500 * species.rarity * (1 + species.remoteness * 0.25));
     const entitlement = species.recognised ? 0 : Math.round(value * grade);
     const novelty = Math.max(0, entitlement - (ledger?.entitlementPaid ?? 0));
-    const samples = species.baselineSamples + (ledger?.samples ?? 0);
+    // Reproductive references answer a different question from adult/tissue samples. The first-discovery cap remains shared.
+    const samples =
+      container?.kind === 'propagule'
+        ? (species.reproduction?.baselineSamples ?? 0) + (ledger?.propaguleSamples ?? 0)
+        : species.baselineSamples + (ledger?.samples ?? 0);
     const additional = container
       ? Math.round(400 * grade * species.rarity * Math.pow(0.25, samples))
       : species.recognised
@@ -159,7 +166,8 @@ export class XenobiologyService {
       contributions: [],
     };
     ledger.entitlementPaid = Math.max(ledger.entitlementPaid, quote.entitlement);
-    if (container) ledger.samples++;
+    if (container?.kind === 'propagule') ledger.propaguleSamples = (ledger.propaguleSamples ?? 0) + 1;
+    else if (container) ledger.samples++;
     ledger.contributions.push(quote.contribution);
     this.state.demand[species.id] = ledger;
     if (!container) this.state.evidence[species.id].submittedLevel = this.state.evidence[species.id].level;
