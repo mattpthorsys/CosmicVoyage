@@ -5,6 +5,7 @@ import type {
   XenobiologySnapshot,
 } from '../entities/biology/biology_types';
 import { hasDiscoveryLevel, type DiscoveryRecord } from './discovery';
+import { isMicrobialPatch } from '../entities/biology/biology_rules';
 
 const TERRAIN: Record<HabitatKind, string> = {
   'moist-margin': 'Low-relief land beside surface water',
@@ -36,10 +37,16 @@ export function habitatLandingPreview(site: BiologySite, snapshot: XenobiologySn
   const analysed = observed.filter((entry) =>
     entry.origins?.some((origin) => origin.surface.siteId === site.id && origin.level === 3)
   );
+  const microbial = analysed.filter((entry) => isMicrobialPatch(entry.species));
   return [
     `${site.label}: X${site.x} Y${site.y} / ${field ? 'VISITED' : 'UNVISITED'}`,
     site.habitat ? TERRAIN[site.habitat.kind] : 'Regional terrain profile not recorded',
     `${observed.length} observed taxa / ${analysed.length} analysed here`,
+    ...(microbial.length
+      ? [
+          `${microbial.length} single-celled taxa resolved here; local evidence, not a global complexity census.`,
+        ]
+      : []),
     observed.length ? 'Species records retained in the science log.' : 'Surface investigation required.',
   ];
 }
@@ -58,6 +65,7 @@ export function biologySurveyReport(
   const lines = [
     summary,
     'Orbital signatures are not species identification or proof of ancestry.',
+    'Surface films, colonies and larger forms require field investigation; oxygen alone does not classify a biosphere.',
     `Planetary mean: ${environment.temperatureK.toFixed(0)} K / surface pressure ${environment.pressureBar.toFixed(2)} bar. Local conditions can differ.`,
   ];
   if (environment.pressureBar > 2)

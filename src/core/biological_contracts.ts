@@ -21,6 +21,7 @@ import { hasSpecimenProvenance } from '../entities/biology/specimen_provenance';
 import { createPropaguleContract } from './propagule_research';
 import { createBehaviourContracts } from './behaviour_research';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
+import { isMicrobialPatch } from '../entities/biology/biology_rules';
 
 export interface BiologicalDeliveryContext {
   readonly station: Pick<Starbase, 'id' | 'name' | 'kind'>;
@@ -114,7 +115,7 @@ export function createBiologicalContract(
       title: 'Habitat reference specimen',
       type: 'xenobiology',
       issuer: 'Xenobiology Survey Office',
-      summary: `Live ${species.name} from ${biosphere.bodyName}, X${site.x} Y${site.y}.`,
+      summary: `${isMicrobialPatch(species) ? 'Viable microbial material:' : 'Live'} ${species.name} from ${biosphere.bodyName}, X${site.x} Y${site.y}.`,
       detail: `${site.label}: ${site.habitat!.description} A regional reference is needed, not a new-species claim. Basic stasis compatible. Minimum specimen quality 75%. Deliver one sealed live container to ${station.name}; 900 Cr contract fee plus remaining ordinary research value. Tissue or dead material does not satisfy this request.`,
       rewardCredits: 900,
       risk: ['territorial', 'ambush'].includes(species.behaviour) ? 'Med' : 'Low',
@@ -126,7 +127,7 @@ export function createBiologicalContract(
           id: 'live-reference',
           kind: 'specimen',
           targetName: species.name,
-          targetLabel: `Live ${species.name} / ${biosphere.bodyName} / X${site.x} Y${site.y} / quality >=75%`,
+          targetLabel: `${isMicrobialPatch(species) ? 'Viable material /' : 'Live'} ${species.name} / ${biosphere.bodyName} / X${site.x} Y${site.y} / quality >=75%`,
           speciesId: species.id,
           siteId: site.id,
           requiredKind: 'live',
@@ -186,11 +187,15 @@ export function createBiologicalContracts(
         const analysis = request === 'analysis';
         offer = {
           id: `${prefix}:mission:bio-${request}`,
-          title: analysis ? 'Habitat biochemical profile' : 'Habitat tissue reference',
+          title: analysis
+            ? 'Habitat biochemical profile'
+            : isMicrobialPatch(species)
+              ? 'Habitat microbial material reference'
+              : 'Habitat tissue reference',
           type: 'xenobiology',
           issuer: 'Xenobiology Survey Office',
           summary: `${analysis ? 'Analyse' : 'Sample'} ${species.name} on ${biosphere.bodyName}, X${site.x} Y${site.y}.`,
-          detail: `${site.label}: ${site.habitat.description} ${analysis ? 'Record detailed analysis within 25 m at this habitat; remote preliminary scans and observations from other sites do not count. No physical collection required.' : 'Deliver one sealed tissue sample from this habitat with quality at least 60%. No stasis required; an intact or live organism is a different contribution.'} Return to ${station.name}. Finite contract fee plus any remaining ordinary research value; prior scientific submissions do not renew novelty.`,
+          detail: `${site.label}: ${site.habitat.description} ${analysis ? 'Record detailed analysis within 25 m at this habitat; remote preliminary scans and observations from other sites do not count. No physical collection required.' : isMicrobialPatch(species) ? 'Deliver one sealed microbial material sample from this habitat with quality at least 60%. No stasis required; use the material sampling action, not viable preservation.' : 'Deliver one sealed tissue sample from this habitat with quality at least 60%. No stasis required; an intact or live organism is a different contribution.'} Return to ${station.name}. Finite contract fee plus any remaining ordinary research value; prior scientific submissions do not renew novelty.`,
           rewardCredits: analysis ? 450 : 550,
           risk: ['territorial', 'ambush'].includes(species.behaviour) ? 'Med' : 'Low',
           originStarbaseId: station.id,
@@ -214,7 +219,7 @@ export function createBiologicalContracts(
                   speciesId: species.id,
                   siteId: site.id,
                   targetName: species.name,
-                  targetLabel: `Tissue / ${species.name} / ${biosphere.bodyName} / X${site.x} Y${site.y} / quality >=60%`,
+                  targetLabel: `${isMicrobialPatch(species) ? 'Microbial material' : 'Tissue'} / ${species.name} / ${biosphere.bodyName} / X${site.x} Y${site.y} / quality >=60%`,
                   requiredKind: 'tissue',
                   minimumQuality: 0.6,
                   reference: createBiologicalReference(species),

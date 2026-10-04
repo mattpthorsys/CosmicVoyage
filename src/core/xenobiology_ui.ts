@@ -8,10 +8,17 @@ import type {
   SpecimenKind,
 } from '../entities/biology/biology_types';
 import { estimateStun } from '../entities/biology/stun_model';
-import { encounterVisible, individualSpecies, individualProfile } from '../systems/surface_encounter_system';
+import {
+  encounterVisible,
+  individualSpecies,
+  individualProfile,
+  createCollectionContainer,
+} from '../systems/surface_encounter_system';
 import {
   individualPhysicalProfile,
-  individualSizeLabel,
+  contactSizeLabel,
+  isMicrobialPatch,
+  specimenKindLabel,
   mineralisationLabel,
 } from '../entities/biology/biology_rules';
 import { stasisCompatibility, propaguleCompatibility, needsStasis } from '../systems/specimen_cargo_system';
@@ -145,6 +152,9 @@ function organismBriefSegments(
   const movement = species.behaviour === 'sessile' ? 'anchored to the substrate' : species.locomotion;
   const social = species.socialBehaviour ? ' Withdraws with nearby group members.' : '';
   return [
+    ...(level >= 3 && isMicrobialPatch(species)
+      ? [{ text: 'Single-celled community. ', tone: 'green' as const, font: 'thin' as const }]
+      : []),
     trait(species.behaviour.charAt(0).toUpperCase() + species.behaviour.slice(1), 'behaviour'),
     { text: ' ' },
     trait(species.role, 'role'),
@@ -167,8 +177,14 @@ export function speciesDescription(species: SpeciesDefinition, service: Xenobiol
   const level = service.evidence(species.id)?.level ?? 0;
   const mass = massEstimate(species.massKg);
   const lines = [
-    level >= 2 ? species.name : 'Unresolved organism',
-    `${species.symmetry}; ${mass}`,
+    level >= 2
+      ? species.name
+      : isMicrobialPatch(species)
+        ? 'Unresolved surface growth'
+        : 'Unresolved organism',
+    isMicrobialPatch(species)
+      ? `Patch biomass ${mass}; aggregate, not one cell`
+      : `${species.symmetry}; ${mass}`,
     service.status(species),
   ];
   if (level >= 1) lines.push(`${species.locomotion}; ${species.metabolism}`);
@@ -190,21 +206,14 @@ function specimenEstimates(
   service: XenobiologyService
 ): { kind: SpecimenKind; credits: number }[] {
   const species = individualSpecies(field, target);
-  const kinds: SpecimenKind[] = ['tissue', 'dead', 'live'];
+  const kinds: SpecimenKind[] = isMicrobialPatch(species) ? ['tissue', 'live'] : ['tissue', 'dead', 'live'];
   if ((service.evidence(species.id)?.level ?? 0) >= 3 && !propaguleAvailability(species, target))
     kinds.push('propagule');
   return kinds.map((kind) => ({
     kind,
     credits: service.quote(species, {
-      id: `${target.id}/${kind}`,
-      sourceId: target.id,
-      siteId: field.site.id,
-      species,
-      kind,
+      ...createCollectionContainer(field, target, kind),
       quality: Math.max(0.2, 1 - (kind === 'dead' && target.state !== 'dead' ? 1 : target.injury) * 0.35),
-      volumeM3: 0.1,
-      sizeScale: target.sizeScale,
-      mineralisation: target.mineralisation,
     }).credits,
   }));
 }
@@ -218,7 +227,10 @@ export function targetQuotes(
   const species = individualSpecies(field, target);
   if ((service.evidence(species.id)?.level ?? 0) < 2) return 'Value unresolved: observe within 40 m';
   return `Cr data ${service.quote(species).credits} / ${specimenEstimates(field, target, service)
-    .map((quote) => `${quote.kind} ${quote.credits}`)
+    .map(
+      (quote) =>
+        `${isMicrobialPatch(species) ? (quote.kind === 'live' ? 'viable' : 'material') : quote.kind} ${quote.credits}`
+    )
     .join(' / ')} (est.)`;
 }
 
@@ -260,7 +272,7 @@ export function createEncounterView(
         ? `Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`
         : 'Preservation unverified / observe contact'
     );
-    if (target.sizeScale !== undefined) scanner.push(`Size: ${individualSizeLabel(target.sizeScale)}`);
+    if (target.sizeScale !== undefined) scanner.push(`Size: ${contactSizeLabel(species, target.sizeScale)}`);
     if (level >= 2 && target.mineralisation !== undefined)
       scanner.push(`Covering: ${mineralisationLabel(target.mineralisation)} / no automatic rarity premium`);
     if (target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds)
@@ -280,7 +292,12 @@ export function createEncounterView(
     scannerDashboard[0] = {
       segments: [
         {
-          text: level >= 2 ? species.name : 'Unresolved organism',
+          text:
+            level >= 2
+              ? species.name
+              : isMicrobialPatch(species)
+                ? 'Unresolved surface growth'
+                : 'Unresolved organism',
           tone: guidance?.confirmed ? 'match' : 'normal',
           font: 'thin',
         },
@@ -289,11 +306,14 @@ export function createEncounterView(
     scannerDashboard[1] = {
       segments: [
         {
-          text: species.symmetry,
+          text: isMicrobialPatch(species) ? 'Attached patch' : species.symmetry,
           tone: guidance?.traits.includes('symmetry') ? 'match' : 'normal',
           font: 'thin',
         },
-        { text: `; ${massEstimate(species.massKg)}`, font: 'thin' },
+        {
+          text: `; ${isMicrobialPatch(species) ? 'aggregate biomass ' : ''}${massEstimate(species.massKg)}`,
+          font: 'thin',
+        },
       ],
     };
     scannerDashboard.push(
@@ -335,12 +355,12 @@ export function createEncounterView(
     targetMassSegments: species
       ? [
           {
-            text: `${massEstimate(species.massKg)} / ${individualSizeLabel(target?.sizeScale)} / `,
+            text: `${massEstimate(species.massKg)} / ${contactSizeLabel(species, target?.sizeScale)} / `,
             tone: 'muted',
             font: 'thin',
           },
           {
-            text: species.symmetry,
+            text: isMicrobialPatch(species) ? 'aggregate biomass' : species.symmetry,
             tone: guidance?.traits.includes('symmetry') ? 'match' : 'muted',
             font: 'thin',
           },
@@ -356,13 +376,18 @@ export function createEncounterView(
     message,
     requests: [...(presentation.requests ?? [])],
     brief: species ? organismBrief(species, level) : 'No contact acquired. TAB cycles visible organisms.',
-    targetName: species && level >= 2 ? species.name : 'Unresolved organism',
+    targetName:
+      species && level >= 2
+        ? species.name
+        : species && isMicrobialPatch(species)
+          ? 'Unresolved surface growth'
+          : 'Unresolved organism',
     targetStatus: species ? service.status(species) : 'NO CONTACT',
     targetRange: target
       ? `${(Math.hypot(target.x - field.roverX, target.y - field.roverY) * 5).toFixed(0)} m / ${target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds && target.state === 'active' ? 'withdrawing' : organismActivity(target)}`
       : '--',
     targetMass: species
-      ? `${massEstimate(species.massKg)} / ${individualSizeLabel(target?.sizeScale)} / ${species.symmetry}`
+      ? `${massEstimate(species.massKg)} / ${contactSizeLabel(species, target?.sizeScale)} / ${isMicrobialPatch(species) ? 'aggregate biomass' : species.symmetry}`
       : '',
     targetSprite: target
       ? organismSprite(individualSpecies(field, target), target.sizeScale, target.mineralisation)
@@ -461,10 +486,14 @@ export function createBiologicalDossier(
   }
   section('Field Identification');
   lines.push({ segments: organismBriefSegments(species, level, guidance?.traits) });
-  entry('Mass estimate', massEstimate(species.massKg), 'amber');
-  entry('Body plan', species.symmetry, matchTone('symmetry'));
+  entry(isMicrobialPatch(species) ? 'Patch biomass' : 'Mass estimate', massEstimate(species.massKg), 'amber');
+  entry(isMicrobialPatch(species) ? 'Patch outline' : 'Body plan', species.symmetry, matchTone('symmetry'));
   if (contact?.target.sizeScale !== undefined)
-    entry('Individual size', individualSizeLabel(contact.target.sizeScale), 'amber');
+    entry(
+      isMicrobialPatch(species) ? 'Patch extent' : 'Individual size',
+      contactSizeLabel(species, contact.target.sizeScale),
+      'amber'
+    );
   if (level >= 2 && contact?.target.mineralisation !== undefined) {
     entry('Covering form', mineralisationLabel(contact.target.mineralisation), 'cyan');
     entry(
@@ -542,6 +571,32 @@ export function createBiologicalDossier(
   }
   section('Structure & Lineage');
   if (level >= 3) {
+    if (species.cellularity)
+      entry(
+        'Cellularity',
+        species.cellularity === 'unicellular'
+          ? 'SINGLE-CELLED COMMUNITY'
+          : species.cellularity.replaceAll('-', ' '),
+        'green'
+      );
+    if (isMicrobialPatch(species)) {
+      entry('Contact form', 'Attached biofilm / colonised sampling patch', 'cyan');
+      entry(
+        'Interpretation',
+        'No organised multicellular structures resolved in this contact. Not a census of the whole planet.',
+        'muted'
+      );
+      entry(
+        'Collection',
+        '5 g representative material in a sealed 0.1 m^3 field cassette; not the entire patch.',
+        'amber'
+      );
+      entry(
+        'Viability',
+        'Preserved community material; isolation or laboratory culture not established.',
+        'muted'
+      );
+    }
     entry(
       'Origin',
       `${species.origin === 'introduced' ? 'managed introduction' : 'native biosphere'} / ancestry unconfirmed`,
@@ -552,7 +607,7 @@ export function createBiologicalDossier(
       entry('Body divisions', `${species.anatomy.segments} principal structural divisions`);
     entry('Covering', species.covering);
     entry('Senses', species.senses);
-    entry('Length', `${species.sizeM.toFixed(2)} m`, 'amber');
+    entry(isMicrobialPatch(species) ? 'Patch span' : 'Length', `${species.sizeM.toFixed(2)} m`, 'amber');
     entry(
       'Environment',
       `${species.temperatureK.toFixed(0)} K / ${species.pressureBar.toFixed(2)} bar`,
@@ -613,7 +668,11 @@ export function createBiologicalDossier(
     if (contact) {
       for (const quote of specimenEstimates(contact.field, contact.target, service))
         entry(
-          `${quote.kind.charAt(0).toUpperCase() + quote.kind.slice(1)} specimen`,
+          isMicrobialPatch(species)
+            ? quote.kind === 'live'
+              ? 'Viable sample'
+              : 'Material sample'
+            : `${quote.kind.charAt(0).toUpperCase() + quote.kind.slice(1)} specimen`,
           `${quote.credits.toLocaleString()} Cr (est.)`,
           'amber'
         );
@@ -681,7 +740,7 @@ export function specimenRows(
       `${service.quote(container.species, container).credits}`,
       `ABOARD / ${container.kind}`,
     ],
-    detail: `${container.species.name} / ${container.kind.toUpperCase()} / ${container.kind === 'propagule' ? 'detachable dormant buds / 5 g material / one stasis slot / parent retained at source' : `${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg`} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
+    detail: `${container.species.name} / ${specimenKindLabel(container.species, container.kind).toUpperCase()} / ${isMicrobialPatch(container.species) ? '5 g representative material / sealed field cassette / not the entire substrate patch' : container.kind === 'propagule' ? 'detachable dormant buds / 5 g material / one stasis slot / parent retained at source' : `${contactSizeLabel(container.species, container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg`} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
     tone: needsStasis(container) ? 'green' : 'normal',
   }));
 }
@@ -702,8 +761,15 @@ export function specimenSaleRows(
         : 'No additional scientific demand. Specimen stays aboard; nothing is discarded.';
     return {
       id: `sample:${container.id}`,
-      cells: [container.species.name, '1', String(credits), `${container.kind} specimen`],
-      detail: `${availability} ${container.kind.toUpperCase()} / ${container.kind === 'propagule' ? 'viable dormant buds / reproductive research demand' : `${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)}`} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
+      cells: [
+        container.species.name,
+        '1',
+        String(credits),
+        isMicrobialPatch(container.species)
+          ? specimenKindLabel(container.species, container.kind)
+          : `${container.kind} specimen`,
+      ],
+      detail: `${availability} ${specimenKindLabel(container.species, container.kind).toUpperCase()} / ${isMicrobialPatch(container.species) ? '5 g representative material / sealed field cassette' : container.kind === 'propagule' ? 'viable dormant buds / reproductive research demand' : `${contactSizeLabel(container.species, container.sizeScale)} / ${mineralisationLabel(container.mineralisation)}`} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
       disabled: credits <= 0,
       tone: credits > 0 ? 'green' : 'normal',
       cellTones: ['normal', 'normal', 'amber', 'cyan'],
@@ -739,11 +805,11 @@ export function researchRows(
       id: `sample:${container.id}`,
       cells: [
         container.species.name,
-        container.kind.toUpperCase(),
+        specimenKindLabel(container.species, container.kind).toUpperCase(),
         `${service.quote(container.species, container).credits} Cr`,
         service.status(container.species),
       ],
-      detail: `Whole ${container.kind} specimen / quality ${Math.round(container.quality * 100)}% / campaign-wide demand.`,
+      detail: `Whole sealed ${specimenKindLabel(container.species, container.kind)} container / quality ${Math.round(container.quality * 100)}% / campaign-wide demand.`,
       disabled: service.quote(container.species, container).credits <= 0,
     })),
   ];

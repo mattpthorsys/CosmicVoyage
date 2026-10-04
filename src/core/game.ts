@@ -172,6 +172,7 @@ import {
 } from '../systems/surface_encounter_system';
 import { prepareEncounterSurface } from './encounter_surface';
 import { SpecimenCargoSystem } from '../systems/specimen_cargo_system';
+import { isMicrobialPatch } from '../entities/biology/biology_rules';
 import { propaguleAvailability, supportsPropagules } from '../entities/biology/propagules';
 import { prepareBiosphere } from '../entities/biology/biosphere_generator';
 import {
@@ -384,8 +385,10 @@ export class Game {
     );
     const savedSites = savedFields.map((field) => field.site);
     // A visited habitat is evidence, not a fresh generation roll after a biology content update.
+    const legacyVisitedWorld =
+      savedFields.length && !savedFields.some((field) => field.bodyId === generated?.id);
     const source: BiosphereDefinition | null =
-      generated ??
+      (!legacyVisitedWorld ? generated : null) ??
       (savedFields.length
         ? {
             id: savedFields[0].bodyId,
@@ -5713,12 +5716,22 @@ export class Game {
       pickup.push({
         id: `collect-organism:${target.id}`,
         cells: [
-          target.id === selected?.id ? 'Collect selected organism' : 'Collect nearby organism',
+          isMicrobialPatch(species)
+            ? 'Preserve microbial sample'
+            : target.id === selected?.id
+              ? 'Collect selected organism'
+              : 'Collect nearby organism',
           '1',
           '--',
-          target.state === 'dead' ? 'Secure intact remains' : 'Place in stasis',
+          isMicrobialPatch(species)
+            ? 'Seal viable material in stasis'
+            : target.state === 'dead'
+              ? 'Secure intact remains'
+              : 'Place in stasis',
         ],
-        detail: `${(this.xenobiology.evidence(species.id)?.level ?? 0) >= 2 ? species.name : 'Selected contact'} / estimated ${species.massKg.toFixed(species.massKg < 1 ? 2 : 1)} kg: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first. Handling limit 80 kg.`,
+        detail: isMicrobialPatch(species)
+          ? `${level >= 2 ? species.name : 'Selected surface growth'} / 5 g representative material in a sealed 0.1 m^3 field cassette. One stasis slot; preserves viable community material, not an isolated laboratory culture. Surrounding substrate remains in place.`
+          : `${level >= 2 ? species.name : 'Selected contact'} / estimated ${species.massKg.toFixed(species.massKg < 1 ? 2 : 1)} kg: transfer one whole organism into rover cargo. Larger mobile organisms must be stunned first. Handling limit 80 kg.`,
         tone: 'green',
       });
     }

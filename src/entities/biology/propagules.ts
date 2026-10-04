@@ -6,6 +6,7 @@ export const PROPAGULE_MASS_KG = 0.005;
 /** Adds the prototype capability to existing compatible mat taxa without changing identities or harvest history. */
 export function withMatReproduction(species: SpeciesDefinition): SpeciesDefinition {
   if (
+    species.cellularity === 'unicellular' ||
     species.reproduction ||
     species.bodyForm !== 'mat' ||
     species.behaviour !== 'sessile' ||
@@ -25,6 +26,7 @@ export function withMatReproduction(species: SpeciesDefinition): SpeciesDefiniti
 /** Restricts the first reproductive commodity to one water-based, sessile mat body family. */
 export function supportsPropagules(species: SpeciesDefinition): boolean {
   return (
+    species.cellularity !== 'unicellular' &&
     species.reproduction?.kind === 'dormant-buds' &&
     species.bodyForm === 'mat' &&
     species.behaviour === 'sessile' &&

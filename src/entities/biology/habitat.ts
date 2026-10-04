@@ -54,11 +54,11 @@ export function classifyHabitat(
     relief,
     waterDistanceCells,
     description: {
-      'moist-margin': 'Water-adjacent land; broad producer mats with grazing and detritus communities.',
-      'rocky-margin': 'Water-adjacent broken rock; attached fan colonies and crevice consumers.',
-      'sheltered-ground': 'Broken relief; substrate colonies and shelter-associated consumers.',
-      'exposed-ground': 'Exposed land; sparse fronds and mobile foragers.',
-      'upland-ground': 'Elevated exposed substrate; compact producer rosettes and small detritus consumers.',
+      'moist-margin': 'Water-adjacent land; potential hydrated substrates and deposited organic material.',
+      'rocky-margin': 'Water-adjacent broken rock; exposed mineral surfaces and sheltered crevices.',
+      'sheltered-ground': 'Broken relief; sheltered substrate and local depositional pockets.',
+      'exposed-ground': 'Open substrate; strong exposure and limited shelter.',
+      'upland-ground': 'Elevated exposed substrate; possible sheltered microhabitats within the relief.',
     }[kind],
   };
 }

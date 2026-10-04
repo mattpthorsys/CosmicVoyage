@@ -1,4 +1,13 @@
-import type { IndividualSizeClass, IndividualMineralisation, SpeciesDefinition } from './biology_types';
+import type {
+  IndividualSizeClass,
+  IndividualMineralisation,
+  SpeciesDefinition,
+  SpecimenKind,
+} from './biology_types';
+
+// Cargo is measured in 0.1 m^3 increments; a microbial cassette includes isolation/preservation hardware.
+export const MICROBIAL_CASSETTE_VOLUME_M3 = 0.1;
+export const MICROBIAL_SAMPLE_MASS_KG = 0.005;
 
 /** Identifies a microbial sampling site by typed biology, never by a mat sprite or description string. */
 export function isMicrobialPatch(species: SpeciesDefinition): boolean {
@@ -10,6 +19,16 @@ export function contactSizeLabel(species: SpeciesDefinition, sizeScale = 1): str
   return isMicrobialPatch(species)
     ? `${individualSizeClass(sizeScale)} patch`
     : individualSizeLabel(sizeScale);
+}
+
+/** Keeps familiar research grades while naming microbial material honestly in cargo and receiving desks. */
+export function specimenKindLabel(species: SpeciesDefinition, kind: SpecimenKind): string {
+  if (!isMicrobialPatch(species)) return kind;
+  return kind === 'live'
+    ? 'viable microbial sample'
+    : kind === 'tissue'
+      ? 'microbial material'
+      : 'fixed microbial material';
 }
 
 /** Converts a stored mass scale into one consistent physical profile without changing species identity. */

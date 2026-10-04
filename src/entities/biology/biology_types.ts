@@ -3,6 +3,7 @@ export const HABITAT_VERSION = 1;
 export const ENCOUNTER_WIDTH = 32;
 export const ENCOUNTER_HEIGHT = 24;
 export const ENCOUNTER_CELL_METRES = 5;
+export const MAX_BIOSPHERE_SPECIES = 14;
 
 export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territorial' | 'ambush';
 export type BiosphereComplexity = 'microbial-only' | 'simple-multicellular' | 'complex-multicellular';
@@ -189,6 +190,8 @@ export interface SpecimenContainer {
   kind: SpecimenKind;
   quality: number;
   volumeM3: number;
+  /** Actual extracted material, distinct from aggregate patch biomass and the sealed cassette's volume. */
+  materialMassKg?: number;
   /** Mass relative to the canonical species profile; absent in pre-variation containers. */
   sizeScale?: number;
   mineralisation?: IndividualMineralisation;

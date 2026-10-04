@@ -1,6 +1,7 @@
 import type { EncounterField, SpecimenContainer } from './biology_types';
 import { samePreservationRequirements } from './preservation';
 import { supportsPropagules, PROPAGULE_VOLUME_M3 } from './propagules';
+import { isMicrobialPatch, MICROBIAL_SAMPLE_MASS_KG, MICROBIAL_CASSETTE_VOLUME_M3 } from './biology_rules';
 
 /** Confirms typed material, parent identity and physical history without requiring the parent to remain alive. */
 export function hasSpecimenProvenance(container: SpecimenContainer, field: EncounterField): boolean {
@@ -13,6 +14,11 @@ export function hasSpecimenProvenance(container: SpecimenContainer, field: Encou
     source.speciesId === container.species.id &&
     field.bodyId === container.species.bodyId &&
     samePreservationRequirements(container.species, canonical) &&
+    container.species.cellularity === canonical.cellularity &&
+    container.species.contactRepresentation === canonical.contactRepresentation &&
+    (!isMicrobialPatch(canonical) ||
+      (container.materialMassKg === MICROBIAL_SAMPLE_MASS_KG &&
+        container.volumeM3 === MICROBIAL_CASSETTE_VOLUME_M3)) &&
     (container.kind !== 'propagule' ||
       (supportsPropagules(canonical) &&
         supportsPropagules(container.species) &&

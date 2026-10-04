@@ -3,13 +3,20 @@ import {
   ENCOUNTER_WIDTH,
   HABITAT_VERSION,
   BEHAVIOUR_OBSERVATION_KINDS,
+  MAX_BIOSPHERE_SPECIES,
   type HabitatProfile,
   type SpeciesDefinition,
   type SpecimenContainer,
   type XenobiologySnapshot,
   type EncounterField,
 } from './biology_types';
-import { canShareRoverCell, individualPhysicalProfile } from './biology_rules';
+import {
+  canShareRoverCell,
+  individualPhysicalProfile,
+  isMicrobialPatch,
+  MICROBIAL_SAMPLE_MASS_KG,
+  MICROBIAL_CASSETTE_VOLUME_M3,
+} from './biology_rules';
 import { supportsPropagules, PROPAGULE_VOLUME_M3 } from './propagules';
 import { hasSpecimenProvenance } from './specimen_provenance';
 
@@ -107,6 +114,26 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
   if (value.relativeAbundance !== undefined) number(value.relativeAbundance, 0.05, 1);
   if (value.structuralMaterial !== undefined)
     choice(value.structuralMaterial, ['organic', 'silica', 'mineral']);
+  if (value.cellularity !== undefined)
+    choice(value.cellularity, ['unicellular', 'simple-multicellular', 'complex-multicellular']);
+  if (value.contactRepresentation !== undefined)
+    choice(value.contactRepresentation, ['individual', 'colony-patch']);
+  if (value.energySource !== undefined) choice(value.energySource, ['light', 'chemical', 'organic']);
+  if (value.surfaceExpression !== undefined)
+    choice(value.surfaceExpression, ['pigmented-film', 'subtle-colony']);
+  if (value.cellularity === 'unicellular') {
+    if (
+      value.contactRepresentation !== 'colony-patch' ||
+      value.behaviour !== 'sessile' ||
+      value.susceptibility !== 0 ||
+      value.reproduction !== undefined ||
+      value.socialBehaviour !== undefined
+    )
+      throw new Error('Invalid microbial sampling contact.');
+    if (value.anatomy && (value.anatomy as Record<string, unknown>).appendages !== 0)
+      throw new Error('Locomotor appendages on a microbial patch.');
+  } else if (value.contactRepresentation === 'colony-patch' || value.surfaceExpression !== undefined)
+    throw new Error('Microbial patch metadata on an individual organism.');
   if (value.preservation !== undefined) {
     record(value.preservation);
     choice(value.preservation.solvent, ['water', 'ammonia', 'hydrocarbon']);
@@ -150,6 +177,15 @@ export function validateSpecimen(value: unknown): asserts value is SpecimenConta
   choice(value.kind, ['live', 'dead', 'tissue', 'propagule']);
   number(value.quality, 0, 1);
   number(value.volumeM3, 0.1, 100);
+  if (isMicrobialPatch(value.species)) {
+    if (
+      value.materialMassKg !== MICROBIAL_SAMPLE_MASS_KG ||
+      value.volumeM3 !== MICROBIAL_CASSETTE_VOLUME_M3 ||
+      value.kind === 'propagule'
+    )
+      throw new Error('Invalid microbial sampling cassette.');
+  } else if (value.materialMassKg !== undefined)
+    throw new Error('Microbial sample mass on an individual specimen.');
   if (
     value.kind === 'propagule' &&
     (!supportsPropagules(value.species) || value.volumeM3 !== PROPAGULE_VOLUME_M3 || value.quality !== 1)
@@ -296,7 +332,7 @@ export function validateXenobiology(
     if (
       !Array.isArray(field.species) ||
       field.species.length < 1 ||
-      field.species.length > 12 ||
+      field.species.length > MAX_BIOSPHERE_SPECIES ||
       !Array.isArray(field.individuals) ||
       field.individuals.length > 24
     )

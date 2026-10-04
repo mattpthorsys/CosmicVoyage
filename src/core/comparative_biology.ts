@@ -6,7 +6,7 @@ import type {
   SpeciesDefinition,
   IndividualMineralisation,
 } from '../entities/biology/biology_types';
-import { individualSizeClass } from '../entities/biology/biology_rules';
+import { individualSizeClass, isMicrobialPatch } from '../entities/biology/biology_rules';
 import { createEncounter } from '../systems/surface_encounter_system';
 import type { Starbase } from '../entities/starbase';
 import type { MissionObjective, StarbaseMission } from './mission_board';
@@ -38,6 +38,7 @@ export function createComparativeBiologicalContracts(
         const species = field.species.find(
           (entry) =>
             entry.recognised &&
+            !isMicrobialPatch(entry) &&
             ['small', 'large'].every((size) =>
               hasTissueSource(field, entry, size as IndividualSizeClass, owned, research)
             )

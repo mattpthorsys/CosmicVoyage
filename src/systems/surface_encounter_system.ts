@@ -3,7 +3,13 @@ import { PRNG } from '../utils/prng';
 import type { CargoComponent } from '../core/components';
 import { SpecimenCargoSystem } from './specimen_cargo_system';
 import { stunOutcome } from '../entities/biology/stun_model';
-import { canShareRoverCell, individualPhysicalProfile } from '../entities/biology/biology_rules';
+import {
+  canShareRoverCell,
+  individualPhysicalProfile,
+  isMicrobialPatch,
+  MICROBIAL_SAMPLE_MASS_KG,
+  MICROBIAL_CASSETTE_VOLUME_M3,
+} from '../entities/biology/biology_rules';
 import { defensiveIntent } from './organism_behaviour';
 import { habitatForagingIntent } from './organism_foraging';
 import { createHabitatPatches, habitatCommunity } from '../entities/biology/habitat';
@@ -71,7 +77,7 @@ export function createEncounter(biosphere: BiosphereDefinition, site: BiologySit
     };
   }
   const individuals: EncounterIndividual[] = [];
-  for (let index = 0; index < 10; index++) {
+  for (let index = 0; index < (biosphere.complexity === 'microbial-only' ? 4 : 10); index++) {
     const x = 4 + ((index * 5) % 24);
     const y = 5 + ((index * 3) % 13);
     terrain[y] = terrain[y].substring(0, x) + '.' + terrain[y].substring(x + 1);
@@ -133,9 +139,12 @@ function createHabitatPopulation(
       : availableConsumers;
   if (!producer) return [];
   const sparse = site.habitat.kind === 'exposed-ground' || site.habitat.kind === 'upland-ground';
+  const microbialOnly = biosphere.species.every(isMicrobialPatch);
   const population = [
-    ...Array.from({ length: sparse ? 3 : 4 }, () => producer),
-    ...Array.from({ length: sparse ? 1 : 3 }, () => consumers[0]).filter((species) => !!species),
+    ...Array.from({ length: microbialOnly ? 2 : sparse ? 3 : 4 }, () => producer),
+    ...Array.from({ length: microbialOnly || sparse ? 1 : 3 }, () => consumers[0]).filter(
+      (species) => !!species
+    ),
     ...consumers.slice(1, 2),
   ];
   const individuals: EncounterIndividual[] = [];
@@ -162,7 +171,11 @@ function createHabitatPopulation(
           continue;
         cells.push({ x, y });
       }
-    const cell = prng.choice(cells);
+    // Give a sparse microbial expedition one nearby, reachable pigment-film contact to investigate.
+    const cell =
+      microbialOnly && index === 0
+        ? cells.sort((a, b) => Math.hypot(a.x - 16, a.y - 21) - Math.hypot(b.x - 16, b.y - 21))[0]
+        : prng.choice(cells);
     if (!cell) continue;
     const { x, y } = cell;
     const ordinal = individuals.filter((actor) => actor.speciesId === species.id).length;
@@ -240,8 +253,10 @@ export function createCollectionContainer(
     species: individualSpecies(field, target),
     kind,
     quality: Math.max(0.2, 1 - target.injury * 0.35),
-    volumeM3:
-      kind === 'propagule'
+    materialMassKg: isMicrobialPatch(profile) ? MICROBIAL_SAMPLE_MASS_KG : undefined,
+    volumeM3: isMicrobialPatch(profile)
+      ? MICROBIAL_CASSETTE_VOLUME_M3
+      : kind === 'propagule'
         ? PROPAGULE_VOLUME_M3
         : kind === 'tissue'
           ? 0.1
@@ -253,9 +268,11 @@ export function createCollectionContainer(
 
 /** Determines sensor/weapon visibility along a short obstacle-tested ray. */
 export function encounterVisible(field: EncounterField, individual: EncounterIndividual): boolean {
+  const species = individualSpecies(field, individual);
+  const radius = isMicrobialPatch(species) ? (species.surfaceExpression === 'pigmented-film' ? 8 : 3) : 14;
   if (
     individual.state === 'collected' ||
-    Math.hypot(individual.x - field.roverX, individual.y - field.roverY) > 14
+    Math.hypot(individual.x - field.roverX, individual.y - field.roverY) > radius
   )
     return false;
   // Sample the short ray at sub-cell intervals; this is visibility, not a new navigation engine.
@@ -321,6 +338,8 @@ export class SurfaceEncounterSystem {
       result.elapsedSeconds = 10;
       result.message = 'Observing local activity.';
     } else if (target && species && profile) {
+      if (isMicrobialPatch(species) && (command.kind === 'shoot' || command.kind === 'stun'))
+        return { ...result, message: 'Microbial patches are sampled, not weapon targets.' };
       if (command.kind === 'observe' || command.kind === 'analyse') {
         if (command.kind === 'analyse' && range > 5)
           return { ...result, message: 'Detailed analysis requires range <=25 m.' };
@@ -339,7 +358,12 @@ export class SurfaceEncounterSystem {
           if (refusal) return { ...result, message: refusal };
         }
         if (command.kind === 'sample' && target.sampled)
-          return { ...result, message: 'This individual has already supplied a tissue sample.' };
+          return {
+            ...result,
+            message: isMicrobialPatch(species)
+              ? 'This patch has already supplied its material sample.'
+              : 'This individual has already supplied a tissue sample.',
+          };
         if (
           command.kind === 'collect' &&
           target.state === 'active' &&
@@ -362,7 +386,9 @@ export class SurfaceEncounterSystem {
         else if (command.kind === 'sample') target.sampled = true;
         else target.state = 'collected';
         result.evidence = { species, level: 3, collected: true };
-        result.message = `${kind === 'propagule' ? 'Viable buds sealed in stasis; parent left intact' : kind === 'live' ? 'Live organism sealed in stasis' : kind === 'dead' ? 'Intact remains secured' : 'Tissue sample sealed'}.`;
+        result.message = isMicrobialPatch(species)
+          ? `${kind === 'live' ? 'Viable microbial material sealed in stasis' : 'Microbial material sample sealed'}; 5 g material in a 0.1 m^3 cassette. ${kind === 'live' ? 'Viable sampling contact exhausted; surrounding substrate left intact.' : 'Patch remains in place; one material sample per source.'}`
+          : `${kind === 'propagule' ? 'Viable buds sealed in stasis; parent left intact' : kind === 'live' ? 'Live organism sealed in stasis' : kind === 'dead' ? 'Intact remains secured' : 'Tissue sample sealed'}.`;
         result.elapsedSeconds = 5;
       } else {
         if (range > 8) return { ...result, message: 'Weapon range <=40 m.' };

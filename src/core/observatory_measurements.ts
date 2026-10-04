@@ -206,10 +206,15 @@ function measurePlanet(
       `Thermal interpretation: ${temperate ? 'temperate candidate' : environment.temperatureK < 265 ? 'cold' : 'hot'}; model-dependent.`
     );
   const biosphere = generateBiosphere(environment);
-  const producers = biosphere?.species.filter((species) => species.metabolism !== 'heterotroph').length ?? 0;
+  const producers =
+    biosphere?.species.filter(
+      (species) => species.energySource === 'light' && species.metabolism !== 'heterotroph'
+    ).length ?? 0;
   const geology = new PRNG(planet.mapSeed).seedNew('observatory-reflectance', 1);
   // A modest shared producer-cover proxy is not an ecosystem simulation. Mineral surfaces can mimic it.
-  const cover = producers ? Math.min(0.8, 0.15 + environment.waterCoverage * 0.5) : 0;
+  const cover = producers
+    ? (biosphere?.pigmentCover ?? Math.min(0.8, 0.15 + environment.waterCoverage * 0.5))
+    : 0;
   const mineralMimic = temperate && environment.landable && geology.random() < 0.06;
   const surfaceTransmission = Math.exp(-Math.max(0, atmosphere.pressure - 1) * 0.12);
   const pigment =

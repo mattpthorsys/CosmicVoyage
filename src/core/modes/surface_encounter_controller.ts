@@ -1,4 +1,10 @@
-import type { EncounterField, EncounterIndividual, StunPower } from '../../entities/biology/biology_types';
+import type {
+  EncounterField,
+  EncounterIndividual,
+  StunPower,
+  SpeciesDefinition,
+} from '../../entities/biology/biology_types';
+import { isMicrobialPatch } from '../../entities/biology/biology_rules';
 import {
   encounterVisible,
   individualProfile,
@@ -58,6 +64,7 @@ export class SurfaceEncounterController {
   /** Consumes one fresh action, with no held-key fall-through into macro travel or combat. */
   input(actions: ReadonlySet<string>, field: EncounterField): EncounterIntent | undefined {
     const target = this.target(field);
+    const profile = target ? individualProfile(field, target) : undefined;
     const confirm = actions.has('ENTER_SYSTEM') || actions.has('PRIMARY_ACTION');
     const cancel = actions.has('QUIT') || actions.has('LEAVE_SYSTEM');
     const state = this.interaction;
@@ -115,10 +122,10 @@ export class SurfaceEncounterController {
         state.index = (state.index + ENCOUNTER_ACTIONS.length - 1) % ENCOUNTER_ACTIONS.length;
       else if (actions.has('MOVE_DOWN') || actions.has('MOVE_RIGHT'))
         state.index = (state.index + 1) % ENCOUNTER_ACTIONS.length;
-      else if (confirm) return this.choose(ENCOUNTER_ACTIONS[state.index].kind, target?.id);
+      else if (confirm) return this.choose(ENCOUNTER_ACTIONS[state.index].kind, target?.id, profile);
       else {
         const shortcut = ENCOUNTER_ACTIONS.find((item) => actions.has(item.action));
-        if (shortcut) return this.choose(shortcut.kind, target?.id);
+        if (shortcut) return this.choose(shortcut.kind, target?.id, profile);
       }
       return;
     }
@@ -128,14 +135,19 @@ export class SurfaceEncounterController {
       return;
     }
     const shortcut = ENCOUNTER_ACTIONS.find((item) => actions.has(item.action));
-    if (shortcut) return this.choose(shortcut.kind, target?.id);
+    if (shortcut) return this.choose(shortcut.kind, target?.id, profile);
     const dx = actions.has('MOVE_RIGHT') ? 1 : actions.has('MOVE_LEFT') ? -1 : 0;
     const dy = actions.has('MOVE_DOWN') ? 1 : actions.has('MOVE_UP') ? -1 : 0;
     if (dx || dy) return { kind: 'command', command: { kind: 'move', dx, dy } };
   }
 
   /** Resolves an explicit menu choice without performing gameplay effects itself. */
-  private choose(action: EncounterAction, targetId?: string): EncounterIntent | undefined {
+  private choose(
+    action: EncounterAction,
+    targetId?: string,
+    species?: SpeciesDefinition
+  ): EncounterIntent | undefined {
+    if (species && isMicrobialPatch(species) && (action === 'stun' || action === 'shoot')) return;
     this.interaction = { kind: 'drive' };
     if (
       action === 'leave' ||
@@ -196,6 +208,7 @@ export class SurfaceEncounterController {
         ],
       };
     const target = this.target(field);
+    const microbial = target ? isMicrobialPatch(individualProfile(field, target)) : false;
     return {
       context,
       leftButtons: [
@@ -204,14 +217,24 @@ export class SurfaceEncounterController {
       ],
       selectedButtonId: state.kind === 'menu' ? ENCOUNTER_ACTIONS[state.index].kind : undefined,
       buttons: ENCOUNTER_ACTIONS.map((item) =>
-        commandButton(item.kind, item.label, item.action, {
-          key: item.key,
-          enabled:
-            ['cargo', 'operations', 'leave', 'wait', 'catalogue', 'missions', 'science'].includes(
-              item.kind
-            ) || !!target,
-          tone: item.kind === 'shoot' ? 'red' : item.kind === 'collect' ? 'green' : 'normal',
-        })
+        commandButton(
+          item.kind,
+          microbial && item.kind === 'sample'
+            ? 'Material'
+            : microbial && item.kind === 'collect'
+              ? 'Preserve'
+              : item.label,
+          item.action,
+          {
+            key: item.key,
+            enabled:
+              ['cargo', 'operations', 'leave', 'wait', 'catalogue', 'missions', 'science'].includes(
+                item.kind
+              ) ||
+              (!!target && !(microbial && (item.kind === 'stun' || item.kind === 'shoot'))),
+            tone: item.kind === 'shoot' ? 'red' : item.kind === 'collect' ? 'green' : 'normal',
+          }
+        )
       ),
     };
   }
