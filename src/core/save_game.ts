@@ -393,11 +393,11 @@ export function parseGameSave(value: string | unknown): GameSave {
       location.kind !== 'planet' ||
       !save.player.terrainVehicle.deployed ||
       save.player.terrainVehicle.onFoot ||
-      ![
-        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio1`,
-        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio2`,
-        `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio${BIOLOGY_VERSION}`,
-      ].includes(field.bodyId)
+      !Array.from(
+        { length: BIOLOGY_VERSION },
+        (_, index) =>
+          `${location.worldX},${location.worldY},${location.systemSlot}/${location.bodyPath}/bio${index + 1}`
+      ).includes(field.bodyId)
     )
       throw new Error('Active encounter does not match saved location.');
   }
