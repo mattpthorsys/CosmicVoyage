@@ -94,6 +94,8 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
   }
   if (value.socialBehaviour !== undefined) choice(value.socialBehaviour, ['group-retreat']);
   if (value.relativeAbundance !== undefined) number(value.relativeAbundance, 0.05, 1);
+  if (value.structuralMaterial !== undefined)
+    choice(value.structuralMaterial, ['organic', 'silica', 'mineral']);
   if (value.anatomy !== undefined) {
     record(value.anatomy);
     number(value.anatomy.appendages, 0, 12, true);
@@ -125,6 +127,11 @@ export function validateSpecimen(value: unknown): asserts value is SpecimenConta
   number(value.quality, 0, 1);
   number(value.volumeM3, 0.1, 100);
   if (value.sizeScale !== undefined) number(value.sizeScale, 0.3, 1.8);
+  if (value.mineralisation !== undefined) {
+    choice(value.mineralisation, ['standard', 'reinforced']);
+    if (!['silica', 'mineral'].includes(value.species.structuralMaterial ?? 'organic'))
+      throw new Error('Mineral covering on an incompatible specimen.');
+  }
 }
 
 /** Validates campaign records and cross-references physical ownership across both cargo carriers. */
@@ -235,6 +242,12 @@ export function validateXenobiology(
       number(individual.injury, 0);
       number(individual.recoveryAt, 0);
       if (individual.sizeScale !== undefined) number(individual.sizeScale, 0.3, 1.8);
+      if (individual.mineralisation !== undefined) {
+        choice(individual.mineralisation, ['standard', 'reinforced']);
+        const species = field.species.find((entry) => entry.id === individual.speciesId)!;
+        if (!['silica', 'mineral'].includes(species.structuralMaterial ?? 'organic'))
+          throw new Error('Mineral covering on an incompatible organism.');
+      }
       if (individual.activity !== undefined)
         choice(individual.activity, [
           'attached',
@@ -274,7 +287,8 @@ export function validateXenobiology(
             !canShareRoverCell(
               individualPhysicalProfile(
                 field.species.find((species) => species.id === individual.speciesId)!,
-                individual.sizeScale as number | undefined
+                individual.sizeScale as number | undefined,
+                individual.mineralisation as 'standard' | 'reinforced' | undefined
               )
             )) ||
           field.terrain[individual.y as number][individual.x as number] !== '.'
@@ -309,5 +323,7 @@ export function validateXenobiology(
       throw new Error('Specimen source lifecycle inconsistent.');
     if (container.sizeScale !== individual.sizeScale)
       throw new Error('Specimen size does not match its source.');
+    if (container.mineralisation !== individual.mineralisation)
+      throw new Error('Specimen covering does not match its source.');
   }
 }

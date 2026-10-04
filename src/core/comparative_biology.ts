@@ -4,6 +4,7 @@ import type {
   IndividualSizeClass,
   SpecimenContainer,
   SpeciesDefinition,
+  IndividualMineralisation,
 } from '../entities/biology/biology_types';
 import { individualSizeClass } from '../entities/biology/biology_rules';
 import { createEncounter } from '../systems/surface_encounter_system';
@@ -111,6 +112,75 @@ export function createComparativeBiologicalContracts(
     }
   }
   return offers;
+}
+
+/** Requests a bounded reference pair only when both covering forms exist or are already aboard. */
+export function createMineralisationComparison(
+  station: Pick<Starbase, 'id' | 'name' | 'kind'>,
+  systemName: string,
+  biospheres: readonly BiosphereDefinition[],
+  fields: Readonly<Record<string, EncounterField>>,
+  owned: readonly SpecimenContainer[],
+  research: XenobiologyService
+): StarbaseMission[] {
+  if (station.kind === 'automated-depot') return [];
+  for (const biosphere of biospheres)
+    for (const site of biosphere.sites) {
+      const field = fields[site.id] ?? createEncounter(biosphere, site);
+      const species = field.species.find(
+        (entry) =>
+          ['silica', 'mineral'].includes(entry.structuralMaterial ?? 'organic') &&
+          (entry.recognised || (research.evidence(entry.id)?.level ?? 0) >= 2) &&
+          (['standard', 'reinforced'] as const).every(
+            (form) =>
+              field.individuals.some(
+                (actor) =>
+                  actor.speciesId === entry.id &&
+                  actor.state !== 'collected' &&
+                  !actor.sampled &&
+                  (actor.mineralisation ?? 'standard') === form &&
+                  actor.injury <= 0.85
+              ) ||
+              owned.some(
+                (container) =>
+                  container.species.id === entry.id &&
+                  container.siteId === site.id &&
+                  container.kind === 'tissue' &&
+                  container.quality >= 0.7 &&
+                  (container.mineralisation ?? 'standard') === form &&
+                  !research.snapshot.demand[entry.id]?.contributions.includes(`${container.sourceId}:tissue`)
+              )
+          )
+      );
+      if (!species) continue;
+      const objectives: MissionObjective[] = (['standard', 'reinforced'] as IndividualMineralisation[]).map(
+        (mineralisation) => ({
+          id: `${mineralisation}-covering`,
+          kind: 'specimen',
+          speciesId: species.id,
+          siteId: site.id,
+          targetName: species.name,
+          targetLabel: `${mineralisation.toUpperCase()} covering / TISSUE / ${species.name} / X${site.x} Y${site.y}`,
+          requiredKind: 'tissue',
+          minimumQuality: 0.7,
+          mineralisation,
+          reference: createBiologicalReference(species),
+        })
+      );
+      return [
+        study(
+          station,
+          systemName,
+          `${station.id}:mission:bio-covering-comparison`,
+          'Mineral covering comparison',
+          `Compare two covering forms of ${species.name} on ${biosphere.bodyName}.`,
+          `Collect tissue from one STANDARD and one REINFORCED covering at ${site.label}, X${site.x} Y${site.y}; quality at least 70%. Observation identifies the external difference. Reinforcement changes mass and handling, but does not establish a new species or its genetic cause. No stasis required. Deliver both together to ${station.name}; partial delivery consumes nothing.`,
+          objectives,
+          1200
+        ),
+      ];
+    }
+  return [];
 }
 
 /** Checks source lifecycle and measured size, including eligible containers already in the expedition holds. */

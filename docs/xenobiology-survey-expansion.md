@@ -13,5 +13,12 @@ await the user's requested switch to Luna.
    C toggles a paired report; Tab chooses a recorded counterpart. Morphology
    and acquired analysis support qualitative affinity, with convergence and
    unconfirmed ancestry stated explicitly. Hidden family labels are not used.
-3. Meaningful individual adaptation and finite comparison request: pending.
+3. Individual covering variation: implemented, verification pending. New native
+   shell-bearing contacts can have a reinforced covering. Source and container
+   retain that form; one resolved physical profile governs mass, stun modelling,
+   handling and cargo. Observation reveals the form and sprites show a restrained
+   ridge highlight. A 1,200 Cr finite request compares standard/reinforced tissue
+   from actual individuals; it adds no ordinary rarity multiplier. The numerical
+   mass/armour adjustments are explicit fictional handling priors, not measured
+   dose-response data or proof of genetic adaptation.
 4. Explicit preservation capabilities and one extremophile expedition: pending.

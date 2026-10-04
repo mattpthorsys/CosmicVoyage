@@ -817,6 +817,8 @@ function validateMissionProgress(save: GameSave): void {
           !['live', 'tissue'].includes(objective.requiredKind) ||
           (objective.sizeClass !== undefined &&
             !['small', 'typical', 'large'].includes(objective.sizeClass)) ||
+          (objective.mineralisation !== undefined &&
+            !['standard', 'reinforced'].includes(objective.mineralisation)) ||
           objective.minimumQuality < 0 ||
           objective.minimumQuality > 1
         )

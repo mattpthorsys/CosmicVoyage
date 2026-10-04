@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createComparativeBiologicalContracts } from '../../core/comparative_biology';
+import {
+  createComparativeBiologicalContracts,
+  createMineralisationComparison,
+} from '../../core/comparative_biology';
 import { deliverBiologicalContract } from '../../core/biological_contracts';
 import { allocateSpecimenObjectives, type SpecimenMissionObjective } from '../../core/mission_board';
 import { MissionProgressService } from '../../core/mission_progress';
@@ -80,6 +83,54 @@ function fixture() {
 }
 
 describe('comparative biological studies', () => {
+  it('requests real covering forms, rejects forged provenance and pays the complete pair only once', () => {
+    const f = fixture();
+    const field = f.fields[0];
+    const sources = field.individuals
+      .filter((actor) => actor.speciesId === field.individuals[0].speciesId)
+      .slice(0, 2);
+    field.species = field.species.map((species) =>
+      species.id === sources[0].speciesId ? { ...species, structuralMaterial: 'mineral' as const } : species
+    );
+    sources[0].mineralisation = 'standard';
+    sources[1].mineralisation = 'reinforced';
+    const mission = createMineralisationComparison(
+      f.station,
+      'Fixture',
+      [f.biosphere],
+      f.research.snapshot.fields,
+      [],
+      f.research
+    )[0];
+    expect(mission).toBeDefined();
+    f.progress.accept(mission);
+    const species = field.species.find((entry) => entry.id === sources[0].speciesId)!;
+    f.research.collected(species);
+    for (const source of sources) {
+      source.sampled = true;
+      f.hold.specimens!.push({
+        id: `${source.id}/tissue`,
+        sourceId: source.id,
+        siteId: field.site.id,
+        species,
+        kind: 'tissue',
+        quality: 1,
+        volumeM3: 0.1,
+        sizeScale: source.sizeScale,
+        mineralisation: source.mineralisation,
+      });
+    }
+    f.hold.specimens![1].mineralisation = 'standard';
+    const before = structuredClone(f.hold);
+    expect(deliverBiologicalContract(f.progress, f.research, f.context, mission.id).ok).toBe(false);
+    expect(f.hold).toEqual(before);
+    f.hold.specimens![1].mineralisation = 'reinforced';
+    expect(deliverBiologicalContract(f.progress, f.research, f.context, mission.id).ok).toBe(true);
+    expect(f.hold.specimens).toHaveLength(0);
+    const credits = f.resources.credits;
+    expect(deliverBiologicalContract(f.progress, f.research, f.context, mission.id).ok).toBe(false);
+    expect(f.resources.credits).toBe(credits);
+  });
   it('offers deterministic finite comparisons only for actual sizes and contrasting habitats', () => {
     const f = fixture();
     const offers = f.offers();

@@ -160,6 +160,12 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
       symmetry,
       organisation: producer ? 'modular colonial' : organisation,
       covering,
+      structuralMaterial:
+        covering === 'flexible mineral shell'
+          ? 'mineral'
+          : covering === 'silica-reinforced cuticle'
+            ? 'silica'
+            : 'organic',
       senses,
       metabolism: producer ? (lineage === 2 ? 'mixotroph' : 'autotroph') : 'heterotroph',
       respiration: aerobic ? 'aerobic' : 'anaerobic',

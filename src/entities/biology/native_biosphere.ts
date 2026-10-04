@@ -160,6 +160,12 @@ function createSpecies(
         ? 'segmented multicellular'
         : 'unsegmented multicellular',
     covering: family.covering,
+    structuralMaterial:
+      family.covering === 'thin mineral shell'
+        ? 'mineral'
+        : family.covering === 'silica-reinforced cuticle'
+          ? 'silica'
+          : 'organic',
     senses: family.senses,
     metabolism: producer ? 'autotroph' : 'heterotroph',
     respiration: aerobic ? 'aerobic' : 'anaerobic',

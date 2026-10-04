@@ -103,6 +103,11 @@ export function assessBiologicalRequests(
         const quality = Math.max(0.2, 1 - contact.target.injury * 0.35);
         if (objective.sizeClass && individualSizeClass(contact.target.sizeScale) !== objective.sizeClass)
           reason = `${objective.sizeClass.toUpperCase()} individual required; observed ${individualSizeClass(contact.target.sizeScale).toUpperCase()}`;
+        else if (
+          objective.mineralisation &&
+          (contact.target.mineralisation ?? 'standard') !== objective.mineralisation
+        )
+          reason = `${objective.mineralisation.toUpperCase()} covering required`;
         else if (quality < objective.minimumQuality)
           reason = `Quality ${Math.round(quality * 100)}%; minimum ${Math.round(objective.minimumQuality * 100)}%`;
         else if (objective.requiredKind === 'tissue' && contact.target.sampled)
@@ -111,7 +116,7 @@ export function assessBiologicalRequests(
           if (contact.target.state === 'dead') reason = 'Dead organism; live reference required';
           else
             reason = stasisCompatibility(
-              individualPhysicalProfile(canonical, contact.target.sizeScale),
+              individualPhysicalProfile(canonical, contact.target.sizeScale, contact.target.mineralisation),
               contact.stasisClass
             );
         }
@@ -121,12 +126,12 @@ export function assessBiologicalRequests(
       const requirement =
         objective.kind === 'biology-data'
           ? 'FIELD ANALYSIS'
-          : `${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()} REFERENCE`;
+          : `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()} REFERENCE`;
       if (canContribute)
         requirements.add(
           objective.kind === 'biology-data'
             ? 'ANALYSIS'
-            : `${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
+            : `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
         );
       lines.push({
         segments: [

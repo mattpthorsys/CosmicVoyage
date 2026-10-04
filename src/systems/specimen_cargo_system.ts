@@ -1,13 +1,18 @@
 import type { CargoComponent } from '../core/components';
 import { CargoSystem } from './cargo_systems';
-import type { SpeciesDefinition, SpecimenContainer } from '../entities/biology/biology_types';
+import type {
+  SpeciesDefinition,
+  SpecimenContainer,
+  IndividualMineralisation,
+} from '../entities/biology/biology_types';
 import { individualPhysicalProfile } from '../entities/biology/biology_rules';
 
 /** Returns the visible capability envelope of the fitted ship/portable preservation kit. */
 export function stasisCompatibility(
   species: SpeciesDefinition,
   equipmentClass: number,
-  sizeScale = 1
+  sizeScale = 1,
+  mineralisation?: IndividualMineralisation
 ): string | null {
   if (equipmentClass < 1) return 'No stasis kit fitted';
   const range = equipmentClass >= 2 ? [273, 345, 0.04, 12] : [280, 315, 0.3, 2];
@@ -15,7 +20,8 @@ export function stasisCompatibility(
     return 'Temperature outside preservation envelope';
   if (species.pressureBar < range[2] || species.pressureBar > range[3])
     return 'Pressure outside preservation envelope';
-  if (individualPhysicalProfile(species, sizeScale).massKg > 80) return 'Beyond rover handling mass (80 kg)';
+  if (individualPhysicalProfile(species, sizeScale, mineralisation).massKg > 80)
+    return 'Beyond rover handling mass (80 kg)';
   return null;
 }
 
@@ -30,11 +36,16 @@ export class SpecimenCargoSystem {
       return 'Insufficient cargo volume';
     if (
       container.kind !== 'tissue' &&
-      individualPhysicalProfile(container.species, container.sizeScale).massKg > 80
+      individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg > 80
     )
       return 'Whole specimen exceeds rover handling mass (80 kg); tissue remains obtainable';
     if (container.kind === 'live') {
-      const incompatibility = stasisCompatibility(container.species, equipmentClass, container.sizeScale);
+      const incompatibility = stasisCompatibility(
+        container.species,
+        equipmentClass,
+        container.sizeScale,
+        container.mineralisation
+      );
       if (incompatibility) return incompatibility;
       if (
         (hold.specimens ?? []).filter((item) => item.kind === 'live').length >= (equipmentClass >= 2 ? 6 : 2)

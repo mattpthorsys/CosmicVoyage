@@ -8,6 +8,43 @@ import { createEncounter } from '../../systems/surface_encounter_system';
 import type { HabitatKind } from '../../entities/biology/biology_types';
 
 describe('native biological families', () => {
+  it('persists a bounded covering variation within suitable inherited materials', () => {
+    const forms = new Set<string>();
+    for (let index = 0; index < 30; index++) {
+      const environment = biologyFixture({ origin: 'native', seed: `covering-${index}` });
+      const species = generateNativeSpecies(environment, new PRNG(environment.seed));
+      const biosphere = {
+        id: environment.bodyId,
+        bodyName: 'Fixture',
+        origin: 'native' as const,
+        species,
+        sites: [],
+      };
+      const site = {
+        id: `covering-site-${index}`,
+        x: 1,
+        y: 1,
+        label: 'Rocks',
+        habitat: {
+          version: 1,
+          kind: 'rocky-margin' as const,
+          relief: 0.1,
+          waterDistanceCells: 1,
+          description: 'Rock margin',
+        },
+      };
+      const field = createEncounter(biosphere, site);
+      expect(field).toEqual(createEncounter(biosphere, site));
+      for (const actor of field.individuals) {
+        if (!actor.mineralisation) continue;
+        forms.add(actor.mineralisation);
+        expect(field.species.find((entry) => entry.id === actor.speciesId)?.structuralMaterial).not.toBe(
+          'organic'
+        );
+      }
+    }
+    expect(forms).toEqual(new Set(['standard', 'reinforced']));
+  });
   it('produces distinct inherited communities rather than the managed templates, with deterministic anatomy', () => {
     const signatures = new Set<string>();
     for (let index = 0; index < 40; index++) {

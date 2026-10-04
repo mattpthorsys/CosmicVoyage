@@ -1,4 +1,8 @@
-import type { OrganismAnatomy, SpeciesDefinition } from '../entities/biology/biology_types';
+import type {
+  IndividualMineralisation,
+  OrganismAnatomy,
+  SpeciesDefinition,
+} from '../entities/biology/biology_types';
 import { PRNG } from '../utils/prng';
 
 export interface PixelSprite {
@@ -35,7 +39,11 @@ export const ROVER_SPRITE: PixelSprite = {
 };
 
 /** Bakes tiny four-colour silhouettes once; visual variation never advances a gameplay RNG. */
-export function createOrganismSprite(species: SpeciesDefinition, sizeScale = 1): PixelSprite {
+export function createOrganismSprite(
+  species: SpeciesDefinition,
+  sizeScale = 1,
+  mineralisation?: IndividualMineralisation
+): PixelSprite {
   const prng = new PRNG(species.id).seedNew('silhouette');
   const sessile = species.behaviour === 'sessile';
   const pattern = species.bodyForm
@@ -67,6 +75,10 @@ export function createOrganismSprite(species: SpeciesDefinition, sizeScale = 1):
   // A small highlight is an observed surface feature, not a disclosure of hidden physiology.
   first[1] = first[1].replace('3', '4');
   second[1] = second[1].replace('3', '4');
+  if (mineralisation === 'reinforced') {
+    first[1] = first[1].replace(/[23]/g, '4');
+    second[1] = second[1].replace(/[23]/g, '4');
+  }
   const display = [...first];
   if (!sessile) {
     display[0] = '.4..4.';

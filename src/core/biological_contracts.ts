@@ -11,7 +11,7 @@ import { allocateSpecimenObjectives, type StarbaseMission } from './mission_boar
 import type { MissionProgressService } from './mission_progress';
 import type { XenobiologyService } from './xenobiology_service';
 import { createBiologicalReference } from './biological_mission_guidance';
-import { createComparativeBiologicalContracts } from './comparative_biology';
+import { createComparativeBiologicalContracts, createMineralisationComparison } from './comparative_biology';
 
 export interface BiologicalDeliveryContext {
   readonly station: Pick<Starbase, 'id' | 'name' | 'kind'>;
@@ -37,7 +37,7 @@ export function biologicalRequirement(mission: StarbaseMission): string {
     return mission.objectives
       .map((objective) =>
         objective.kind === 'specimen'
-          ? `${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
+          ? `${objective.mineralisation ? `${objective.mineralisation.toUpperCase()} ` : ''}${objective.sizeClass ? `${objective.sizeClass.toUpperCase()} ` : ''}${objective.requiredKind.toUpperCase()}`
           : 'ANALYSIS'
       )
       .join(' + ');
@@ -88,7 +88,7 @@ export function createBiologicalContract(
                 container.species.id === entry.id &&
                 container.kind === 'live' &&
                 container.quality >= 0.75 &&
-                !stasisCompatibility(container.species, 1, container.sizeScale)
+                !stasisCompatibility(container.species, 1, container.sizeScale, container.mineralisation)
             ))
       );
     if (!species) continue;
@@ -217,6 +217,7 @@ export function createBiologicalContracts(
   return [
     ...offers,
     ...createComparativeBiologicalContracts(station, systemName, biospheres, fields, owned, research),
+    ...createMineralisationComparison(station, systemName, biospheres, fields, owned, research),
   ];
 }
 
@@ -279,6 +280,7 @@ export function deliverBiologicalContract(
       !source ||
       (container.kind === 'tissue' ? !source.sampled : source.state !== 'collected') ||
       container.sizeScale !== source.sizeScale ||
+      container.mineralisation !== source.mineralisation ||
       source.speciesId !== container.species.id ||
       field.bodyId !== container.species.bodyId ||
       (research.evidence(container.species.id)?.level ?? 0) < 2

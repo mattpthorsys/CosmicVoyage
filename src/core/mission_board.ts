@@ -5,6 +5,7 @@ import { StellarBody } from '../entities/stellar_body';
 import { DiscoveryLevel, hasDiscoveryLevel } from './discovery';
 import type {
   IndividualSizeClass,
+  IndividualMineralisation,
   SpeciesDefinition,
   SpecimenContainer,
 } from '../entities/biology/biology_types';
@@ -56,6 +57,7 @@ export interface SpecimenMissionObjective {
   requiredKind: 'live' | 'tissue';
   minimumQuality: number;
   sizeClass?: IndividualSizeClass;
+  mineralisation?: IndividualMineralisation;
   reference?: BiologicalReference;
   location?: MissionBodyLocation;
 }
@@ -189,7 +191,8 @@ export function matchesSpecimenObjective(
     container.siteId === objective.siteId &&
     container.kind === objective.requiredKind &&
     container.quality >= objective.minimumQuality &&
-    (!objective.sizeClass || individualSizeClass(container.sizeScale) === objective.sizeClass)
+    (!objective.sizeClass || individualSizeClass(container.sizeScale) === objective.sizeClass) &&
+    (!objective.mineralisation || (container.mineralisation ?? 'standard') === objective.mineralisation)
   );
 }
 

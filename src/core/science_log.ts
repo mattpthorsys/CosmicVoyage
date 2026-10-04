@@ -3,7 +3,11 @@ import type { InputManager } from './input_manager';
 import type { MissionJournalReturn } from './mission_journal';
 import type { StarbaseMission } from './mission_board';
 import { allocateSpecimenObjectives } from './mission_board';
-import { individualSizeLabel, individualPhysicalProfile } from '../entities/biology/biology_rules';
+import {
+  individualSizeLabel,
+  individualPhysicalProfile,
+  mineralisationLabel,
+} from '../entities/biology/biology_rules';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { createBiologicalDossier } from './xenobiology_ui';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
@@ -214,7 +218,7 @@ export class ScienceLog {
               const container = allocated.get(objective.id);
               if (container && complete)
                 line(
-                  `${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}%`,
+                  `${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}%`,
                   'cyan'
                 );
               if (objective.kind === 'biology-data' && complete) {
@@ -227,6 +231,8 @@ export class ScienceLog {
                     'cyan'
                   );
               }
+              if (container?.mineralisation)
+                line(`Recorded specimen: ${mineralisationLabel(container.mineralisation)}`, 'cyan');
             }
           }
         }

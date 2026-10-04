@@ -7,6 +7,7 @@ export const ENCOUNTER_CELL_METRES = 5;
 export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territorial' | 'ambush';
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
 export type IndividualSizeClass = 'small' | 'typical' | 'large';
+export type IndividualMineralisation = 'standard' | 'reinforced';
 export type EvidenceLevel = 0 | 1 | 2 | 3;
 export type StunPower = 0 | 1 | 2;
 export type BiologicalActivity =
@@ -85,6 +86,7 @@ export interface SpeciesDefinition {
   readonly anatomy?: OrganismAnatomy;
   /** A bounded community-selection weight, not a simulated population count. */
   readonly relativeAbundance?: number;
+  readonly structuralMaterial?: 'organic' | 'silica' | 'mineral';
 }
 
 export interface BiologySite {
@@ -140,6 +142,7 @@ export interface SpecimenContainer {
   volumeM3: number;
   /** Mass relative to the canonical species profile; absent in pre-variation containers. */
   sizeScale?: number;
+  mineralisation?: IndividualMineralisation;
 }
 
 export interface EncounterIndividual {
@@ -158,6 +161,7 @@ export interface EncounterIndividual {
   groupId?: string;
   retreatUntil?: number;
   sizeScale?: number;
+  mineralisation?: IndividualMineralisation;
   activity?: BiologicalActivity;
   /** Local action time, never wall time; a fresh warning protects the whole initiating command. */
   displayUntil?: number;

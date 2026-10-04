@@ -53,6 +53,36 @@ function fixture(sizeScale: number) {
 }
 
 describe('individual physical variation', () => {
+  it('retains reinforced covering in the specimen and refuses handling above the shared mass limit', () => {
+    const f = fixture(1);
+    f.field.species = f.field.species.map((species) =>
+      species.id === f.actor.speciesId
+        ? { ...species, massKg: 75, structuralMaterial: 'mineral' as const }
+        : species
+    );
+    f.actor.mineralisation = 'reinforced';
+    const canonical = f.field.species.find((species) => species.id === f.actor.speciesId)!;
+    const profile = individualProfile(f.field, f.actor);
+    expect(profile.massKg).toBeCloseTo(86.25);
+    expect(profile.armour).toBeGreaterThan(canonical.armour);
+    expect(stunOutcome(profile, 1).stunned).toBeLessThan(stunOutcome(canonical, 1).stunned);
+    const before = structuredClone(f.field);
+    expect(f.system.act(f.field, { kind: 'collect', targetId: f.actor.id }, f.cargo, 1).elapsedSeconds).toBe(
+      0
+    );
+    expect(f.field).toEqual(before);
+    expect(
+      f.system.act(f.field, { kind: 'sample', targetId: f.actor.id }, f.cargo, 1).elapsedSeconds
+    ).toBeGreaterThan(0);
+    expect(f.cargo.specimens![0].mineralisation).toBe('reinforced');
+    const service = new XenobiologyService();
+    service.snapshot.fields[f.field.site.id] = f.field;
+    service.collected(canonical);
+    expect(() => validateXenobiology(service.createSnapshot(), f.cargo.specimens!)).not.toThrow();
+    const corrupt = structuredClone(f.cargo.specimens!);
+    corrupt[0].mineralisation = 'standard';
+    expect(() => validateXenobiology(service.createSnapshot(), corrupt)).toThrow('covering');
+  });
   it('uses mass scale and cubic length consistently in stun predictions and handling', () => {
     const f = fixture(0.45);
     const canonical = f.field.species.find((species) => species.id === f.actor.speciesId)!;

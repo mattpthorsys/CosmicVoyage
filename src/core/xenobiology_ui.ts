@@ -4,10 +4,15 @@ import type {
   SpeciesDefinition,
   SpecimenContainer,
   StunPower,
+  IndividualMineralisation,
 } from '../entities/biology/biology_types';
 import { estimateStun } from '../entities/biology/stun_model';
 import { encounterVisible, individualSpecies, individualProfile } from '../systems/surface_encounter_system';
-import { individualPhysicalProfile, individualSizeLabel } from '../entities/biology/biology_rules';
+import {
+  individualPhysicalProfile,
+  individualSizeLabel,
+  mineralisationLabel,
+} from '../entities/biology/biology_rules';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import { organismActivity } from '../systems/organism_behaviour';
 import {
@@ -84,15 +89,20 @@ export interface EncounterViewModel {
   readonly requests: readonly string[];
 }
 
-const spriteCache = new WeakMap<SpeciesDefinition, Map<number, PixelSprite>>();
+const spriteCache = new WeakMap<SpeciesDefinition, Map<string, PixelSprite>>();
 
 /** Keeps procedural sprite baking outside the frame drawing loop. */
-function organismSprite(species: SpeciesDefinition, sizeScale = 1): PixelSprite {
-  const variants = spriteCache.get(species) ?? new Map<number, PixelSprite>();
-  const prior = variants.get(sizeScale);
+function organismSprite(
+  species: SpeciesDefinition,
+  sizeScale = 1,
+  mineralisation?: IndividualMineralisation
+): PixelSprite {
+  const variants = spriteCache.get(species) ?? new Map<string, PixelSprite>();
+  const key = `${sizeScale}:${mineralisation ?? 'standard'}`;
+  const prior = variants.get(key);
   if (prior) return prior;
-  const sprite = createOrganismSprite(species, sizeScale);
-  variants.set(sizeScale, sprite);
+  const sprite = createOrganismSprite(species, sizeScale, mineralisation);
+  variants.set(key, sprite);
   spriteCache.set(species, variants);
   return sprite;
 }
@@ -186,6 +196,7 @@ function specimenEstimates(
       quality: Math.max(0.2, 1 - (kind === 'dead' && target.state !== 'dead' ? 1 : target.injury) * 0.35),
       volumeM3: 0.1,
       sizeScale: target.sizeScale,
+      mineralisation: target.mineralisation,
     }).credits,
   }));
 }
@@ -234,6 +245,8 @@ export function createEncounterView(
     }
     scanner.push(`Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`);
     if (target.sizeScale !== undefined) scanner.push(`Size: ${individualSizeLabel(target.sizeScale)}`);
+    if (level >= 2 && target.mineralisation !== undefined)
+      scanner.push(`Covering: ${mineralisationLabel(target.mineralisation)} / no automatic rarity premium`);
     if (target.groupId && (target.retreatUntil ?? 0) > field.elapsedSeconds)
       scanner.push('Observed activity: coordinated group withdrawal');
   } else scanner.push('No contact selected', `${visible.length} visible biological contacts`);
@@ -290,7 +303,7 @@ export function createEncounterView(
           (service.evidence(species.id)?.level ?? 0) >= 2 &&
           ['territorial', 'ambush'].includes(species.behaviour),
         selected: individual.id === targetId,
-        sprite: organismSprite(species, individual.sizeScale),
+        sprite: organismSprite(species, individual.sizeScale, individual.mineralisation),
         missionTarget: assessBiologicalRequests(
           species,
           service.evidence(species.id)?.level ?? 0,
@@ -335,7 +348,9 @@ export function createEncounterView(
     targetMass: species
       ? `${massEstimate(species.massKg)} / ${individualSizeLabel(target?.sizeScale)} / ${species.symmetry}`
       : '',
-    targetSprite: target ? organismSprite(individualSpecies(field, target), target.sizeScale) : undefined,
+    targetSprite: target
+      ? organismSprite(individualSpecies(field, target), target.sizeScale, target.mineralisation)
+      : undefined,
     cargo: {
       ...cargo,
       percent: cargo.capacityM3 > 0 ? Math.round((100 * cargo.usedM3) / cargo.capacityM3) : 0,
@@ -434,6 +449,16 @@ export function createBiologicalDossier(
   entry('Body plan', species.symmetry, matchTone('symmetry'));
   if (contact?.target.sizeScale !== undefined)
     entry('Individual size', individualSizeLabel(contact.target.sizeScale), 'amber');
+  if (level >= 2 && contact?.target.mineralisation !== undefined) {
+    entry('Covering form', mineralisationLabel(contact.target.mineralisation), 'cyan');
+    entry(
+      'Handling',
+      contact.target.mineralisation === 'reinforced'
+        ? 'Heavier covering; adjusted mass and stun estimates. Tissue comparison may be useful.'
+        : 'Standard reference form; no automatic individual rarity premium.',
+      'amber'
+    );
+  }
   if (level >= 1 && species.bodyForm) entry('External form', species.bodyForm, matchTone('bodyForm', 'cyan'));
   if (level >= 2 && species.anatomy) {
     const anatomy = species.anatomy;
@@ -570,7 +595,7 @@ export function specimenRows(
       `${service.quote(container.species, container).credits}`,
       container.kind,
     ],
-    detail: `${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${individualPhysicalProfile(container.species, container.sizeScale).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
+    detail: `${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${individualPhysicalProfile(container.species, container.sizeScale, container.mineralisation).massKg.toFixed(2)} kg / quality ${Math.round(container.quality * 100)}% / ${service.status(container.species)}. Whole sealed container; disposal is irreversible.`,
     tone: container.kind === 'live' ? 'green' : 'normal',
   }));
 }
@@ -592,7 +617,7 @@ export function specimenSaleRows(
     return {
       id: `sample:${container.id}`,
       cells: [container.species.name, '1', String(credits), `${container.kind} specimen`],
-      detail: `${availability} ${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
+      detail: `${availability} ${container.kind.toUpperCase()} / ${individualSizeLabel(container.sizeScale)} / ${mineralisationLabel(container.mineralisation)} / ${carrier === 'rover' ? 'stowed rover' : 'ship hold'} / ${container.volumeM3.toFixed(1)} m^3 / quality ${Math.round(container.quality * 100)}%.`,
       disabled: credits <= 0,
       tone: credits > 0 ? 'green' : 'normal',
       cellTones: ['normal', 'normal', 'amber', 'cyan'],

@@ -161,9 +161,17 @@ function createHabitatPopulation(
     const ordinal = individuals.filter((actor) => actor.speciesId === species.id).length;
     const massScale =
       [0.45, 1, 1.65][ordinal % 3] * new PRNG(site.id).seedNew('individual-size', index).random(0.94, 1.06);
+    const mineralisation =
+      biosphere.origin === 'native' && species.structuralMaterial && species.structuralMaterial !== 'organic'
+        ? new PRNG(site.id).seedNew('individual-covering', index).random() < 0.22
+          ? 'reinforced'
+          : 'standard'
+        : undefined;
     // The existing low-energy anaerobic content remains small even at the top of its size distribution.
     const sizeScale =
-      species.respiration === 'anaerobic' ? Math.min(massScale, 3 / species.massKg) : massScale;
+      species.respiration === 'anaerobic'
+        ? Math.min(massScale, 3 / (species.massKg * (mineralisation === 'reinforced' ? 1.15 : 1)))
+        : massScale;
     // Join each contact to the observation corridor, regardless of illustrative outcrop placement.
     for (let cx = Math.min(x, 16); cx <= Math.max(x, 16); cx++)
       terrain[y] = terrain[y].substring(0, cx) + '.' + terrain[y].substring(cx + 1);
@@ -183,6 +191,7 @@ function createHabitatPopulation(
       groupId: species.socialBehaviour ? `${site.id}/group:${species.id}` : undefined,
       retreatUntil: species.socialBehaviour ? 0 : undefined,
       sizeScale,
+      mineralisation,
     });
   }
   return individuals;
@@ -203,7 +212,11 @@ export function individualSpecies(field: EncounterField, individual: EncounterIn
 
 /** Resolves effective dimensions for handling, outcomes and presentation while leaving catalogue traits canonical. */
 export function individualProfile(field: EncounterField, individual: EncounterIndividual): SpeciesDefinition {
-  return individualPhysicalProfile(individualSpecies(field, individual), individual.sizeScale);
+  return individualPhysicalProfile(
+    individualSpecies(field, individual),
+    individual.sizeScale,
+    individual.mineralisation
+  );
 }
 
 /** Determines sensor/weapon visibility along a short obstacle-tested ray. */
@@ -308,6 +321,7 @@ export class SurfaceEncounterSystem {
           quality: Math.max(0.2, 1 - target.injury * 0.35),
           volumeM3: kind === 'tissue' ? 0.1 : Math.ceil((0.2 + profile.massKg / 250) * 10) / 10,
           sizeScale: target.sizeScale,
+          mineralisation: target.mineralisation,
         } as const;
         const refusal = this.specimens.add(cargo, container, stasisClass);
         if (refusal) return { ...result, message: refusal };
