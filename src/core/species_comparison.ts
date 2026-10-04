@@ -91,6 +91,7 @@ export function speciesComparisonLines(
     matches >= 2 ? 'green' : 'amber'
   );
   line('Similarity can reflect convergence. Common ancestry remains unconfirmed.', 'muted');
+  line('');
   for (const character of CHARACTERS) {
     line(character.label.toUpperCase(), 'cyan', true);
     const a = primary.level >= character.level ? character.value(primary) : 'unresolved';

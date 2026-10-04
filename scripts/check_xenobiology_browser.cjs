@@ -975,8 +975,7 @@ async function main() {
     await load(pressureDock);
     assert(pressure.shipyardIndex >= 0, 'Pressure upgrade needs an inhabited shipyard.');
     for (let index = 0; index < pressure.shipyardIndex; index++) await press('ArrowRight');
-    await press('ArrowDown');
-    await press('ArrowDown');
+    for (let index = 0; index < 15; index++) await press('ArrowDown');
     await capture('pressure-cradle-shipyard');
     await press('Enter');
     const fitted = await checkpoint();

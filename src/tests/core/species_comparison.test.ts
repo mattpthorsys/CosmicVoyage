@@ -33,6 +33,7 @@ describe('evidence-based species comparison', () => {
       b = record(2, 3);
     const before = structuredClone([a, b]);
     const report = speciesComparisonLines(a, b);
+    expect(report[6].segments).toEqual([]);
     expect(
       speciesComparisonLines(a, { ...b, species: { ...b.species, lineage: a.species.lineage } })
     ).toEqual(report);
