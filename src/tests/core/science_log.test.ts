@@ -21,6 +21,36 @@ function origin(siteId = 'habitat'): BiologyOrigin {
 }
 
 describe('science log', () => {
+  it('compares only acquired records and cycles counterparts without collecting or changing time', () => {
+    const service = new XenobiologyService();
+    const species = generateBiosphere(biologyFixture())!.species;
+    species.slice(0, 3).forEach((entry) => service.observe(entry, 3));
+    const before = service.createSnapshot();
+    const log = new ScienceLog();
+    const actions = new Set(['BIOLOGY_COLLECT']);
+    const input = {
+      wasActionJustPressed: (action: string) => actions.has(action),
+      wasAnyKeyJustPressed: () => actions.size > 0,
+    };
+    log.input(input, log.entries(service, []), log.createModel(service, [], 1, 100, 35, false));
+    expect(log.comparing).toBe(true);
+    const first = log.createModel(service, [], 1, 100, 35, false);
+    expect(
+      first.dashboard!.some((line) => line.segments.some((span) => span.text === 'COMPARATIVE BIOLOGY'))
+    ).toBe(true);
+    const old = log.comparisonId;
+    actions.clear();
+    actions.add('CYCLE_TARGET');
+    log.input(input, log.entries(service, []), first);
+    expect(log.comparisonId).not.toBe(old);
+    const narrow = log.createModel(service, [], 1, 32, 24, false);
+    expect(
+      narrow.dashboard!.every(
+        (line) => line.segments.reduce((length, span) => length + span.text.length, 0) <= 20
+      )
+    ).toBe(true);
+    expect(service.createSnapshot()).toEqual(before);
+  });
   it('compares actual acquired contributions, updates when cargo is lost and preserves demand', () => {
     const service = new XenobiologyService();
     const species = generateBiosphere(biologyFixture())!.species[0];

@@ -8,6 +8,7 @@ import { TerminalTextReveal } from './terminal_text_reveal';
 import { createBiologicalDossier } from './xenobiology_ui';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import type { XenobiologyService } from './xenobiology_service';
+import { comparisonCandidates, speciesComparisonLines } from './species_comparison';
 import {
   clampIndex,
   getDashboardVisibleRows,
@@ -27,6 +28,8 @@ export class ScienceLog {
   filter = 0;
   viewOffset = 0;
   notice = '';
+  comparing = false;
+  comparisonId: string | null = null;
   readonly reveal = new TerminalTextReveal();
 
   /** Opens a paused record, preserving the last selected species. */
@@ -83,6 +86,18 @@ export class ScienceLog {
       return;
     }
     const selected = this.selected(entries);
+    if (input.wasActionJustPressed('BIOLOGY_COLLECT')) {
+      this.comparing = !this.comparing;
+      this.viewOffset = 0;
+      return;
+    }
+    if (this.comparing && selected && input.wasActionJustPressed('CYCLE_TARGET')) {
+      const candidates = comparisonCandidates(selected, entries);
+      const index = candidates.findIndex((entry) => entry.species.id === this.comparisonId);
+      this.comparisonId = candidates[(index + 1) % Math.max(1, candidates.length)]?.species.id ?? null;
+      this.viewOffset = 0;
+      return;
+    }
     if (input.wasActionJustPressed('BIOLOGY_SITE')) {
       this.originIndex = (this.originIndex + 1) % Math.max(1, selected?.origins?.length ?? 0);
       this.viewOffset = 0;
@@ -234,7 +249,13 @@ export class ScienceLog {
           line(`Next ${kind} reference: approximately ${value.toLocaleString()} Cr at full quality`, 'amber');
         }
       }
-      lines.push(...createBiologicalDossier(species, service, width));
+      if (this.comparing) {
+        const candidates = comparisonCandidates(entry, entries);
+        const counterpart =
+          candidates.find((candidate) => candidate.species.id === this.comparisonId) ?? candidates[0];
+        this.comparisonId = counterpart?.species.id ?? null;
+        lines.push(...speciesComparisonLines(entry, counterpart));
+      } else lines.push(...createBiologicalDossier(species, service, width));
     }
     if (this.notice) lines.unshift({ segments: [{ text: this.notice, tone: 'amber' }] });
     const dashboard = wrapDashboardLines(lines, width);
@@ -243,7 +264,7 @@ export class ScienceLog {
         {
           segments: [
             {
-              text: `LEFT/RIGHT species  UP/DN scroll  PGUP/DN page  S filter  B habitat  ${canLand ? 'ENTER landing site  ' : ''}ESC return`,
+              text: `LEFT/RIGHT species  ${this.comparing ? 'TAB counterpart  ' : ''}C ${this.comparing ? 'dossier' : 'compare'}  UP/DN scroll  PGUP/DN page  S filter  B habitat  ${canLand ? 'ENTER landing site  ' : ''}ESC return`,
             },
           ],
         },

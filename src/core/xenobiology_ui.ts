@@ -160,7 +160,7 @@ export function speciesDescription(species: SpeciesDefinition, service: Xenobiol
   if (level >= 2) lines.push(`${species.behaviour}; ${species.role}`, species.chemistry);
   if (level >= 3)
     lines.push(
-      `${species.lineage}; ${species.organisation}`,
+      species.organisation,
       species.covering,
       species.senses,
       `${species.sizeM.toFixed(2)} m; ${species.temperatureK.toFixed(0)} K; ${species.pressureBar.toFixed(2)} bar`
@@ -479,8 +479,8 @@ export function createBiologicalDossier(
   section('Structure & Lineage');
   if (level >= 3) {
     entry(
-      'Ancestry',
-      `${species.lineage} / ${species.origin === 'introduced' ? 'managed introduction' : 'native biosphere'}`,
+      'Origin',
+      `${species.origin === 'introduced' ? 'managed introduction' : 'native biosphere'} / ancestry unconfirmed`,
       'cyan'
     );
     entry('Organisation', species.organisation);

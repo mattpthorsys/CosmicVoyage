@@ -71,7 +71,8 @@ describe('xenobiology interface', () => {
     expect(speciesDescription(species, service).join(' ')).toContain(species.chemistry);
     expect(speciesDescription(species, service).join(' ')).not.toContain(species.lineage);
     service.observe(species, 3);
-    expect(speciesDescription(species, service).join(' ')).toContain(species.lineage);
+    expect(speciesDescription(species, service).join(' ')).toContain(species.organisation);
+    expect(speciesDescription(species, service).join(' ')).not.toContain(species.lineage);
   });
   it('wraps dossier information rather than truncating it', () => {
     const line = 'A long biological description containing meaningful observations and scientific value';
