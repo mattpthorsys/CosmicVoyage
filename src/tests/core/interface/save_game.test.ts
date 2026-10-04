@@ -22,6 +22,8 @@ import { ethologyFixture } from '../../fixtures/ethology';
 import { XenobiologyService } from '../../../core/xenobiology_service';
 import { SurfaceEncounterSystem } from '../../../systems/surface_encounter_system';
 import { createDefaultCargo } from '../../../core/components';
+import { createObservatorySnapshot } from '../../../core/observatory_types';
+import { observatoryContactFixture, observatoryObservationFixture } from '../../fixtures/observatory';
 import { createBehaviourContracts } from '../../../core/behaviour_research';
 import { createPropaguleContract } from '../../../core/propagule_research';
 
@@ -153,6 +155,28 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
+  it('round-trips observatory evidence and a destination while accepting voyages without the new optional instrument state', () => {
+    const save = createSave();
+    expect(() => parseGameSave(JSON.stringify(save))).not.toThrow();
+    const contact = observatoryContactFixture();
+    save.player.ship.observatoryClass = 2;
+    save.observatory = createObservatorySnapshot();
+    save.observatory.observations[contact.id] = observatoryObservationFixture(contact);
+    save.observatory.destination = {
+      worldX: contact.worldX,
+      worldY: contact.worldY,
+      systemSlot: 0,
+      name: contact.name,
+      kind: contact.kind,
+    };
+    expect(parseGameSave(JSON.stringify(save)).observatory).toEqual(save.observatory);
+    save.observatory.destination.systemSlot = 1;
+    expect(() => parseGameSave(JSON.stringify(save))).toThrow('unreachable');
+    save.observatory.destination.systemSlot = 0;
+    save.player.ship.observatoryClass = 9;
+    expect(() => parseGameSave(JSON.stringify(save))).toThrow('observatory class');
+  });
+
   it('round-trips viable batches, source depletion, reproductive demand and typed accepted requests', () => {
     const save = createSave();
     const f = ethologyFixture();

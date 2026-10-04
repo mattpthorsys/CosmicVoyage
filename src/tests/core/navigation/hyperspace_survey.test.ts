@@ -87,6 +87,16 @@ describe('HyperspaceSurveyService', () => {
     expect(fullSystemCalls).toBe(0);
     expect(first.nearestSystemContact?.system?.name).toBe('Survey-2');
     expect(first.starbaseMarkers.some((marker) => marker.x === 7 && marker.y === 4)).toBe(true);
+
+    service.setInstrumentMultiplier(1.4);
+    const fitted = service.getSurvey(0, 0, 11, 9);
+    expect(fitted).not.toBe(first);
+    expect(fitted.medium.sensorRangeMultiplier).toBe(1.4);
+    expect(fitted.visibleCells).toEqual(first.visibleCells);
+    expect(service.getSurvey(0, 0, 11, 9)).toBe(fitted);
+    service.setInstrumentMultiplier(1);
+    expect(service.getSurvey(0, 0, 11, 9).medium.sensorRangeMultiplier).toBe(1);
+    expect(fullSystemCalls).toBe(0);
   });
 
   it('finds nearest system contact by outward shells before scanning the full brown-dwarf horizon', () => {

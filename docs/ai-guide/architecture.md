@@ -98,6 +98,10 @@ generate mission outcomes, or mutate player progression.
 - `InterfaceModeController` guarantees that only one modal interface is active.
 - `GalaxyMapController` owns map pan and zoom while `galaxy-map` is the active
   modal; it is not a physical location state.
+- `ObservatoryService` owns bounded distant surveys and persistent signal evidence;
+  `ObservatoryController` owns the full-screen instrument's filters and navigation.
+  Its renderer never generates planets or changes discovery progress. See
+  [the observatory guide](../observatory.md) for equipment, limits and controls.
 - `Player` owns resources, position, ship, cargo, rover, and crew.
 - `XenobiologyService` owns persisted evidence, encounter actors and campaign-wide
   research demand. `SurfaceEncounterSystem` resolves commands; its controller

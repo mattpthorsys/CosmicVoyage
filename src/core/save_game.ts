@@ -23,11 +23,7 @@ import {
 import { validateSpecimen, validateXenobiology } from '../entities/biology/biology_validation';
 import { preservationKit } from '../entities/biology/preservation';
 import { withMatReproduction } from '../entities/biology/propagules';
-import {
-  createObservatorySnapshot,
-  validateObservatorySnapshot,
-  type ObservatorySnapshot,
-} from './observatory_types';
+import { validateObservatorySnapshot, type ObservatorySnapshot } from './observatory_types';
 
 export const SAVE_GAME_VERSION = 17;
 export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v17';
@@ -386,7 +382,6 @@ export function parseGameSave(value: string | unknown): GameSave {
   validateLocation(save.location);
   validatePlayer(save.player);
   if (save.observatory !== undefined) validateObservatorySnapshot(save.observatory);
-  save.observatory ??= createObservatorySnapshot();
   validateXenobiology(save.xenobiology, [
     ...(save.player.cargoHold.specimens ?? []),
     ...(save.player.terrainVehicle.cargoHold.specimens ?? []),

@@ -68,6 +68,7 @@ export class HyperspaceSurveyService {
   private readonly maxPrefetchBatchSize = 512;
   private prefetchGeneration = 0;
   private surveyPrefetchActive = false;
+  private instrumentMultiplier = 1;
   private queuedSurveyPrefetch: {
     generation: number;
     requests: Array<{ worldX: number; worldY: number }>;
@@ -93,11 +94,27 @@ export class HyperspaceSurveyService {
     this.cellProvider.clearCache();
   }
 
+  /** Changes catalogue detection reach without altering physical stellar colours or faint-object fades. */
+  setInstrumentMultiplier(multiplier: number): void {
+    const value = Math.max(1, Math.min(2, Number.isFinite(multiplier) ? multiplier : 1));
+    if (value === this.instrumentMultiplier) return;
+    this.instrumentMultiplier = value;
+    this.surveyCache = null;
+    this.overlayContactsCache = null;
+  }
+
   /** Returns survey. */
   getSurvey(worldX: number, worldY: number, cols: number, rows: number): HyperspaceSurvey {
     const safeCols = Math.max(1, Math.floor(cols));
     const safeRows = Math.max(1, Math.floor(rows));
-    const medium = this.systemDataGenerator.getInterstellarMediumProperties(worldX, worldY);
+    const baseMedium = this.systemDataGenerator.getInterstellarMediumProperties(worldX, worldY);
+    const medium =
+      this.instrumentMultiplier === 1
+        ? baseMedium
+        : {
+            ...baseMedium,
+            sensorRangeMultiplier: baseMedium.sensorRangeMultiplier * this.instrumentMultiplier,
+          };
     const detectionRadius = Math.max(
       4,
       Math.ceil(CONFIG.DEEP_SPACE_PHENOMENA_DETECTION_RADIUS_CELLS * medium.sensorRangeMultiplier)

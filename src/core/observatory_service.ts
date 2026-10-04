@@ -1,6 +1,9 @@
 import { CONFIG } from '../config';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { SolarSystem } from '../entities/solar_system';
+import type { StellarArchitecture } from '../entities/stellar_body';
+import { AU_IN_METERS } from '../constants/physics';
+import type { BiologyOrigin } from '../entities/biology/biology_types';
 import { PRNG } from '../utils/prng';
 import {
   getHyperspaceSurveyCellProvider,
@@ -9,6 +12,7 @@ import {
 } from './hyperspace_survey_cell_provider';
 import { getStellarDetectionRadii } from './stellar_detection';
 import { measureObservatoryContact } from './observatory_measurements';
+import type { HyperspaceSurveyCell } from './hyperspace_survey';
 import {
   createObservatorySnapshot,
   observatoryContactId,
@@ -27,6 +31,8 @@ export class ObservatoryService {
   private readonly physicalCache = new Map<string, SolarSystem>();
   private readonly exposureBudgets = new Map<string, number>();
   private generation = 0;
+  private passiveGeneration = 0;
+  private lastPassiveAt = -Infinity;
 
   /** Shares the installed worker provider while retaining a deterministic synchronous fallback. */
   constructor(
@@ -40,6 +46,7 @@ export class ObservatoryService {
   /** Invalidates work when a modal closes or a new search supersedes it. */
   cancel(): void {
     this.generation++;
+    this.passiveGeneration++;
   }
 
   /** Returns a detached save payload instead of exposing live observation arrays. */
@@ -54,6 +61,7 @@ export class ObservatoryService {
     this.searchCache.clear();
     this.physicalCache.clear();
     this.exposureBudgets.clear();
+    this.lastPassiveAt = -Infinity;
   }
 
   /** Searches a physical radius in small worker batches; filters and pagination never alter coverage. */
@@ -101,8 +109,7 @@ export class ObservatoryService {
             distanceLy,
             system: cell.system,
             phenomenon: null,
-            multiplicity:
-              architecture?.kind === 'starless' ? 'unresolved' : (architecture?.kind ?? 'unresolved'),
+            multiplicity: observedMultiplicity(architecture, distanceLy, capabilities.equipmentClass),
           });
         } else if (
           capabilities.equipmentClass > 0 &&
@@ -148,14 +155,28 @@ export class ObservatoryService {
   /** Retains the best evidence; passive revisits cannot downgrade a deliberate exposure. */
   retain(contact: ObservatoryContact, observation: ObservatoryObservation): void {
     const previous = this.snapshot.observations[contact.id];
+    if (previous?.biology === 'catalogued') {
+      observation = {
+        ...observation,
+        biology: 'catalogued',
+        origin: previous.origin,
+        bodyName: previous.bodyName,
+        bodyPath: previous.bodyPath,
+        features: [
+          ...observation.features,
+          previous.origin === 'native'
+            ? 'Prior surface evidence establishes a native biosphere.'
+            : 'Registry or surface evidence establishes a managed biosphere.',
+        ].slice(0, 24),
+      };
+    }
     if (
       !previous ||
       observation.quality > previous.quality ||
       (observation.quality === previous.quality && observation.exposure > previous.exposure)
     ) {
       this.snapshot.observations[contact.id] = structuredClone(observation);
-      const keys = Object.keys(this.snapshot.observations);
-      if (keys.length > 4096) delete this.snapshot.observations[keys[0]];
+      this.trimCatalogue();
     }
   }
 
@@ -168,6 +189,92 @@ export class ObservatoryService {
       name: contact.name,
       kind: contact.kind,
     };
+  }
+
+  /** Imports confirmed surface provenance, never the hidden contents of an unvisited generated biosphere. */
+  recordKnownBiosphere(contact: ObservatoryContact, origin: BiologyOrigin, native: boolean): void {
+    const record =
+      this.snapshot.observations[contact.id] ??
+      ({
+        address: { worldX: contact.worldX, worldY: contact.worldY, systemSlot: contact.systemSlot },
+        quality: 0,
+        biology: 'unmeasured',
+        technology: 'unmeasured',
+        origin: 'unknown',
+        features: [],
+        bodyName: null,
+        bodyPath: null,
+        observedFromX: origin.worldX,
+        observedFromY: origin.worldY,
+        rangeLy: 0,
+        equipmentClass: 0,
+        exposure: 0,
+      } satisfies ObservatoryObservation);
+    // Keep native evidence in a mixed system even when a later entry describes introduced life.
+    if (record.origin === 'native' && !native) return;
+    this.snapshot.observations[contact.id] = {
+      ...record,
+      biology: 'catalogued',
+      origin: native ? 'native' : 'managed',
+      bodyName: origin.bodyName,
+      bodyPath: origin.bodyPath,
+      features: [
+        ...record.features.filter((feature) => !feature.startsWith('Prior surface evidence')),
+        `Prior surface evidence establishes a ${native ? 'native' : 'managed'} biosphere.`,
+      ].slice(0, 24),
+    };
+    this.trimCatalogue();
+  }
+
+  /** Applies the same save bound to both remote readings and imported surface evidence. */
+  private trimCatalogue(): void {
+    const keys = Object.keys(this.snapshot.observations);
+    if (keys.length > 4096) delete this.snapshot.observations[keys[0]];
+  }
+
+  /** Samples two nearby visible targets between frames, never widening the renderer's physical search. */
+  async sampleWhileTravelling(
+    cells: readonly HyperspaceSurveyCell[],
+    capabilities: ObservatoryCapabilities,
+    x: number,
+    y: number
+  ): Promise<void> {
+    const now = performance.now();
+    if (!capabilities.equipmentClass || now - this.lastPassiveAt < 750) return;
+    this.lastPassiveAt = now;
+    const generation = ++this.passiveGeneration;
+    const medium = this.generator.getInterstellarMediumProperties(x, y);
+    const targets = cells
+      .filter(
+        (cell) =>
+          cell.system.exists &&
+          cell.system.objectKind === 'stellar' &&
+          cell.rangeCells * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS <=
+            capabilities.atmosphericRadiusLy * medium.sensorRangeMultiplier
+      )
+      .sort((a, b) => a.rangeCells - b.rangeCells)
+      .slice(0, 2);
+    for (const cell of targets) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      if (generation !== this.passiveGeneration) return;
+      const address = { worldX: cell.worldX, worldY: cell.worldY, systemSlot: 0 };
+      const architecture = this.generator.getSystemProperties(cell.worldX, cell.worldY).architecture;
+      const contact: ObservatoryContact = {
+        ...address,
+        id: observatoryContactId(address),
+        name: cell.system.name ?? 'Unclassified contact',
+        kind: 'system',
+        distanceLy: observatoryDistanceLy(x, y, address),
+        system: cell.system,
+        phenomenon: null,
+        multiplicity: observedMultiplicity(
+          architecture,
+          observatoryDistanceLy(x, y, address),
+          capabilities.equipmentClass
+        ),
+      };
+      this.observe(contact, capabilities, x, y, false);
+    }
   }
 
   /** Integrates bounded exposures; reopening or rendering the terminal cannot reroll measurements. */
@@ -216,4 +323,18 @@ export class ObservatoryService {
       seconds: deliberate && capabilities.equipmentClass > 0 && used < 3 ? 300 : 0,
     };
   }
+}
+
+/** Resolves actual companions only above the instrument's angular threshold, not projected cell overlaps. */
+function observedMultiplicity(
+  architecture: StellarArchitecture | null,
+  distanceLy: number,
+  equipmentClass: number
+): ObservatoryContact['multiplicity'] {
+  if (!architecture || architecture.kind === 'starless') return 'unresolved';
+  if (architecture.kind === 'single') return 'single';
+  const angularThreshold = [0.1, 0.025, 0.008, 0.003][equipmentClass];
+  const separationAu = architecture.binarySeparation / AU_IN_METERS;
+  const angularSeparationArcsec = separationAu / Math.max(0.01, distanceLy / 3.26156);
+  return angularSeparationArcsec >= angularThreshold ? architecture.kind : 'unresolved';
 }

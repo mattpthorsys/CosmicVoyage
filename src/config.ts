@@ -78,6 +78,7 @@ export const CONFIG = {
     ROVER_CARGO: 'i',
     MISSION_JOURNAL: 'j',
     SCIENCE_LOG: 'x',
+    OBSERVATORY: 'f',
     ORBIT_DOSSIER: 'd',
     BIOLOGY_SITE: 'b',
     BIOLOGY_COLLECT: 'c',

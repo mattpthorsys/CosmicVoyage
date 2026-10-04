@@ -62,10 +62,10 @@ export interface ObservatoryCapabilities {
 
 /** Keeps photometric reach distinct from the much shorter planetary spectroscopy range. */
 export function getObservatoryCapabilities(
-  ship: Pick<ShipModificationState, 'observatoryClass' | 'damage'>
+  ship: Pick<ShipModificationState, 'observatoryClass' | 'damage'> | undefined
 ): ObservatoryCapabilities {
-  const equipmentClass = Math.max(0, Math.min(3, Math.floor(ship.observatoryClass ?? 0)));
-  const damage = Math.max(0, Math.min(100, ship.damage?.subsystemDamage.specialBay ?? 0));
+  const equipmentClass = Math.max(0, Math.min(3, Math.floor(ship?.observatoryClass ?? 0)));
+  const damage = Math.max(0, Math.min(100, ship?.damage?.subsystemDamage?.specialBay ?? 0));
   const efficiency = Math.max(0.3, 1 - damage / 140);
   return {
     equipmentClass,

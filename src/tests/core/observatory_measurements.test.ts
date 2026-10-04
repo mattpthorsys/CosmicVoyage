@@ -61,7 +61,7 @@ describe('distant planetary measurements', () => {
     expect(result.origin).toBe('managed');
     expect(result.technology).toBe('registered');
     expect(result.features.some((feature) => feature.includes('Oxygen'))).toBe(true);
-    expect(system.colonyWorld?.isSurfaceReady).toBe(false);
+    expect(system.colonyWorld?.isSurfaceReady()).toBe(false);
   });
 
   it('reports inadequate sensitivity rather than declaring distant worlds lifeless', () => {
@@ -79,6 +79,27 @@ describe('distant planetary measurements', () => {
     );
     expect(result.biology).toBe('insufficient');
     expect(result.bodyName).toBeNull();
+  });
+
+  it('does not classify common gas-giant absorption as evidence of a terrestrial biosphere', () => {
+    const { system, contact } = fixture();
+    const giant = system.colonyWorld!;
+    Object.defineProperty(giant, 'type', { value: 'GasGiant' });
+    giant.moons.splice(0);
+    system.planets.splice(0, system.planets.length, giant);
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 3;
+    const result = measureObservatoryContact(
+      contact,
+      system,
+      getObservatoryCapabilities(ship),
+      contact.worldX - 1,
+      contact.worldY,
+      1,
+      3
+    );
+    expect(result.biology).toBe('no-signal');
+    expect(result.features.some((feature) => feature.includes('not diagnostic of biology'))).toBe(true);
   });
 
   it('has repeatable results and improves quality with proximity and exposure', () => {

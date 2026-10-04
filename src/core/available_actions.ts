@@ -105,6 +105,17 @@ export function createAvailableActions(context: AvailableActionContext): Availab
           )
         );
       }
+      actions.push(
+        action(
+          'observatory',
+          'Observatory',
+          CONFIG.KEY_BINDINGS.OBSERVATORY,
+          'OBSERVATORY',
+          'utility',
+          88,
+          true
+        )
+      );
       actions.push(action('boost', 'Boost Drift', CONFIG.KEY_BINDINGS.BOOST, 'BOOST', 'movement', 82, true));
       actions.push(
         action(

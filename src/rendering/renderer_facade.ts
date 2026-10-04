@@ -29,6 +29,8 @@ import { getShortcutFontMask } from './shortcut_text';
 import { createPlayerViewSnapshot, SceneViewModel } from './scene_view_model';
 import { GalaxyMapRenderer } from './galaxy_map_renderer';
 import type { GalaxyMapModel } from '../core/galaxy_map';
+import type { ObservatoryScreenModel } from '../core/observatory';
+import { drawObservatory } from './observatory_renderer';
 
 /**
  * Facade class for the rendering system.
@@ -445,6 +447,10 @@ export class RendererFacade {
   /** Draws the modal top-down Milky Way instrument through the shared detailed raster layer. */
   drawGalaxyMap(model: GalaxyMapModel): void {
     this.galaxyMapRenderer.draw(model);
+  }
+  /** Draws the local observatory as an exclusive full-screen terminal rather than an underlying scene. */
+  drawObservatory(model: ObservatoryScreenModel): void {
+    drawObservatory(this.screenBuffer, model);
   }
   // --- Popup Drawing Method ---
   /** Draws a popup window with animations and typing text effect. */

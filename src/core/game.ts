@@ -67,6 +67,14 @@ import {
 import { MissionProgressService } from './mission_progress';
 import { MissionJournal, type MissionJournalEntry } from './mission_journal';
 import { ScienceLog } from './science_log';
+import { ObservatoryController, type ObservatoryScreenModel } from './observatory';
+import { ObservatoryService } from './observatory_service';
+import {
+  createObservatorySnapshot,
+  getObservatoryCapabilities,
+  observatoryDistanceLy,
+  type ObservatoryContact,
+} from './observatory_types';
 import { biologySurveyReport, biologySurveySummary, habitatLandingPreview } from './biology_survey';
 import {
   getMissionLandingBody,
@@ -288,6 +296,9 @@ export class Game {
   private _missionProgress?: MissionProgressService;
   private _missionJournal?: MissionJournal;
   private _scienceLog?: ScienceLog;
+  private _observatoryService?: ObservatoryService;
+  private _observatoryController?: ObservatoryController;
+  private observatorySearchSerial = 0;
   private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
@@ -326,6 +337,16 @@ export class Game {
   private get scanService(): ScanService {
     this._scanService ??= new ScanService();
     return this._scanService;
+  }
+
+  /** Owns the catalogue and evidence independently of the instrument's transient UI state. */
+  private get observatoryService(): ObservatoryService {
+    return (this._observatoryService ??= new ObservatoryService(this.systemDataGenerator, this.gameSeedPRNG));
+  }
+
+  /** Returns the paused instrument controller, including lightweight non-canvas harnesses. */
+  private get observatoryController(): ObservatoryController {
+    return (this._observatoryController ??= new ObservatoryController());
   }
 
   /** Returns the campaign's independent biology state, also in prototype-based test harnesses. */
@@ -1253,6 +1274,7 @@ export class Game {
       planetMutations,
       ...this.missionProgress.createSnapshot(),
       catalogueDiscoveries: this.scanService.createSnapshot(),
+      observatory: this._observatoryService?.createSnapshot() ?? createObservatorySnapshot(),
       economy: this.starbaseCommerce.createSnapshot(),
       xenobiology: this.xenobiology.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
@@ -1350,6 +1372,11 @@ export class Game {
     });
     this.missionProgress.resolveBiologicalReferences(this.xenobiology.snapshot.fields);
     this.scanService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.catalogueDiscoveries);
+    this.observatoryService.restoreSnapshot(
+      isLegacyGalaxyMigration
+        ? createObservatorySnapshot()
+        : (save.observatory ?? createObservatorySnapshot())
+    );
     this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
     this.statusMessage = wasRelocatedFromLegacySystem
@@ -1544,6 +1571,17 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.interfaceMode.is('observatory')) {
+      if (this.observatoryController.reveal.isActive) this.observatoryController.reveal.complete();
+      else {
+        this.inputManager.justPressedActions.add(data.action);
+        this.handleObservatoryInput();
+        this.inputManager.justPressedActions.delete(data.action);
+      }
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('ship-repairs')) {
       if (this.shipRepairConsole.reveal.isActive) this.shipRepairConsole.reveal.complete();
       else {
@@ -1711,6 +1749,8 @@ export class Game {
     window.removeEventListener('resize', this._handleResize);
     this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
     this.movementSystem.destroy();
+    this.observatorySearchSerial++;
+    this._observatoryService?.cancel();
     this.miningSystem.destroy();
     this.stateManager.destroy();
     this.renderer.destroy();
@@ -2822,6 +2862,9 @@ export class Game {
       case 'SCIENCE_LOG':
         this.openScienceLog();
         return;
+      case 'OBSERVATORY':
+        this.openObservatory();
+        return;
       case 'ORBIT_DOSSIER':
         if (this.stateManager.state === 'orbit' && !this.orbitModeState.dossier.isOpen) {
           this.orbitModeState.dossier.open();
@@ -2972,6 +3015,7 @@ export class Game {
       'cycle-target',
       'target-menu',
       'ship-menu',
+      'observatory',
       'zoom-in',
       'zoom-out',
       'section-left',
@@ -3294,6 +3338,174 @@ export class Game {
     return (this._scienceLog ??= new ScienceLog());
   }
 
+  /** Opens from travel or Operations without changing the player's physical location. */
+  private openObservatory(): void {
+    const parent = this.interfaceMode.kind;
+    if (!['none', 'ship-menu'].includes(parent) || this.popupState !== 'inactive') return;
+    if (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen) return;
+    if (this.activeEncounter) return;
+    this.observatoryController.open(parent === 'ship-menu' ? 'ship-menu' : 'none');
+    this.interfaceMode.open('observatory');
+    this.travelMode.commandMoving = false;
+    this.travelMode.observeCursor = null;
+    this.player.terrainVehicle.moving = false;
+    this.terminalOverlay.clear();
+    this.forceFullRender = true;
+    this._observatoryService?.cancel();
+    void this.refreshObservatory();
+  }
+
+  /** Cancels catalogue acquisition before restoring the parent, consuming any held movement keys. */
+  private closeObservatory(): void {
+    this.observatorySearchSerial++;
+    this.observatoryService.cancel();
+    const parent = this.observatoryController.returnTo;
+    if (parent === 'ship-menu') this.interfaceMode.open('ship-menu');
+    else this.interfaceMode.close('observatory');
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Acquires a bounded preliminary sweep with cancellable yields between expensive physical summaries. */
+  private async refreshObservatory(): Promise<void> {
+    const serial = ++this.observatorySearchSerial;
+    const controller = this.observatoryController;
+    const capabilities = getObservatoryCapabilities(this.player.ship);
+    const x = this.player.position.worldX;
+    const y = this.player.position.worldY;
+    controller.contacts = [];
+    controller.coverage = 'Acquiring contacts...';
+    try {
+      const contacts = await this.observatoryService.search(x, y, capabilities, (fraction) => {
+        if (serial !== this.observatorySearchSerial) return;
+        controller.coverage = `Catalogue acquisition ${Math.round(fraction * 100)}%`;
+        this.forceFullRender = true;
+      });
+      if (!contacts || serial !== this.observatorySearchSerial) return;
+      controller.contacts = contacts;
+      const medium = this.systemDataGenerator.getInterstellarMediumProperties(x, y);
+      const targets = contacts
+        .filter(
+          (contact) =>
+            contact.kind === 'signal' ||
+            (contact.system?.objectKind === 'stellar' &&
+              contact.distanceLy <= capabilities.atmosphericRadiusLy * medium.sensorRangeMultiplier)
+        )
+        .slice(0, capabilities.passiveTargets);
+      this.forceFullRender = true;
+      for (let index = 0; index < targets.length; index++) {
+        if (serial !== this.observatorySearchSerial) return;
+        const contact = targets[index];
+        this.observatoryService.observe(
+          contact,
+          capabilities,
+          x,
+          y,
+          false,
+          this.getCurrentObservatorySystem(contact)
+        );
+        controller.coverage = `Preliminary spectra ${index + 1}/${targets.length}; ${contacts.length} contacts`;
+        this.forceFullRender = true;
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
+      if (serial !== this.observatorySearchSerial) return;
+      for (const entry of Object.values(this.xenobiology.snapshot.evidence))
+        for (const origin of entry.origins ?? []) {
+          if ((origin.level ?? entry.level) < 2) continue;
+          const contact = contacts.find(
+            (candidate) =>
+              candidate.worldX === origin.worldX &&
+              candidate.worldY === origin.worldY &&
+              candidate.systemSlot === origin.systemSlot
+          );
+          if (contact)
+            this.observatoryService.recordKnownBiosphere(contact, origin, entry.species.origin === 'native');
+        }
+      controller.coverage = `${contacts.length} contacts / ${targets.length} preliminary spectra / ${capabilities.equipmentClass ? 'unmeasured contacts retained' : 'suite not fitted'}`;
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+    } catch (error) {
+      if (serial !== this.observatorySearchSerial) return;
+      controller.notice = 'Catalogue acquisition failed. Close and reopen to retry.';
+      logger.warn('[Observatory] Acquisition failed.', error);
+      this.forceFullRender = true;
+    }
+  }
+
+  /** Prefers the live physical system when observations include the player's current location. */
+  private getCurrentObservatorySystem(contact: ObservatoryContact): SolarSystem | null {
+    const system = this.stateManager.currentSystem;
+    return system &&
+      system.starX === contact.worldX &&
+      system.starY === contact.worldY &&
+      system.systemSlot === contact.systemSlot
+      ? system
+      : null;
+  }
+
+  /** Builds a readonly instrument model using acquired evidence, not undiscovered biological state. */
+  private createObservatoryModel(): ObservatoryScreenModel {
+    const capabilities = getObservatoryCapabilities(this.player.ship);
+    const medium = this.systemDataGenerator.getInterstellarMediumProperties(
+      this.player.position.worldX,
+      this.player.position.worldY
+    );
+    return this.observatoryController.createModel(
+      this.observatoryService.snapshot,
+      { ...capabilities, contactRadiusLy: capabilities.contactRadiusLy * medium.sensorRangeMultiplier },
+      this.player.position.worldX,
+      this.player.position.worldY,
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows(),
+      (contact) =>
+        this.scanService.getCatalogueRecord(`system:${contact.worldX},${contact.worldY}`).observations > 0 ||
+        Boolean(this.getCurrentObservatorySystem(contact)) ||
+        [...this.planetMutationRegistry.values()].some(
+          (entry) =>
+            entry.worldX === contact.worldX &&
+            entry.worldY === contact.worldY &&
+            entry.systemSlot === contact.systemSlot
+        )
+    );
+  }
+
+  /** Resolves instrument actions without advancing surface surveys or specimen mission objectives. */
+  private handleObservatoryInput(): boolean {
+    if (!this.interfaceMode.is('observatory')) {
+      if (!this.inputManager.wasActionJustPressed('OBSERVATORY')) return false;
+      this.openObservatory();
+      return this.interfaceMode.is('observatory');
+    }
+    const model = this.createObservatoryModel();
+    const intent = this.observatoryController.input(this.inputManager, model);
+    const selected = model.contacts.find((contact) => contact.id === model.selectedId);
+    if (intent === 'close') this.closeObservatory();
+    else if (intent === 'clear') {
+      this.observatoryService.snapshot.destination = null;
+      this.observatoryController.notice = 'Navigation destination cleared.';
+    } else if (intent === 'mark' && selected) {
+      this.observatoryService.markDestination(selected);
+      this.observatoryController.notice = `Destination: ${selected.name} / X ${selected.worldX} Y ${selected.worldY}`;
+    } else if (intent === 'observe' && selected) {
+      const result = this.observatoryService.observe(
+        selected,
+        getObservatoryCapabilities(this.player.ship),
+        this.player.position.worldX,
+        this.player.position.worldY,
+        true,
+        this.getCurrentObservatorySystem(selected)
+      );
+      this.gameClockElapsedSeconds += result.seconds;
+      this.observatoryController.notice = !(this.player.ship.observatoryClass ?? 0)
+        ? 'Fit an Observatory Suite at a shipyard for planetary spectroscopy.'
+        : result.seconds
+          ? 'Five-minute integration recorded; catalogue retains best evidence.'
+          : 'Exposure complete for this position and instrument. Approach or upgrade for better sensitivity.';
+    }
+    this.forceFullRender = true;
+    return true;
+  }
+
   /** Opens from a safe parent menu or travel, preserving the parent for Escape. */
   private openScienceLog(): void {
     const kind = this.interfaceMode.kind;
@@ -3539,6 +3751,12 @@ export class Game {
       this._handleOrbitInput();
       this._publishStatusUpdate();
       return;
+    }
+    if (this.interfaceMode.is('observatory') || this.inputManager.wasActionJustPressed('OBSERVATORY')) {
+      if (this.handleObservatoryInput()) {
+        this._publishStatusUpdate();
+        return;
+      }
     }
     if (this.handleScienceLogInput() || this.handleMissionJournalInput()) {
       this._publishStatusUpdate();
@@ -4322,6 +4540,14 @@ export class Game {
   /** Updates. */
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
+    this.hyperspaceSurveyService?.setInstrumentMultiplier?.(
+      getObservatoryCapabilities(this.player.ship).stellarRangeMultiplier
+    );
+    if (this.interfaceMode.is('observatory')) {
+      if (this.observatoryController.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     if (this.interfaceMode.is('ship-repairs')) {
       if (this.shipRepairConsole.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
@@ -4481,13 +4707,24 @@ export class Game {
       this.renderer.getGridCols(),
       this.renderer.getGridRows(),
       this.player.resources.fuel.toFixed(3),
+      getObservatoryCapabilities(this.player.ship).stellarRangeMultiplier,
     ].join('|');
     if (viewportSignature === this.lastHyperspaceUpdateSignature) {
       return this.lastHyperspaceUpdateStatus;
     }
 
-    // Check for nearby star system for status message
+    // Telescope processing is bounded and yields between targets, independently of the travel renderer.
     const survey = this.getCurrentHyperspaceSurvey();
+    if (this.player.ship.observatoryClass) {
+      void this.observatoryService
+        .sampleWhileTravelling(
+          survey.visibleCells,
+          getObservatoryCapabilities(this.player.ship),
+          this.player.position.worldX,
+          this.player.position.worldY
+        )
+        .catch((error) => logger.warn('[Observatory] Passive integration failed.', error));
+    }
     const currentProps =
       survey.visibleCells[Math.floor(survey.rows / 2) * survey.cols + Math.floor(survey.cols / 2)]?.system ??
       this.systemDataGenerator.getSystemMapProperties(
@@ -4552,6 +4789,9 @@ export class Game {
 
   /** Returns current hyperspace survey. */
   private getCurrentHyperspaceSurvey() {
+    this.hyperspaceSurveyService.setInstrumentMultiplier?.(
+      getObservatoryCapabilities(this.player.ship).stellarRangeMultiplier
+    );
     const cols = Math.max(
       1,
       Math.floor(this.renderer.getCanvas().width / Math.max(1, this.renderer.getCharWidthPx()))
@@ -6032,6 +6272,10 @@ export class Game {
   /** Activates ship menu selection. */
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id === 'observatory') {
+      this.openObservatory();
+      return;
+    }
     if (row.id === 'science') {
       this.openScienceLog();
       return;
@@ -6373,6 +6617,19 @@ export class Game {
             ],
             detail:
               'Biological dossiers, return coordinates, remaining research demand and preservation requirements.',
+            cellTones: ['cyan', 'green'],
+            detailTone: 'cyan',
+          },
+          {
+            id: 'observatory',
+            cells: [
+              'Observatory',
+              this.player.ship.observatoryClass
+                ? `Suite Class ${this.player.ship.observatoryClass}`
+                : 'Navigation catalogue / suite not fitted',
+            ],
+            detail:
+              'Nearby contacts, distant atmospheric evidence, radio sources and navigation destinations.',
             cellTones: ['cyan', 'green'],
             detailTone: 'cyan',
           },
@@ -7286,109 +7543,112 @@ export class Game {
         const fullCanvasRepaint = this.forceFullRender;
         this.renderer.clear(fullCanvasRepaint);
 
-        // Draw main content layer based on state
-        switch (currentState) {
-          case 'hyperspace':
-            this.renderer.drawScene(
-              createSceneViewModel({
-                kind: 'hyperspace',
-                player: createPlayerViewSnapshot(this.player),
-              })
-            );
-            this.drawTravelObserveCursor();
-            break;
-          case 'system':
-            const system = this.stateManager.currentSystem;
-            if (system) {
-              const currentViewScale = this.getCurrentViewScale();
+        // Instruments own the entire foreground; do not stage planet rasters underneath them.
+        if (this.interfaceMode.is('observatory'))
+          this.renderer.drawObservatory(this.createObservatoryModel());
+        else
+          switch (currentState) {
+            case 'hyperspace':
               this.renderer.drawScene(
                 createSceneViewModel({
-                  kind: 'system',
+                  kind: 'hyperspace',
                   player: createPlayerViewSnapshot(this.player),
-                  system,
-                  viewScale: currentViewScale,
                 })
               );
               this.drawTravelObserveCursor();
-            } else {
-              this._renderError('System data missing for render!');
-            }
-            break;
-          case 'orbit':
-            const orbitPlanet = this.stateManager.currentPlanet;
-            if (orbitPlanet) {
-              this.renderer.drawScene(
-                createSceneViewModel({
-                  kind: 'orbit',
-                  model: this.createCurrentOrbitScreen(),
-                })
-              );
-              if (this.orbitModeState.dossier.isOpen && this.stateManager.currentOrbitReferencePlanet) {
-                this.renderer.drawTextModalTable(
-                  this.orbitModeState.createDossier(
-                    this.stateManager.currentOrbitReferencePlanet,
-                    this.stateManager.currentSystem?.stars ?? [],
-                    this.renderer.getGridCols(),
-                    this.renderer.getGridRows()
-                  )
-                );
-              }
-            } else {
-              this._renderError('Orbit data missing for render!');
-            }
-            break;
-          case 'planet':
-            const planet = this.stateManager.currentPlanet;
-            if (planet) {
-              if (planet.isSurfaceReady()) {
+              break;
+            case 'system':
+              const system = this.stateManager.currentSystem;
+              if (system) {
+                const currentViewScale = this.getCurrentViewScale();
                 this.renderer.drawScene(
                   createSceneViewModel({
-                    kind: 'surface',
+                    kind: 'system',
                     player: createPlayerViewSnapshot(this.player),
-                    body: planet,
-                    overlay: this.createSurfaceVehicleOverlayModel(),
-                    encounter: this.activeEncounter
-                      ? this.createCurrentEncounterView(this.activeEncounter)
-                      : undefined,
+                    system,
+                    viewScale: currentViewScale,
                   })
                 );
+                this.drawTravelObserveCursor();
               } else {
-                this.requestSurfacePreparation(planet);
-                this.renderer.drawSurfaceLoading(planet.name);
+                this._renderError('System data missing for render!');
               }
-            } else {
-              this._renderError('Planet data missing for render!');
-            }
-            break;
-          case 'starbase':
-            const starbase = this.stateManager.currentStarbase;
-            if (starbase) {
-              try {
-                // Starbases also need ensureSurfaceReady for placeholder data
-                starbase.ensureSurfaceReady();
+              break;
+            case 'orbit':
+              const orbitPlanet = this.stateManager.currentPlanet;
+              if (orbitPlanet) {
                 this.renderer.drawScene(
                   createSceneViewModel({
-                    kind: 'starbase',
-                    player: createPlayerViewSnapshot(this.player),
-                    starbase,
-                    model: this.createCurrentStarbaseScreen(),
+                    kind: 'orbit',
+                    model: this.createCurrentOrbitScreen(),
                   })
                 );
-              } catch (surfaceError) {
-                logger.error(
-                  `[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`
-                );
-                this._renderError(
-                  `Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
-                );
+                if (this.orbitModeState.dossier.isOpen && this.stateManager.currentOrbitReferencePlanet) {
+                  this.renderer.drawTextModalTable(
+                    this.orbitModeState.createDossier(
+                      this.stateManager.currentOrbitReferencePlanet,
+                      this.stateManager.currentSystem?.stars ?? [],
+                      this.renderer.getGridCols(),
+                      this.renderer.getGridRows()
+                    )
+                  );
+                }
+              } else {
+                this._renderError('Orbit data missing for render!');
               }
-            } else {
-              this._renderError('Starbase data missing for render!');
-            }
-            break;
-          default:
-            this._renderError(`Unknown game state: ${currentState}`);
-        }
+              break;
+            case 'planet':
+              const planet = this.stateManager.currentPlanet;
+              if (planet) {
+                if (planet.isSurfaceReady()) {
+                  this.renderer.drawScene(
+                    createSceneViewModel({
+                      kind: 'surface',
+                      player: createPlayerViewSnapshot(this.player),
+                      body: planet,
+                      overlay: this.createSurfaceVehicleOverlayModel(),
+                      encounter: this.activeEncounter
+                        ? this.createCurrentEncounterView(this.activeEncounter)
+                        : undefined,
+                    })
+                  );
+                } else {
+                  this.requestSurfacePreparation(planet);
+                  this.renderer.drawSurfaceLoading(planet.name);
+                }
+              } else {
+                this._renderError('Planet data missing for render!');
+              }
+              break;
+            case 'starbase':
+              const starbase = this.stateManager.currentStarbase;
+              if (starbase) {
+                try {
+                  // Starbases also need ensureSurfaceReady for placeholder data
+                  starbase.ensureSurfaceReady();
+                  this.renderer.drawScene(
+                    createSceneViewModel({
+                      kind: 'starbase',
+                      player: createPlayerViewSnapshot(this.player),
+                      starbase,
+                      model: this.createCurrentStarbaseScreen(),
+                    })
+                  );
+                } catch (surfaceError) {
+                  logger.error(
+                    `[Game:_render] Error ensuring starbase ready for ${starbase.name}: ${surfaceError}`
+                  );
+                  this._renderError(
+                    `Docking Error: ${surfaceError instanceof Error ? surfaceError.message : 'Unknown'}`
+                  );
+                }
+              } else {
+                this._renderError('Starbase data missing for render!');
+              }
+              break;
+            default:
+              this._renderError(`Unknown game state: ${currentState}`);
+          }
 
         // Draw Popup (if active)
         const field = this.activeEncounter;
@@ -7519,6 +7779,7 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('ship-repairs') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
@@ -7568,6 +7829,7 @@ export class Game {
   /** Returns whether game clock paused. */
   private isGameClockPaused(): boolean {
     return (
+      this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -7609,6 +7871,20 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.interfaceMode.is('observatory'))
+      return [
+        'observatory',
+        this.observatoryController.selectedId,
+        this.observatoryController.filters.join(','),
+        this.observatoryController.filterGroup,
+        this.observatoryController.sort,
+        this.observatoryController.detailOffset,
+        this.observatoryController.notice,
+        this.observatoryController.coverage,
+        this.observatoryController.reveal.progress,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
     if (this.interfaceMode.is('science-log'))
       return [
         'science-log',
@@ -7963,6 +8239,33 @@ export class Game {
           priority: 'secondary',
         },
       ];
+      const destination = this._observatoryService?.snapshot.destination;
+      if (destination) {
+        const dx = destination.worldX - this.player.position.worldX;
+        const dy = destination.worldY - this.player.position.worldY;
+        telemetry.target = [
+          {
+            id: 'destination',
+            label: 'DEST',
+            compactLabel: 'DST',
+            value: destination.name,
+            compactValue: destination.name,
+            tone: 'signal',
+          },
+          {
+            id: 'destination-grid',
+            label: 'GRID',
+            value: `${destination.worldX},${destination.worldY}`,
+            priority: 'secondary',
+          },
+          {
+            id: 'destination-range',
+            label: 'BRG',
+            value: `${this.formatBearing(dx, dy)} / ${observatoryDistanceLy(this.player.position.worldX, this.player.position.worldY, destination).toFixed(1)} ly`,
+            priority: 'secondary',
+          },
+        ];
+      }
       return telemetry;
     }
 
@@ -8107,6 +8410,20 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.interfaceMode.is('observatory'))
+      return {
+        context: 'observatory',
+        buttons: [
+          commandButton('up', 'Previous', 'MOVE_UP', { key: 'Up' }),
+          commandButton('down', 'Next', 'MOVE_DOWN', { key: 'Down' }),
+          commandButton('filter-group', 'Filter group', 'CYCLE_TARGET', { key: 'Tab' }),
+          commandButton('filter', 'Change filter', 'OBSERVATORY_FILTER', { key: 'Right' }),
+          commandButton('observe', 'Observe', 'SCAN', { key: 'V', tone: 'green' }),
+          commandButton('destination', 'Destination', 'ENTER_SYSTEM', { key: 'Enter' }),
+          commandButton('clear-destination', 'Clear destination', 'BIOLOGY_COLLECT', { key: 'C' }),
+          commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
+        ],
+      };
     if (this.interfaceMode.is('ship-repairs')) return this.shipRepairConsole.createCommandBar();
     if (this.shipMenuOpen)
       return {
@@ -8255,6 +8572,7 @@ export class Game {
           key: CONFIG.KEY_BINDINGS.SHIP_MENU,
           detail: 'Open ship operations.',
         }),
+        commandButton('observatory', 'Observatory', 'OBSERVATORY', { key: CONFIG.KEY_BINDINGS.OBSERVATORY }),
         commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', {
           detail: 'Open a reticle for long-range contact observation.',
         }),

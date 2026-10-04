@@ -148,10 +148,10 @@ function measurePlanet(
   // Very close planets are harder to separate from glare. Companions add contamination, not free sensitivity.
   const separation = Math.min(1, separationAu / Math.max(0.15, rangeLy * 0.015));
   const companionPenalty = 1 / (1 + Math.max(0, system.stars.length - 1) * 0.12);
-  const photons = Math.min(1, Math.sqrt(Math.max(0.01, stellarLuminosity)) * Math.max(0.25, radiusEarth));
+  const photons = Math.min(1, Math.sqrt(Math.max(0.01, stellarLuminosity)) * Math.max(0.03, radiusEarth));
   const distanceFactor = 1 / (1 + (rangeLy / Math.max(1, capabilities.atmosphericRadiusLy * 0.65)) ** 2);
   const pressureFactor =
-    atmosphere.pressure < 0.001 ? 0.35 : Math.min(1, 0.6 + Math.log10(1 + atmosphere.pressure) * 0.3);
+    atmosphere.pressure < 0.001 ? 0.35 : Math.min(1, 0.85 + Math.log10(1 + atmosphere.pressure) * 0.3);
   const quality = Math.max(
     0,
     Math.min(
@@ -186,7 +186,11 @@ function measurePlanet(
   // A modest shared producer-cover proxy is not an ecosystem simulation. Mineral surfaces can mimic it.
   const cover = producers ? Math.min(0.8, 0.15 + environment.waterCoverage * 0.5) : 0;
   const mineralMimic = temperate && environment.landable && geology.random() < 0.06;
-  const pigment = quality >= 0.3 && ((cover > 0.2 && quality * cover > 0.1) || mineralMimic);
+  const surfaceTransmission = Math.exp(-Math.max(0, atmosphere.pressure - 1) * 0.12);
+  const pigment =
+    quality >= 0.3 &&
+    surfaceTransmission * quality > 0.2 &&
+    ((cover > 0.2 && quality * cover > 0.1) || mineralMimic);
   if (pigment) features.push('Surface reflectance discontinuity: candidate; mineral mimic possible.');
   let evidence =
     (water && temperate ? 0.18 : 0) +
@@ -197,6 +201,10 @@ function measurePlanet(
   // UV-driven oxygen and hot/cold chemistry receive less weight, regardless of generated life.
   if (system.stars.some((star) => /^[OB]/.test(star.starType))) evidence *= 0.55;
   if (!temperate || !water) evidence *= 0.35;
+  if (planet.type === 'GasGiant' || planet.type === 'IceGiant') {
+    evidence *= 0.1;
+    if (usable) features.push('Gas-dominated atmosphere; these gases are not diagnostic of biology.');
+  }
   return {
     planet,
     path,
