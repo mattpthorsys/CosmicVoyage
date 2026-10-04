@@ -1070,6 +1070,8 @@ describe('SceneRenderer visual regressions', () => {
       footer: ['Esc/Left back'],
     });
 
+    expect(buffer.clear).toHaveBeenCalledOnce();
+    expect(buffer.clear).toHaveBeenCalledWith(false);
     const renderedRows = renderTextRows(drawCalls);
     expect(renderedRows.join('\n')).toContain('DRIVE TRUNK');
     expect(renderedRows.join('\n')).not.toContain('VESSEL DIAGRAM');

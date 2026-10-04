@@ -1420,6 +1420,8 @@ export class SceneRenderer {
 
   /** Draws text dashboard. */
   private drawTextDashboard(model: TextModalTableModel): void {
+    // Dashboard modals replace the scene; discard cells staged earlier this frame.
+    this.screenBuffer.clear(false);
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
     const footerRows = model.footer?.length ?? 0;
