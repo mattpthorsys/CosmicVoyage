@@ -11,7 +11,7 @@ import type {
 
 const SIGNAL_FILTERS = [
   'ALL SIGNALS',
-  'BIO CANDIDATES',
+  'BIO SIGNALS',
   'CATALOGUED BIO',
   'TECH SIGNALS',
   'UNIDENTIFIED',
@@ -100,7 +100,9 @@ export class ObservatoryController {
         const record = state.observations[contact.id];
         const biology = record?.biology;
         const technology = record?.technology;
-        if (this.filters[0] === 1 && !['candidate', 'strong'].includes(biology ?? '')) return false;
+        // Confirmed colonies belong in the broad biology view, not only in the catalogue subfilter.
+        if (this.filters[0] === 1 && !['candidate', 'strong', 'catalogued'].includes(biology ?? ''))
+          return false;
         if (this.filters[0] === 2 && biology !== 'catalogued') return false;
         if (this.filters[0] === 3 && !['registered', 'unidentified'].includes(technology ?? '')) return false;
         if (this.filters[0] === 4 && technology !== 'unidentified') return false;
@@ -314,7 +316,11 @@ export function observatoryReadout(
   line('SPECTRAL ASSESSMENT', 'cyan', true);
   line(
     observatoryBiologyLabel(record),
-    record?.biology === 'strong' ? 'green' : record?.biology === 'candidate' ? 'amber' : 'muted'
+    record?.biology === 'strong' || record?.biology === 'catalogued'
+      ? 'green'
+      : record?.biology === 'candidate'
+        ? 'amber'
+        : 'muted'
   );
   if (!record) {
     line('No planetary spectrum recorded.', 'muted');
@@ -324,7 +330,11 @@ export function observatoryReadout(
     `Measurement quality: ${record.quality >= 0.7 ? 'HIGH' : record.quality >= 0.4 ? 'MODERATE' : record.quality >= 0.15 ? 'LOW' : 'LIMITED'} / exposure ${record.exposure}/3`,
     'green'
   );
-  if (record.bodyName) line(`Resolved source: ${record.bodyName}`, 'cyan');
+  if (record.bodyName)
+    line(
+      `${record.biology === 'catalogued' ? 'Documented world' : 'Resolved source'}: ${record.bodyName}`,
+      'cyan'
+    );
   for (const feature of record.features)
     line(feature, feature.includes('candidate') || feature.includes('alternatives') ? 'amber' : 'normal');
   line(

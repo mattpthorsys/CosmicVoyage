@@ -3384,14 +3384,11 @@ export class Game {
       if (!contacts || serial !== this.observatorySearchSerial) return;
       controller.contacts = contacts;
       const medium = this.systemDataGenerator.getInterstellarMediumProperties(x, y);
-      const targets = contacts
-        .filter(
-          (contact) =>
-            contact.kind === 'signal' ||
-            (contact.system?.objectKind === 'stellar' &&
-              contact.distanceLy <= capabilities.atmosphericRadiusLy * medium.sensorRangeMultiplier)
-        )
-        .slice(0, capabilities.passiveTargets);
+      const targets = this.observatoryService.selectPreliminaryTargets(
+        contacts,
+        capabilities,
+        medium.sensorRangeMultiplier
+      );
       this.forceFullRender = true;
       for (let index = 0; index < targets.length; index++) {
         if (serial !== this.observatorySearchSerial) return;
@@ -3421,7 +3418,11 @@ export class Game {
           if (contact)
             this.observatoryService.recordKnownBiosphere(contact, origin, entry.species.origin === 'native');
         }
-      controller.coverage = `${contacts.length} contacts / ${targets.length} preliminary spectra / ${capabilities.equipmentClass ? 'unmeasured contacts retained' : 'suite not fitted'}`;
+      const unmeasured = contacts.filter((contact) => {
+        const record = this.observatoryService.snapshot.observations[contact.id];
+        return !record || record.biology === 'unmeasured';
+      }).length;
+      controller.coverage = `${contacts.length} contacts / ${targets.length} readings this sweep / ${capabilities.equipmentClass ? `${unmeasured} unmeasured` : 'suite not fitted'}`;
       this.forceFullRender = true;
       this._publishStatusUpdate();
     } catch (error) {

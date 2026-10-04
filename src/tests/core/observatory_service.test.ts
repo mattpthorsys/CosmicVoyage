@@ -50,6 +50,48 @@ function harness() {
 }
 
 describe('observatory catalogue', () => {
+  it('progresses bounded preliminary sweeps beyond the same nearest contacts', () => {
+    const { service } = harness();
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 1;
+    const capabilities = { ...getObservatoryCapabilities(ship), passiveTargets: 2 };
+    const contacts = [
+      observatoryContactFixture(1),
+      observatoryContactFixture(2),
+      observatoryContactFixture(3),
+    ];
+    expect(service.selectPreliminaryTargets(contacts, capabilities, 1)).toEqual(contacts.slice(0, 2));
+    service.retain(contacts[0], observatoryObservationFixture(contacts[0]));
+    service.retain(contacts[1], observatoryObservationFixture(contacts[1]));
+    expect(service.selectPreliminaryTargets(contacts, capabilities, 1)[0]).toBe(contacts[2]);
+    expect(contacts.map((contact) => contact.worldX)).toEqual([1, 2, 3]);
+  });
+
+  it('includes registered carrier targets beyond spectroscopy range without admitting distant unregistered worlds', () => {
+    const { service } = harness();
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 1;
+    const colony = observatoryContactFixture(30);
+    colony.system = { ...colony.system!, stationKind: 'starbase', settlementStage: 'complete' };
+    const contacts = [observatoryContactFixture(29), colony, observatoryContactFixture(1)];
+    expect(service.selectPreliminaryTargets(contacts, getObservatoryCapabilities(ship), 1)).toEqual([
+      contacts[2],
+      colony,
+    ]);
+    ship.observatoryClass = 0;
+    expect(service.selectPreliminaryTargets(contacts, getObservatoryCapabilities(ship), 1)).toEqual([]);
+  });
+
+  it('does not discard a charted colony solely because its red-dwarf host is optically faint', async () => {
+    const { service, contact } = harness();
+    Object.assign(contact.system!, { starType: 'M', stationKind: 'starbase' });
+    const ship = createDefaultShipModifications();
+    expect(await service.search(-27, 0, getObservatoryCapabilities(ship))).toEqual([]);
+    ship.observatoryClass = 1;
+    const contacts = await service.search(-27, 0, getObservatoryCapabilities(ship));
+    expect(contacts?.map((entry) => entry.id)).toEqual([contact.id]);
+  });
+
   it('reuses a bounded catalogue and changes coverage only when the search setup changes', async () => {
     const { service, provider, capabilities } = harness();
     const contacts = await service.search(0, 0, capabilities);
@@ -85,6 +127,31 @@ describe('observatory catalogue', () => {
     expect(service.snapshot.observations[contact.id].features).not.toContain('Detached');
     expect(service.snapshot.observations[contact.id].biology).toBe('strong');
     expect(saved.destination?.systemSlot).toBe(0);
+  });
+
+  it('merges new registry knowledge without downgrading a stronger saved exposure', () => {
+    const { service, contact } = harness();
+    service.retain(contact, observatoryObservationFixture(contact, { quality: 0.8, exposure: 3 }));
+    service.retain(
+      contact,
+      observatoryObservationFixture(contact, {
+        biology: 'catalogued',
+        origin: 'managed',
+        quality: 0,
+        exposure: 0,
+        technology: 'registered',
+        bodyName: 'Known colony',
+        bodyPath: 'planet:0',
+        features: ['Registry identifies Known colony: established managed biosphere.'],
+      })
+    );
+    const record = service.snapshot.observations[contact.id];
+    expect(record.biology).toBe('catalogued');
+    expect(record.origin).toBe('managed');
+    expect(record.quality).toBe(0.8);
+    expect(record.exposure).toBe(3);
+    expect(record.bodyName).toBe('Known colony');
+    expect(record.features.some((feature) => feature.startsWith('Registry'))).toBe(true);
   });
 
   it('does not erase confirmed surface provenance when a remote nondetection is obtained', () => {

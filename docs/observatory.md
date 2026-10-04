@@ -26,6 +26,8 @@ fade effects; the extra range belongs to detection and the instrument catalogue.
 - Up/Down selects contacts.
 - Tab selects a filter group; Left/Right changes that group's filter.
 - Signal, host and survey filters combine, rather than replacing one another.
+- BIO SIGNALS includes both spectral candidates and catalogued native/managed biospheres;
+  CATALOGUED BIO restricts the list to documented biospheres.
 - S cycles range, scientific-interest and name sorting.
 - PgUp/PgDn scrolls the selected scientific report without moving the target.
 - V records a deliberate exposure, up to three integrations per observing setup.
@@ -46,6 +48,11 @@ bearing and remaining projected distance. Marking never teleports or enters a sy
 ## Evidence And Exploration
 
 Nearby targets receive bounded preliminary spectroscopy when the instrument opens.
+Subsequent sweeps prioritize previously unmeasured contacts, so reopening progresses
+through coverage instead of only repeating the same nearest targets. Registered facility
+carriers are also eligible within catalogue reach, even beyond atmospheric reach.
+Charted facility targets remain available around optically faint hosts; a chart entry
+alone does not establish a carrier or a living biosphere without physical validation.
 An installed suite also processes at most two nearby visible stellar contacts between
 travel frames, throttled to avoid making movement expensive. More distant or unsampled
 contacts remain listed as unmeasured. Explicit observation can investigate them.
@@ -62,8 +69,12 @@ surface contribution; gas-giant chemistry is not treated as a terrestrial biosig
 Stellar output, close-in glare, companion contamination, distance and exposure affect
 measurement quality. No unrelated distant-life roll is introduced.
 
-Managed life is catalogued only with an actual registered facility and the appropriate
-physical world. Previously observed native/introduced biology also imports its saved
+Managed life is catalogued only when an actual colony-linked starbase documents a completed,
+physically viable introduced biosphere. That registry knowledge is independent of which
+world has the strongest spectrum, and does not require detecting a faint planetary spectrum.
+The report identifies the documented world separately from any different resolved spectral
+source. Terraforming without such registry evidence can still produce spectral candidates,
+subject to normal sensitivity limits. Previously observed native/introduced biology imports its saved
 surface provenance. Remote candidate readings do not reveal organisms, habitat coordinates,
 species novelty or specimen value, and do not advance orbital/surface mission objectives.
 

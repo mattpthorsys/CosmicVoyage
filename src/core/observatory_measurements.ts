@@ -16,7 +16,6 @@ interface PlanetaryMeasurement {
   quality: number;
   score: number;
   features: string[];
-  managed: boolean;
 }
 
 /** Converts canonical physical inputs into evidence; it never changes atmospheres or exposes species. */
@@ -66,9 +65,17 @@ export function measureObservatoryContact(
     record.technology = 'registered';
     record.features.push(`Registered facility carrier: ${system.stations[0].name}`);
   }
+  const documented = record.technology === 'registered' ? registeredManagedBiosphere(system) : null;
+  if (documented) {
+    record.biology = 'catalogued';
+    record.origin = 'managed';
+    record.bodyName = documented.name;
+    record.bodyPath = documented.path;
+    record.features.push(`Registry identifies ${documented.name}: established managed biosphere.`);
+  }
   const spectroscopyReach = capabilities.atmosphericRadiusLy * mediumEfficiency;
   if (rangeLy > spectroscopyReach || spectroscopyReach <= 0) {
-    record.biology = 'insufficient';
+    if (!documented) record.biology = 'insufficient';
     record.features.push('Planetary spectra below useful sensitivity at this distance.');
     return record;
   }
@@ -106,25 +113,43 @@ export function measureObservatoryContact(
   measurements.sort((a, b) => b.score - a.score || b.quality - a.quality);
   const best = measurements[0];
   if (!best || best.quality < 0.12) {
-    record.biology = 'insufficient';
+    if (!documented) record.biology = 'insufficient';
     record.features.push('No usable terrestrial atmospheric spectrum resolved.');
     return record;
   }
   record.quality = best.quality;
   record.features.push(...best.features);
+  if (documented) {
+    if (best.path !== documented.path && best.quality >= 0.48)
+      record.features.push(
+        `Measured spectral source: ${best.planet.name}; distinct from the documented colony.`
+      );
+    return record;
+  }
   record.bodyName = best.quality >= 0.48 ? best.planet.name : null;
   record.bodyPath = best.quality >= 0.48 ? best.path : null;
   record.biology =
     best.score >= 0.64 && best.quality >= 0.65 ? 'strong' : best.score >= 0.24 ? 'candidate' : 'no-signal';
-  // Introduced life is catalogue knowledge only where an actual registered colony exists.
-  if (best.managed && record.technology === 'registered') {
-    record.biology = 'catalogued';
-    record.origin = 'managed';
-    record.features.push('Registry identifies an established managed biosphere.');
-  } else if (record.biology === 'candidate' || record.biology === 'strong')
+  if (record.biology === 'candidate' || record.biology === 'strong')
     record.features.push('Abiotic alternatives remain; orbital follow-up recommended.');
   else record.features.push('No diagnostic signal above sensitivity; biology is not excluded.');
   return record;
+}
+
+/** Reads actual colony registry evidence, independently of spectral sensitivity or the best-looking planet. */
+function registeredManagedBiosphere(system: SolarSystem): { name: string; path: string } | null {
+  const colony = system.colonyWorld;
+  if (
+    !colony ||
+    colony.terraforming?.stage !== 'complete' ||
+    !system.stations.some((station) => station.kind === 'starbase' && station.colonyWorldName === colony.name)
+  )
+    return null;
+  const index = system.planets.indexOf(colony);
+  if (index < 0) return null;
+  const path = `planet:${index}`;
+  const biosphere = generateBiosphere(createBiologyEnvironment(colony, system, path));
+  return biosphere?.origin === 'introduced' ? { name: colony.name, path } : null;
 }
 
 /** Approximates spectroscopy and reflectance sensitivity without expensive line-by-line radiative transfer. */
@@ -211,6 +236,5 @@ function measurePlanet(
     quality,
     score: evidence * Math.min(1, quality / 0.35),
     features,
-    managed: environment.origin === 'introduced' && Boolean(biosphere),
   };
 }

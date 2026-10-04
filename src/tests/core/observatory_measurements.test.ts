@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../../config';
 import { SystemDataGenerator } from '../../generation/system_data_generator';
 import { SolarSystem } from '../../entities/solar_system';
+import { createBiologyEnvironment, generateBiosphere } from '../../entities/biology/biosphere_generator';
 import { PRNG } from '../../utils/prng';
 import { measureObservatoryContact } from '../../core/observatory_measurements';
 import { createDefaultShipModifications } from '../../core/ship_modifications';
@@ -62,6 +63,106 @@ describe('distant planetary measurements', () => {
     expect(result.technology).toBe('registered');
     expect(result.features.some((feature) => feature.includes('Oxygen'))).toBe(true);
     expect(system.colonyWorld?.isSurfaceReady()).toBe(false);
+  });
+
+  it('retains a documented colony outside atmospheric reach but within registered beacon reach', () => {
+    const { system, contact } = fixture();
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 1;
+    const result = measureObservatoryContact(
+      contact,
+      system,
+      getObservatoryCapabilities(ship),
+      contact.worldX - 30,
+      contact.worldY,
+      1,
+      0
+    );
+    expect(result.biology).toBe('catalogued');
+    expect(result.origin).toBe('managed');
+    expect(result.technology).toBe('registered');
+    expect(result.quality).toBe(0);
+    expect(result.bodyName).toBe(system.colonyWorld?.name);
+    expect(result.features.some((feature) => feature.includes('below useful sensitivity'))).toBe(true);
+    expect(result.features.some((feature) => feature.startsWith('Registry'))).toBe(true);
+  });
+
+  it('does not lose registry knowledge when every planetary spectrum is faint', () => {
+    const { system, contact } = fixture();
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 1;
+    const capabilities = { ...getObservatoryCapabilities(ship), qualityCeiling: 0.05 };
+    const result = measureObservatoryContact(
+      contact,
+      system,
+      capabilities,
+      contact.worldX - 1,
+      contact.worldY,
+      1,
+      0
+    );
+    expect(result.biology).toBe('catalogued');
+    expect(result.bodyName).toBe(system.colonyWorld?.name);
+    expect(result.features.some((feature) => feature.includes('No usable'))).toBe(true);
+    expect(system.colonyWorld?.isSurfaceReady()).toBe(false);
+  });
+
+  it('detects an unregistered terraformed biosphere spectrally without inventing a registry entry', () => {
+    const { system, contact } = fixture();
+    Object.defineProperty(system, 'stations', { value: [] });
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 3;
+    const result = measureObservatoryContact(
+      contact,
+      system,
+      getObservatoryCapabilities(ship),
+      contact.worldX - 1,
+      contact.worldY,
+      1,
+      3
+    );
+    expect(['candidate', 'strong']).toContain(result.biology);
+    expect(result.origin).toBe('unknown');
+    expect(result.technology).toBe('no-signal');
+    expect(result.features.some((feature) => feature.startsWith('Registry'))).toBe(false);
+  });
+
+  it('reports a native biosphere as a spectral candidate without revealing or cataloguing its species', () => {
+    const { system, contact } = fixture();
+    const planet = system.colonyWorld!;
+    // Keep a suitable water world but remove its engineered overlay and human registry.
+    Object.defineProperty(planet, 'atmosphere', { value: planet.effectiveAtmosphere });
+    Object.defineProperty(planet, 'surfaceTemp', { value: planet.effectiveSurfaceTemp });
+    Object.defineProperty(planet, 'hydrosphere', { value: 'shallow saline seas' });
+    planet.terraforming = null;
+    planet.moons.splice(0);
+    system.planets.splice(0, system.planets.length, planet);
+    Object.defineProperty(system, 'stations', { value: [] });
+    let native: ReturnType<typeof generateBiosphere> = null;
+    for (let index = 0; index < 64 && !native; index++) {
+      Object.defineProperty(planet, 'mapSeed', { value: `observatory-native-${index}` });
+      native = generateBiosphere(createBiologyEnvironment(planet, system, 'planet:0'));
+    }
+    expect(native?.origin).toBe('native');
+    const ship = createDefaultShipModifications();
+    ship.observatoryClass = 3;
+    const result = measureObservatoryContact(
+      contact,
+      system,
+      getObservatoryCapabilities(ship),
+      contact.worldX - 1,
+      contact.worldY,
+      1,
+      3
+    );
+    expect(['candidate', 'strong']).toContain(result.biology);
+    expect(result.origin).toBe('unknown');
+    expect(result.technology).toBe('no-signal');
+    expect(result.features.some((feature) => feature.includes('reflectance discontinuity'))).toBe(true);
+    expect(
+      native!.species.every((species) => !result.features.some((feature) => feature.includes(species.name)))
+    ).toBe(true);
+    expect(planet.isSurfaceReady()).toBe(false);
   });
 
   it('reports inadequate sensitivity rather than declaring distant worlds lifeless', () => {

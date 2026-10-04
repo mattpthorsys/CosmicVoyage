@@ -5,6 +5,43 @@ import { createDefaultShipModifications } from '../../../core/ship_modifications
 import { observatoryContactFixture, observatoryObservationFixture } from '../../fixtures/observatory';
 
 describe('observatory terminal', () => {
+  it('includes both catalogued terraformed worlds and indigenous candidates in BIO SIGNALS', () => {
+    const controller = new ObservatoryController();
+    controller.contacts = Array.from({ length: 5 }, (_, index) => observatoryContactFixture(index + 1));
+    const state = createObservatorySnapshot();
+    state.observations[controller.contacts[0].id] = observatoryObservationFixture(controller.contacts[0], {
+      biology: 'candidate',
+    });
+    state.observations[controller.contacts[1].id] = observatoryObservationFixture(controller.contacts[1], {
+      biology: 'strong',
+    });
+    state.observations[controller.contacts[2].id] = observatoryObservationFixture(controller.contacts[2], {
+      biology: 'catalogued',
+      origin: 'managed',
+      bodyName: 'Known colony',
+      bodyPath: 'planet:0',
+    });
+    state.observations[controller.contacts[3].id] = observatoryObservationFixture(controller.contacts[3], {
+      biology: 'no-signal',
+    });
+    controller.filters[0] = 1;
+    expect(controller.filtered(state, () => false)).toEqual(controller.contacts.slice(0, 3));
+    controller.filters[0] = 2;
+    expect(controller.filtered(state, () => false)).toEqual([controller.contacts[2]]);
+    const model = controller.createModel(
+      state,
+      getObservatoryCapabilities(createDefaultShipModifications()),
+      0,
+      0,
+      120,
+      45,
+      () => false
+    );
+    const text = model.details.map((line) => line.segments.map((segment) => segment.text).join('')).join(' ');
+    expect(text).toContain('Documented world: Known colony');
+    expect(text).not.toContain('Resolved source');
+  });
+
   it('combines evidence and host filters before paging, preserving distant matching targets', () => {
     const controller = new ObservatoryController();
     controller.contacts = Array.from({ length: 40 }, (_, index) => observatoryContactFixture(index + 1));

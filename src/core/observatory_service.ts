@@ -99,7 +99,10 @@ export class ObservatoryService {
             cell.system,
             medium.sensorRangeMultiplier * capabilities.stellarRangeMultiplier
           );
-          if (distanceLy / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS > detection.statusRadius) continue;
+          // Charted facility targets remain available when the host is faint; verify their carrier on observation.
+          const chartedCarrier = capabilities.equipmentClass > 0 && Boolean(cell.system.stationKind);
+          if (distanceLy / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS > detection.statusRadius && !chartedCarrier)
+            continue;
           const architecture = this.generator.getSystemProperties(cell.worldX, cell.worldY).architecture;
           contacts.push({
             ...address,
@@ -152,6 +155,30 @@ export class ObservatoryService {
     return system;
   }
 
+  /** Sweeps unmeasured contacts first, including registered carriers beyond atmospheric reach. */
+  selectPreliminaryTargets(
+    contacts: readonly ObservatoryContact[],
+    capabilities: ObservatoryCapabilities,
+    mediumEfficiency: number
+  ): ObservatoryContact[] {
+    if (!capabilities.equipmentClass) return [];
+    const reach = capabilities.atmosphericRadiusLy * mediumEfficiency;
+    /** Ranks only acquired measurement state, never generated planets or hidden biology. */
+    const sampled = (contact: ObservatoryContact): number => {
+      const record = this.snapshot.observations[contact.id];
+      return record && record.biology !== 'unmeasured' ? 1 : 0;
+    };
+    return contacts
+      .filter(
+        (contact) =>
+          contact.kind === 'signal' ||
+          contact.system?.stationKind ||
+          (contact.system?.objectKind === 'stellar' && contact.distanceLy <= reach)
+      )
+      .sort((a, b) => sampled(a) - sampled(b) || a.distanceLy - b.distanceLy || a.id.localeCompare(b.id))
+      .slice(0, capabilities.passiveTargets);
+  }
+
   /** Retains the best evidence; passive revisits cannot downgrade a deliberate exposure. */
   retain(contact: ObservatoryContact, observation: ObservatoryObservation): void {
     const previous = this.snapshot.observations[contact.id];
@@ -169,6 +196,30 @@ export class ObservatoryService {
             : 'Registry or surface evidence establishes a managed biosphere.',
         ].slice(0, 24),
       };
+    }
+    // Registry knowledge can improve even when its current spectrum is weaker than a saved exposure.
+    if (
+      previous &&
+      previous.biology !== 'catalogued' &&
+      observation.biology === 'catalogued' &&
+      (previous.quality > observation.quality ||
+        (previous.quality === observation.quality && previous.exposure >= observation.exposure))
+    ) {
+      this.snapshot.observations[contact.id] = {
+        ...previous,
+        biology: 'catalogued',
+        origin: observation.origin,
+        technology: observation.technology === 'registered' ? 'registered' : previous.technology,
+        bodyName: observation.bodyName,
+        bodyPath: observation.bodyPath,
+        features: [
+          ...new Set([
+            ...previous.features,
+            ...observation.features.filter((feature) => feature.startsWith('Registry')),
+          ]),
+        ].slice(0, 24),
+      };
+      return;
     }
     if (
       !previous ||
