@@ -6189,7 +6189,7 @@ export class Game {
   /** Returns ship menu meta. */
   private getShipMenuMeta(): {
     title: string;
-    subtitle: string;
+    subtitle?: string;
     columns: string[];
     widths: number[];
     footer: string[];
@@ -6264,7 +6264,6 @@ export class Game {
       default:
         return {
           title: 'Ship Operations',
-          subtitle: 'Quiet shipboard console. HUD overlays are muted while this panel is open.',
           columns: ['SECTION', 'STATUS'],
           widths: [26, 28],
           footer: ['Up/Down select  Enter/Right open  Esc/Left close'],

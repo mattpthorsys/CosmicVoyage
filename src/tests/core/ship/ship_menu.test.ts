@@ -74,6 +74,16 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
 }
 
 describe('ship menu', () => {
+  it('shows the operations menu without the explanatory subtitle', () => {
+    const model = createShipMenuHarness().createShipMenuModel();
+    expect(model.title).toBe('Ship Operations');
+    expect(model.subtitle).toBeUndefined();
+    expect(model.rows.map((row: any) => row.id)).toEqual(
+      expect.arrayContaining(['cargo', 'crew', 'status', 'missions'])
+    );
+    expect(model.footer).toEqual(['Up/Down select  Enter/Right open  Esc/Left close']);
+  });
+
   it('is available in travel and surface states but not over active menus', () => {
     const game = createShipMenuHarness('hyperspace');
 
