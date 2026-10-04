@@ -148,8 +148,8 @@ describe('xenobiology interface', () => {
       'W',
       'D',
       'N',
+      'I',
       'O',
-      'P',
       'J',
       'X',
       'Esc',
@@ -211,7 +211,8 @@ describe('xenobiology interface', () => {
       y: 1,
     });
     const controller = new SurfaceEncounterController();
-    expect(controller.input(new Set(['SHIP_MENU']), field)).toEqual({ kind: 'cargo' });
+    expect(controller.input(new Set(['ROVER_CARGO']), field)).toEqual({ kind: 'cargo' });
+    expect(controller.input(new Set(['SHIP_MENU']), field)).toEqual({ kind: 'operations' });
     controller.input(new Set(['TRADE']), field);
     expect(controller.interaction.kind).toBe('power');
     const before = field.roverX;

@@ -42,7 +42,7 @@ replace a personal playthrough for expedition pacing or economy balance.
    compare dose predictions, and Escape cancels without firing.
 5. For the profile request, use `A` within 25 m. For tissue, use `S` within
    7.5 m. For a live reference, stun a larger mobile organism if necessary,
-   approach it, and collect through `O` Cargo. Basic stasis is still included.
+   approach it, and collect through `I` Cargo. Basic stasis is still included.
 6. Press `X`: browse species with Left/Right or Tab, scroll with Up/Down or
    Page Up/Page Down, change filters with `S`, and cycle recorded habitats
    with `B`. Verify the clock and creatures remain still while reading.

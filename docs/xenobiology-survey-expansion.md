@@ -116,7 +116,7 @@ document with actual results and any remaining playtest limitations.
 4. On an occasional suitable high-pressure water world, analyse an attached
    colony. Extended stasis must refuse native-substrate preservation while `S`
    still provides tissue. Fit the pressure-preserving cradle in Shipyard, return,
-   approach within 7.5 m and collect through `O` Cargo or `C`. Deliver an accepted
+   approach within 7.5 m and collect through `I` Cargo or `C`. Deliver an accepted
    Pressure-preserved reference at its staffed issuer. Such a world is not
    guaranteed in a voyage or near the starting hub; do not search indefinitely
    just to validate interface changes.

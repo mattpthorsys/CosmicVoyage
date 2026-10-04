@@ -13,6 +13,22 @@ function keyEvent(key: string, code: string): KeyboardEvent {
 }
 
 describe('InputManager', () => {
+  it.each([
+    ['o', 'KeyO', 'SHIP_MENU'],
+    ['O', 'KeyO', 'SHIP_MENU'],
+    ['i', 'KeyI', 'ROVER_CARGO'],
+    ['I', 'KeyI', 'ROVER_CARGO'],
+    ['p', 'KeyP', 'DOWNLOAD_LOG'],
+    ['F4', 'F4', 'INFO_TEST'],
+  ])('maps %s/%s to %s without shadowing another shortcut', (key, code, action) => {
+    const input = new InputManager() as any;
+    input.isListening = true;
+    input._handleKeyDown(keyEvent(key, code));
+    expect([...input.justPressedActions]).toEqual([action]);
+    input._handleKeyUp(keyEvent(key, code));
+    expect(input.isActionActive(action)).toBe(false);
+  });
+
   it('does not treat a repeated Enter as fresh confirmation after a modal clears input', () => {
     const input = new InputManager() as any;
     input.isListening = true;

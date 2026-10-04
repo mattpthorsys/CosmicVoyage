@@ -103,7 +103,9 @@ import {
   getStarbaseShipyardProfile,
   installShipyardUpgrade,
   NUCLEAR_MISSILE_COST,
+  ROVER_REPAIR_COST_PER_POINT,
 } from './ship_modifications';
+import { ShipRepairConsole, createRepairQuotes, purchaseRepairs } from './ship_repair_console';
 import { formatDistanceAu, formatHyperspaceSpan, formatLightTimeFromMeters } from '../utils/space_scale';
 import { HyperspaceSurveyService, HyperspaceSurveyContact } from './hyperspace_survey';
 import { createShipStatusDashboard } from './ship_status_dashboard';
@@ -286,6 +288,7 @@ export class Game {
   private _surfaceMode?: SurfaceModeController;
   private _starbaseMode?: StarbaseController;
   private _shipOperations?: ShipOperationsController;
+  private _shipRepairConsole?: ShipRepairConsole;
   private _modeDispatcher?: GameModeDispatcher;
   private _interfaceMode?: InterfaceModeController<
     QuantitySelectorState<QuantityOperation>,
@@ -644,7 +647,9 @@ export class Game {
 
   /** Restores rover armour with an explicit affordable field/port service. */
   private repairRover(): void {
-    const cost = Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * 5);
+    const cost = Math.ceil(
+      (100 - (this.player.terrainVehicle.integrity ?? 100)) * ROVER_REPAIR_COST_PER_POINT
+    );
     if (this.player.resources.credits < cost) {
       this.statusMessage = `Rover repair requires ${cost} Cr.`;
       return;
@@ -741,6 +746,11 @@ export class Game {
   /** Returns ship operations. */
   private get shipOperations(): ShipOperationsController {
     return (this._shipOperations ??= new ShipOperationsController());
+  }
+
+  /** Returns the diagnostic terminal without mixing its state with Shipyard tab selection. */
+  private get shipRepairConsole(): ShipRepairConsole {
+    return (this._shipRepairConsole ??= new ShipRepairConsole());
   }
 
   /** Returns mode dispatcher. */
@@ -1467,6 +1477,17 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.interfaceMode.is('ship-repairs')) {
+      if (this.shipRepairConsole.reveal.isActive) this.shipRepairConsole.reveal.complete();
+      else {
+        this.inputManager.justPressedActions.add(data.action);
+        this.handleShipRepairInput();
+        this.inputManager.justPressedActions.delete(data.action);
+      }
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('science-log')) {
       this.inputManager.justPressedActions.add(data.action);
       this.handleScienceLogInput();
@@ -1769,6 +1790,68 @@ export class Game {
       return true; // Consume input for this frame
     }
     return false; // No zoom change
+  }
+
+  /** Opens diagnostic work orders while retaining the parent Shipyard selection. */
+  private openShipRepairConsole(): void {
+    const station = this.stateManager.currentStarbase;
+    if (this.stateManager.state !== 'starbase' || !station || station.capabilities?.shipyard === false)
+      return;
+    if (this.interfaceMode.kind !== 'none') return;
+    this.shipRepairConsole.open();
+    this.interfaceMode.open('ship-repairs');
+    this.statusMessage = 'Shipyard diagnostic link established.';
+    this.forceFullRender = true;
+  }
+
+  /** Builds work orders from live ship damage rather than retaining potentially stale prices. */
+  private createShipRepairModel(): TextModalTableModel {
+    const station = this.stateManager.currentStarbase!;
+    return this.shipRepairConsole.createModel(
+      this.player,
+      station.name,
+      getStarbaseShipyardProfile(this.getStationPersistenceKey(station)),
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows()
+    );
+  }
+
+  /** Gives repair controls exclusive input and commits only affordable, requoted work orders. */
+  private handleShipRepairInput(): boolean {
+    if (!this.interfaceMode.is('ship-repairs')) return false;
+    const station = this.stateManager.currentStarbase;
+    if (this.stateManager.state !== 'starbase' || !station || station.capabilities?.shipyard === false) {
+      this.interfaceMode.close('ship-repairs');
+      this.forceFullRender = true;
+      return true;
+    }
+    const model = this.createShipRepairModel();
+    const intent = this.shipRepairConsole.input(
+      this.inputManager,
+      createRepairQuotes(this.player),
+      model.visibleRowCount
+    );
+    if (intent?.kind === 'close') {
+      this.interfaceMode.close('ship-repairs');
+      this.shipRepairConsole.reveal.complete();
+      this.inputManager.clearState();
+      this.statusMessage = this.shipRepairConsole.notice || 'Returned to Shipyard.';
+      this.starbaseMode.alert = this.statusMessage;
+    } else if (intent?.kind === 'repair') {
+      const result = purchaseRepairs(this.player, intent.target);
+      this.shipRepairConsole.notice = this.statusMessage = result.message;
+      this.shipRepairConsole.noticeTone = result.ok ? 'green' : 'red';
+      if (result.ok) {
+        this.shipRepairConsole.selectedTarget = 'all';
+        this.shipRepairConsole.viewOffset = 0;
+        eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+          newCredits: this.player.resources.credits,
+          amountChanged: -result.cost,
+        });
+      }
+    }
+    if (intent || this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
   }
 
   /** Handles starbase trade input. */
@@ -2247,8 +2330,12 @@ export class Game {
       this.forceFullRender = true;
       return true;
     }
-    if (this.inputManager.wasActionJustPressed('OPEN_SHIP_MENU')) {
+    if (this.inputManager.wasActionJustPressed('SHIP_MENU')) {
       this.openShipMenu();
+      return true;
+    }
+    if (this.inputManager.wasActionJustPressed('ROVER_CARGO')) {
+      this.openRoverCargo();
       return true;
     }
 
@@ -2361,10 +2448,7 @@ export class Game {
   private _handleTravelCommandInput(): boolean {
     const state = this.stateManager.state;
     if (state !== 'hyperspace' && state !== 'system') return false;
-    if (
-      this.inputManager.wasActionJustPressed('OPEN_SHIP_MENU') ||
-      this.inputManager.wasActionJustPressed('SHIP_MENU')
-    ) {
+    if (this.inputManager.wasActionJustPressed('SHIP_MENU')) {
       this.openShipMenu();
       return true;
     }
@@ -2500,7 +2584,6 @@ export class Game {
       'CYCLE_TARGET',
       'TARGET_MENU',
       'SHIP_MENU',
-      'OPEN_SHIP_MENU',
       'HELP',
       'TOGGLE_PROFILER',
       'APPROACH_TARGET',
@@ -2535,7 +2618,7 @@ export class Game {
           this.openTargetMenu();
           return true;
         }
-        if (action === 'SHIP_MENU' || action === 'OPEN_SHIP_MENU') {
+        if (action === 'SHIP_MENU') {
           this.openShipMenu();
           return true;
         }
@@ -3346,6 +3429,10 @@ export class Game {
 
   /** Processes all input for the current frame by calling helper methods. */
   private _processInput(): void {
+    if (this.handleShipRepairInput()) {
+      this._publishStatusUpdate();
+      return;
+    }
     if (this._handleJettisonConfirmationInput()) {
       this._publishStatusUpdate();
       return;
@@ -4150,6 +4237,11 @@ export class Game {
   /** Updates. */
   private _update(deltaTime: number): void {
     this.captureCurrentPlanetMutations();
+    if (this.interfaceMode.is('ship-repairs')) {
+      if (this.shipRepairConsole.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     if (this.interfaceMode.is('science-log')) {
       if (this.scienceLog.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
@@ -5055,7 +5147,7 @@ export class Game {
         items.push({
           id: 'repair',
           label: 'Repair',
-          status: `${Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * 5)} Cr`,
+          status: `${Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * ROVER_REPAIR_COST_PER_POINT)} Cr`,
         });
     }
     return items;
@@ -7185,6 +7277,8 @@ export class Game {
         }
         if (this.interfaceMode.is('science-log'))
           this.renderer.drawTextModalTable(this.createScienceLogModel());
+        if (this.interfaceMode.is('ship-repairs'))
+          this.renderer.drawTextModalTable(this.createShipRepairModel());
 
         if (this.quantitySelector) {
           this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
@@ -7266,6 +7360,7 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      this.interfaceMode.is('ship-repairs') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -7335,6 +7430,7 @@ export class Game {
   private canSkipMainRender(state: GameState, signature: string): boolean {
     if (
       this.forceFullRender ||
+      this.interfaceMode.is('ship-repairs') ||
       this.popupState !== 'inactive' ||
       this.shipMenuOpen ||
       this.roverCargoOpen ||
@@ -7852,6 +7948,7 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.interfaceMode.is('ship-repairs')) return this.shipRepairConsole.createCommandBar();
     if (this.shipMenuOpen)
       return {
         context: 'ship operations',
@@ -7996,7 +8093,7 @@ export class Game {
           detail: 'Scan the stellar or planemo contact at current coordinates.',
         }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-          key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+          key: CONFIG.KEY_BINDINGS.SHIP_MENU,
           detail: 'Open ship operations.',
         }),
         commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', {
@@ -8055,7 +8152,7 @@ export class Game {
           detail: 'Scan a nearby star, planet, starbase, or selected close target.',
         }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-          key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+          key: CONFIG.KEY_BINDINGS.SHIP_MENU,
           detail: 'Open ship operations.',
         }),
         commandButton('observe', 'Observe', 'OBSERVE_SYSTEM_TARGET', {
@@ -8111,7 +8208,7 @@ export class Game {
         targetName: this.stateManager.currentPlanet?.name,
         buttons: [
           commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-            key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+            key: CONFIG.KEY_BINDINGS.SHIP_MENU,
             detail: 'Open landed ship operations.',
           }),
           commandButton('scan-surface', 'Scan', 'SCAN', {
@@ -8152,10 +8249,11 @@ export class Game {
           enabled: rover.fuel > 0,
         }),
         commandButton('cargo', 'Cargo', 'ROVER_CARGO', {
+          key: CONFIG.KEY_BINDINGS.ROVER_CARGO,
           detail: `Terrain vehicle cargo ${this.formatCargoLoad(cargo, rover.cargoHold.capacity)} m^3.`,
         }),
         commandButton('operations', 'Operations', 'OPEN_SHIP_MENU', {
-          key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+          key: CONFIG.KEY_BINDINGS.SHIP_MENU,
           detail: 'Open ship operations through the rover link.',
         }),
         commandButton('mine', 'Mine', 'ROVER_MINE', {
@@ -8517,6 +8615,10 @@ export class Game {
       this.purchaseTerrainVehicle();
       return;
     }
+    if (this.starbaseMode.sectionId === 'shipyard' && row.id === 'shipyard:repair') {
+      this.openShipRepairConsole();
+      return;
+    }
     if (this.starbaseMode.sectionId === 'shipyard' && row.id.startsWith('shipyard:')) {
       this.purchaseShipyardUpgrade(row.id);
       return;
@@ -8526,6 +8628,10 @@ export class Game {
 
   /** Purchases and installs the selected shipyard upgrade when affordable. */
   private purchaseShipyardUpgrade(optionId: string): void {
+    if (optionId === 'shipyard:repair') {
+      this.openShipRepairConsole();
+      return;
+    }
     const stationKey = this.getStationPersistenceKey(this.stateManager.currentStarbase);
     const profile = getStarbaseShipyardProfile(stationKey);
     const option = createShipyardUpgradeOptions(this.player.ship, profile).find(
@@ -8856,7 +8962,7 @@ export class Game {
             id: 'rover-repair',
             cells: [
               'Rover armour repair',
-              `${Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * 5)} Cr`,
+              `${Math.ceil((100 - (this.player.terrainVehicle.integrity ?? 100)) * ROVER_REPAIR_COST_PER_POINT)} Cr`,
               `${this.player.terrainVehicle.integrity ?? 100}%`,
               'Restore terrain vehicle integrity.',
             ],
@@ -8947,7 +9053,17 @@ export class Game {
         ];
       case 'shipyard':
         const profile = getStarbaseShipyardProfile(stationKey);
+        const repair = createRepairQuotes(this.player)[0];
         return [
+          {
+            id: 'shipyard:repair',
+            cells: ['Repairs / diagnostics', `${repair.cost.toLocaleString()} Cr`, 'OPEN', repair.condition],
+            detail:
+              'Hull, ship systems and terrain vehicle: inspect condition and authorise individual repairs or complete restoration.',
+            tone: 'amber',
+            cellTones: ['amber', 'amber', 'green', 'cyan'],
+            detailTone: 'cyan',
+          },
           ...this.getShipyardRefitRows(starbase),
           {
             id: 'terrain-vehicle',
@@ -8962,12 +9078,14 @@ export class Game {
             detail: 'Replacement includes fuel cell, cargo bay, scanner mast, and recovery transponder.',
             disabled: this.player.terrainVehicle.available,
           },
-          ...createShipyardUpgradeOptions(this.player.ship, profile).map((option) => ({
-            id: option.id,
-            cells: [option.label, `${option.cost.toLocaleString()} Cr`, option.eta, option.workOrder],
-            detail: option.detail,
-            disabled: option.disabled,
-          })),
+          ...createShipyardUpgradeOptions(this.player.ship, profile)
+            .filter((option) => option.id !== 'shipyard:repair')
+            .map((option) => ({
+              id: option.id,
+              cells: [option.label, `${option.cost.toLocaleString()} Cr`, option.eta, option.workOrder],
+              detail: option.detail,
+              disabled: option.disabled,
+            })),
           {
             id: 's1',
             cells: [
@@ -9064,7 +9182,7 @@ export class Game {
         ],
         detail:
           repairCost > 0
-            ? 'Enter the damage repair order below to restore hull and damaged subsystems.'
+            ? 'Open Repairs / diagnostics at the top of Shipyard to inspect and authorise work orders.'
             : 'Hull and fitted modules are reading nominal.',
         disabled: true,
       },

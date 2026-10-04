@@ -322,7 +322,7 @@ async function main() {
       'none'
     );
     await press('Escape');
-    await press('o');
+    await press('i');
     await capture('narrow-cargo');
     await press('ArrowDown');
     await capture('narrow-cargo-selected');
@@ -488,7 +488,7 @@ async function main() {
     await page.waitForTimeout(1700);
     await capture('desktop-contract-dossier');
     await press('Escape');
-    await press('o');
+    await press('i');
     await press('Enter');
     const capturedReference = await checkpoint();
     assert.equal(capturedReference.player.terrainVehicle.cargoHold.specimens.length, 1);
@@ -880,6 +880,7 @@ async function main() {
       const { createBiologyEnvironment } = await import('/src/entities/biology/biosphere_generator.ts');
       const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
       const { getStationSections } = await import('/src/core/starbase_ui.ts');
+      const { Game } = await import('/src/core/game.ts');
       const prng = new PRNG(initial.save.seed),
         location = initial.save.location;
       const system = new SolarSystem(
@@ -938,11 +939,19 @@ async function main() {
       save.player.ship.stasisClass = 2;
       save.xenobiology = research.createSnapshot();
       Object.assign(save, progress.createSnapshot());
+      const yardModel = Object.assign(Object.create(Game.prototype), {
+        player: save.player,
+        stateManager: { currentStarbase: system.starbase, currentSystem: system },
+        getTradeDepotManifest: () => [],
+      });
       return {
         save,
         missionId: mission.id,
         sourceId: target.id,
         shipyardIndex: getStationSections(system.starbase).findIndex((section) => section.id === 'shipyard'),
+        pressureCradleIndex: yardModel
+          .getStarbaseRows(system.starbase, 'shipyard')
+          .findIndex((row) => row.id === 'shipyard:stasis:3'),
       };
     }, fixture);
     await load(pressure.save);
@@ -975,7 +984,8 @@ async function main() {
     await load(pressureDock);
     assert(pressure.shipyardIndex >= 0, 'Pressure upgrade needs an inhabited shipyard.');
     for (let index = 0; index < pressure.shipyardIndex; index++) await press('ArrowRight');
-    for (let index = 0; index < 15; index++) await press('ArrowDown');
+    assert(pressure.pressureCradleIndex >= 0, 'Pressure-preserving cradle missing from the yard.');
+    for (let index = 0; index < pressure.pressureCradleIndex; index++) await press('ArrowDown');
     await capture('pressure-cradle-shipyard');
     await press('Enter');
     const fitted = await checkpoint();
@@ -999,7 +1009,7 @@ async function main() {
       ).length,
       1
     );
-    await press('o');
+    await press('i');
     await capture('pressure-live-cargo');
     pressureCollected.location = { ...docked.location };
     pressureCollected.player.terrainVehicle.deployed = false;
@@ -1022,6 +1032,134 @@ async function main() {
     await capture('pressure-reference-settled');
     metrics.pressureExpedition = true;
     metrics.speciesComparison = true;
+
+    // Exercise armed confirmations, visible incapacitation and Operations without changing local time.
+    const localFixture = structuredClone(delivery.save);
+    const localSiteId = localFixture.xenobiology.activeSiteId;
+    const localField = localFixture.xenobiology.fields[localSiteId];
+    const localContact = localField.individuals.find((actor) => actor.state === 'stunned');
+    assert(localContact, 'Controlled incapacitation fixture missing.');
+    localField.individuals = [localContact];
+    localContact.state = 'active';
+    await load(localFixture);
+    /** Counts the stun badge colour on the cell plane, independently of the creature sprite raster. */
+    const stunMarkerPixels = async () =>
+      page.evaluate(async () => {
+        const { CONFIG } = await import('/src/config.ts');
+        const { TEXT_PALETTE } = await import('/src/rendering/text_palette.ts');
+        const { getEncounterLayout } = await import('/src/rendering/surface_encounter_renderer.ts');
+        const canvas = document.querySelector('#gameCanvas');
+        const cellHeight = CONFIG.FONT_SIZE_PX * CONFIG.CHAR_SCALE;
+        const cellWidth = cellHeight * CONFIG.CHAR_ASPECT_RATIO;
+        const area = getEncounterLayout(
+          Math.floor(canvas.width / cellWidth),
+          Math.floor(canvas.height / cellHeight)
+        ).field;
+        const data = canvas
+          .getContext('2d')
+          .getImageData(
+            area.x * cellWidth,
+            area.y * cellHeight,
+            area.width * cellWidth,
+            area.height * cellHeight
+          ).data;
+        const colour = [1, 3, 5].map((start) => parseInt(TEXT_PALETTE.amber.slice(start, start + 2), 16));
+        let pixels = 0;
+        for (let index = 0; index < data.length; index += 4)
+          if (colour.every((value, channel) => data[index + channel] === value)) pixels++;
+        return pixels;
+      });
+    const unstunnedMarkers = await stunMarkerPixels();
+    localContact.state = 'stunned';
+    localContact.recoveryAt = localField.elapsedSeconds + 3600;
+    await load(localFixture);
+    const localBefore = await checkpoint();
+    metrics.stunMarkerPixels = (await stunMarkerPixels()) - unstunnedMarkers;
+    assert(metrics.stunMarkerPixels > 0, 'Stunned contact has no visible cell-plane marker.');
+    await capture('desktop-stunned-contact');
+    await page.setViewportSize({ width: 480, height: 800 });
+    await capture('narrow-stunned-contact');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await press('o');
+    await capture('field-operations');
+    assert(
+      await page.locator('#commandStrip [data-command-id="return"]:visible').count(),
+      'Operations controls absent.'
+    );
+    await page.locator('#commandStrip [data-command-id="return"]').click();
+    await page.waitForTimeout(100);
+    const afterOperations = await checkpoint();
+    assert.equal(afterOperations.gameClockElapsedSeconds, localBefore.gameClockElapsedSeconds);
+    assert.deepEqual(
+      afterOperations.xenobiology.fields[localSiteId],
+      localBefore.xenobiology.fields[localSiteId]
+    );
+    await press('k');
+    const armed = await capture('lethal-confirmation');
+    assert.equal(armed.spritePixels, 0, 'Creature sprites leaked into lethal confirmation.');
+    await page.waitForTimeout(900);
+    await press('ArrowRight');
+    assert.equal(
+      (await capture('lethal-confirmation-held')).centreHash,
+      armed.centreHash,
+      'Idle or unrelated input dismissed lethal confirmation.'
+    );
+    await press('Escape');
+    assert((await capture('lethal-confirmation-cancelled')).spritePixels > 0);
+    assert.equal((await checkpoint()).xenobiology.fields[localSiteId].individuals[0].state, 'stunned');
+    await press('k');
+    await page.waitForTimeout(500);
+    await press('Enter');
+    assert.equal(
+      (await checkpoint()).xenobiology.fields[localSiteId].individuals[0].state,
+      'dead',
+      'Confirmed lethal action was not performed.'
+    );
+    metrics.lethalConfirmation = true;
+    metrics.fieldOperations = true;
+
+    // Repair diagnostics must show current damage, settle only selected work, and keep the Shipyard parent.
+    const repairs = structuredClone(pressureDelivered);
+    repairs.player.ship.damage = {
+      hullIntegrity: 80,
+      maxHullIntegrity: 100,
+      subsystemDamage: { drive: 25, shield: 10 },
+    };
+    repairs.player.terrainVehicle.available = true;
+    repairs.player.terrainVehicle.integrity = 60;
+    repairs.player.resources.credits = 10000;
+    await load(repairs);
+    for (let index = 0; index < pressure.shipyardIndex; index++) await press('ArrowRight');
+    await capture('repairs-first-shipyard-item');
+    await press('Enter');
+    await page.waitForTimeout(1700);
+    await capture('desktop-repair-control');
+    assert.equal(
+      (await checkpoint()).player.resources.credits,
+      10000,
+      'Opening diagnostics charged credits.'
+    );
+    await page.setViewportSize({ width: 480, height: 800 });
+    await capture('narrow-repair-control');
+    await press('ArrowDown');
+    await capture('narrow-hull-repair-selected');
+    await press('Enter');
+    const hullRepaired = await checkpoint();
+    assert.equal(hullRepaired.player.ship.damage.hullIntegrity, 100);
+    assert.deepEqual(hullRepaired.player.ship.damage.subsystemDamage, { drive: 25, shield: 10 });
+    assert.equal(hullRepaired.player.terrainVehicle.integrity, 60);
+    assert.equal(hullRepaired.player.resources.credits, 9760);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.locator('#commandStrip [data-command-id="all"]').click();
+    const fullyRepaired = await checkpoint();
+    assert.deepEqual(fullyRepaired.player.ship.damage.subsystemDamage, {});
+    assert.equal(fullyRepaired.player.terrainVehicle.integrity, 100);
+    assert.equal(fullyRepaired.player.resources.credits, 8930);
+    await capture('repairs-completed');
+    await press('Escape');
+    assert.equal((await checkpoint()).location.kind, 'starbase', 'Escape from repairs undocked the ship.');
+    await capture('repairs-return-to-shipyard');
+    metrics.shipyardRepairs = true;
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify(

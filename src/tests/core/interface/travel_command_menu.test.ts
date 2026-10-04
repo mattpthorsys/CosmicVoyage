@@ -61,21 +61,21 @@ describe('travel command menu', () => {
   it.each(['hyperspace', 'system'] as const)(
     'keeps Operations selectable and its hotkey usable while %s travel is paused',
     (state) => {
-      const game = createTravelHarness(state, 'OPEN_SHIP_MENU');
+      const game = createTravelHarness(state, 'SHIP_MENU');
       game.travelCommandMoving = false;
       game.openShipMenu = vi.fn();
       const model =
         state === 'hyperspace' ? game.createHyperspaceCommandBar([]) : game.createSystemCommandBar([]);
       expect(model.buttons.find((button: { id: string }) => button.id === 'operations')).toMatchObject({
         action: 'OPEN_SHIP_MENU',
-        key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+        key: CONFIG.KEY_BINDINGS.SHIP_MENU,
       });
       expect(game._handleTravelCommandInput()).toBe(true);
       expect(game.openShipMenu).toHaveBeenCalledOnce();
     }
   );
   it('includes Operations in the rover menu and command strip away from the parked ship', () => {
-    const game = Object.assign(createTravelHarness('system', 'OPEN_SHIP_MENU'), {
+    const game = Object.assign(createTravelHarness('system', 'SHIP_MENU'), {
       stateManager: { state: 'planet', currentPlanet: { name: 'Dust' } },
       cargoSystem: { getTotalUnits: () => 0 },
       isAtParkedShip: () => false,
@@ -91,11 +91,27 @@ describe('travel command menu', () => {
       expect.objectContaining({
         id: 'operations',
         action: 'OPEN_SHIP_MENU',
-        key: CONFIG.KEY_BINDINGS.OPEN_SHIP_MENU,
+        key: CONFIG.KEY_BINDINGS.SHIP_MENU,
       })
     );
     expect(game._handleSurfaceVehicleInput()).toBe(true);
     expect(game.openShipMenu).toHaveBeenCalledOnce();
+  });
+  it('keeps rover Cargo on I, separate from the O Operations shortcut', () => {
+    const game = Object.assign(createTravelHarness('system', 'ROVER_CARGO'), {
+      stateManager: { state: 'planet', currentPlanet: { name: 'Dust' } },
+      cargoSystem: { getTotalUnits: () => 0 },
+      isAtParkedShip: () => false,
+      openRoverCargo: vi.fn(),
+      openShipMenu: vi.fn(),
+    });
+    game.player.terrainVehicle.deployed = true;
+    expect(game.createSurfaceCommandBar().buttons).toContainEqual(
+      expect.objectContaining({ id: 'cargo', action: 'ROVER_CARGO', key: 'i' })
+    );
+    expect(game._handleSurfaceVehicleInput()).toBe(true);
+    expect(game.openRoverCargo).toHaveBeenCalledOnce();
+    expect(game.openShipMenu).not.toHaveBeenCalled();
   });
   it('pauses hyperspace movement with Enter and lets arrows select commands', () => {
     const publish = vi.spyOn(eventManager, 'publish').mockImplementation(() => undefined);

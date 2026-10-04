@@ -312,5 +312,5 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
   );
   if (quote) text(quote, TEXT_PALETTE.amber);
   for (const request of model.requests) text(request, TEXT_PALETTE.amber);
-  drawShortcutText(buffer, '[D] dossier  [O] cargo'.slice(0, width), x, limit, TEXT_PALETTE.cyan, bg);
+  drawShortcutText(buffer, '[D] dossier  [I] cargo'.slice(0, width), x, limit, TEXT_PALETTE.cyan, bg);
 }

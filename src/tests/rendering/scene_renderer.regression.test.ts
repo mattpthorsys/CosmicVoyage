@@ -8,6 +8,8 @@ import { Player } from '../../core/player';
 import type { OrbitStellarSource } from '../../core/orbit_ui';
 import type { TextModalTableModel } from '../../core/text_ui';
 import { MissionJournal } from '../../core/mission_journal';
+import { ShipRepairConsole } from '../../core/ship_repair_console';
+import { getStarbaseShipyardProfile } from '../../core/ship_modifications';
 import { Planet } from '../../entities/planet';
 import { Starbase } from '../../entities/starbase';
 import { SolarSystem } from '../../entities/solar_system';
@@ -1096,6 +1098,40 @@ describe('SceneRenderer visual regressions', () => {
     );
     expect(drawCalls.some((call) => call.font === 'thin')).toBe(true);
     expect(fontsForText(drawCalls, ' MISSION JOURNAL ')).toEqual(Array(17).fill('thick'));
+  });
+
+  it.each([
+    [120, 42],
+    [76, 24],
+    [30, 45],
+    [48, 20],
+  ])('renders selected repair quotes legibly over a clean scene in a %sx%s terminal', (cols, rows) => {
+    const { buffer, drawCalls } = createMockScreenBuffer(cols, rows);
+    const player = new Player();
+    player.ship.damage.hullIntegrity = 80;
+    player.ship.damage.subsystemDamage = { drive: 25, shield: 10 };
+    const console = new ShipRepairConsole();
+    console.selectedTarget = 'drive';
+    const model = console.createModel(
+      player,
+      'Regression Dock',
+      getStarbaseShipyardProfile('Regression Dock'),
+      cols,
+      rows
+    );
+    createSceneRenderer(buffer).drawTextModalTable(model);
+    const text = renderTextRows(drawCalls).join('\n');
+    expect(text).toContain('REPAIR CONTROL');
+    expect(text).toContain('Drive');
+    expect(text).toContain('450 Cr');
+    expect(text).toContain('75% integrity');
+    expect(buffer.clear).toHaveBeenCalledWith(false);
+    expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
+    expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < rows)).toBe(
+      true
+    );
+    expect(fontsForText(drawCalls, ' REPAIR CONTROL ')).toEqual(Array(16).fill('thick'));
+    expect(fontsForText(drawCalls, '75% integrity')).toEqual(Array(13).fill('thin'));
   });
 
   it('shows only the scrolled dossier page and a scroll indicator', () => {

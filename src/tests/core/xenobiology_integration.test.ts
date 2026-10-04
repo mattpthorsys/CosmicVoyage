@@ -132,7 +132,7 @@ describe('xenobiology Game integration', () => {
     });
     const target = game.encounterController.target(field)?.id;
     const before = structuredClone(field);
-    keys.add('OPEN_SHIP_MENU');
+    keys.add('SHIP_MENU');
     game.handleEncounterInput();
     expect(game.shipMenuOpen).toBe(true);
     expect(game.encounterController.targetId).toBe(target);
@@ -152,7 +152,7 @@ describe('xenobiology Game integration', () => {
     expect(field).toEqual(before);
     expect(game.encounterController.targetId).toBe(target);
     keys.clear();
-    keys.add('SHIP_MENU');
+    keys.add('ROVER_CARGO');
     game.handleEncounterInput();
     expect(game.shipMenuOpen).toBe(false);
     expect(game.createRoverCargoModel().title).toBe('Terrain Vehicle Cargo');

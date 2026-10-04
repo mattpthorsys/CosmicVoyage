@@ -75,7 +75,7 @@ export const CONFIG = {
     CYCLE_TARGET: 'Tab',
     TARGET_MENU: 'n',
     SHIP_MENU: 'o',
-    OPEN_SHIP_MENU: 'p',
+    ROVER_CARGO: 'i',
     MISSION_JOURNAL: 'j',
     SCIENCE_LOG: 'x',
     ORBIT_DOSSIER: 'd',
@@ -99,7 +99,7 @@ export const CONFIG = {
     PEEK_SYSTEM: 's', // Compatibility alias for the shared local survey key.
     SCAN_SYSTEM_OBJECT: 's', // Changed from PEEK_SYSTEM
     DOWNLOAD_LOG: 'p',
-    INFO_TEST: 'i',
+    INFO_TEST: 'F4',
     QUIT: 'Escape',
     ZOOM_IN: '=', // Using '=' for the key next to backspace (often shares with '+')
     ZOOM_OUT: '-', // Using '-' for the key next to '0'

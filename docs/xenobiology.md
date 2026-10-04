@@ -91,7 +91,8 @@ a predictive model of alien evolution. Introduced colony taxa remain familiar.
 | W             | Wait ten local seconds                                  |
 | D             | Scrollable dossier for the selected species             |
 | N             | Personal species/evidence record                        |
-| O             | Rover cargo manifest                                    |
+| I             | Rover cargo manifest                                    |
+| O             | Ship Operations through the rover link                   |
 | X             | Shipboard science log and recorded return sites          |
 | Escape        | Close a panel, or withdraw near the entry at X16 Y21    |
 
@@ -155,7 +156,7 @@ tissue sample and one whole specimen: revisiting or reloading does not recreate
 it.
 
 To pick up an organism, drive next to it (small benign organisms can share the
-rover's cell), press `O` for Cargo, select **Collect selected organism** or
+rover's cell), press `I` for Cargo, select **Collect selected organism** or
 **Collect nearby organism**, and press Enter. The sealed specimen then appears
 in that same manifest. `C` is a shortcut for the selected contact. Large mobile
 organisms must first be stunned; incompatible stasis, a full hold or exhausted
@@ -307,7 +308,7 @@ suitable local offer; no planet or species is manufactured to fill the board.
 Accept with Enter. The request gives the planet, habitat X/Y, species, live
 condition and minimum quality of 75%. After reliable observation, matching
 contacts show the accepted request in the field assessment and `D` dossier.
-Approach, stun if necessary, and use `O` Cargo or `C` to collect normally.
+Approach, stun if necessary, and use `I` Cargo or `C` to collect normally.
 Tissue and dead specimens retain their ordinary scientific use but do not
 satisfy a live-reference request. Repeated stunning can reduce specimen quality.
 

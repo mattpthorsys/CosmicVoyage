@@ -88,6 +88,13 @@ export interface ShipyardUpgradeOption {
   disabled?: boolean;
 }
 
+export interface ShipRepairOrder {
+  target: 'hull' | ShipDamageSubsystem;
+  label: string;
+  integrityPercent: number;
+  cost: number;
+}
+
 export interface StarbaseShipyardProfile {
   kind: ShipyardKind;
   label: string;
@@ -105,6 +112,17 @@ export const CARGO_POD_COST = 650;
 export const DEFAULT_CARGO_POD_CAPACITY = 25;
 export const HULL_REPAIR_COST_PER_POINT = 12;
 export const SUBSYSTEM_REPAIR_COST_PER_POINT = 18;
+export const ROVER_REPAIR_COST_PER_POINT = 5;
+export const SHIP_DAMAGE_SUBSYSTEMS: readonly ShipDamageSubsystem[] = [
+  'drive',
+  'shield',
+  'laser',
+  'missileBay',
+  'cargoBay',
+  'probeBay',
+  'landingBay',
+  'specialBay',
+];
 
 /** Returns engine fuel use multiplier. */
 export function getEngineFuelUseMultiplier(engineClass: number): number {
@@ -163,16 +181,36 @@ export function getSubsystemDamage(ship: ShipModificationState, subsystem: ShipD
   return Math.max(0, Math.min(100, Math.round(ship.damage.subsystemDamage[subsystem] ?? 0)));
 }
 
-/** Returns ship repair cost. */
-export function getShipRepairCost(ship: ShipModificationState): number {
+/** Quotes damaged hull and subsystems once, so individual and complete repair totals agree. */
+export function createShipRepairOrders(ship: ShipModificationState): ShipRepairOrder[] {
+  const orders: ShipRepairOrder[] = [];
   const hullDamage = Math.max(0, ship.damage.maxHullIntegrity - ship.damage.hullIntegrity);
-  const subsystemDamage = Object.values(ship.damage.subsystemDamage).reduce(
-    (sum, damage) => sum + Math.max(0, damage ?? 0),
-    0
-  );
-  return Math.ceil(
-    hullDamage * HULL_REPAIR_COST_PER_POINT + subsystemDamage * SUBSYSTEM_REPAIR_COST_PER_POINT
-  );
+  if (hullDamage > 0)
+    orders.push({
+      target: 'hull',
+      label: 'Hull / pressure envelope',
+      integrityPercent:
+        ship.damage.maxHullIntegrity > 0
+          ? Math.round((100 * ship.damage.hullIntegrity) / ship.damage.maxHullIntegrity)
+          : 0,
+      cost: Math.ceil(hullDamage * HULL_REPAIR_COST_PER_POINT),
+    });
+  for (const target of SHIP_DAMAGE_SUBSYSTEMS) {
+    const damage = getSubsystemDamage(ship, target);
+    if (damage > 0)
+      orders.push({
+        target,
+        label: formatSubsystemLabel(target),
+        integrityPercent: 100 - damage,
+        cost: damage * SUBSYSTEM_REPAIR_COST_PER_POINT,
+      });
+  }
+  return orders;
+}
+
+/** Returns the sum of the same itemised ship repair quotes shown by the yard. */
+export function getShipRepairCost(ship: ShipModificationState): number {
+  return createShipRepairOrders(ship).reduce((total, order) => total + order.cost, 0);
 }
 
 /** Returns ship damage summary. */
