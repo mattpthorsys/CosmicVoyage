@@ -66,7 +66,7 @@ export function speciesComparisonLines(
   const lines: TextDashboardLine[] = [];
   /** Preserves semantic colours while leaving wrapping to the shared terminal layout. */
   const line = (text: string, tone: TextTone = 'normal', heading = false): void => {
-    lines.push({ segments: [{ text, tone, font: heading ? 'thick' : 'thin' }] });
+    lines.push(text ? { segments: [{ text, tone, font: heading ? 'thick' : 'thin' }] } : { segments: [] });
   };
   line('COMPARATIVE BIOLOGY', 'cyan', true);
   if (primary.level < 2) {
