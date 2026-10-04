@@ -94,8 +94,12 @@ export class SurfaceEncounterController {
       return;
     }
     if (state.kind === 'confirm') {
-      this.interaction = { kind: 'drive' };
-      if (confirm) return { kind: 'command', command: { kind: 'shoot', targetId: state.targetId } };
+      // Idle frames and unrelated keys must not dismiss an armed confirmation.
+      if (cancel) this.interaction = { kind: 'drive' };
+      else if (confirm) {
+        this.interaction = { kind: 'drive' };
+        return { kind: 'command', command: { kind: 'shoot', targetId: state.targetId } };
+      }
       return;
     }
     if (actions.has('CYCLE_TARGET')) {

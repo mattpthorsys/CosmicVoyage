@@ -55,7 +55,9 @@ function drawSprite(
   displaying = false
 ): void {
   const pattern =
-    displaying && sprite.displayFrame ? sprite.displayFrame : sprite.frames[frame % sprite.frames.length];
+    displaying && state === 'active' && sprite.displayFrame
+      ? sprite.displayFrame
+      : sprite.frames[state === 'active' ? frame % sprite.frames.length : 0];
   const palette =
     state === 'dead'
       ? ['#343537', '#74767b', '#b4b5b0', '#d4d3c8']
@@ -131,6 +133,16 @@ export function drawSurfaceEncounter(buffer: ScreenBuffer, model: EncounterViewM
   for (const actor of model.actors) {
     const p = point(actor.x, actor.y);
     drawSprite(buffer, actor.sprite, p[0], p[1], 0.5, model.turn, field, actor.state, actor.displaying);
+    if (actor.state === 'stunned') {
+      const markerY = p[1] > field.y ? p[1] - 1 : p[1] + Math.ceil(actor.sprite.frames[0].length * 0.5);
+      if (
+        p[0] >= field.x &&
+        p[0] + 2 <= field.x + field.width &&
+        markerY >= field.y &&
+        markerY < field.y + field.height
+      )
+        buffer.drawString('zZ', p[0], markerY, TEXT_PALETTE.amber, null, 'thin');
+    }
     // The office marker follows this camera projection, while cyan brackets retain selection ownership.
     if (
       actor.missionTarget &&
@@ -292,7 +304,12 @@ function drawTelemetry(buffer: ScreenBuffer, model: EncounterViewModel, panel: R
   else text(model.brief);
   if (model.targetMassSegments.length) styled(model.targetMassSegments);
   else text(model.targetMass, TEXT_PALETTE.textMuted);
-  text(model.targetRange, TEXT_PALETTE.cyan);
+  text(
+    model.targetRange,
+    model.actors.some((actor) => actor.selected && actor.state === 'stunned')
+      ? TEXT_PALETTE.amber
+      : TEXT_PALETTE.cyan
+  );
   if (quote) text(quote, TEXT_PALETTE.amber);
   for (const request of model.requests) text(request, TEXT_PALETTE.amber);
   drawShortcutText(buffer, '[D] dossier  [O] cargo'.slice(0, width), x, limit, TEXT_PALETTE.cyan, bg);

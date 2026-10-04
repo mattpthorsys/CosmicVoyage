@@ -94,6 +94,40 @@ describe('xenobiology interface', () => {
       command: { kind: 'move', dx: 0, dy: -1 },
     });
   });
+  it('holds lethal confirmation across idle frames and unrelated input until explicitly confirmed', () => {
+    const field = createEncounter(generateBiosphere(biologyFixture())!, {
+      id: 'confirm',
+      label: 'Confirm',
+      x: 1,
+      y: 1,
+    });
+    const controller = new SurfaceEncounterController();
+    const target = controller.target(field)!;
+    controller.input(new Set(['BIOLOGY_SHOOT']), field);
+    const before = structuredClone(field);
+    for (let frame = 0; frame < 60; frame++) expect(controller.input(new Set(), field)).toBeUndefined();
+    expect(controller.input(new Set(['MOVE_RIGHT', 'CYCLE_TARGET']), field)).toBeUndefined();
+    expect(controller.interaction).toEqual({ kind: 'confirm', targetId: target.id });
+    expect(field).toEqual(before);
+    expect(controller.input(new Set(['ENTER_SYSTEM']), field)).toEqual({
+      kind: 'command',
+      command: { kind: 'shoot', targetId: target.id },
+    });
+    expect(controller.interaction.kind).toBe('drive');
+  });
+  it('cancels lethal confirmation without firing or advancing field time', () => {
+    const field = createEncounter(generateBiosphere(biologyFixture())!, {
+      id: 'cancel',
+      label: 'Cancel',
+      x: 1,
+      y: 1,
+    });
+    const controller = new SurfaceEncounterController();
+    controller.input(new Set(['BIOLOGY_SHOOT']), field);
+    expect(controller.input(new Set(['QUIT', 'ENTER_SYSTEM']), field)).toBeUndefined();
+    expect(controller.interaction.kind).toBe('drive');
+    expect(field.elapsedSeconds).toBe(0);
+  });
   it('uses the bottom action menu, with cargo and all capture hotkeys, rather than another popup', () => {
     const biosphere = generateBiosphere(biologyFixture())!,
       field = createEncounter(biosphere, { id: 'site', label: 'Site', x: 1, y: 1 });

@@ -56,6 +56,63 @@ describe('field survey graphics contracts', () => {
   it.each([
     [120, 42],
     [30, 45],
+  ])('marks stunned contacts and freezes their pose until recovery in a %sx%s field', (cols, rows) => {
+    const field = createEncounter(generateBiosphere(biologyFixture())!, {
+      id: 'stunned',
+      x: 1,
+      y: 1,
+      label: 'Stunned',
+    });
+    const target = field.individuals[0];
+    field.individuals = [target];
+    target.x = field.roverX + 1;
+    target.y = field.roverY - 1;
+    target.state = 'stunned';
+    target.recoveryAt = 180;
+    const service = new XenobiologyService();
+    const view = createEncounterView(field, target.id, service, {
+      power: 1,
+      stasisClass: 1,
+      integrity: 100,
+      cargo: { usedM3: 0, capacityM3: 50 },
+      message: '',
+    });
+    const first = display(cols, rows);
+    const later = display(cols, rows);
+    drawSurfaceEncounter(first.buffer, { ...view, turn: 0 });
+    drawSurfaceEncounter(later.buffer, { ...view, turn: 1 });
+    expect(later.pixels).toEqual(first.pixels);
+    const layout = getEncounterLayout(cols, rows);
+    const marks = [...first.cells].filter(([position, cell]) => {
+      const [x, y] = position.split(',').map(Number);
+      return (
+        x < layout.field.width &&
+        y >= layout.field.y &&
+        y < layout.field.y + layout.field.height &&
+        ['z', 'Z'].includes(cell.char) &&
+        cell.fg === TEXT_PALETTE.amber
+      );
+    });
+    expect(marks.map(([, cell]) => cell.char)).toEqual(['z', 'Z']);
+    expect(first.outside).toEqual([]);
+    target.state = 'active';
+    const recovered = display(cols, rows);
+    drawSurfaceEncounter(
+      recovered.buffer,
+      createEncounterView(field, target.id, service, {
+        power: 1,
+        stasisClass: 1,
+        integrity: 100,
+        cargo: { usedM3: 0, capacityM3: 50 },
+        message: '',
+      })
+    );
+    expect(marks.every(([position]) => recovered.cells.get(position)?.char === GLYPHS.BLOCK)).toBe(true);
+    expect(recovered.outside).toEqual([]);
+  });
+  it.each([
+    [120, 42],
+    [30, 45],
   ])(
     'renders a visible defensive posture without changing state or escaping the %sx%s field',
     (cols, rows) => {
