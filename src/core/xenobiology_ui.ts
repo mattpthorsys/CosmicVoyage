@@ -14,6 +14,7 @@ import {
   mineralisationLabel,
 } from '../entities/biology/biology_rules';
 import { stasisCompatibility } from '../systems/specimen_cargo_system';
+import { preservationRequirementDescription } from '../entities/biology/preservation';
 import { organismActivity } from '../systems/organism_behaviour';
 import {
   wrapDashboardLines,
@@ -243,7 +244,11 @@ export function createEncounterView(
         `Mortality ${estimate.mortality} / ${estimate.recovery}`
       );
     }
-    scanner.push(`Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`);
+    scanner.push(
+      level >= 2
+        ? `Stasis: ${stasisCompatibility(species, stasisClass) ?? 'compatible'}`
+        : 'Preservation unverified / observe contact'
+    );
     if (target.sizeScale !== undefined) scanner.push(`Size: ${individualSizeLabel(target.sizeScale)}`);
     if (level >= 2 && target.mineralisation !== undefined)
       scanner.push(`Covering: ${mineralisationLabel(target.mineralisation)} / no automatic rarity premium`);
@@ -519,6 +524,7 @@ export function createBiologicalDossier(
       `${species.temperatureK.toFixed(0)} K / ${species.pressureBar.toFixed(2)} bar`,
       'amber'
     );
+    entry('Preservation', preservationRequirementDescription(species), 'amber');
   } else
     entry('Assessment', 'Close analysis or a specimen is needed to resolve structural details.', 'muted');
   section('Scientific Demand');

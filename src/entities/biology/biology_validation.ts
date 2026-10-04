@@ -8,6 +8,7 @@ import {
   type XenobiologySnapshot,
 } from './biology_types';
 import { canShareRoverCell, individualPhysicalProfile } from './biology_rules';
+import { samePreservationRequirements } from './preservation';
 
 /** Requires a structured save value without trusting a cast of imported JSON. */
 function record(value: unknown): asserts value is Record<string, unknown> {
@@ -96,6 +97,12 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
   if (value.relativeAbundance !== undefined) number(value.relativeAbundance, 0.05, 1);
   if (value.structuralMaterial !== undefined)
     choice(value.structuralMaterial, ['organic', 'silica', 'mineral']);
+  if (value.preservation !== undefined) {
+    record(value.preservation);
+    choice(value.preservation.solvent, ['water', 'ammonia', 'hydrocarbon']);
+    if (typeof value.preservation.retainsSubstrate !== 'boolean')
+      throw new Error('Invalid biological preservation requirement.');
+  }
   if (value.anatomy !== undefined) {
     record(value.anatomy);
     number(value.anatomy.appendages, 0, 12, true);
@@ -325,5 +332,10 @@ export function validateXenobiology(
       throw new Error('Specimen size does not match its source.');
     if (container.mineralisation !== individual.mineralisation)
       throw new Error('Specimen covering does not match its source.');
+    const canonical = (field.species as SpeciesDefinition[]).find(
+      (species) => species.id === individual.speciesId
+    );
+    if (!canonical || !samePreservationRequirements(container.species, canonical))
+      throw new Error('Specimen preservation does not match its source.');
   }
 }

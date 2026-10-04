@@ -15,6 +15,7 @@ import { isBreathableTerraformingProfile, type TerraformingProfile } from './hab
 // Import the generator and data interface
 import { SurfaceData, SurfaceGenerationRequest } from './planet/surface_generator';
 import { getSurfaceGenerationProvider } from './planet/surface_generation_provider';
+import { atmosphereBolometricFlux } from './planet/stellar_irradiation';
 import { getManagedSurfaceWaterPhase, isLiquidCovered, SurfaceLiquidOverlay } from './planet/surface_liquid';
 import {
   advanceDiscoveryRecord,
@@ -94,6 +95,8 @@ export class Planet {
   public readonly lithosphere: string; //
   public readonly magneticFieldStrength: number;
   public readonly mass: number; // Mass (kg)
+  /** Generated reference flux stays independent of the current animation/orbital phase. */
+  public readonly referenceStellarFluxWm2: number;
   public readonly escapeVelocity: number;
   public readonly axialTilt: number; // in radians
   public readonly tidallyLocked: boolean;
@@ -201,6 +204,11 @@ export class Planet {
     this.orbitAngle = angle; //
     this.orbitHost = orbitHost ?? { kind: 'barycentric' };
     this.stellarEnvironment = stellarEnvironment ?? getDefaultStellarEnvironment(parentStarType);
+    this.referenceStellarFluxWm2 = atmosphereBolometricFlux(
+      this.stellarEnvironment,
+      orbitDistance,
+      totalFlux_W_m2
+    );
 
     // Seed PRNG specifically for this planet
     this.systemPRNG = systemPRNG.seedNew('planet_' + name); //

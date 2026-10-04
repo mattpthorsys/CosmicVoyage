@@ -12,6 +12,8 @@ import type { MissionProgressService } from './mission_progress';
 import type { XenobiologyService } from './xenobiology_service';
 import { createBiologicalReference } from './biological_mission_guidance';
 import { createComparativeBiologicalContracts, createMineralisationComparison } from './comparative_biology';
+import { createPressureExpedition } from './pressure_expedition';
+import { samePreservationRequirements } from '../entities/biology/preservation';
 
 export interface BiologicalDeliveryContext {
   readonly station: Pick<Starbase, 'id' | 'name' | 'kind'>;
@@ -218,6 +220,7 @@ export function createBiologicalContracts(
     ...offers,
     ...createComparativeBiologicalContracts(station, systemName, biospheres, fields, owned, research),
     ...createMineralisationComparison(station, systemName, biospheres, fields, owned, research),
+    ...createPressureExpedition(station, systemName, biospheres, fields, owned, research),
   ];
 }
 
@@ -276,8 +279,11 @@ export function deliverBiologicalContract(
       return { ok: false, message: 'Specimen ownership is ambiguous; delivery refused.' };
     const field = research.snapshot.fields[container.siteId];
     const source = field?.individuals.find((actor) => actor.id === container.sourceId);
+    const canonical = field?.species.find((species) => species.id === source?.speciesId);
     if (
       !source ||
+      !canonical ||
+      !samePreservationRequirements(container.species, canonical) ||
       (container.kind === 'tissue' ? !source.sampled : source.state !== 'collected') ||
       container.sizeScale !== source.sizeScale ||
       container.mineralisation !== source.mineralisation ||

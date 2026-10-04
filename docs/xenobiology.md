@@ -13,9 +13,13 @@ See [the expansion verification handoff](xenobiology-expansion-verification.md)
 for a personal playthrough and the automated/browser checks.
 
 The subsequent native-family, inherited anatomy, readable activity/defence and
-comparative-research additions are implemented but not yet verified. Their
-current checkpoints, verification commands and personal expedition are in
+comparative-research additions also passed automated and browser verification.
+Their checkpoints, verification results and personal expedition are in
 [the native expansion handoff](xenobiology-native-expansion.md).
+
+The latest survey previews, evidence comparisons, reinforced coverings and
+pressure-preservation expedition are implemented, with verification pending
+the requested Luna handoff. See [the survey expansion handoff](xenobiology-survey-expansion.md).
 
 ## First Expedition
 
@@ -29,6 +33,9 @@ current checkpoints, verification commands and personal expedition are in
 3. Press `B` to select an accessible habitat on the landing map. Repeated `B`
    cycles habitats. If coordinates are still preparing, wait and press it again.
    `Enter` lands at the selected coordinate.
+   Previews show physical terrain and locally acquired record counts, not
+   unobserved species. The dossier distinguishes visited/unvisited habitats
+   and gives planetary mean conditions for expedition preparation.
 4. In landed ship operations, select Terrain Vehicle, then Disembark. Press `B`
    or choose **Life** to investigate the habitat. Entry requires a deployed,
    serviceable rover within one regional cell of the habitat.
@@ -162,6 +169,12 @@ tissue from a larger individual remains collectible. Size never grants a new
 species identity or resets scientific novelty. Older fields keep their original
 individual sizes. Try an unvisited habitat or a new voyage to see new variation.
 
+Native silica/mineral-covered organisms can also carry a persistent reinforced
+covering. Observation reveals the form; a restrained ridge highlight distinguishes
+the sprite. Reinforcement modestly increases mass and armour, so the same measured
+profile governs stun estimates, handling and cargo. It does not establish a new
+species, a genetic adaptation or an automatic rarity premium.
+
 Containers use ordinary cargo volume, cannot be split into commodity quantities,
 and appear in ship/rover manifests. Disposal requires confirmation and is
 irreversible. Docking transfers whole containers that fit; overflow remains in
@@ -180,6 +193,13 @@ evidence. Any key completes an unfinished text reveal before taking action.
 - `Enter`, while orbiting the recorded planet or its parent, selects its exact
   landing site. A later Enter confirms landing; the log never teleports or lands.
 - Escape returns to the parent interface; `X` also closes the log.
+- `C` toggles recorded species comparisons. Left/Right changes the primary
+  species; Tab changes the observed counterpart. Missing traits remain unresolved.
+
+Comparisons highlight acquired structural similarities and differences. Possible
+affinity is qualitative: convergence remains possible, and hidden family labels
+are never exposed as established ancestry. No specimen, time or scientific demand
+is consumed while comparing records.
 
 Each entry includes hyperspace coordinates/contact slot, body and habitat X/Y,
 personal collection and current cargo counts, submitted evidence, physical
@@ -199,11 +219,20 @@ life. Extended equipment is available at an inhabited starbase's Shipyard:
 | -------- | -------- | ---------------------- | ---------------------- |
 | Basic    | Included | 280-315 K; 0.3-2 bar   | 2                      |
 | Extended | 1,900 Cr | 273-345 K; 0.04-12 bar | 6                      |
+| Pressure-preserving cradle | 4,200 Cr | 273-345 K; 0.04-30 bar; isolated native substrate | 6 |
 
 Basic stasis shares the standard survey bay. Upgrading uses that same bay.
-Both kits support the version-one carbon-water profiles and a handling limit
+All current kits explicitly support water-solvent profiles and a handling limit
 of 80 kg. Containers also need cargo volume. Incompatible live specimens remain
 in the field; observations, tissue and dead specimens are still alternatives.
+
+Occasional suitable high-pressure water worlds support attached producer films
+and small detritus-recycling colonies. These are collected colonial material,
+not giant microbes. Native substrate isolation matters even when the pressure
+fits extended equipment: the scanner and analysed dossier explain what is needed.
+The pressure cradle shares the existing bay, not an extra equipment installation.
+No current kit supports ammonia/hydrocarbon biology, and no such life is generated
+in this wave. Stasis specifications are fictional equipment capabilities.
 
 Most organisms are sessile, passive or skittish. Territorial organisms and
 ambushers can threaten rover armour, but an initial warning action does not also
@@ -337,6 +366,19 @@ two different advertised habitat kinds on one planet. Use `A` within 25 m at
 both; the two site-specific data packets require no cargo and pay **1,100 Cr
 plus remaining ordinary data value**. Existing qualifying site records count.
 The comparison describes observations, not proof of adaptation or causation.
+
+**Mineral covering comparison** requests tissue from one STANDARD and one
+REINFORCED native covering at the same actual habitat, each at least 70% quality.
+The complete pair pays **1,200 Cr plus remaining ordinary research value**, with
+no stasis required. Forms are identified by observation, not assumed genetic cause.
+
+**Pressure-preserved reference** requests one live attached colonial sample at
+75% quality or better, including isolated native substrate. Fit the
+**Pressure-preserving cradle** in Shipyard and collect normally. Deliver to the
+staffed issuer for **1,600 Cr plus remaining ordinary research value**. This
+finite offer requires an obtainable known or player-observed organism; ports do
+not manufacture pressure worlds to supply it. Scan data and tissue remain useful
+without this upgrade but do not satisfy the live request.
 
 `J` shows COMPLETE/NEEDED beside each contribution. For distinct destinations,
 `B` chooses the habitat before Enter selects its orbital landing cursor. Two

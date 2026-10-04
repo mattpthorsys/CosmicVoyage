@@ -147,7 +147,7 @@ function createLegacyLocation() {
 }
 
 describe('save game persistence', () => {
-  it('restores active fields at the current biology version and retains version-one field IDs', () => {
+  it('restores active fields at the current biology version and retains older field IDs', () => {
     const save = createSave();
     const location = { worldX: 3, worldY: -2, systemSlot: 0, bodyPath: 'planet:0' };
     /** Builds a valid field snapshot with either the persisted or current generated body suffix. */
@@ -179,6 +179,34 @@ describe('save game persistence', () => {
     save.xenobiology.fields = { [legacyField.site.id]: legacyField };
     save.xenobiology.activeSiteId = legacyField.site.id;
     expect(parseGameSave(save).xenobiology.fields[legacyField.site.id].bodyId).toContain('/bio1');
+    const versionTwo = makeField(2);
+    save.xenobiology.fields = { [versionTwo.site.id]: versionTwo };
+    save.xenobiology.activeSiteId = versionTwo.site.id;
+    expect(parseGameSave({ ...save, version: 14 }).xenobiology.fields[versionTwo.site.id]).toEqual(
+      versionTwo
+    );
+  });
+
+  it('migrates version-fourteen storage and preserves exact class-three equipment capabilities', () => {
+    const legacy = { ...createSave(), version: 14 };
+    const session = new MemoryStorage(),
+      manual = new MemoryStorage();
+    session.setItem('cosmic-voyage.session.v14', JSON.stringify(legacy));
+    manual.setItem('cosmic-voyage.manual.v14', JSON.stringify(legacy));
+    const storage = new SaveGameStorage(session, manual);
+    expect(storage.loadSession()).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
+    expect(storage.loadManual()).toEqual({ ...legacy, version: SAVE_GAME_VERSION });
+    expect(session.getItem('cosmic-voyage.session.v14')).toBeNull();
+    expect(manual.getItem('cosmic-voyage.manual.v14')).toBeNull();
+    const current = createSave();
+    current.player.ship.stasisClass = 3;
+    expect(parseGameSave(JSON.stringify(current)).player.ship.stasisClass).toBe(3);
+    current.player.ship.stasisClass = 4;
+    expect(() => parseGameSave(current)).toThrow();
+    storage.clearSession();
+    storage.clearManual();
+    expect(session.length).toBe(0);
+    expect(manual.length).toBe(0);
   });
 
   it('migrates version-thirteen storage without losing evidence or accepted contract packets', () => {

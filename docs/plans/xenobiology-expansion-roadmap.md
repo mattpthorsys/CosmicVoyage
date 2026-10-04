@@ -6,11 +6,15 @@ passed automated and browser verification. The next authorised four steps
 variation, and analysis/tissue requests) also passed full automated and browser
 verification. See the [verification handoff](../xenobiology-expansion-verification.md).
 The subsequent native-family, inherited pixel anatomy, bounded defensive
-activity and comparative-research steps are now implemented, with verification
-pending the requested model handoff. See
+activity and comparative-research steps also passed automated and browser
+verification. See
 [native expansion checkpoints](../xenobiology-native-expansion.md).
+The next authorised wave adds survey previews, acquired-trait comparisons,
+reinforced covering variation and one pressure-preservation expedition. It is
+implemented, with verification pending the requested Luna handoff. See
+[survey expansion checkpoints](../xenobiology-survey-expansion.md).
 Later waves remain exploratory, not implementation commitments.
-Codebase baseline inspected: 2026-10-03. The bounded discovery, capture, cargo,
+Codebase baseline inspected: 2026-10-04. The bounded discovery, capture, cargo,
 stasis, and research loop now exists, including the terrain-integrated field
 view and specimen listings in Sell. See the [implementation plan](xenobiology-first-version.md)
 and [current implementation/player guide](../xenobiology.md). Long-session
@@ -105,8 +109,8 @@ Preserve established contracts and distinguish them from unfinished extensions:
 | Explicit encounter time and modal pausing | Successful commands advance local time; reading and inactive fields are suspended | Extra behaviour must not silently use accelerated travel or rendering time. |
 | Whole-container transactions and shared occupied volume | Ship and rover specimens share ordinary cargo capacity | New material/carriers must not permit partial organisms, duplicate ownership, or duplicate sales. |
 | Typed commands, bounded actors, and readonly scene models | Implemented with controller/system/renderer separation | Add concrete domain rules rather than more formulas in Game or SceneRenderer. |
-| Versioned snapshots | Schema 13 preserves previous records and adds discovery origins, individual size and data/tissue objectives | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
-| Evidence-filtered descriptions and handling checks | Implemented; stasis uses class-based temperature/pressure/mass limits and live slots | Typed chemistry/containment capability envelopes are still an extension. |
+| Versioned snapshots | Schema 15 retains recorded fields/cargo, typed biological objectives and preservation requirements; current wave verification pending | Sparse deltas or another bounded retention policy remain future work, not an existing foundation. |
+| Evidence-filtered descriptions and handling checks | Explicit solvent, temperature/pressure, substrate isolation, mass and live-slot capabilities; current wave verification pending | Current kits support water only; new chemistry must not be unlocked by an arbitrary class number. |
 | Terrain-integrated field UI and pixel silhouettes | Implemented with cached surface appearance and two-frame sprites | Appearance is not detailed local geology, habitat simulation, or continuous traversal. |
 
 ### Current limits that should guide expansion
@@ -599,7 +603,10 @@ should help plan expeditions, not require completing an encyclopaedia.
 The shipboard `X` science log now supplies evidence-filtered dossiers, novelty,
 pending-data and aboard filters, recorded origin coordinates, personal and
 submission history, accepted requests and orbital return-site selection.
-Related-species comparison and inferred relationships remain future work.
+The current unverified wave adds `C` acquired-trait comparisons and Tab counterpart
+selection. These report qualitative morphological/structural affinity and
+convergence limits, not established ancestry or a numerical confidence model.
+Genomic evidence and a richer relationship visualisation remain future work.
 
 Suggested views:
 
@@ -669,8 +676,9 @@ is not permission to generate physically incompatible life while waiting.
 This milestone has been explicitly authorised and its automated and browser
 verification passed, as did the science log, individual sizes and
 analysis/tissue requests. Native inherited groups, their silhouettes, visible
-defensive activity and paired comparison requests are the current unverified
-extension. The stages below document scope and acceptance gates rather than
+defensive activity and paired comparison requests also passed verification.
+Survey previews, recorded comparisons, reinforced coverings and the pressure
+expedition are the current unverified extension. The stages below document scope and acceptance gates rather than
 claiming tested completion or instructing implementation of later waves.
 
 **Player decision:** choose how to approach a recognisable community and which

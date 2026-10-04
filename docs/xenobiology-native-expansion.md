@@ -3,6 +3,11 @@
 Implementation checkpoints and verification results for the four additions
 authorised after mission highlighting.
 
+This records the verified biology-version-2/schema-14 checkpoint. The subsequent
+version-3/schema-15 wave is separately documented in the
+[survey expansion handoff](xenobiology-survey-expansion.md); its verification is
+still pending the user's requested Luna switch.
+
 ## Checkpoints
 
 1. Native families: implemented and verified. Native worlds generate

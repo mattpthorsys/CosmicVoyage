@@ -16,6 +16,24 @@ export function biologyFixture(overrides: Partial<BiologyEnvironment> = {}): Bio
     humanIntensity: 1,
     distanceLy: 0,
     landable: true,
+    stellarFluxWm2: 1361,
+    carbonDioxideBar: 0.0004,
     ...overrides,
   };
+}
+
+/** Supplies an explicit water-colony envelope, not a prediction of alien habitability or occurrence. */
+export function pressureBiologyFixture(overrides: Partial<BiologyEnvironment> = {}): BiologyEnvironment {
+  return biologyFixture({
+    bodyId: '0,0,0/planet:0/bio3',
+    bodyName: 'Pressure reference',
+    seed: 'pressure-fixture',
+    origin: 'native',
+    temperatureK: 300,
+    pressureBar: 10,
+    oxygenBar: 0,
+    stellarFluxWm2: 800,
+    carbonDioxideBar: 0.0004,
+    ...overrides,
+  });
 }

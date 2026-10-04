@@ -11,6 +11,7 @@ import {
 } from './biology_types';
 import { classifyHabitat } from './habitat';
 import { generateNativeSpecies } from './native_biosphere';
+import { supportsPressureCommunity, generatePressureCommunity } from './pressure_biosphere';
 
 export interface BiologyEnvironment {
   readonly bodyId: string;
@@ -26,6 +27,8 @@ export interface BiologyEnvironment {
   readonly humanIntensity: number;
   readonly distanceLy: number;
   readonly landable: boolean;
+  readonly stellarFluxWm2?: number;
+  readonly carbonDioxideBar?: number;
 }
 
 /** Reads canonical physical inputs without advancing orbits or consuming generation streams. */
@@ -63,21 +66,25 @@ export function createBiologyEnvironment(
       Math.max(0, 1 - Math.hypot(system.starX, system.starY) / 4500),
     distanceLy: system.galacticContext?.human.distanceFromSolLy ?? Math.hypot(system.starX, system.starY),
     landable: !['GasGiant', 'IceGiant', 'Molten', 'Hycean'].includes(planet.type),
+    stellarFluxWm2: planet.referenceStellarFluxWm2,
+    carbonDioxideBar: (atmosphere.pressure * (atmosphere.composition['Carbon Dioxide'] ?? 0)) / 100,
   };
 }
 
 /** Generates a small inherited biosphere; probability coefficients are explicit gameplay priors. */
 export function generateBiosphere(environment: BiologyEnvironment): BiosphereDefinition | null {
   const e = environment;
+  const pressureCommunity = supportsPressureCommunity(e);
   if (
     !e.landable ||
     e.waterCoverage <= 0 ||
     e.temperatureK < 273.15 ||
     e.temperatureK > 345 ||
     e.pressureBar < 0.04 ||
-    e.pressureBar > 15 ||
+    (e.pressureBar > 15 && !pressureCommunity) ||
     e.gravity > 3 ||
-    e.ageGyr < 0.3
+    e.ageGyr < 0.3 ||
+    getManagedSurfaceWaterPhase(e.temperatureK, e.pressureBar) !== 'liquid'
   )
     return null;
   const prng = new PRNG(e.origin === 'introduced' ? 'managed-carbon-water' : e.seed).seedNew(
@@ -86,6 +93,14 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
   );
   const temperate = Math.max(0.15, 1 - Math.abs(e.temperatureK - 294) / 65);
   if (e.origin === 'native' && prng.random() > 0.34 * temperate * Math.min(1, e.ageGyr / 2)) return null;
+  if (pressureCommunity)
+    return {
+      id: e.bodyId,
+      bodyName: e.bodyName,
+      origin: 'native',
+      species: generatePressureCommunity(e, prng),
+      sites: [],
+    };
   if (e.origin === 'native')
     return {
       id: e.bodyId,
@@ -232,11 +247,19 @@ export function prepareBiosphere(
   const prng = new PRNG(environment.seed).seedNew('biology-sites', BIOLOGY_VERSION);
   const sites: BiologySite[] = [];
   const used = new Set<string>();
+  const habitatTarget = Math.min(
+    3,
+    new Set(
+      biosphere.species
+        .filter((species) => species.metabolism !== 'heterotroph')
+        .flatMap((species) => species.habitatAffinity ?? [])
+    ).size || 3
+  );
   for (
     let attempt = 0;
     attempt < 768 &&
     (sites.length < 6 ||
-      new Set(sites.map((site) => site.habitat?.kind)).size < 3 ||
+      new Set(sites.map((site) => site.habitat?.kind)).size < habitatTarget ||
       !sites.some((site) => site.habitat?.waterDistanceCells !== null));
     attempt++
   ) {
@@ -246,6 +269,12 @@ export function prepareBiosphere(
     if (height <= (surface.liquidOverlay?.seaLevel ?? -1) || used.has(`${x},${y}`)) continue;
     const habitat = classifyHabitat(surface, x, y, environment.waterCoverage > 0);
     if (!habitat) continue;
+    if (
+      !biosphere.species.some(
+        (species) => species.metabolism !== 'heterotroph' && species.habitatAffinity?.includes(habitat.kind)
+      )
+    )
+      continue;
     // Retain representative habitats when they actually occur in the prepared regional terrain.
     if (sites.length === 6 && sites.some((site) => site.habitat?.kind === habitat.kind)) continue;
     used.add(`${x},${y}`);

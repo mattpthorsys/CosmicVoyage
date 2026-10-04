@@ -829,6 +829,200 @@ async function main() {
       );
       metrics.secondHabitatNavigation = true;
     } else metrics.secondHabitatNavigation = 'no contrasting habitats on representative generated colony';
+    const comparisonSave = await page.evaluate(async (initial) => {
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const research = new XenobiologyService();
+      for (const species of initial.biosphere.species.slice(0, 3)) research.observe(species, 3);
+      const save = structuredClone(initial.save);
+      save.xenobiology = research.createSnapshot();
+      return save;
+    }, fixture);
+    await load(comparisonSave);
+    await capture('survey-orbit-summary');
+    await press('d');
+    await page.waitForTimeout(1700);
+    await capture('survey-planetary-dossier');
+    await press('Escape');
+    await press('x');
+    await page.waitForTimeout(1700);
+    const comparisonBefore = await checkpoint();
+    await press('c');
+    const comparisonPixels = await capture('desktop-species-comparison');
+    assert.equal(comparisonPixels.spritePixels, 0, 'Sprites leaked through comparison terminal.');
+    await press('Tab');
+    assert.notEqual(
+      (await capture('desktop-comparison-counterpart')).centreHash,
+      comparisonPixels.centreHash
+    );
+    await page.setViewportSize({ width: 480, height: 800 });
+    await capture('narrow-species-comparison');
+    const comparisonAfter = await checkpoint();
+    assert.equal(comparisonAfter.gameClockElapsedSeconds, comparisonBefore.gameClockElapsedSeconds);
+    assert.deepEqual(
+      comparisonAfter.xenobiology,
+      comparisonBefore.xenobiology,
+      'Comparison changed research state.'
+    );
+    await press('Escape');
+    await page.setViewportSize({ width: 1400, height: 900 });
+
+    // Controlled pressure environment tests presentation/handling, not the probability of finding a world.
+    const pressure = await page.evaluate(async (initial) => {
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const { generatePressureCommunity } = await import('/src/entities/biology/pressure_biosphere.ts');
+      const { createEncounter } = await import('/src/systems/surface_encounter_system.ts');
+      const { XenobiologyService } = await import('/src/core/xenobiology_service.ts');
+      const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+      const { createPressureExpedition } = await import('/src/core/pressure_expedition.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { getSystemPlanetPaths } = await import('/src/core/save_game.ts');
+      const { createBiologyEnvironment } = await import('/src/entities/biology/biosphere_generator.ts');
+      const { resolveMissionNavigation } = await import('/src/core/mission_navigation.ts');
+      const { getStationSections } = await import('/src/core/starbase_ui.ts');
+      const prng = new PRNG(initial.save.seed),
+        location = initial.save.location;
+      const system = new SolarSystem(
+        new SystemDataGenerator(prng).getSystemProperties(location.worldX, location.worldY),
+        location.worldX,
+        location.worldY,
+        prng
+      );
+      const body = getSystemPlanetPaths(system).find((entry) => entry.path === location.bodyPath).planet;
+      const environment = {
+        ...createBiologyEnvironment(body, system, location.bodyPath),
+        origin: 'native',
+        temperatureK: 300,
+        pressureBar: 10,
+        oxygenBar: 0,
+        stellarFluxWm2: 800,
+        carbonDioxideBar: 0.0004,
+      };
+      const site = initial.biosphere.sites.find((entry) => entry.habitat.kind === 'moist-margin');
+      if (!site) throw new Error('No representative water margin for pressure handling fixture.');
+      const bio = {
+        id: environment.bodyId,
+        bodyName: environment.bodyName,
+        origin: 'native',
+        sites: [site],
+        species: generatePressureCommunity(environment, new PRNG('pressure-browser')).map((species) => ({
+          ...species,
+          recognised: true,
+        })),
+      };
+      const field = createEncounter(bio, site),
+        target = field.individuals[0];
+      field.individuals = [target];
+      target.x = target.homeX = 16;
+      target.y = target.homeY = 20;
+      field.terrain[20] = field.terrain[20].slice(0, 16) + '.' + field.terrain[20].slice(17);
+      const research = new XenobiologyService();
+      research.snapshot.fields[site.id] = field;
+      research.snapshot.activeSiteId = site.id;
+      const mission = createPressureExpedition(
+        system.starbase,
+        system.name,
+        [bio],
+        research.snapshot.fields,
+        [],
+        research
+      )[0];
+      if (!mission) throw new Error('Pressure request has no obtainable contact.');
+      const progress = new MissionProgressService();
+      progress.accept(resolveMissionNavigation(mission, system, [bio]));
+      const save = structuredClone(initial.save);
+      save.location.kind = 'planet';
+      save.player.position.surfaceX = site.x;
+      save.player.position.surfaceY = site.y;
+      save.player.terrainVehicle.deployed = true;
+      save.player.ship.stasisClass = 2;
+      save.xenobiology = research.createSnapshot();
+      Object.assign(save, progress.createSnapshot());
+      return {
+        save,
+        missionId: mission.id,
+        sourceId: target.id,
+        shipyardIndex: getStationSections(system.starbase).findIndex((section) => section.id === 'shipyard'),
+      };
+    }, fixture);
+    await load(pressure.save);
+    await press('v');
+    const pressureBefore = await checkpoint();
+    await press('c');
+    const pressureRefused = await checkpoint();
+    assert.deepEqual(
+      pressureRefused.xenobiology,
+      pressureBefore.xenobiology,
+      'Incompatible collection mutated the field.'
+    );
+    assert.equal(pressureRefused.player.terrainVehicle.cargoHold.specimens.length, 0);
+    await capture('pressure-cradle-required');
+    await press('a');
+    await press('d');
+    await page.waitForTimeout(1700);
+    await capture('desktop-pressure-dossier');
+    await page.setViewportSize({ width: 480, height: 800 });
+    await capture('narrow-pressure-dossier');
+    await press('Escape');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await press('s');
+    const pressureTissue = await checkpoint();
+    assert.equal(pressureTissue.player.terrainVehicle.cargoHold.specimens[0].kind, 'tissue');
+    const pressureDock = structuredClone(pressureTissue);
+    pressureDock.xenobiology.activeSiteId = null;
+    pressureDock.player.terrainVehicle.deployed = false;
+    pressureDock.location = { ...docked.location };
+    await load(pressureDock);
+    assert(pressure.shipyardIndex >= 0, 'Pressure upgrade needs an inhabited shipyard.');
+    for (let index = 0; index < pressure.shipyardIndex; index++) await press('ArrowRight');
+    await press('ArrowDown');
+    await press('ArrowDown');
+    await capture('pressure-cradle-shipyard');
+    await press('Enter');
+    const fitted = await checkpoint();
+    assert.equal(fitted.player.ship.stasisClass, 3, 'Shipyard did not fit pressure cradle.');
+    assert.equal(fitted.player.resources.credits, pressureDock.player.resources.credits - 4200);
+    fitted.location = { ...pressure.save.location };
+    fitted.player.position.surfaceX = pressure.save.player.position.surfaceX;
+    fitted.player.position.surfaceY = pressure.save.player.position.surfaceY;
+    fitted.player.terrainVehicle.deployed = true;
+    fitted.xenobiology.activeSiteId = pressure.save.xenobiology.activeSiteId;
+    await load(fitted);
+    await press('c');
+    const pressureCollected = await checkpoint();
+    const pressureContainers = [
+      ...pressureCollected.player.cargoHold.specimens,
+      ...pressureCollected.player.terrainVehicle.cargoHold.specimens,
+    ];
+    assert.equal(
+      pressureContainers.filter(
+        (container) => container.kind === 'live' && container.sourceId === pressure.sourceId
+      ).length,
+      1
+    );
+    await press('o');
+    await capture('pressure-live-cargo');
+    pressureCollected.location = { ...docked.location };
+    pressureCollected.player.terrainVehicle.deployed = false;
+    pressureCollected.xenobiology.activeSiteId = null;
+    await load(pressureCollected);
+    for (let index = 0; index < 4; index++) await press('ArrowRight');
+    await press('ArrowDown');
+    await capture('pressure-reference-delivery');
+    await press('Enter');
+    const pressureDelivered = await checkpoint();
+    assert(pressureDelivered.completedMissionIds.includes(pressure.missionId));
+    assert(pressureDelivered.player.resources.credits >= pressureCollected.player.resources.credits + 1600);
+    assert.equal(
+      [
+        ...pressureDelivered.player.cargoHold.specimens,
+        ...pressureDelivered.player.terrainVehicle.cargoHold.specimens,
+      ].filter((container) => container.kind === 'live').length,
+      0
+    );
+    await capture('pressure-reference-settled');
+    metrics.pressureExpedition = true;
+    metrics.speciesComparison = true;
     assert.deepEqual(errors, []);
     console.log(
       JSON.stringify(

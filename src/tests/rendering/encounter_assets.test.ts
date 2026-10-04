@@ -11,6 +11,22 @@ import { createBiologicalDossier } from '../../core/xenobiology_ui';
 import { XenobiologyService } from '../../core/xenobiology_service';
 
 describe('field visual assets', () => {
+  it('marks reinforced coverings without changing silhouette dimensions or adding colours', () => {
+    const species = {
+      ...generateBiosphere(biologyFixture())!.species[0],
+      structuralMaterial: 'mineral' as const,
+    };
+    const ordinary = createOrganismSprite(species, 1, 'standard');
+    const reinforced = createOrganismSprite(species, 1, 'reinforced');
+    expect(reinforced.frames).not.toEqual(ordinary.frames);
+    expect(reinforced.palette).toEqual(ordinary.palette);
+    expect(reinforced.palette).toHaveLength(4);
+    for (const frame of reinforced.frames) {
+      expect(frame).toHaveLength(4);
+      expect(frame.every((row) => row.length === 6 && /^[.1234]+$/.test(row))).toBe(true);
+    }
+    expect(createOrganismSprite(species, 1, 'reinforced')).toEqual(reinforced);
+  });
   it('renders inherited native pigments and limbs consistently without changing the stable raster footprint', () => {
     const environment = biologyFixture({ origin: 'native' });
     const species = generateNativeSpecies(environment, new PRNG('anatomy'));

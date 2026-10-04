@@ -345,11 +345,27 @@ export class Game {
     const prior = cache.get(planet);
     if (prior && prior.ready === ready) return prior.biosphere;
     const generated = prepareBiosphere(planet, system, path);
-    const savedSites = generated
-      ? Object.values(this.xenobiology.snapshot.fields)
-          .filter((field) => field.bodyId === generated.id)
-          .map((field) => field.site)
-      : [];
+    const bodyIdentity = `${system.starX},${system.starY},${system.systemSlot}/${path}`;
+    const savedFields = Object.values(this.xenobiology.snapshot.fields).filter(
+      (field) => field.bodyId.replace(/\/bio\d+$/, '') === bodyIdentity
+    );
+    const savedSites = savedFields.map((field) => field.site);
+    // A visited habitat is evidence, not a fresh generation roll after a biology content update.
+    const source: BiosphereDefinition | null =
+      generated ??
+      (savedFields.length
+        ? {
+            id: savedFields[0].bodyId,
+            bodyName: planet.name,
+            origin: savedFields[0].species[0]?.origin ?? 'native',
+            species: [
+              ...new Map(
+                savedFields.flatMap((field) => field.species).map((species) => [species.id, species])
+              ).values(),
+            ],
+            sites: [],
+          }
+        : null);
     const recordedSites: BiologySite[] = [];
     // Keep accepted destinations accessible when a content update chooses a different six-site sample.
     for (const mission of this.missionProgress.getActiveMissions()) {
@@ -369,12 +385,12 @@ export class Game {
         });
       }
     }
-    const biosphere = generated
+    const biosphere = source
       ? {
-          ...generated,
+          ...source,
           sites: [
             ...new Map(
-              [...recordedSites, ...generated.sites, ...savedSites].map((site) => [site.id, site])
+              [...source.sites, ...recordedSites, ...savedSites].map((site) => [`${site.x},${site.y}`, site])
             ).values(),
           ],
         }

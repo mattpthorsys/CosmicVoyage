@@ -35,6 +35,7 @@ describe('science log', () => {
     log.input(input, log.entries(service, []), log.createModel(service, [], 1, 100, 35, false));
     expect(log.comparing).toBe(true);
     const first = log.createModel(service, [], 1, 100, 35, false);
+    expect(first.dashboard![0].segments[0].text).toBe('COMPARATIVE BIOLOGY');
     expect(
       first.dashboard!.some((line) => line.segments.some((span) => span.text === 'COMPARATIVE BIOLOGY'))
     ).toBe(true);

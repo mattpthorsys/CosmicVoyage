@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { Game } from '../../core/game';
 import { Player } from '../../core/player';
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
+import * as biologyGeneration from '../../entities/biology/biosphere_generator';
+import type { BiosphereDefinition } from '../../entities/biology/biology_types';
 import { biologyFixture } from '../fixtures/biology';
 import { createEncounter } from '../../systems/surface_encounter_system';
 import { XenobiologyService } from '../../core/xenobiology_service';
@@ -24,6 +26,7 @@ interface BiologyGameHarness {
   encounterController: SurfaceEncounterController;
   gameClockElapsedSeconds: number;
   handleEncounterInput(): boolean;
+  getBiosphere(): BiosphereDefinition | null;
   isGameClockPaused(): boolean;
   _update(delta: number): void;
   transferRoverCargoToShip(): number;
@@ -118,6 +121,70 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
 }
 
 describe('xenobiology Game integration', () => {
+  it('keeps a visited habitat accessible if new biology generation finds no new biosphere', () => {
+    const { game, field } = harness();
+    const planet = { name: 'Retained field', mapSeed: 'retained', moons: [], isSurfaceReady: () => true };
+    Object.assign(game, {
+      stateManager: {
+        state: 'planet',
+        currentPlanet: planet,
+        currentSystem: { name: 'Fixture', starX: 0, starY: 0, systemSlot: 0, planets: [planet] },
+      },
+    });
+    const prepare = vi.spyOn(biologyGeneration, 'prepareBiosphere').mockReturnValue(null);
+    try {
+      const biosphere = game.getBiosphere();
+      expect(biosphere?.sites).toEqual([field.site]);
+      expect(biosphere?.species).toEqual(field.species);
+      expect(biosphere?.id).toBe(field.bodyId);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  it('prefers the persistent visited site over a new-generation site at the same coordinates', () => {
+    const { game, field } = harness();
+    const planet = { name: 'Retained field', mapSeed: 'retained', moons: [], isSurfaceReady: () => true };
+    Object.assign(game, {
+      stateManager: {
+        state: 'planet',
+        currentPlanet: planet,
+        currentSystem: { name: 'Fixture', starX: 0, starY: 0, systemSlot: 0, planets: [planet] },
+      },
+    });
+    const generated = generateBiosphere(biologyFixture({ bodyId: '0,0,0/planet:0/bio3' }))!;
+    const prepare = vi.spyOn(biologyGeneration, 'prepareBiosphere').mockReturnValue({
+      ...generated,
+      sites: [{ ...field.site, id: `${generated.id}/site:1,1` }],
+    });
+    try {
+      expect(game.getBiosphere()?.sites).toEqual([field.site]);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  it('round-trips typed preservation and refuses imported containers with weakened source requirements', () => {
+    const { game, field, player, service } = harness();
+    field.species[0] = {
+      ...field.species[0],
+      temperatureK: 300,
+      pressureBar: 10,
+      preservation: { solvent: 'water', retainsSubstrate: true },
+    };
+    player.ship.stasisClass = 3;
+    game.dropSelectedRoverCargo(
+      game.getRoverCargoRows().find((row) => row.id.startsWith('collect-organism:'))!
+    );
+    const saved = parseGameSave(saveFixture(player, service));
+    expect(saved.player.terrainVehicle.cargoHold.specimens).toHaveLength(1);
+    expect(saved.player.ship.stasisClass).toBe(3);
+    const container = saved.player.terrainVehicle.cargoHold.specimens![0];
+    expect(container.species.preservation).toEqual({ solvent: 'water', retainsSubstrate: true });
+    container.species = { ...container.species, preservation: { solvent: 'water', retainsSubstrate: false } };
+    expect(() => parseGameSave(saved)).toThrow('preservation does not match');
+  });
+
   it('delivers an accepted zero-price live reference through Research and persists the contract', () => {
     const { game, field, player, service } = harness();
     field.species[0] = { ...field.species[0], baselineSamples: 12 };

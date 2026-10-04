@@ -60,6 +60,10 @@ export function biologySurveyReport(
     'Orbital signatures are not species identification or proof of ancestry.',
     `Planetary mean: ${environment.temperatureK.toFixed(0)} K / surface pressure ${environment.pressureBar.toFixed(2)} bar. Local conditions can differ.`,
   ];
+  if (environment.pressureBar > 2)
+    lines.push(
+      'Preservation planning: basic kit supports 2 bar; extended kit 12 bar. Pressure-preserving cradle supports 30 bar and native substrate. Scan and tissue work do not require live stasis.'
+    );
   const landing = selected && biosphere.sites.find((site) => site.x === selected.x && site.y === selected.y);
   if (landing) lines.push('SELECTED LANDING HABITAT', ...habitatLandingPreview(landing, snapshot), '');
   for (const site of biosphere.sites) lines.push(...habitatLandingPreview(site, snapshot), '');

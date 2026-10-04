@@ -168,6 +168,13 @@ export class ScienceLog {
         'muted'
       );
     } else {
+      if (this.comparing) {
+        const candidates = comparisonCandidates(entry, entries);
+        const counterpart =
+          candidates.find((candidate) => candidate.species.id === this.comparisonId) ?? candidates[0];
+        this.comparisonId = counterpart?.species.id ?? null;
+        lines.push(...speciesComparisonLines(entry, counterpart));
+      }
       line('EXPEDITION RECORD', 'cyan', true);
       if (origin) {
         line(`${origin.bodyName} / ${origin.systemName}`, 'bright');
@@ -255,13 +262,7 @@ export class ScienceLog {
           line(`Next ${kind} reference: approximately ${value.toLocaleString()} Cr at full quality`, 'amber');
         }
       }
-      if (this.comparing) {
-        const candidates = comparisonCandidates(entry, entries);
-        const counterpart =
-          candidates.find((candidate) => candidate.species.id === this.comparisonId) ?? candidates[0];
-        this.comparisonId = counterpart?.species.id ?? null;
-        lines.push(...speciesComparisonLines(entry, counterpart));
-      } else lines.push(...createBiologicalDossier(species, service, width));
+      if (!this.comparing) lines.push(...createBiologicalDossier(species, service, width));
     }
     if (this.notice) lines.unshift({ segments: [{ text: this.notice, tone: 'amber' }] });
     const dashboard = wrapDashboardLines(lines, width);

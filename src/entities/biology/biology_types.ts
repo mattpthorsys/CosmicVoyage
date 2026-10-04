@@ -1,4 +1,4 @@
-export const BIOLOGY_VERSION = 2;
+export const BIOLOGY_VERSION = 3;
 export const HABITAT_VERSION = 1;
 export const ENCOUNTER_WIDTH = 32;
 export const ENCOUNTER_HEIGHT = 24;
@@ -8,6 +8,7 @@ export type BiologicalBehaviour = 'sessile' | 'passive' | 'skittish' | 'territor
 export type SpecimenKind = 'tissue' | 'dead' | 'live';
 export type IndividualSizeClass = 'small' | 'typical' | 'large';
 export type IndividualMineralisation = 'standard' | 'reinforced';
+export type BiologicalSolvent = 'water' | 'ammonia' | 'hydrocarbon';
 export type EvidenceLevel = 0 | 1 | 2 | 3;
 export type StunPower = 0 | 1 | 2;
 export type BiologicalActivity =
@@ -87,6 +88,10 @@ export interface SpeciesDefinition {
   /** A bounded community-selection weight, not a simulated population count. */
   readonly relativeAbundance?: number;
   readonly structuralMaterial?: 'organic' | 'silica' | 'mineral';
+  readonly preservation?: {
+    readonly solvent: BiologicalSolvent;
+    readonly retainsSubstrate: boolean;
+  };
 }
 
 export interface BiologySite {

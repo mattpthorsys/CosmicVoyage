@@ -6,6 +6,7 @@ import type {
   IndividualMineralisation,
 } from '../entities/biology/biology_types';
 import { individualPhysicalProfile } from '../entities/biology/biology_rules';
+import { preservationKit } from '../entities/biology/preservation';
 
 /** Returns the visible capability envelope of the fitted ship/portable preservation kit. */
 export function stasisCompatibility(
@@ -14,12 +15,16 @@ export function stasisCompatibility(
   sizeScale = 1,
   mineralisation?: IndividualMineralisation
 ): string | null {
-  if (equipmentClass < 1) return 'No stasis kit fitted';
-  const range = equipmentClass >= 2 ? [273, 345, 0.04, 12] : [280, 315, 0.3, 2];
-  if (species.temperatureK < range[0] || species.temperatureK > range[1])
+  const kit = preservationKit(equipmentClass);
+  if (!kit) return 'No stasis kit fitted';
+  if (!kit.solvents.includes(species.preservation?.solvent ?? 'water'))
+    return 'Solvent chemistry unsupported by fitted preservation kit';
+  if (species.temperatureK < kit.temperatureK[0] || species.temperatureK > kit.temperatureK[1])
     return 'Temperature outside preservation envelope';
-  if (species.pressureBar < range[2] || species.pressureBar > range[3])
+  if (species.pressureBar < kit.pressureBar[0] || species.pressureBar > kit.pressureBar[1])
     return 'Pressure outside preservation envelope';
+  if (species.preservation?.retainsSubstrate && !kit.retainsSubstrate)
+    return 'Pressure-preserving cradle required: retain isolated native substrate';
   if (individualPhysicalProfile(species, sizeScale, mineralisation).massKg > 80)
     return 'Beyond rover handling mass (80 kg)';
   return null;
@@ -48,7 +53,8 @@ export class SpecimenCargoSystem {
       );
       if (incompatibility) return incompatibility;
       if (
-        (hold.specimens ?? []).filter((item) => item.kind === 'live').length >= (equipmentClass >= 2 ? 6 : 2)
+        (hold.specimens ?? []).filter((item) => item.kind === 'live').length >=
+        (preservationKit(equipmentClass)?.liveSlots ?? 0)
       )
         return 'All live stasis slots occupied';
     }
