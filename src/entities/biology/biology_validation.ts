@@ -94,6 +94,13 @@ export function validateSpecies(value: unknown): asserts value is SpeciesDefinit
     );
   }
   if (value.socialBehaviour !== undefined) choice(value.socialBehaviour, ['group-retreat']);
+  if (value.foragingGuild !== undefined) {
+    choice(value.foragingGuild, ['grazer', 'detritivore']);
+    if (value.metabolism !== 'heterotroph' || value.behaviour === 'sessile' || value.behaviour === 'ambush')
+      throw new Error('Invalid mobile foraging guild.');
+  }
+  if (value.seeksShelter !== undefined && typeof value.seeksShelter !== 'boolean')
+    throw new Error('Invalid shelter preference.');
   if (value.relativeAbundance !== undefined) number(value.relativeAbundance, 0.05, 1);
   if (value.structuralMaterial !== undefined)
     choice(value.structuralMaterial, ['organic', 'silica', 'mineral']);
@@ -260,6 +267,8 @@ export function validateXenobiology(
           'attached',
           'resting',
           'foraging',
+          'feeding',
+          'sheltering',
           'withdrawing',
           'displaying',
           'defending',

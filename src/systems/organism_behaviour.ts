@@ -66,6 +66,8 @@ export function organismActivity(actor: EncounterIndividual): string {
     attached: 'attached to substrate',
     resting: 'resting',
     foraging: 'foraging',
+    feeding: 'feeding at substrate',
+    sheltering: 'using substrate shelter',
     withdrawing: 'withdrawing',
     displaying: 'warning display / withdraw',
     defending: 'defending home range',

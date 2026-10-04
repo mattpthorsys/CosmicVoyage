@@ -228,6 +228,13 @@ export function generateBiosphere(environment: BiologyEnvironment): BiosphereDef
                     ? ['rocky-margin']
                     : ['upland-ground'],
       socialBehaviour: index === 1 && aerobic ? 'group-retreat' : undefined,
+      foragingGuild:
+        producer || behaviour === 'ambush'
+          ? undefined
+          : lineage === 1 || lineage >= 3
+            ? 'detritivore'
+            : 'grazer',
+      seeksShelter: !producer && behaviour !== 'ambush' && (lineage === 1 || lineage >= 3),
     });
   }
   return { id: e.bodyId, bodyName: e.bodyName, origin: e.origin, species, sites: [] };

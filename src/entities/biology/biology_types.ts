@@ -15,6 +15,8 @@ export type BiologicalActivity =
   | 'attached'
   | 'resting'
   | 'foraging'
+  | 'feeding'
+  | 'sheltering'
   | 'withdrawing'
   | 'displaying'
   | 'defending'
@@ -82,6 +84,9 @@ export interface SpeciesDefinition {
   readonly remoteness: number;
   readonly habitatAffinity?: readonly HabitatKind[];
   readonly socialBehaviour?: 'group-retreat';
+  /** Typed resource preferences; descriptive role text is never parsed by the encounter AI. */
+  readonly foragingGuild?: 'grazer' | 'detritivore';
+  readonly seeksShelter?: boolean;
   /** Observed external anatomy; this also selects the constrained silhouette library. */
   readonly bodyForm?: OrganismBodyForm;
   readonly anatomy?: OrganismAnatomy;

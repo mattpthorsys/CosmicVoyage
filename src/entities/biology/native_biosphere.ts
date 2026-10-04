@@ -186,6 +186,8 @@ function createSpecies(
     remoteness: Math.max(0, Math.min(1, e.distanceLy / 5000)),
     habitatAffinity: AFFINITIES[family.guild][variant],
     socialBehaviour: family.guild === 'grazer' && behaviour === 'skittish' ? 'group-retreat' : undefined,
+    foragingGuild: family.guild === 'grazer' || family.guild === 'detritivore' ? family.guild : undefined,
+    seeksShelter: !producer && variant === 1 && family.guild !== 'predator',
     bodyForm: family.form,
     anatomy: family.anatomy,
     relativeAbundance: { producer: 1, grazer: 0.65, detritivore: 0.45, predator: 0.12 }[family.guild],

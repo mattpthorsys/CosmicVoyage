@@ -5,6 +5,7 @@ import { SpecimenCargoSystem } from './specimen_cargo_system';
 import { stunOutcome } from '../entities/biology/stun_model';
 import { canShareRoverCell, individualPhysicalProfile } from '../entities/biology/biology_rules';
 import { defensiveIntent } from './organism_behaviour';
+import { habitatForagingIntent } from './organism_foraging';
 import { createHabitatPatches, habitatCommunity } from '../entities/biology/habitat';
 import {
   ENCOUNTER_HEIGHT,
@@ -407,16 +408,29 @@ export class SurfaceEncounterSystem {
         const retreating = individual.groupId && (individual.retreatUntil ?? 0) > tick * 5;
         if (defense?.goal) {
           [gx, gy] = defense.goal;
-        } else if (retreating || (species.behaviour === 'skittish' && sensed && distance < 7)) {
+        } else if (retreating || (species.behaviour === 'skittish' && sensed && distance < 6)) {
           individual.activity = 'withdrawing';
           gx = individual.x + Math.sign(individual.x - field.roverX) * 4;
           gy = individual.y + Math.sign(individual.y - field.roverY) * 4;
         } else {
-          const phase = new PRNG(field.seed).seedNew(individual.id, 'activity-phase').randomInt(0, 5);
-          individual.activity = (tick + phase) % 6 < 2 ? 'resting' : 'foraging';
-          if (individual.activity === 'resting') continue;
+          const foraging = habitatForagingIntent(field, individual, species, tick);
+          if (foraging) {
+            individual.activity = foraging.activity;
+            if (!foraging.goal) continue;
+            [gx, gy] = foraging.goal;
+          } else {
+            const phase = new PRNG(field.seed).seedNew(individual.id, 'activity-phase').randomInt(0, 5);
+            individual.activity = (tick + phase) % 6 < 2 ? 'resting' : 'foraging';
+            if (individual.activity === 'resting') continue;
+          }
         }
-        if (!defense && !retreating && individual.groupId && individual.activity === 'foraging') {
+        if (
+          !defense &&
+          !retreating &&
+          !species.foragingGuild &&
+          individual.groupId &&
+          individual.activity === 'foraging'
+        ) {
           const neighbours = field.individuals.filter(
             (other) =>
               other.id !== individual.id && other.state === 'active' && other.groupId === individual.groupId
