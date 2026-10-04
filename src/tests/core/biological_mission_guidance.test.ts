@@ -78,7 +78,13 @@ describe('biological mission guidance', () => {
     expect(assessBiologicalRequests(f.consumer, 1, [request], contact).eligible).toBe(false);
     const identified = assessBiologicalRequests(f.consumer, 2, [request], contact);
     expect(identified.eligible).toBe(true);
-    expect(identified.summary!.segments.map((span) => span.text).join(' ')).toContain('PASSIVE RECORD');
+    expect(identified.summary!.segments.map((span) => span.text).join(' ')).toContain('SUBSTRATE FEEDING');
+    expect(
+      identified.lines
+        .flatMap((line) => line.segments)
+        .map((span) => span.text)
+        .join(' ')
+    ).toContain('PASSIVE RECORD');
     f.actor.sampled = true;
     expect(assessBiologicalRequests(f.consumer, 2, [request], contact).eligible).toBe(false);
     f.actor.sampled = false;

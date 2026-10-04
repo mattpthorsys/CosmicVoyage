@@ -114,6 +114,20 @@ async function main() {
       );
       const importFailure = await page.locator('#splashMessage').textContent();
       assert(!importFailure.startsWith('Import failed:'), importFailure);
+      if (save.location.kind === 'planet' && save.xenobiology.activeSiteId) {
+        await page.waitForFunction(
+          () => {
+            const canvas = document.querySelector('#gameCanvasOrbit');
+            const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+            let lit = 0;
+            for (let index = 0; index < pixels.length; index += 4)
+              if (pixels[index + 3] > 0 && pixels[index] + pixels[index + 1] + pixels[index + 2] > 60) lit++;
+            return lit > 20;
+          },
+          undefined,
+          { timeout: 15000 }
+        );
+      }
       await page.waitForTimeout(500);
     };
     /** Sends a complete physical key press with enough time for the game frame to consume it. */
@@ -555,7 +569,10 @@ async function main() {
         throw new Error('Representative alternative requests must share an obtainable producer.');
       // Keep one real generated organism next to the rover to isolate interface/delivery from travel.
       field.individuals = [source];
-      field.species.find((species) => species.id === source.speciesId).behaviour = 'sessile';
+      const stationarySpecies = field.species.find((species) => species.id === source.speciesId);
+      stationarySpecies.behaviour = 'sessile';
+      delete stationarySpecies.foragingGuild;
+      delete stationarySpecies.seeksShelter;
       for (const mission of offers)
         for (const requirement of mission.objectives)
           if (requirement.kind !== 'scan') requirement.reference.behaviour = 'sessile';
@@ -1234,7 +1251,14 @@ async function main() {
         const colour = [1, 3, 5].map((start) => parseInt(TEXT_PALETTE.amber.slice(start, start + 2), 16));
         let pixels = 0;
         for (let index = 0; index < data.length; index += 4)
-          if (colour.every((value, channel) => data[index + channel] === value)) pixels++;
+          if (
+            data[index] >= colour[0] - 24 &&
+            data[index + 1] >= colour[1] - 48 &&
+            data[index + 2] >= colour[2] - 38 &&
+            data[index] > data[index + 1] + 20 &&
+            data[index + 1] > data[index + 2] + 35
+          )
+            pixels++;
         return pixels;
       });
     const unstunnedMarkers = await stunMarkerPixels();
@@ -1243,8 +1267,9 @@ async function main() {
     await load(localFixture);
     const localBefore = await checkpoint();
     metrics.stunMarkerPixels = (await stunMarkerPixels()) - unstunnedMarkers;
+    const stunnedCapture = await capture('desktop-stunned-contact');
     assert(metrics.stunMarkerPixels > 0, 'Stunned contact has no visible cell-plane marker.');
-    await capture('desktop-stunned-contact');
+    assert(stunnedCapture.spritePixels > 20, 'Stunned organism sprite is missing.');
     await page.setViewportSize({ width: 480, height: 800 });
     await capture('narrow-stunned-contact');
     await page.setViewportSize({ width: 1400, height: 900 });

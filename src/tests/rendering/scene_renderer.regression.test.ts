@@ -1170,7 +1170,7 @@ describe('SceneRenderer visual regressions', () => {
     expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < rows)).toBe(
       true
     );
-    expect(fontsForText(drawCalls, 'FIELD ETHOLOGY')).toEqual(Array(13).fill('thick'));
+    expect(fontsForText(drawCalls, 'FIELD ETHOLOGY')).toEqual(Array(14).fill('thick'));
     expect(drawCalls.some((call) => call.font === 'thin' && call.fg === TEXT_PALETTE.green)).toBe(true);
     expect(service.createSnapshot()).toEqual(before);
   });
