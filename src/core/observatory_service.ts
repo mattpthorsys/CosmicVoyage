@@ -8,6 +8,7 @@ import {
   type HyperspaceSurveyCellProvider,
 } from './hyperspace_survey_cell_provider';
 import { getStellarDetectionRadii } from './stellar_detection';
+import { measureObservatoryContact } from './observatory_measurements';
 import {
   createObservatorySnapshot,
   observatoryContactId,
@@ -24,6 +25,7 @@ export class ObservatoryService {
   private readonly provider: HyperspaceSurveyCellProvider;
   private readonly searchCache = new Map<string, ObservatoryContact[]>();
   private readonly physicalCache = new Map<string, SolarSystem>();
+  private readonly exposureBudgets = new Map<string, number>();
   private generation = 0;
 
   /** Shares the installed worker provider while retaining a deterministic synchronous fallback. */
@@ -51,6 +53,7 @@ export class ObservatoryService {
     this.snapshot = structuredClone(snapshot);
     this.searchCache.clear();
     this.physicalCache.clear();
+    this.exposureBudgets.clear();
   }
 
   /** Searches a physical radius in small worker batches; filters and pagination never alter coverage. */
@@ -164,6 +167,53 @@ export class ObservatoryService {
       systemSlot: contact.systemSlot,
       name: contact.name,
       kind: contact.kind,
+    };
+  }
+
+  /** Integrates bounded exposures; reopening or rendering the terminal cannot reroll measurements. */
+  observe(
+    contact: ObservatoryContact,
+    capabilities: ObservatoryCapabilities,
+    x: number,
+    y: number,
+    deliberate: boolean,
+    currentSystem: SolarSystem | null = null
+  ): { record: ObservatoryObservation; seconds: number } {
+    const previous = this.snapshot.observations[contact.id];
+    const sameSetup =
+      previous?.observedFromX === x &&
+      previous.observedFromY === y &&
+      previous.equipmentClass === capabilities.equipmentClass;
+    const setup = `${contact.id}|${x},${y}|${capabilities.equipmentClass}|${capabilities.qualityCeiling}`;
+    const used = this.exposureBudgets.get(setup) ?? (sameSetup ? (previous?.exposure ?? 0) : 0);
+    const exposure = deliberate ? Math.min(3, used + 1) : 0;
+    if (deliberate && capabilities.equipmentClass > 0) {
+      this.exposureBudgets.set(setup, exposure);
+      if (this.exposureBudgets.size > 4096)
+        this.exposureBudgets.delete(this.exposureBudgets.keys().next().value!);
+    }
+    const medium = this.generator.getInterstellarMediumProperties(x, y);
+    const range = observatoryDistanceLy(x, y, contact);
+    const canResolveAtmosphere =
+      capabilities.equipmentClass > 0 &&
+      range <= capabilities.atmosphericRadiusLy * medium.sensorRangeMultiplier;
+    const system =
+      contact.kind === 'system' && (canResolveAtmosphere || contact.system?.stationKind)
+        ? (currentSystem ?? this.getPhysicalSystem(contact))
+        : null;
+    const record = measureObservatoryContact(
+      contact,
+      system,
+      capabilities,
+      x,
+      y,
+      medium.sensorRangeMultiplier,
+      exposure
+    );
+    this.retain(contact, record);
+    return {
+      record: this.snapshot.observations[contact.id] ?? record,
+      seconds: deliberate && capabilities.equipmentClass > 0 && used < 3 ? 300 : 0,
     };
   }
 }
