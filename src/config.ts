@@ -33,7 +33,7 @@ export const CONFIG = {
   INITIAL_FUEL: 500,
   MAX_FUEL: 500,
   INITIAL_CARGO_CAPACITY: 100,
-  INITIAL_CREDITS: 1000,
+  INITIAL_CREDITS: 5000, // Temporary observatory playtest allowance; normal starting balance is 1000.
   DEFAULT_VIEW_SCALE: 1.0,
 
   // --- Movement / Physics ---
