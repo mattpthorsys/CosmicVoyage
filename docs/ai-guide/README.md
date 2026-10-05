@@ -75,3 +75,5 @@ verification. The planning documents preserve its design rationale:
   proposed towing contracts, crew hypersleep, contractor support fuel, persistent
   buoy/depot deployment, and staged programming/verification milestones. This
   feature is not yet implemented.
+- [Heavy-haul foundations](../heavy-haul-foundations.md): current M0-M2 module
+  boundaries, equipment/quote calibration, persistence work, and pending checks.
