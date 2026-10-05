@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateBiosphere } from '../../entities/biology/biosphere_generator';
+import { assessBiosphereEligibility, generateBiosphere } from '../../entities/biology/biosphere_generator';
 import { PRNG } from '../../utils/prng';
-import { biologyFixture } from '../fixtures/biology';
+import { biologyFixture, pressureBiologyFixture } from '../fixtures/biology';
 
 describe('bounded biosphere generation', () => {
   it('is independent of unrelated PRNG consumption and generates inherited traits', () => {
@@ -29,6 +29,36 @@ describe('bounded biosphere generation', () => {
     ]) {
       expect(generateBiosphere(biologyFixture(overrides))).toBeNull();
     }
+  });
+
+  it('reports independent physical exclusions before the life-occurrence roll and rejects nonfinite state', () => {
+    expect(assessBiosphereEligibility(biologyFixture())).toEqual({
+      eligible: true,
+      pressureCommunity: false,
+      exclusions: [],
+    });
+    const cold = biologyFixture({ waterCoverage: 0, temperatureK: 170, pressureBar: 0.001, ageGyr: 0.1 });
+    expect(assessBiosphereEligibility(cold).exclusions).toEqual([
+      'no-surface-water',
+      'too-cold',
+      'pressure-too-low',
+      'too-young',
+      'water-not-liquid',
+    ]);
+    for (const patch of [{ gravity: NaN }, { ageGyr: Infinity }, { waterCoverage: 2 }]) {
+      const environment = biologyFixture(patch);
+      expect(assessBiosphereEligibility(environment).exclusions).toEqual(['invalid-environment']);
+      expect(generateBiosphere(environment)).toBeNull();
+    }
+    const pressure = pressureBiologyFixture({ pressureBar: 20 });
+    expect(assessBiosphereEligibility(pressure)).toEqual({
+      eligible: true,
+      pressureCommunity: true,
+      exclusions: [],
+    });
+    expect(assessBiosphereEligibility({ ...pressure, carbonDioxideBar: 5 }).exclusions).toEqual([
+      'pressure-too-high',
+    ]);
   });
 
   it('keeps introduced identities and inherited traits stable across colony environments', () => {

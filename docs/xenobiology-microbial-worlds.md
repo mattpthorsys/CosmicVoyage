@@ -111,6 +111,10 @@ atmospheric biosphere feedback and ecology simulation remain deferred.
 
 ## Verification
 
+The record below covers the baseline before the subsequent native-life generation
+audit. See [the audit](native-life-generation-audit.md) for its fixes and pending
+verification.
+
 Verification completed on 2026-10-04 and 2026-10-05. `npm run check` passed documentation,
 format, lint, both TypeScript checks, all 930 tests across 132 test files, and the
 production build. The Observatory measurement tests exposed a unit error: planet

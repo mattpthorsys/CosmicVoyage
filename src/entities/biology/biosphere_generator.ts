@@ -33,6 +33,48 @@ export interface BiologyEnvironment {
   readonly carbonDioxideBar?: number;
 }
 
+export type BiosphereExclusion =
+  | 'invalid-environment'
+  | 'unlandable'
+  | 'no-surface-water'
+  | 'too-cold'
+  | 'too-hot'
+  | 'pressure-too-low'
+  | 'pressure-too-high'
+  | 'gravity-too-high'
+  | 'too-young'
+  | 'water-not-liquid';
+
+export interface BiosphereEligibility {
+  readonly eligible: boolean;
+  readonly pressureCommunity: boolean;
+  readonly exclusions: readonly BiosphereExclusion[];
+}
+
+/** Shares the surface-life screen with diagnostics without sampling occurrence or consuming a PRNG. */
+export function assessBiosphereEligibility(e: BiologyEnvironment): BiosphereEligibility {
+  if (
+    ![e.temperatureK, e.pressureBar, e.gravity, e.ageGyr, e.waterCoverage].every(Number.isFinite) ||
+    e.gravity < 0 ||
+    e.waterCoverage < 0 ||
+    e.waterCoverage > 1
+  )
+    return { eligible: false, pressureCommunity: false, exclusions: ['invalid-environment'] };
+  const pressureCommunity = supportsPressureCommunity(e);
+  const exclusions: BiosphereExclusion[] = [];
+  if (!e.landable) exclusions.push('unlandable');
+  if (e.waterCoverage <= 0) exclusions.push('no-surface-water');
+  if (e.temperatureK < 273.15) exclusions.push('too-cold');
+  if (e.temperatureK > 345) exclusions.push('too-hot');
+  if (e.pressureBar < 0.04) exclusions.push('pressure-too-low');
+  if (e.pressureBar > 15 && !pressureCommunity) exclusions.push('pressure-too-high');
+  if (e.gravity > 3) exclusions.push('gravity-too-high');
+  if (e.ageGyr < 0.3) exclusions.push('too-young');
+  if (getManagedSurfaceWaterPhase(e.temperatureK, e.pressureBar) !== 'liquid')
+    exclusions.push('water-not-liquid');
+  return { eligible: exclusions.length === 0, pressureCommunity, exclusions };
+}
+
 /** Reads canonical physical inputs without advancing orbits or consuming generation streams. */
 export function createBiologyEnvironment(
   planet: Planet,
@@ -76,19 +118,8 @@ export function createBiologyEnvironment(
 /** Generates a small inherited biosphere; probability coefficients are explicit gameplay priors. */
 export function generateBiosphere(environment: BiologyEnvironment): BiosphereDefinition | null {
   const e = environment;
-  const pressureCommunity = supportsPressureCommunity(e);
-  if (
-    !e.landable ||
-    e.waterCoverage <= 0 ||
-    e.temperatureK < 273.15 ||
-    e.temperatureK > 345 ||
-    e.pressureBar < 0.04 ||
-    (e.pressureBar > 15 && !pressureCommunity) ||
-    e.gravity > 3 ||
-    e.ageGyr < 0.3 ||
-    getManagedSurfaceWaterPhase(e.temperatureK, e.pressureBar) !== 'liquid'
-  )
-    return null;
+  const { eligible, pressureCommunity } = assessBiosphereEligibility(e);
+  if (!eligible) return null;
   const prng = new PRNG(e.origin === 'introduced' ? 'managed-carbon-water' : e.seed).seedNew(
     'biology',
     e.origin === 'introduced' ? 1 : BIOLOGY_VERSION

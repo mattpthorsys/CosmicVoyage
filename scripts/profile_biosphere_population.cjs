@@ -13,10 +13,8 @@ function loadModel() {
         export { logger, LogLevel } from './utils/logger';
         export { SystemDataGenerator } from './generation/system_data_generator';
         export { SolarSystem } from './entities/solar_system';
-        export { createBiologyEnvironment, generateBiosphere } from './entities/biology/biosphere_generator';
+        export { createBiologyEnvironment, generateBiosphere, assessBiosphereEligibility } from './entities/biology/biosphere_generator';
         export { selectBiosphereComplexity } from './entities/biology/biosphere_complexity';
-        export { supportsPressureCommunity } from './entities/biology/pressure_biosphere';
-        export { getManagedSurfaceWaterPhase } from './entities/planet/surface_liquid';
         export { BIOLOGY_VERSION } from './entities/biology/biology_types';
         export { validateSpecies } from './entities/biology/biology_validation';`,
       sourcefile: filename,
@@ -45,6 +43,52 @@ function visitBodies(bodies, visit, prefix = '', kind = 'planet') {
   });
 }
 
+/** Creates independent counters for the full catalogue, enterable systems and spectral subpopulations. */
+function populationCounts() {
+  return {
+    systems: 0,
+    bodies: 0,
+    nativeBodies: 0,
+    nativeLandable: 0,
+    nativeTemperate: 0,
+    nativeSurfaceWater: 0,
+    nativeEligible: 0,
+    eligibleWithoutLife: 0,
+    nativeLiving: 0,
+    managedLiving: 0,
+    'microbial-only': 0,
+    'simple-multicellular': 0,
+    'complex-multicellular': 0,
+    exclusions: {},
+  };
+}
+
+/** Records independent physical counts; exclusions overlap and are not a mutually exclusive histogram. */
+function countEnvironment(counts, environment, eligibility) {
+  counts.bodies++;
+  if (environment.origin !== 'native') return;
+  counts.nativeBodies++;
+  if (environment.landable) counts.nativeLandable++;
+  if (environment.temperatureK >= 273.15 && environment.temperatureK <= 345) counts.nativeTemperate++;
+  if (environment.waterCoverage > 0) counts.nativeSurfaceWater++;
+  if (eligibility.eligible) counts.nativeEligible++;
+  for (const reason of eligibility.exclusions)
+    counts.exclusions[reason] = (counts.exclusions[reason] ?? 0) + 1;
+}
+
+/** Counts a generated result without confusing physical eligibility with the subsequent occurrence roll. */
+function countBiosphere(counts, biosphere, environment, eligibility) {
+  if (!biosphere) {
+    if (environment.origin === 'native' && eligibility.eligible) counts.eligibleWithoutLife++;
+    return;
+  }
+  if (biosphere.origin === 'introduced') counts.managedLiving++;
+  else {
+    counts.nativeLiving++;
+    counts[biosphere.complexity]++;
+  }
+}
+
 /** Samples finite local/remote catalogues; generated frequency is not the conditional biological prior. */
 function profileCatalogue(model, seed, centre, requested) {
   const {
@@ -53,25 +97,18 @@ function profileCatalogue(model, seed, centre, requested) {
     SolarSystem,
     createBiologyEnvironment,
     generateBiosphere,
-    supportsPressureCommunity,
-    getManagedSurfaceWaterPhase,
+    assessBiosphereEligibility,
     validateSpecies,
   } = model;
   const root = new PRNG(seed);
   const generator = new SystemDataGenerator(root);
   const addresses = new PRNG(seed).seedNew('biosphere-probe', centre.name);
   const visited = new Set();
-  const counts = {
-    systems: 0,
-    bodies: 0,
-    nativeEligible: 0,
-    nativeLiving: 0,
-    managedLiving: 0,
-    'microbial-only': 0,
-    'simple-multicellular': 0,
-    'complex-multicellular': 0,
-  };
+  const counts = populationCounts();
+  const enterable = populationCounts();
+  const byPrimarySpectralClass = {};
   const examples = [];
+  const eligibleExamples = [];
   for (let attempt = 0; attempt < requested * 80 && counts.systems < requested; attempt++) {
     const x = centre.x + addresses.randomInt(-180, 180);
     const y = centre.y + addresses.randomInt(-180, 180);
@@ -83,53 +120,69 @@ function profileCatalogue(model, seed, centre, requested) {
       if (!descriptor.exists || descriptor.objectKind !== 'stellar') continue;
       const slot = descriptor.systemSlot ?? 0;
       const system = new SolarSystem(generator.getSystemProperties(x, y, slot), x, y, root);
-      counts.systems++;
+      const spectralClass = system.starType.charAt(0);
+      const group = (byPrimarySpectralClass[spectralClass] ??= populationCounts());
+      const counters = slot === 0 ? [counts, enterable, group] : [counts, group];
+      counters.forEach((counter) => counter.systems++);
       visitBodies(system.planets, (body, bodyPath) => {
-        counts.bodies++;
         const environment = createBiologyEnvironment(body, system, bodyPath);
+        const eligibility = assessBiosphereEligibility(environment);
+        counters.forEach((counter) => countEnvironment(counter, environment, eligibility));
+        const address = {
+          x,
+          y,
+          slot,
+          enterable: slot === 0,
+          system: system.name,
+          primaryStarType: system.starType,
+          body: body.name,
+          bodyPath,
+          bodyType: body.type,
+          temperatureK: environment.temperatureK,
+          pressureBar: environment.pressureBar,
+          oxygenBar: environment.oxygenBar,
+          ageGyr: environment.ageGyr,
+          waterCoverage: environment.waterCoverage,
+          gravity: environment.gravity,
+          stellarFluxWm2: environment.stellarFluxWm2,
+        };
         if (
           environment.origin === 'native' &&
-          environment.landable &&
-          environment.waterCoverage > 0 &&
-          environment.temperatureK >= 273.15 &&
-          environment.temperatureK <= 345 &&
-          environment.pressureBar >= 0.04 &&
-          (environment.pressureBar <= 15 || supportsPressureCommunity(environment)) &&
-          environment.gravity <= 3 &&
-          environment.ageGyr >= 0.3 &&
-          getManagedSurfaceWaterPhase(environment.temperatureK, environment.pressureBar) === 'liquid'
+          eligibility.eligible &&
+          eligibleExamples.filter((entry) => entry.enterable === address.enterable).length < 3
         )
-          counts.nativeEligible++;
+          eligibleExamples.push(address);
         const biosphere = generateBiosphere(environment);
+        counters.forEach((counter) => countBiosphere(counter, biosphere, environment, eligibility));
+        if (body.isSurfaceReady()) throw new Error('Population probe unexpectedly generated terrain.');
         if (!biosphere) return;
         biosphere.species.forEach(validateSpecies);
-        if (body.isSurfaceReady()) throw new Error('Population probe unexpectedly generated terrain.');
-        if (biosphere.origin === 'introduced') counts.managedLiving++;
-        else {
-          counts.nativeLiving++;
-          counts[biosphere.complexity]++;
-          if (examples.filter((entry) => entry.complexity === biosphere.complexity).length < 3)
-            examples.push({
-              x,
-              y,
-              slot,
-              system: system.name,
-              body: body.name,
-              bodyPath,
-              complexity: biosphere.complexity,
-              temperatureK: environment.temperatureK,
-              pressureBar: environment.pressureBar,
-              oxygenBar: environment.oxygenBar,
-              ageGyr: environment.ageGyr,
-              pigmentCover: biosphere.pigmentCover,
-              recognisedTaxa: biosphere.species.filter((species) => species.recognised).length,
-              totalTaxa: biosphere.species.length,
-            });
-        }
+        if (
+          biosphere.origin === 'native' &&
+          examples.filter(
+            (entry) => entry.complexity === biosphere.complexity && entry.enterable === address.enterable
+          ).length < 3
+        )
+          examples.push({
+            ...address,
+            complexity: biosphere.complexity,
+            pigmentCover: biosphere.pigmentCover,
+            recognisedTaxa: biosphere.species.filter((species) => species.recognised).length,
+            totalTaxa: biosphere.species.length,
+          });
       });
     }
   }
-  return { seed, region: centre.name, requestedSystems: requested, counts, examples };
+  return {
+    seed,
+    region: centre.name,
+    requestedSystems: requested,
+    counts,
+    enterable,
+    byPrimarySpectralClass,
+    eligibleExamples: eligibleExamples.sort((a, b) => Number(b.enterable) - Number(a.enterable)),
+    examples: examples.sort((a, b) => Number(b.enterable) - Number(a.enterable)),
+  };
 }
 
 /** Reports controlled priors separately from real canonical planet populations across independent seeds. */
@@ -208,7 +261,7 @@ function main() {
         priors,
         catalogues,
         caveat:
-          'Complexity coefficients are conditional gameplay priors, not measured alien-life statistics. Actual populations depend on canonical planet generation. No life placements or atmospheres are injected; example coordinates include nonzero slots which travel cannot yet enter.',
+          'Complexity coefficients are conditional gameplay priors, not measured alien-life statistics. Actual populations depend on canonical planet generation. No life placements or atmospheres are injected. Enterable counts include only slot zero; other slots are reported separately in catalogue totals. Physical counters and exclusion reasons overlap.',
       },
       null,
       2
