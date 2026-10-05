@@ -7,6 +7,7 @@ import { PRNG } from '../../utils/prng';
 import type {
   HyperspaceSurveyCellData,
   HyperspaceSurveyCellProvider,
+  HyperspaceSurveyCellRequest,
 } from '../../core/hyperspace_survey_cell_provider';
 import { observatoryContactFixture, observatoryObservationFixture } from '../fixtures/observatory';
 
@@ -36,7 +37,7 @@ function harness() {
         rarity: null,
       },
     }),
-    getCellDataBatchAsync: vi.fn(async (requests) =>
+    getCellDataBatchAsync: vi.fn(async (requests: readonly HyperspaceSurveyCellRequest[]) =>
       requests.map(({ worldX, worldY }) => provider.getCellData(worldX, worldY))
     ),
     clearCache: () => {},

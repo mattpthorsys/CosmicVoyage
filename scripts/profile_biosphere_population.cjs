@@ -15,6 +15,8 @@ function loadModel() {
         export { SolarSystem } from './entities/solar_system';
         export { createBiologyEnvironment, generateBiosphere } from './entities/biology/biosphere_generator';
         export { selectBiosphereComplexity } from './entities/biology/biosphere_complexity';
+        export { supportsPressureCommunity } from './entities/biology/pressure_biosphere';
+        export { getManagedSurfaceWaterPhase } from './entities/planet/surface_liquid';
         export { BIOLOGY_VERSION } from './entities/biology/biology_types';
         export { validateSpecies } from './entities/biology/biology_validation';`,
       sourcefile: filename,
@@ -51,6 +53,8 @@ function profileCatalogue(model, seed, centre, requested) {
     SolarSystem,
     createBiologyEnvironment,
     generateBiosphere,
+    supportsPressureCommunity,
+    getManagedSurfaceWaterPhase,
     validateSpecies,
   } = model;
   const root = new PRNG(seed);
@@ -60,6 +64,7 @@ function profileCatalogue(model, seed, centre, requested) {
   const counts = {
     systems: 0,
     bodies: 0,
+    nativeEligible: 0,
     nativeLiving: 0,
     managedLiving: 0,
     'microbial-only': 0,
@@ -82,6 +87,19 @@ function profileCatalogue(model, seed, centre, requested) {
       visitBodies(system.planets, (body, bodyPath) => {
         counts.bodies++;
         const environment = createBiologyEnvironment(body, system, bodyPath);
+        if (
+          environment.origin === 'native' &&
+          environment.landable &&
+          environment.waterCoverage > 0 &&
+          environment.temperatureK >= 273.15 &&
+          environment.temperatureK <= 345 &&
+          environment.pressureBar >= 0.04 &&
+          (environment.pressureBar <= 15 || supportsPressureCommunity(environment)) &&
+          environment.gravity <= 3 &&
+          environment.ageGyr >= 0.3 &&
+          getManagedSurfaceWaterPhase(environment.temperatureK, environment.pressureBar) === 'liquid'
+        )
+          counts.nativeEligible++;
         const biosphere = generateBiosphere(environment);
         if (!biosphere) return;
         biosphere.species.forEach(validateSpecies);

@@ -97,13 +97,11 @@ async function main() {
     /** Imports through the application's normal picker and waits for the new game to become visible. */
     const load = async (save) => {
       const originalSavedAt = save.savedAt;
-      await page
-        .locator('#saveImportInput')
-        .setInputFiles({
-          name: 'observatory-fixture.json',
-          mimeType: 'application/json',
-          buffer: Buffer.from(JSON.stringify(save)),
-        });
+      await page.locator('#saveImportInput').setInputFiles({
+        name: 'observatory-fixture.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(save)),
+      });
       await page.waitForFunction(
         ({ seed, originalSavedAt }) => {
           const key = Object.keys(sessionStorage).find((key) => key.startsWith('cosmic-voyage.session.v'));

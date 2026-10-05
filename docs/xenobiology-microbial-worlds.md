@@ -109,28 +109,31 @@ converted into dormant-bud parents by the legacy save enrichment path.
 Laboratory culture, microscopic animation, expanding exotic-solvent niches,
 atmospheric biosphere feedback and ecology simulation remain deferred.
 
-## Pending Luna Verification
+## Verification
 
-Implementation and test preparation are complete; **no new tests, typechecks,
-lint/build checks, browser checks or population probes have been executed**.
-Run these together with the pending Observatory verification:
+Verification completed on 2026-10-04 and 2026-10-05. `npm run check` passed documentation,
+format, lint, both TypeScript checks, all 930 tests across 132 test files, and the
+production build. The Observatory measurement tests exposed a unit error: planet
+diameters are stored in kilometres, so Earth radii must use a 12,742 km divisor.
+That correction restores the expected planetary spectral measurements.
 
-```sh
-npm run check
-node scripts/profile_biosphere_population.cjs --systems=150 --samples=1200
-PLAYWRIGHT_MODULE=/home/mpalmer/.cache/ms-playwright-go/1.57.0/package COSMIC_URL=http://127.0.0.1:5177 node scripts/check_microbial_browser.cjs
-PLAYWRIGHT_MODULE=/home/mpalmer/.cache/ms-playwright-go/1.57.0/package COSMIC_URL=http://127.0.0.1:5177 node scripts/check_observatory_browser.cjs
-```
+The microbial, Observatory and Xenobiology Playwright workflows all passed with
+no browser errors. Captures were reviewed at desktop and narrow widths in
+`/tmp/cosmic-microbial`, `/tmp/cosmic-observatory` and `/tmp/cosmic-xenobiology`.
+The Xenobiology run also exercised mission targeting and delivery, specimen and
+research submissions, behavioural surveys, propagule/comparative studies,
+stun/lethal actions, field operations and shipyard repairs.
 
-Browser execution may need permission outside the filesystem sandbox for Chromium.
-The microbial browser fixture isolates interactions on a physically compatible
-managed world; it does not establish native population frequency. The population
-probe separately samples actual near-human and remote canonical catalogues across
-three seeds, including planets/moons and example addresses, without generating
-terrain or injecting life. Conditional reference trials and actual catalogue
-counts are reported separately. Review the results before changing the priors;
-do not assert a precise population frequency from a small sample. Example addresses
-can contain nonzero system slots, which normal travel cannot yet enter.
+The population probe (`--systems=150 --samples=1200`) sampled near-human and
+remote canonical catalogues across three seeds, including planets and moons,
+without generating terrain or injecting life. Across six catalogues of roughly
+993-1,615 bodies each, it found no generated native living biosphere; only one
+catalogue had a native environment pass the current eligibility screen. Managed
+living worlds appeared in the near-human samples and none in the remote samples.
+This small sample is a balance warning, not a reliable estimate of galaxy-wide
+frequency. Inspect eligibility and generation priors before retuning them.
+Example addresses can contain nonzero system slots, which normal travel cannot
+yet enter.
 
 Prepared regressions cover deterministic inherited generation, old microbial worlds,
 simple low-energy fauna, typed save validation, version-3 active save import,
@@ -141,7 +144,6 @@ zero-demand Sell entries and atmospheric/reflectance consistency. Existing
 Observatory tests cover equipment, combined BIO filters, managed registry evidence,
 progressive coverage, destinations and pause/save integration.
 
-Inspect browser screenshots in `/tmp/cosmic-microbial` and
-`/tmp/cosmic-observatory` after running the scripts. Also run the established
-xenobiology/browser workflows as appropriate to catch unrelated mission,
-propagule, Shipyard, launch and graphics regressions from recent unverified work.
+Browser checks use the shared application save-import workflow and real keyboard
+input; the fixtures isolate deterministic encounter and mission cases without
+altering a running game's private state.

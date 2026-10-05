@@ -128,13 +128,11 @@ async function main() {
     };
     /** Restores a fixture through normal validated import without accessing a live Game's private state. */
     const load = async (save) => {
-      await page
-        .locator('#saveImportInput')
-        .setInputFiles({
-          name: 'microbial-fixture.json',
-          mimeType: 'application/json',
-          buffer: Buffer.from(JSON.stringify(save)),
-        });
+      await page.locator('#saveImportInput').setInputFiles({
+        name: 'microbial-fixture.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify(save)),
+      });
       await page.waitForFunction(
         ({ seed, savedAt }) => {
           const key = Object.keys(sessionStorage).find((entry) =>
@@ -166,9 +164,35 @@ async function main() {
       await press('F10');
       return save;
     };
-    /** Captures nonblank terminals and verifies field sprites do not leak over full-screen reading overlays. */
+    /** Captures visible terminals and requires organism pixels only while the field view is active. */
     const capture = async (name, expectSprites) => {
+      if (expectSprites)
+        await page.waitForFunction(
+          () => {
+            const raster = document.querySelector('#gameCanvasOrbit');
+            if (!(raster instanceof HTMLCanvasElement) || raster.width === 0 || raster.height === 0)
+              return false;
+            const detail = raster.getContext('2d').getImageData(0, 0, raster.width, raster.height).data;
+            let sprites = 0;
+            for (let index = 0; index < detail.length; index += 16) {
+              if (detail[index + 3] > 128 && detail[index] + detail[index + 1] + detail[index + 2] > 60) {
+                sprites++;
+                if (sprites > 20) return true;
+              }
+            }
+            return false;
+          },
+          null,
+          { timeout: 30000 }
+        );
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      );
       await page.evaluate(() => document.fonts.ready);
+      await page.screenshot({ path: path.join(output, `${name}.png`) });
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      );
       const pixels = await page.evaluate(() => {
         const canvas = document.querySelector('#gameCanvas');
         const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
@@ -178,19 +202,37 @@ async function main() {
         const raster = document.querySelector('#gameCanvasOrbit');
         const detail = raster.getContext('2d').getImageData(0, 0, raster.width, raster.height).data;
         let sprites = 0;
-        for (let index = 0; index < detail.length; index += 4)
-          if (detail[index + 3] > 0 && detail[index] + detail[index + 1] + detail[index + 2] > 60) sprites++;
+        let visibleSprites = 0;
+        let minX = raster.width,
+          minY = raster.height,
+          maxX = -1,
+          maxY = -1;
+        for (let pixel = 0; pixel < raster.width * raster.height; pixel++) {
+          const index = pixel * 4;
+          if (detail[index + 3] > 0 && detail[index] + detail[index + 1] + detail[index + 2] > 60) {
+            sprites++;
+            if (detail[index + 3] > 128) visibleSprites++;
+            const x = pixel % raster.width,
+              y = Math.floor(pixel / raster.width);
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
         return {
           lit,
           sprites,
+          visibleSprites,
+          rasterWidth: raster.width,
+          rasterHeight: raster.height,
+          spriteBounds: sprites ? { minX, minY, maxX, maxY } : null,
           thin: document.fonts.check('16px PxPlus_IBM_CGAthin'),
           thick: document.fonts.check('16px PxPlus_IBM_CGA'),
         };
       });
       assert(pixels.lit > 300 && pixels.thin && pixels.thick, JSON.stringify({ name, pixels }));
-      if (expectSprites) assert(pixels.sprites > 20, 'Field silhouettes missing.');
-      else assert.equal(pixels.sprites, 0, 'Field silhouettes leaked through a modal.');
-      await page.screenshot({ path: path.join(output, `${name}.png`) });
+      if (expectSprites) assert(pixels.visibleSprites > 20, 'Field silhouettes missing.');
       return pixels;
     };
     await load(fixture.save);

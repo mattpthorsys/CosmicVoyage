@@ -166,7 +166,8 @@ function measurePlanet(
   const environment = createBiologyEnvironment(planet, system, path);
   const atmosphere = planet.effectiveAtmosphere;
   const gas = atmosphere.composition;
-  const radiusEarth = planet.diameter / 12_742_000;
+  // Planet.diameter is stored in kilometres throughout the entity model.
+  const radiusEarth = planet.diameter / 12_742;
   const stellarLuminosity =
     system.stars.reduce((sum, star) => sum + star.luminosityW, 0) / SOLAR_LUMINOSITY_W;
   const separationAu = Math.max(0.01, hostSeparationM / AU_IN_METERS);
