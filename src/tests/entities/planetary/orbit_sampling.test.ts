@@ -51,6 +51,7 @@ function generate(starType: string, index: number): SolarSystem {
       exists: true,
       name: `Compact ${starType} ${index}`,
       starType,
+      architecture: architecture([source('A', starType)]),
       ageGyr: environment.ageGyr,
       metallicityFeH: 0,
       hasStarbase: false,
@@ -93,14 +94,19 @@ describe('host-aware planet orbit sampling', () => {
   });
 
   it.each(['K5V', 'M3V', 'M8V'])(
-    'allows warm and cold orbits around %s without a fixed 0.1 AU gap or a surface-life guarantee',
+    'allows warm and cold orbits around %s with stable spacing and no surface-life guarantee',
     (starType) => {
       let warm = 0;
       let cold = 0;
-      let compactPairs = 0;
+      let subTenthAuPairs = 0;
+      let adjacentPairs = 0;
       let airless = 0;
       for (let index = 0; index < 24; index++) {
         const value = generate(starType, index);
+        const minimumSampledGap =
+          0.1 *
+          getPlanetOrbitSamplingScale(value.architecture, { kind: 'circumstellar', starId: 'A' }) *
+          AU_IN_METERS;
         const planets = value.planets.filter((planet) => planet !== null);
         const ordered = [...planets].sort((a, b) => a.orbitDistance - b.orbitDistance);
         for (const [slot, planet] of ordered.entries()) {
@@ -110,15 +116,21 @@ describe('host-aware planet orbit sampling', () => {
           if (planet.referenceStellarFluxWm2 >= 600 && planet.referenceStellarFluxWm2 <= 2300) warm++;
           if (planet.referenceStellarFluxWm2 < 300) cold++;
           if (planet.atmosphere.pressure === 0) airless++;
-          if (slot > 0 && planet.orbitDistance - ordered[slot - 1].orbitDistance < 0.1 * AU_IN_METERS)
-            compactPairs++;
+          if (slot > 0) {
+            const gap = planet.orbitDistance - ordered[slot - 1].orbitDistance;
+            expect(gap).toBeGreaterThanOrEqual(minimumSampledGap);
+            adjacentPairs++;
+            if (gap < 0.1 * AU_IN_METERS) subTenthAuPairs++;
+          }
           expect(planet.terraforming).toBeNull();
           expect(planet.isSurfaceReady()).toBe(false);
         }
       }
       expect(warm).toBeGreaterThan(0);
       expect(cold).toBeGreaterThan(0);
-      expect(compactPairs).toBeGreaterThan(0);
+      expect(adjacentPairs).toBeGreaterThan(0);
+      // K5 planets may need wider gaps to remain outside one another's mutual Hill spheres.
+      if (starType.startsWith('M')) expect(subTenthAuPairs).toBeGreaterThan(0);
       expect(airless).toBeGreaterThan(0);
       const first = generate(starType, 0);
       expect(generate(starType, 0).planets.map((planet) => planet?.orbitDistance)).toEqual(
