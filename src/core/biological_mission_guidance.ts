@@ -7,6 +7,7 @@ import { individualPhysicalProfile, individualSizeClass } from '../entities/biol
 import { stasisCompatibility, propaguleCompatibility } from '../systems/specimen_cargo_system';
 import { propaguleAvailability } from '../entities/biology/propagules';
 import type { BiologicalReference, MissionStatus, StarbaseMission } from './mission_board';
+import { isBiologicalMissionObjective } from './mission_board';
 import type { TextDashboardLine } from './text_ui';
 import { behaviourSources } from '../systems/organism_behaviour';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
@@ -60,7 +61,7 @@ export function assessBiologicalRequests(
   for (const { mission, status, completedObjectiveIds } of requests) {
     if (status !== 'ACTIVE' && status !== 'READY') continue;
     for (const objective of mission.objectives) {
-      if (objective.kind === 'scan') continue;
+      if (!isBiologicalMissionObjective(objective)) continue;
       const sameSite = objective.siteId === contact.field.site.id;
       const reference = objective.reference;
       const compared = reference

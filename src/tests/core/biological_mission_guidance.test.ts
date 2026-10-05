@@ -7,7 +7,11 @@ import {
   createBiologicalReference,
   type BiologicalFieldRequest,
 } from '../../core/biological_mission_guidance';
-import { formatMissionDetailSegments, type StarbaseMission } from '../../core/mission_board';
+import {
+  formatMissionDetailSegments,
+  isBiologicalMissionObjective,
+  type StarbaseMission,
+} from '../../core/mission_board';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { createBiologicalDossier, createEncounterView } from '../../core/xenobiology_ui';
 import { MissionJournal } from '../../core/mission_journal';
@@ -274,7 +278,7 @@ describe('biological mission guidance', () => {
   it('adds office traits to older accepted contracts without changing their identity, requirements or progress', () => {
     const f = fixture();
     const objective = f.mission.objectives[0];
-    if (objective.kind === 'scan') throw new Error('Expected a biological objective.');
+    if (!isBiologicalMissionObjective(objective)) throw new Error('Expected a biological objective.');
     delete objective.reference;
     const progress = new MissionProgressService();
     progress.accept(f.mission);

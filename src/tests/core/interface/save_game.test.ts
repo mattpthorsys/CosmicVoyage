@@ -26,6 +26,15 @@ import { createObservatorySnapshot } from '../../../core/observatory_types';
 import { observatoryContactFixture, observatoryObservationFixture } from '../../fixtures/observatory';
 import { createBehaviourContracts } from '../../../core/behaviour_research';
 import { createPropaguleContract } from '../../../core/propagule_research';
+import { createHeavyHaulSnapshot } from '../../../core/heavy_haul_types';
+import { HeavyHaulService } from '../../../core/heavy_haul_service';
+import { getHeavyHaulObjective } from '../../../core/mission_board';
+import {
+  heavyHaulContextFixture,
+  heavyHaulMissionFixture,
+  heavyHaulReceiptFixture,
+  haulRendezvousFixture,
+} from '../../fixtures/heavy_haul_contracts';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -70,6 +79,9 @@ function createSave(): GameSave {
     savedAt: '2026-06-20T00:00:00.000Z',
     seed: 'save-test',
     gameClockElapsedSeconds: 42,
+    bulkAdvanceSeconds: 0,
+    heavyHaul: createHeavyHaulSnapshot(),
+    infrastructure: [],
     player: {
       position: {
         worldX: 3,
@@ -99,6 +111,8 @@ function createSave(): GameSave {
       crew: [],
       ship: {
         stasisClass: 0,
+        towCouplerClass: 0,
+        hypersleepClass: 0,
         superstructure: {
           name: 'Test',
           engineMounts: 1,
@@ -154,12 +168,182 @@ function createLegacyLocation() {
   };
 }
 
+/** Builds each reachable domain stage with the matching complete save checkpoint. */
+function createHaulSave(stage: 'waiting' | 'attached' | 'arrived' | 'deployed') {
+  const save = createSave();
+  const missions = new MissionProgressService();
+  const service = new HeavyHaulService(missions);
+  const mission = heavyHaulMissionFixture();
+  const objective = getHeavyHaulObjective(mission)!;
+  const context = heavyHaulContextFixture();
+  save.player.ship = structuredClone(context.ship);
+  save.player.crew = structuredClone([...context.crew]);
+  Object.assign(save.player.position, {
+    worldX: objective.pickup.systemAddress.worldX,
+    worldY: objective.pickup.systemAddress.worldY,
+  });
+  save.location = { kind: 'system', ...objective.pickup.systemAddress };
+  if (!service.accept(mission, context).ok) throw new Error('Invalid haul acceptance fixture.');
+  if (stage !== 'waiting' && !service.couple(haulRendezvousFixture(objective.pickup), context).ok)
+    throw new Error('Invalid coupling fixture.');
+  if (stage === 'arrived' || stage === 'deployed') {
+    const receipt = heavyHaulReceiptFixture(mission, context);
+    if (!service.recordArrival(receipt, context).ok) throw new Error('Invalid arrival fixture.');
+    save.gameClockElapsedSeconds = receipt.arrivalSeconds;
+    save.bulkAdvanceSeconds = receipt.durationSeconds;
+    save.location = { kind: 'system', ...objective.destination.systemAddress };
+    Object.assign(save.player.position, {
+      worldX: objective.destination.systemAddress.worldX,
+      worldY: objective.destination.systemAddress.worldY,
+    });
+    if (stage === 'deployed') {
+      const deployment = service.commitDeployment({
+        ...haulRendezvousFixture(objective.destination),
+        gameClockSeconds: save.gameClockElapsedSeconds,
+        bulkAdvanceSeconds: save.bulkAdvanceSeconds,
+        orbit: objective.destination.orbit,
+      });
+      if (!deployment.ok) throw new Error(deployment.message);
+      save.infrastructure = [deployment.installation];
+      save.player.resources.credits += deployment.credits;
+    }
+  }
+  Object.assign(save, missions.createSnapshot());
+  save.heavyHaul = service.createSnapshot();
+  return { save, mission, service, missions };
+}
+
+describe('heavy-haul save foundations', () => {
+  it('migrates actual version-17 records without granting free crew berths or altering normal resources', () => {
+    const current = createSave();
+    current.player.ship.stasisClass = 1;
+    const { heavyHaul: _haul, infrastructure: _assets, bulkAdvanceSeconds: _bulk, ...legacy } = current;
+    const { towCouplerClass: _coupler, hypersleepClass: _sleep, ...oldShip } = legacy.player.ship;
+    const old = { ...legacy, version: 17, player: { ...legacy.player, ship: oldShip } };
+    const before = structuredClone(old);
+    const migrated = parseGameSave(old);
+    expect(migrated.version).toBe(18);
+    expect(migrated.heavyHaul).toEqual(createHeavyHaulSnapshot());
+    expect(migrated.infrastructure).toEqual([]);
+    expect(migrated.bulkAdvanceSeconds).toBe(0);
+    expect(migrated.player.ship).toMatchObject({ stasisClass: 1, towCouplerClass: 0, hypersleepClass: 0 });
+    expect(migrated.player.resources).toEqual(old.player.resources);
+    expect(old).toEqual(before);
+  });
+
+  it.each(['session', 'manual'])('loads and retires prior-version %s storage keys', (kind) => {
+    const session = new MemoryStorage();
+    const manual = new MemoryStorage();
+    const store = kind === 'session' ? session : manual;
+    const key = `cosmic-voyage.${kind}.v17`;
+    store.setItem(key, JSON.stringify({ ...createSave(), version: 17 }));
+    const storage = new SaveGameStorage(session, manual);
+    const restored = kind === 'session' ? storage.loadSession() : storage.loadManual();
+    expect(restored?.version).toBe(18);
+    expect(store.getItem(key)).toBeNull();
+    expect(store.getItem(kind === 'session' ? SESSION_SAVE_KEY : MANUAL_SAVE_KEY)).not.toBeNull();
+    store.setItem(key, JSON.stringify({ ...createSave(), version: 17 }));
+    storage.clearSession();
+    storage.clearManual();
+    expect(session.length + manual.length).toBe(0);
+  });
+
+  it.each(['waiting', 'attached', 'arrived', 'deployed'] as const)(
+    'round-trips the %s stage without duplicating packages, payments or support fuel',
+    (stage) => {
+      const { save } = createHaulSave(stage);
+      expect(parseGameSave(JSON.stringify(save))).toEqual(save);
+    }
+  );
+
+  it('rejects absent tow state, forged support, orphan receipts, and impossible times', () => {
+    const { save } = createHaulSave('arrived');
+    const missing = structuredClone(save);
+    missing.heavyHaul.activeTow = null;
+    expect(() => parseGameSave(missing)).toThrow('no tow record');
+    const fuel = structuredClone(save);
+    fuel.heavyHaul.activeTow!.remainingSupportFuelUnits += 1;
+    expect(() => parseGameSave(fuel)).toThrow('support ledger');
+    const orphan = structuredClone(save);
+    const operationId = orphan.heavyHaul.activeTow!.journeyOperationId!;
+    const orphanOperationId = 'missing-contract:transit';
+    const receipt = orphan.heavyHaul.journeyReceipts[operationId];
+    delete orphan.heavyHaul.journeyReceipts[operationId];
+    orphan.heavyHaul.journeyReceipts[orphanOperationId] = {
+      ...receipt,
+      operationId: orphanOperationId,
+      missionId: 'missing-contract',
+    };
+    expect(() => parseGameSave(orphan)).toThrow('orphan');
+    const time = structuredClone(save);
+    time.bulkAdvanceSeconds = time.gameClockElapsedSeconds + 1;
+    expect(() => parseGameSave(time)).toThrow('bulk time watermark');
+  });
+
+  it('rejects invalid equipment, overbooked bays, and planetary operations with an attached package', () => {
+    const save = createSave();
+    save.player.ship.hypersleepClass = 3;
+    expect(() => parseGameSave(save)).toThrow('hypersleep class');
+    save.player.ship.hypersleepClass = 1;
+    expect(() => parseGameSave(save)).toThrow('bay accounting');
+    save.player.ship.hypersleepClass = 0;
+    save.player.ship.towCouplerClass = -1;
+    expect(() => parseGameSave(save)).toThrow('tow coupler');
+    const attached = createHaulSave('attached').save;
+    attached.location = {
+      kind: 'orbit',
+      worldX: 0,
+      worldY: 0,
+      systemSlot: 0,
+      bodyPath: 'planet:0',
+      orbitReferencePath: 'planet:0',
+    };
+    expect(() => parseGameSave(attached)).toThrow('Attached tow');
+  });
+
+  it('rejects duplicate installations, unpaid sources, predated epochs, and invalid hosts', () => {
+    const { save } = createHaulSave('deployed');
+    const duplicate = structuredClone(save);
+    duplicate.infrastructure.push(structuredClone(duplicate.infrastructure[0]));
+    expect(() => parseGameSave(duplicate)).toThrow('duplicate installation');
+    const unpaid = structuredClone(save);
+    unpaid.completedMissionIds = [];
+    expect(() => parseGameSave(unpaid)).toThrow();
+    const epoch = structuredClone(save);
+    Object.assign(epoch.infrastructure[0], { commissionedAtSeconds: epoch.gameClockElapsedSeconds + 1 });
+    expect(() => parseGameSave(epoch)).toThrow('installation epoch');
+    const host = structuredClone(save);
+    Object.assign(host.infrastructure[0].orbit.host, { starId: 'D' });
+    expect(() => parseGameSave(host)).toThrow('stellar host');
+  });
+
+  it('requires explicit ledgers in version 18 rather than silently discarding damaged state', () => {
+    const { heavyHaul: _haul, ...incomplete } = createSave();
+    expect(() => parseGameSave(incomplete)).toThrow('heavy-haul state');
+  });
+
+  it('rejects system/address mismatches, missing commissioned assets, and unaccounted journey time', () => {
+    const arrived = createHaulSave('arrived').save;
+    const wrongAddress = structuredClone(arrived);
+    wrongAddress.location.worldX += 1;
+    expect(() => parseGameSave(wrongAddress)).toThrow('system address');
+    const noTime = structuredClone(arrived);
+    noTime.bulkAdvanceSeconds = 0;
+    expect(() => parseGameSave(noTime)).toThrow('exceed bulk time');
+    const deployed = createHaulSave('deployed').save;
+    deployed.infrastructure = [];
+    expect(() => parseGameSave(deployed)).toThrow('no commissioned installation');
+  });
+});
+
 describe('save game persistence', () => {
   it('round-trips observatory evidence and a destination while accepting voyages without the new optional instrument state', () => {
     const save = createSave();
     expect(() => parseGameSave(JSON.stringify(save))).not.toThrow();
     const contact = observatoryContactFixture();
     save.player.ship.observatoryClass = 2;
+    save.player.ship.superstructure.specialPurposeBays = 2;
+    save.player.ship.specialBaysOccupied = 2;
     save.observatory = createObservatorySnapshot();
     save.observatory.observations[contact.id] = observatoryObservationFixture(contact);
     save.observatory.destination = {

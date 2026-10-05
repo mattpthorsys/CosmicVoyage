@@ -10,6 +10,7 @@ import { individualSizeClass, isMicrobialPatch } from '../entities/biology/biolo
 import { createEncounter } from '../systems/surface_encounter_system';
 import type { Starbase } from '../entities/starbase';
 import type { MissionObjective, StarbaseMission } from './mission_board';
+import { isBiologicalMissionObjective } from './mission_board';
 import { createBiologicalReference } from './biological_mission_guidance';
 import type { XenobiologyService } from './xenobiology_service';
 
@@ -235,7 +236,8 @@ function study(
     issuer: 'Comparative Biology Office',
     risk: objectives.some(
       (objective) =>
-        objective.kind !== 'scan' && ['territorial', 'ambush'].includes(objective.reference?.behaviour ?? '')
+        isBiologicalMissionObjective(objective) &&
+        ['territorial', 'ambush'].includes(objective.reference?.behaviour ?? '')
     )
       ? 'Med'
       : 'Low',

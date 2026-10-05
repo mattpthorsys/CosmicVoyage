@@ -80,8 +80,9 @@ or reward. Better drives must improve the same quoted job.
 
 The baseline movement, quote, lifecycle, fitting, save, and biological regression
 tests have passed together with `npm run check`. Contracts themselves remain
-future M3-M5 work. Keep the baseline, domain, and fitting/persistence changes in
-separate milestone commits.
+future M3-M5 work. M0 is committed independently; M1 and M2 are kept together
+because typed objectives, save schema, equipment, and game save plumbing depend
+on the same versioned state contract.
 
 The full design and later stages are in
 [the implementation plan](plans/heavy-haul-first-version.md).

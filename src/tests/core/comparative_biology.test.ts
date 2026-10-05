@@ -4,7 +4,11 @@ import {
   createMineralisationComparison,
 } from '../../core/comparative_biology';
 import { deliverBiologicalContract } from '../../core/biological_contracts';
-import { allocateSpecimenObjectives, type SpecimenMissionObjective } from '../../core/mission_board';
+import {
+  allocateSpecimenObjectives,
+  isBiologicalMissionObjective,
+  type SpecimenMissionObjective,
+} from '../../core/mission_board';
 import { MissionProgressService } from '../../core/mission_progress';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { createDefaultCargo } from '../../core/components';
@@ -142,7 +146,9 @@ describe('comparative biological studies', () => {
     );
     const habitats = offers.find((mission) => mission.id.endsWith('habitat-comparison'))!;
     expect(
-      new Set(habitats.objectives.map((objective) => objective.kind !== 'scan' && objective.siteId)).size
+      new Set(
+        habitats.objectives.map((objective) => isBiologicalMissionObjective(objective) && objective.siteId)
+      ).size
     ).toBe(2);
     for (const field of f.fields)
       for (const actor of field.individuals) {

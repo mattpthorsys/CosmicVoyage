@@ -12,6 +12,7 @@ import { SurfaceEncounterController } from '../../core/modes/surface_encounter_c
 import type { Starbase } from '../../entities/starbase';
 import { eventManager } from '../../core/event_manager';
 import { parseGameSave, SAVE_GAME_VERSION, type GameSave } from '../../core/save_game';
+import { createHeavyHaulSnapshot } from '../../core/heavy_haul_types';
 import { CONFIG } from '../../config';
 import type { TextModalTableModel, TextTableRow } from '../../core/text_ui';
 import { PRNG } from '../../utils/prng';
@@ -138,6 +139,9 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
     savedAt: '2026-10-03T00:00:00Z',
     seed: 'biology-fixture',
     gameClockElapsedSeconds: 100,
+    bulkAdvanceSeconds: 0,
+    heavyHaul: createHeavyHaulSnapshot(),
+    infrastructure: [],
     player: structuredClone({
       position: player.position,
       resources: player.resources,

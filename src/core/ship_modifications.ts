@@ -3,6 +3,12 @@ import {
   preservationKit,
   preservationKitDescription,
 } from '../entities/biology/preservation';
+import {
+  HAUL_ENGINE_REFITS,
+  HAUL_MAX_CERTIFIED_DAMAGE,
+  HYPERSLEEP_MODULES,
+  TOW_COUPLERS,
+} from '../constants/heavy_haul';
 
 export type ShipMountKind =
   | 'engine'
@@ -21,7 +27,9 @@ export type ShipDamageSubsystem =
   | 'cargoBay'
   | 'probeBay'
   | 'landingBay'
-  | 'specialBay';
+  | 'specialBay'
+  | 'towCoupler'
+  | 'hypersleepBay';
 export type ShipyardKind = 'frontier' | 'commercial' | 'industrial' | 'research' | 'naval';
 
 export interface ShipSuperstructure {
@@ -58,6 +66,10 @@ export interface ShipModificationState {
   observatoryClass?: number;
   /** Basic stasis shares the included survey bay; specialised kits upgrade that installation. */
   stasisClass?: number;
+  /** External hull fitting, independent of biological stasis and internal cargo volume. */
+  towCouplerClass?: number;
+  /** One occupied special bay; upgrades replace the module without occupying another bay. */
+  hypersleepClass?: number;
   damage: ShipDamageState;
 }
 
@@ -124,6 +136,8 @@ export const SHIP_DAMAGE_SUBSYSTEMS: readonly ShipDamageSubsystem[] = [
   'probeBay',
   'landingBay',
   'specialBay',
+  'towCoupler',
+  'hypersleepBay',
 ];
 
 /** Returns engine fuel use multiplier. */
@@ -161,6 +175,8 @@ export function createDefaultShipModifications(): ShipModificationState {
     observatoryClass: 0,
     // Basic carbon-water stasis shares the standard survey bay; no paid refit is needed to begin collecting.
     stasisClass: 1,
+    towCouplerClass: 0,
+    hypersleepClass: 0,
     damage: {
       hullIntegrity: 100,
       maxHullIntegrity: 100,
@@ -182,6 +198,22 @@ export function getAvailableCargoPodBays(ship: ShipModificationState): number {
 /** Returns subsystem damage. */
 export function getSubsystemDamage(ship: ShipModificationState, subsystem: ShipDamageSubsystem): number {
   return Math.max(0, Math.min(100, Math.round(ship.damage.subsystemDamage[subsystem] ?? 0)));
+}
+
+/** Returns certified crew berths; specimen stasis never grants crew hypersleep capacity. */
+export function getFunctionalHypersleepBerths(ship: ShipModificationState): number {
+  const module = HYPERSLEEP_MODULES.find((entry) => entry.equipmentClass === (ship.hypersleepClass ?? 0));
+  const requiredBays =
+    1 +
+    (ship.surveyEquipmentClass > 0 || (ship.stasisClass ?? 0) > 0 ? 1 : 0) +
+    ((ship.observatoryClass ?? 0) > 0 ? 1 : 0);
+  const fitted =
+    Number.isInteger(ship.specialBaysOccupied) &&
+    ship.specialBaysOccupied >= requiredBays &&
+    ship.specialBaysOccupied <= ship.superstructure.specialPurposeBays;
+  return module && fitted && getSubsystemDamage(ship, 'hypersleepBay') <= HAUL_MAX_CERTIFIED_DAMAGE
+    ? module.berths
+    : 0;
 }
 
 /** Quotes damaged hull and subsystems once, so individual and complete repair totals agree. */
@@ -384,6 +416,48 @@ export function createShipyardUpgradeOptions(
 ): ShipyardUpgradeOption[] {
   const repairCost = getShipRepairCost(ship);
   const options: ShipyardUpgradeOption[] = [
+    ...HAUL_ENGINE_REFITS.map(
+      (refit): ShipyardUpgradeOption => ({
+        id: `shipyard:engine:${refit.engineClass}`,
+        label: `Drive Class ${refit.engineClass}`,
+        cost: refit.cost,
+        eta: '6h',
+        workOrder: 'Replace the primary drive; certify heavier external loads.',
+        detail:
+          refit.engineClass === 3 && !['industrial', 'naval', 'research'].includes(profile.kind)
+            ? 'Drive Class 3 requires an industrial, research, or naval certification yard.'
+            : `One engine mount. Improves haul performance and reactor fuel efficiency; ordinary cursor speed is unchanged. Current class ${ship.engineClass}.`,
+        disabled:
+          ship.superstructure.engineMounts < 1 ||
+          ship.engineClass >= refit.engineClass ||
+          (refit.engineClass === 3 && !['industrial', 'naval', 'research'].includes(profile.kind)),
+      })
+    ),
+    ...TOW_COUPLERS.map(
+      (coupler): ShipyardUpgradeOption => ({
+        id: `shipyard:tow-coupler:${coupler.equipmentClass}`,
+        label: `Tow Coupler Class ${coupler.equipmentClass}`,
+        cost: coupler.cost,
+        eta: '2h',
+        workOrder: 'Fit external load-transfer hardpoints.',
+        detail: `${coupler.maximumMassKg.toLocaleString()} kg structural rating; drive certification also limits towing. External fitting uses no cargo space or special bay. Haul contracts are not yet available.`,
+        disabled: (ship.towCouplerClass ?? 0) >= coupler.equipmentClass,
+      })
+    ),
+    ...HYPERSLEEP_MODULES.map(
+      (module): ShipyardUpgradeOption => ({
+        id: `shipyard:hypersleep:${module.equipmentClass}`,
+        label: `Crew Hypersleep / ${module.berths} berths`,
+        cost: module.cost,
+        eta: '3h',
+        workOrder: 'Fit crew suspension and autonomous-voyage support.',
+        detail: `${module.berths} crew berths in one special-purpose bay. Replaces an earlier module in the same bay; distinct from specimen stasis.`,
+        disabled:
+          (ship.hypersleepClass ?? 0) >= module.equipmentClass ||
+          (!(ship.hypersleepClass ?? 0) &&
+            ship.specialBaysOccupied >= ship.superstructure.specialPurposeBays),
+      })
+    ),
     ...[1, 2, 3].map(
       (equipmentClass): ShipyardUpgradeOption => ({
         id: `shipyard:observatory:${equipmentClass}`,
@@ -510,6 +584,34 @@ export function createShipyardUpgradeOptions(
 
 /** Applies a purchased shipyard upgrade to the ship. */
 export function installShipyardUpgrade(ship: ShipModificationState, optionId: string): string {
+  const engine = HAUL_ENGINE_REFITS.find((entry) => optionId === `shipyard:engine:${entry.engineClass}`);
+  if (engine) {
+    if (ship.superstructure.engineMounts < 1) return 'No engine mount available.';
+    if (ship.engineClass >= engine.engineClass) return 'Drive already installed or superseded.';
+    ship.engineClass = engine.engineClass;
+    return `Installed Drive Class ${engine.engineClass}.`;
+  }
+  const coupler = TOW_COUPLERS.find((entry) => optionId === `shipyard:tow-coupler:${entry.equipmentClass}`);
+  if (coupler) {
+    if ((ship.towCouplerClass ?? 0) >= coupler.equipmentClass)
+      return 'Tow coupler already installed or superseded.';
+    ship.towCouplerClass = coupler.equipmentClass;
+    return `Installed Tow Coupler Class ${coupler.equipmentClass}.`;
+  }
+  const sleep = HYPERSLEEP_MODULES.find(
+    (entry) => optionId === `shipyard:hypersleep:${entry.equipmentClass}`
+  );
+  if (sleep) {
+    if ((ship.hypersleepClass ?? 0) >= sleep.equipmentClass)
+      return 'Hypersleep module already installed or superseded.';
+    if (!(ship.hypersleepClass ?? 0)) {
+      if (ship.specialBaysOccupied >= ship.superstructure.specialPurposeBays)
+        return 'No free special-purpose bay.';
+      ship.specialBaysOccupied++;
+    }
+    ship.hypersleepClass = sleep.equipmentClass;
+    return `Installed ${sleep.berths} crew hypersleep berths.`;
+  }
   const observatoryMatch = optionId.match(/^shipyard:observatory:([1-3])$/);
   if (observatoryMatch) {
     const equipmentClass = Number(observatoryMatch[1]);

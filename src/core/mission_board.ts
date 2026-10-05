@@ -13,6 +13,7 @@ import type {
 import { individualSizeClass } from '../entities/biology/biology_rules';
 import type { TextDashboardSegment } from './text_ui';
 import { resolveMissionNavigation } from './mission_navigation';
+import type { HeavyHaulObjective } from './heavy_haul_types';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
 export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'READY' | 'COMPLETE';
@@ -93,16 +94,36 @@ export type BiologicalReference = Pick<
   'symmetry' | 'bodyForm' | 'locomotion' | 'metabolism' | 'role' | 'behaviour'
 >;
 
-export type MissionObjective =
-  | ScanMissionObjective
+export type BiologicalMissionObjective =
   | SpecimenMissionObjective
   | BiologicalDataObjective
   | BiologicalBehaviourObjective;
 
+export type MissionObjective = ScanMissionObjective | BiologicalMissionObjective | HeavyHaulObjective;
+
+/** Narrows actual biological requests; other non-scan objectives are not implicitly biology. */
+export function isBiologicalMissionObjective(
+  objective: MissionObjective
+): objective is BiologicalMissionObjective {
+  return (
+    objective.kind === 'specimen' ||
+    objective.kind === 'biology-data' ||
+    objective.kind === 'biology-behaviour'
+  );
+}
+
+/** Resolves the one immutable package objective required by a heavy-haul contract. */
+export function getHeavyHaulObjective(mission: StarbaseMission): HeavyHaulObjective | undefined {
+  const objective = mission.objectives[0];
+  return mission.type === 'heavy-haul' && mission.objectives.length === 1 && objective?.kind === 'haul'
+    ? objective
+    : undefined;
+}
+
 export interface StarbaseMission {
   id: string;
   title: string;
-  type: 'survey' | 'charting' | 'recovery' | 'xenobiology';
+  type: 'survey' | 'charting' | 'recovery' | 'xenobiology' | 'heavy-haul';
   issuer: string;
   summary: string;
   detail: string;
@@ -148,13 +169,11 @@ export function formatMissionDetailSegments(
 ): TextDashboardSegment[] {
   const objectiveText = mission.objectives.map((objective) => objective.targetLabel).join(' -> ');
   const species = new Set<string>();
-  const references = mission.objectives.filter(
-    (objective): objective is Exclude<MissionObjective, ScanMissionObjective> => {
-      if (objective.kind === 'scan' || species.has(objective.speciesId)) return false;
-      species.add(objective.speciesId);
-      return true;
-    }
-  );
+  const references = mission.objectives.filter((objective): objective is BiologicalMissionObjective => {
+    if (!isBiologicalMissionObjective(objective) || species.has(objective.speciesId)) return false;
+    species.add(objective.speciesId);
+    return true;
+  });
   const segments: TextDashboardSegment[] = references.flatMap((objective) => [
     { text: 'CREATURE: ', tone: 'muted' as const, font: 'thin' as const },
     { text: biologicalReferenceDescription(objective), tone: 'cyan' as const, font: 'thin' as const },
@@ -164,7 +183,7 @@ export function formatMissionDetailSegments(
     text: [
       `CONTRACT: ${mission.title}`,
       `ISSUER: ${mission.issuer}`,
-      `OBJECTIVES: ${objectiveText} -> Return to ${mission.originStarbaseName}`,
+      `OBJECTIVES: ${objectiveText} -> ${mission.type === 'heavy-haul' ? 'Deploy for escrow payment' : `Return to ${mission.originStarbaseName}`}`,
       `PAYMENT: ${mission.rewardCredits.toLocaleString()} Cr`,
       `RISK: ${mission.risk}`,
       `STATUS: ${getMissionStatusLabel(status)}`,
@@ -177,9 +196,7 @@ export function formatMissionDetailSegments(
 }
 
 /** Describes the commissioned organism without implying that the player has identified a contact. */
-export function biologicalReferenceDescription(
-  objective: Exclude<MissionObjective, ScanMissionObjective>
-): string {
+export function biologicalReferenceDescription(objective: BiologicalMissionObjective): string {
   const reference = objective.reference;
   return reference
     ? `${objective.targetName} / ${reference.symmetry}${reference.bodyForm ? ` ${reference.bodyForm}` : ''} / ${reference.behaviour} ${reference.role} / ${reference.locomotion} / ${reference.metabolism}`

@@ -1,6 +1,10 @@
 import type { InputManager } from './input_manager';
 import type { MissionStatus, StarbaseMission } from './mission_board';
-import { biologicalReferenceDescription, getMissionStatusLabel } from './mission_board';
+import {
+  biologicalReferenceDescription,
+  getMissionStatusLabel,
+  isBiologicalMissionObjective,
+} from './mission_board';
 import { getMissionLandingObjectiveIndices } from './mission_navigation';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
@@ -132,7 +136,7 @@ export class MissionJournal {
         `${getMissionStatusLabel(status)} / objectives ${entry.completed}/${entry.total}`,
         status === 'READY' ? 'green' : 'amber'
       );
-      if (status === 'READY')
+      if (status === 'READY' && mission.type !== 'heavy-haul')
         line(
           `All contributions ready. Claim payment at ${mission.originStarbaseName} through ${mission.type === 'xenobiology' ? 'Missions or Research' : 'Missions'}.`,
           'green'
@@ -143,7 +147,7 @@ export class MissionJournal {
       line(mission.summary);
       const references = new Set<string>();
       for (const objective of mission.objectives) {
-        if (objective.kind === 'scan') continue;
+        if (!isBiologicalMissionObjective(objective)) continue;
         if (references.has(objective.speciesId)) continue;
         references.add(objective.speciesId);
         line('REFERENCE ORGANISM', 'cyan', true);
@@ -178,8 +182,21 @@ export class MissionJournal {
         if (location?.surface) {
           line(`Habitat: ${location.surface.label}`);
           line(`Surface: X ${location.surface.x}  Y ${location.surface.y}`, 'green');
-        } else if (objective.kind !== 'scan') {
+        } else if (isBiologicalMissionObjective(objective)) {
           line('Exact habitat coordinates pending local surface data.', 'muted');
+        } else if (objective.kind === 'haul') {
+          line(
+            `Pickup: ${objective.pickup.systemName} / X ${objective.pickup.systemAddress.worldX} Y ${objective.pickup.systemAddress.worldY}`,
+            'cyan'
+          );
+          line(
+            `Deployment: ${objective.destination.systemName} / X ${objective.destination.systemAddress.worldX} Y ${objective.destination.systemAddress.worldY}`,
+            'green'
+          );
+          line(
+            `External wet mass: ${objective.package.wetMassKg.toLocaleString()} kg / escrow paid on deployment.`,
+            'amber'
+          );
         } else if (
           objective.kind === 'scan' &&
           objective.targetType === 'planet' &&
@@ -212,7 +229,7 @@ export class MissionJournal {
       line('');
       line('BRIEFING', 'cyan', true);
       line(mission.detail);
-      if (status === 'READY')
+      if (status === 'READY' && mission.type !== 'heavy-haul')
         line('Delivery ready. Return to the issuing station to claim payment.', 'green');
     }
     if (this.notice) {

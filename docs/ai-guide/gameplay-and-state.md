@@ -44,7 +44,13 @@ shared by every state. Save parsing validates nested player, mission, discovery,
 planet mutation, and economy state before restoration. Schema changes require a
 new save version and an explicit migration from the previous version.
 
-Save version 9 records Galaxy generation version 5. Version-eight and
+Save version 18 records Galaxy generation version 8 and adds independent tow,
+infrastructure, and bulk-time watermark records. Version-17 voyages migrate
+with empty haul/world ledgers and no purchased crew hypersleep or coupler;
+biological stasis is preserved. Actual haul travel and world commissioning are
+not yet enabled. See [heavy-haul foundations](../heavy-haul-foundations.md).
+
+Historically, save version 9 recorded Galaxy generation version 5. Version-eight and
 version-seven coordinates remain unchanged during migration; version-six saves
 are rotated and rescaled onto the one-light-year, north-up coordinate system.
 Planet mutation keys include the slot so dense projected cells cannot alias one

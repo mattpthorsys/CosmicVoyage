@@ -2,7 +2,7 @@ import type { BiologyOrigin, SpeciesEvidence, SpecimenContainer } from '../entit
 import type { InputManager } from './input_manager';
 import type { MissionJournalReturn } from './mission_journal';
 import type { StarbaseMission } from './mission_board';
-import { allocateSpecimenObjectives } from './mission_board';
+import { allocateSpecimenObjectives, isBiologicalMissionObjective } from './mission_board';
 import {
   individualSizeLabel,
   individualPhysicalProfile,
@@ -204,7 +204,7 @@ export class ScienceLog {
       for (const mission of missions)
         if (
           mission.objectives.some(
-            (objective) => objective.kind !== 'scan' && objective.speciesId === entry.species.id
+            (objective) => isBiologicalMissionObjective(objective) && objective.speciesId === entry.species.id
           )
         ) {
           line(`Accepted request: ${mission.title} / return to ${mission.originStarbaseName}`, 'green');
@@ -221,7 +221,7 @@ export class ScienceLog {
               cargo
             );
             for (const objective of mission.objectives) {
-              if (objective.kind === 'scan' || objective.speciesId !== species.id) continue;
+              if (!isBiologicalMissionObjective(objective) || objective.speciesId !== species.id) continue;
               const complete =
                 objectiveProgress[mission.id]?.includes(objective.id) ??
                 (objective.kind === 'specimen'

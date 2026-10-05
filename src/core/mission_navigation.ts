@@ -2,6 +2,7 @@ import type { BiosphereDefinition } from '../entities/biology/biology_types';
 import type { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import type { MissionBodyLocation, MissionSystemAddress, StarbaseMission } from './mission_board';
+import { isBiologicalMissionObjective } from './mission_board';
 import { findSystemPlanetByPath, getSystemPlanetPaths } from './save_game';
 import { createBiologicalReference } from './biological_mission_guidance';
 
@@ -21,6 +22,7 @@ export function resolveMissionNavigation(
   biospheres: readonly BiosphereDefinition[] = []
 ): StarbaseMission {
   if (
+    mission.type === 'heavy-haul' ||
     mission.systemName !== system.name ||
     (mission.systemAddress && !isMissionSystem(mission.systemAddress, system))
   )
@@ -42,6 +44,7 @@ export function resolveMissionNavigation(
           ? { ...objective, location: { bodyPath: body.path, bodyName: body.planet.name } }
           : objective;
       }
+      if (!isBiologicalMissionObjective(objective)) return objective;
       const biosphere = biospheres.find((entry) => entry.sites.some((site) => site.id === objective.siteId));
       const site = biosphere?.sites.find((entry) => entry.id === objective.siteId);
       const body = biosphere && bodies.find(({ planet }) => planet.name === biosphere.bodyName);

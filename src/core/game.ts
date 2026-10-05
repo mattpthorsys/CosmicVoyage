@@ -69,6 +69,10 @@ import { MissionJournal, type MissionJournalEntry } from './mission_journal';
 import { ScienceLog } from './science_log';
 import { ObservatoryController, type ObservatoryScreenModel } from './observatory';
 import { ObservatoryService } from './observatory_service';
+import { HeavyHaulService } from './heavy_haul_service';
+import { createHeavyHaulSnapshot, type InfrastructureRecord } from './heavy_haul_types';
+import { getFunctionalHypersleepBerths } from './ship_modifications';
+import { TOW_COUPLERS } from '../constants/heavy_haul';
 import {
   createObservatorySnapshot,
   getObservatoryCapabilities,
@@ -299,6 +303,9 @@ export class Game {
   private _scienceLog?: ScienceLog;
   private _observatoryService?: ObservatoryService;
   private _observatoryController?: ObservatoryController;
+  private _heavyHaulService?: HeavyHaulService;
+  private infrastructureRecords: InfrastructureRecord[] = [];
+  private bulkAdvanceSeconds = 0;
   private observatorySearchSerial = 0;
   private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
@@ -343,6 +350,11 @@ export class Game {
   /** Owns the catalogue and evidence independently of the instrument's transient UI state. */
   private get observatoryService(): ObservatoryService {
     return (this._observatoryService ??= new ObservatoryService(this.systemDataGenerator, this.gameSeedPRNG));
+  }
+
+  /** Keeps tow state tied to the existing canonical mission owner, without generating production offers. */
+  private get heavyHaulService(): HeavyHaulService {
+    return (this._heavyHaulService ??= new HeavyHaulService(this.missionProgress));
   }
 
   /** Returns the paused instrument controller, including lightweight non-canvas harnesses. */
@@ -1247,6 +1259,9 @@ export class Game {
       savedAt: new Date().toISOString(),
       seed: this.gameSeedPRNG.getInitialSeed(),
       gameClockElapsedSeconds: this.gameClockElapsedSeconds,
+      bulkAdvanceSeconds: this.bulkAdvanceSeconds ?? 0,
+      heavyHaul: this._heavyHaulService?.createSnapshot() ?? createHeavyHaulSnapshot(),
+      infrastructure: cloneSaveValue(this.infrastructureRecords ?? []),
       player: cloneSaveValue({
         position: this.player.position,
         render: this.player.render,
@@ -1259,6 +1274,7 @@ export class Game {
       location: this.createLocationSaveData(),
       systemOrbit: system
         ? {
+            lastAppliedBulkSeconds: this.bulkAdvanceSeconds ?? 0,
             stars: system.stars.map((star) => ({
               id: star.id,
               orbitAngle: star.orbit?.angle ?? null,
@@ -1293,6 +1309,9 @@ export class Game {
     const isLegacyGalaxyMigration =
       save.migratedFromGenerationVersion !== undefined &&
       save.migratedFromGenerationVersion < CONFIG.GALAXY_MODEL_VERSION;
+    // Restore world records before location resolution; M4 will materialise their service overlay here.
+    this.infrastructureRecords = isLegacyGalaxyMigration ? [] : cloneSaveValue(save.infrastructure);
+    this.bulkAdvanceSeconds = isLegacyGalaxyMigration ? 0 : save.bulkAdvanceSeconds;
     this.planetMutationRegistry = isLegacyGalaxyMigration
       ? new Map()
       : new Map(
@@ -1373,6 +1392,10 @@ export class Game {
       activeMissions: isLegacyGalaxyMigration ? {} : save.activeMissions,
       missionObjectiveProgress: isLegacyGalaxyMigration ? {} : save.missionObjectiveProgress,
     });
+    this.heavyHaulService.restoreSnapshot(
+      isLegacyGalaxyMigration ? createHeavyHaulSnapshot() : save.heavyHaul,
+      this.gameClockElapsedSeconds
+    );
     this.missionProgress.resolveBiologicalReferences(this.xenobiology.snapshot.fields);
     this.scanService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.catalogueDiscoveries);
     this.observatoryService.restoreSnapshot(
@@ -1425,6 +1448,7 @@ export class Game {
     if (!system) return;
     for (const { path, planet } of getSystemPlanetPaths(system)) {
       const mutation: PlanetMutationSaveData = {
+        lastAppliedBulkSeconds: this.bulkAdvanceSeconds ?? 0,
         worldX: system.starX,
         worldY: system.starY,
         systemSlot: system.systemSlot,
@@ -9688,7 +9712,33 @@ export class Game {
           `Class ${ship.engineClass}; drive efficiency ${stats.driveEfficiencyPercent}%`,
         ],
         detail:
-          'Primary drive is fitted. Future engine refits can use this slot without changing the superstructure.',
+          'Drive classes 2-3 are listed below where this yard can certify them. Reactor efficiency and haul capability improve; ordinary cursor speed is unchanged.',
+        disabled: true,
+      },
+      {
+        id: 'refit:tow-coupler',
+        cells: [
+          'External coupler',
+          'See below',
+          '--',
+          (ship.towCouplerClass ?? 0) > 0
+            ? `Class ${ship.towCouplerClass}; ${TOW_COUPLERS.find((entry) => entry.equipmentClass === ship.towCouplerClass)?.maximumMassKg.toLocaleString()} kg structural rating`
+            : 'Not fitted; external hull mount',
+        ],
+        detail:
+          'Structural rating and fitted drive jointly limit tow mass. Contractor support is separate from ship fuel and cargo.',
+        disabled: true,
+      },
+      {
+        id: 'refit:hypersleep',
+        cells: [
+          'Crew hypersleep',
+          'See below',
+          '--',
+          `${getFunctionalHypersleepBerths(ship)} functional berths / ${this.player.crew.filter((member) => member.hitPoints > 0).length} living crew`,
+        ],
+        detail:
+          'One special-purpose bay supplies crew suspension. Biological specimen stasis does not provide crew berths.',
         disabled: true,
       },
       {
@@ -9860,7 +9910,7 @@ export class Game {
       services: 'Refuel and future station services.',
       notices: 'Read local port bulletins.',
       missions: 'Accept local scan and charting contracts.',
-      shipyard: 'Buy missiles, cargo pods, shields, lasers, and future refits.',
+      shipyard: 'Drive refits, tow couplers, crew hypersleep, cargo pods, and defensive fittings.',
       crew: 'Hire crew and assign training points.',
     };
     return summaries[sectionId];

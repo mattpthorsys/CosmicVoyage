@@ -24,10 +24,24 @@ import { validateSpecimen, validateXenobiology } from '../entities/biology/biolo
 import { preservationKit } from '../entities/biology/preservation';
 import { withMatReproduction } from '../entities/biology/propagules';
 import { validateObservatorySnapshot, type ObservatorySnapshot } from './observatory_types';
+import {
+  createHeavyHaulSnapshot,
+  type HeavyHaulSnapshot,
+  type InfrastructureRecord,
+} from './heavy_haul_types';
+import {
+  validateHeavyHaulObjective,
+  validateHeavyHaulSnapshot,
+  validateInfrastructureRecords,
+} from './heavy_haul_validation';
+import { isBiologicalMissionObjective, getHeavyHaulObjective } from './mission_board';
+import { sameHaulAddress } from './heavy_haul_types';
 
-export const SAVE_GAME_VERSION = 17;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v17';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v17';
+export const SAVE_GAME_VERSION = 18;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v18';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v18';
+const VERSION_SEVENTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v17';
+const VERSION_SEVENTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v17';
 const VERSION_SIXTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v16';
 const VERSION_SIXTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v16';
 const VERSION_FIFTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v15';
@@ -89,6 +103,8 @@ export interface PlanetMutationSaveData {
   primaryResource: string | null;
   minedLocations: string[];
   minedLocationAmounts: Record<string, number>;
+  /** Missing legacy values mean no explicit bulk voyage has been applied. */
+  lastAppliedBulkSeconds?: number;
 }
 
 export interface PlanetMutationSaveDataV1 extends Omit<PlanetMutationSaveData, 'discovery'> {
@@ -98,6 +114,7 @@ export interface PlanetMutationSaveDataV1 extends Omit<PlanetMutationSaveData, '
 export interface SystemOrbitSaveData {
   stars: Array<{ id: string; orbitAngle: number | null; systemX: number; systemY: number }>;
   starbase: { orbitAngle: number; systemX: number; systemY: number } | null;
+  lastAppliedBulkSeconds?: number;
 }
 
 export interface LegacyLocationSaveData {
@@ -225,7 +242,15 @@ export interface GameSaveV17 extends Omit<GameSaveV16, 'version'> {
   observatory?: ObservatorySnapshot;
 }
 
-export type GameSave = GameSaveV17;
+export interface GameSaveV18 extends Omit<GameSaveV17, 'version'> {
+  version: 18;
+  heavyHaul: HeavyHaulSnapshot;
+  infrastructure: InfrastructureRecord[];
+  /** Lazy orbital catch-up watermark, not a second game calendar. */
+  bulkAdvanceSeconds: number;
+}
+
+export type GameSave = GameSaveV18;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -274,6 +299,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV15
     | GameSaveV16
     | GameSaveV17
+    | GameSaveV18
   >;
   if (
     record.version !== 1 &&
@@ -292,6 +318,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 14 &&
     record.version !== 15 &&
     record.version !== 16 &&
+    record.version !== 17 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -363,10 +390,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 14:
     case 15:
     case 16:
-      save = { ...(candidate as unknown as GameSaveV12), version: SAVE_GAME_VERSION };
+    case 17:
+      save = migrateV17Save({ ...(candidate as unknown as GameSaveV17), version: 17 });
       break;
     default:
-      save = candidate as unknown as GameSaveV17;
+      save = candidate as unknown as GameSaveV18;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -422,6 +450,73 @@ export function parseGameSave(value: string | unknown): GameSave {
   validateStringArray(save.completedMissionIds, 'completed mission ids');
   validateStringArray(save.tutorialHintsShown, 'tutorial hints');
   validateMissionProgress(save);
+  assertFiniteNumber(save.bulkAdvanceSeconds, 'bulk advance seconds');
+  if (save.bulkAdvanceSeconds < 0 || save.bulkAdvanceSeconds > save.gameClockElapsedSeconds)
+    throw new Error('Save bulk time watermark is invalid.');
+  validateHeavyHaulSnapshot(
+    save.heavyHaul,
+    save.activeMissions,
+    save.completedMissionIds,
+    save.gameClockElapsedSeconds
+  );
+  const recordedBulkSeconds = Object.values(save.heavyHaul.journeyReceipts).reduce(
+    (sum, receipt) => sum + receipt.durationSeconds,
+    0
+  );
+  if (recordedBulkSeconds > save.bulkAdvanceSeconds + 1e-3)
+    throw new Error('Save journey receipts exceed bulk time advanced.');
+  validateInfrastructureRecords(
+    save.infrastructure,
+    save.gameClockElapsedSeconds,
+    save.bulkAdvanceSeconds,
+    save.completedMissionIds
+  );
+  for (const watermark of [
+    save.systemOrbit?.lastAppliedBulkSeconds,
+    ...save.planetMutations.map((mutation) => mutation.lastAppliedBulkSeconds),
+  ])
+    if (
+      watermark !== undefined &&
+      (!Number.isFinite(watermark) || watermark < 0 || watermark > save.bulkAdvanceSeconds)
+    )
+      throw new Error('Save orbital bulk watermark is invalid.');
+  const tow = save.heavyHaul.activeTow;
+  if (
+    tow &&
+    tow.stage !== 'awaiting-pickup' &&
+    (save.location.kind === 'orbit' || save.location.kind === 'planet')
+  )
+    throw new Error('Attached tow cannot be in planetary operations.');
+  if (tow && save.infrastructure.some((asset) => asset.sourceMissionId === tow.missionId))
+    throw new Error('Tow package is already deployed.');
+  if (tow && tow.stage !== 'awaiting-pickup') {
+    const mission = save.activeMissions[tow.missionId];
+    const objective = getHeavyHaulObjective(mission);
+    if (!objective) throw new Error('Attached tow has no canonical haul objective.');
+    const endpoint = tow.stage === 'arrived' ? objective.destination : objective.pickup;
+    if (
+      !sameHaulAddress(save.location, endpoint.systemAddress) ||
+      save.player.position.worldX !== save.location.worldX ||
+      save.player.position.worldY !== save.location.worldY
+    )
+      throw new Error('Attached tow does not match saved system address.');
+    if (
+      save.location.kind === 'starbase' &&
+      (tow.stage === 'arrived' || save.location.stationId !== mission.originStarbaseId)
+    )
+      throw new Error('Attached tow is not parked at its source yard.');
+  }
+  for (const receipt of Object.values(save.heavyHaul.journeyReceipts)) {
+    const asset = save.infrastructure.find((entry) => entry.sourceMissionId === receipt.missionId);
+    if (save.completedMissionIds.includes(receipt.missionId) && !asset)
+      throw new Error('Paid haul has no commissioned installation.');
+    if (
+      asset &&
+      (asset.commissionedAtSeconds < receipt.arrivalSeconds ||
+        asset.lastAppliedBulkSeconds < receipt.durationSeconds)
+    )
+      throw new Error('Installation predates its haul arrival.');
+  }
   validatePlanetMutations(save.planetMutations);
   validateEconomy(save.economy);
   return record.version !== SAVE_GAME_VERSION ? migrateMatReproduction(save) : save;
@@ -630,9 +725,9 @@ function migrateV9Save(save: GameSaveV9): GameSave {
 
 /** Adds empty biological progression without changing current-generation world identities. */
 function migrateV10Save(save: GameSaveV10): GameSave {
-  return {
+  return migrateV17Save({
     ...save,
-    version: SAVE_GAME_VERSION,
+    version: 17,
     xenobiology: createXenobiologySnapshot(),
     player: {
       ...save.player,
@@ -644,12 +739,29 @@ function migrateV10Save(save: GameSaveV10): GameSave {
       },
       ship: { ...save.player.ship, stasisClass: 1 },
     },
-  };
+  });
 }
 
 /** Retains existing specimens and frozen legacy fields while admitting typed biological objectives. */
 function migrateV11Save(save: GameSaveV11): GameSave {
-  return { ...save, version: SAVE_GAME_VERSION };
+  return migrateV17Save({ ...save, version: 17 });
+}
+
+/** Adds empty tow/world ledgers; old specimen stasis never becomes free crew hypersleep. */
+function migrateV17Save(save: GameSaveV17): GameSave {
+  return {
+    ...save,
+    version: SAVE_GAME_VERSION,
+    heavyHaul: createHeavyHaulSnapshot(),
+    infrastructure: [],
+    bulkAdvanceSeconds: 0,
+    player: {
+      ...save.player,
+      ship: { ...save.player.ship, towCouplerClass: 0, hypersleepClass: 0 },
+    },
+    systemOrbit: save.systemOrbit ? { ...save.systemOrbit, lastAppliedBulkSeconds: 0 } : null,
+    planetMutations: save.planetMutations.map((mutation) => ({ ...mutation, lastAppliedBulkSeconds: 0 })),
+  };
 }
 
 /** Migrates a typed local location while retaining only its mode-specific fields. */
@@ -792,6 +904,35 @@ function validatePlayer(player: PlayerSaveData): void {
     throw new Error('Save observatory class is invalid.');
   assertFiniteNumber(ship.damage.hullIntegrity, 'ship hull integrity');
   assertFiniteNumber(ship.damage.maxHullIntegrity, 'ship maximum hull integrity');
+  if (
+    !Number.isInteger(ship.towCouplerClass) ||
+    (ship.towCouplerClass ?? -1) < 0 ||
+    (ship.towCouplerClass ?? 4) > 3
+  )
+    throw new Error('Save tow coupler class is invalid.');
+  if (
+    !Number.isInteger(ship.hypersleepClass) ||
+    (ship.hypersleepClass ?? -1) < 0 ||
+    (ship.hypersleepClass ?? 3) > 2
+  )
+    throw new Error('Save crew hypersleep class is invalid.');
+  assertFiniteNumber(ship.specialBaysOccupied, 'occupied special bays');
+  assertFiniteNumber(ship.superstructure.specialPurposeBays, 'special bay capacity');
+  const minimumOccupiedBays =
+    (ship.surveyEquipmentClass > 0 || (ship.stasisClass ?? 0) > 0 ? 1 : 0) +
+    ((ship.observatoryClass ?? 0) > 0 ? 1 : 0) +
+    ((ship.hypersleepClass ?? 0) > 0 ? 1 : 0);
+  if (
+    !Number.isInteger(ship.specialBaysOccupied) ||
+    ship.specialBaysOccupied < minimumOccupiedBays ||
+    ship.specialBaysOccupied > ship.superstructure.specialPurposeBays
+  )
+    throw new Error('Save special-purpose bay accounting is invalid.');
+  for (const subsystem of ['towCoupler', 'hypersleepBay'] as const) {
+    const damage = ship.damage.subsystemDamage[subsystem] ?? 0;
+    if (!Number.isFinite(damage) || damage < 0 || damage > 100)
+      throw new Error(`Save ${subsystem} damage is invalid.`);
+  }
 }
 
 /** Validates cargo capacity and all stored item quantities. */
@@ -854,7 +995,7 @@ function validateMissionProgress(save: GameSave): void {
             throw new Error('Invalid mission landing coordinates.');
           assertNonEmptyString(surface.siteId, 'mission landing habitat id');
           assertNonEmptyString(surface.label, 'mission landing habitat label');
-          if (objective.kind !== 'scan' && surface.siteId !== objective.siteId)
+          if (isBiologicalMissionObjective(objective) && surface.siteId !== objective.siteId)
             throw new Error('Mission landing habitat does not match its biological objective.');
         }
       }
@@ -891,20 +1032,35 @@ function validateMissionProgress(save: GameSave): void {
           objective.requiredBehaviour === 'defensive-display'
         )
           throw new Error('Invalid non-destructive field-study requirement.');
+      } else if (objective.kind === 'haul') {
+        validateHeavyHaulObjective(objective);
       } else throw new Error('Unsupported mission objective kind.');
-      if (objective.kind !== 'scan' && objective.reference !== undefined)
+      if (isBiologicalMissionObjective(objective) && objective.reference !== undefined)
         validateBiologicalReference(objective.reference);
     }
     if (new Set(mission.objectives.map((objective) => objective.id)).size !== mission.objectives.length)
       throw new Error('Duplicate mission objective identity.');
     if (
-      mission.objectives.some((objective) => objective.kind !== 'scan') &&
+      mission.objectives.some(isBiologicalMissionObjective) &&
       (mission.type !== 'xenobiology' ||
         mission.objectives.length > 4 ||
-        mission.objectives.some((objective) => objective.kind === 'scan') ||
+        mission.objectives.some((objective) => !isBiologicalMissionObjective(objective)) ||
         !mission.originStarbaseId)
     )
       throw new Error('Invalid biological delivery contract.');
+    if (mission.type === 'heavy-haul' || mission.objectives.some((objective) => objective.kind === 'haul')) {
+      if (
+        mission.type !== 'heavy-haul' ||
+        mission.objectives.length !== 1 ||
+        mission.objectives[0].kind !== 'haul' ||
+        !mission.originStarbaseId ||
+        save.activeMissions[mission.id] !== mission ||
+        !save.acceptedMissionIds.includes(mission.id) ||
+        save.readyMissionIds.includes(mission.id) ||
+        (save.missionObjectiveProgress[mission.id]?.length ?? 0) > 0
+      )
+        throw new Error('Invalid heavy-haul contract progression.');
+    }
   }
   for (const [missionId, objectiveIds] of Object.entries(save.missionObjectiveProgress)) {
     if (!save.activeMissions[missionId] || !Array.isArray(objectiveIds)) {
@@ -1074,6 +1230,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_SEVENTEEN_SESSION_SAVE_KEY,
       VERSION_SIXTEEN_SESSION_SAVE_KEY,
       VERSION_FIFTEEN_SESSION_SAVE_KEY,
       VERSION_FOURTEEN_SESSION_SAVE_KEY,
@@ -1101,6 +1258,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_SEVENTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SIXTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FIFTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FOURTEEN_SESSION_SAVE_KEY);
@@ -1124,6 +1282,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_SEVENTEEN_MANUAL_SAVE_KEY,
       VERSION_SIXTEEN_MANUAL_SAVE_KEY,
       VERSION_FIFTEEN_MANUAL_SAVE_KEY,
       VERSION_FOURTEEN_MANUAL_SAVE_KEY,
@@ -1151,6 +1310,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_SEVENTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SIXTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FIFTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FOURTEEN_MANUAL_SAVE_KEY);

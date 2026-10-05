@@ -10,6 +10,7 @@ import { stasisCompatibility } from '../systems/specimen_cargo_system';
 import {
   allocateSpecimenObjectives,
   specimenObjectiveShortfall,
+  isBiologicalMissionObjective,
   type StarbaseMission,
 } from './mission_board';
 import type { MissionProgressService } from './mission_progress';
@@ -254,7 +255,7 @@ export function deliverBiologicalContract(
     !mission ||
     mission.type !== 'xenobiology' ||
     !mission.objectives.length ||
-    mission.objectives.some((objective) => objective.kind === 'scan')
+    mission.objectives.some((objective) => !isBiologicalMissionObjective(objective))
   )
     return { ok: false, message: 'No active biological delivery request.' };
   if (context.station.kind === 'automated-depot')
@@ -272,7 +273,8 @@ export function deliverBiologicalContract(
   );
   const completed = progress.getCompletedObjectiveIds(mission, containers);
   for (const objective of mission.objectives) {
-    if (objective.kind === 'scan') return { ok: false, message: 'Unsupported biological objective.' };
+    if (!isBiologicalMissionObjective(objective))
+      return { ok: false, message: 'Unsupported biological objective.' };
     if (objective.kind === 'biology-behaviour') {
       if (
         !completed.includes(objective.id) ||

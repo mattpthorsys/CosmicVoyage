@@ -6,7 +6,12 @@ import {
   StarbaseMission,
   allocateSpecimenObjectives,
   specimenObjectiveShortfall,
+  isBiologicalMissionObjective,
+  getHeavyHaulObjective,
 } from './mission_board';
+import { sameHaulAddress } from './heavy_haul_types';
+import type { MissionSystemAddress } from './mission_board';
+import { validateHeavyHaulObjective } from './heavy_haul_validation';
 import type { SpecimenContainer } from '../entities/biology/biology_types';
 import type { BehaviourObservationKind } from '../entities/biology/biology_types';
 import { Planet } from '../entities/planet';
@@ -98,7 +103,9 @@ export class MissionProgressService {
               ? `Detailed analysis not recorded: ${objective.targetLabel}.`
               : objective.kind === 'biology-behaviour'
                 ? `Field episode not recorded: ${objective.targetLabel}.`
-                : `Survey incomplete: ${objective.targetLabel}.`,
+                : objective.kind === 'haul'
+                  ? `Deploy the external package at ${objective.destination.systemName}.`
+                  : `Survey incomplete: ${objective.targetLabel}.`,
         ])
     );
   }
@@ -106,8 +113,24 @@ export class MissionProgressService {
   /** Accepts an available mission and returns whether state changed. */
   accept(mission: StarbaseMission): boolean {
     if (this.getStatus(mission) !== 'AVAILABLE') return false;
+    if (mission.type === 'heavy-haul') {
+      const objective = getHeavyHaulObjective(mission);
+      if (
+        !objective ||
+        !mission.id.trim() ||
+        ['__proto__', 'constructor', 'prototype'].includes(mission.id) ||
+        this.getActiveMissions().some((entry) => entry.type === 'heavy-haul')
+      )
+        return false;
+      try {
+        validateHeavyHaulObjective(objective);
+      } catch {
+        return false;
+      }
+    }
     this.acceptedMissionIds.add(mission.id);
-    this.activeMissions[mission.id] = structuredClone(mission);
+    const accepted = structuredClone(mission);
+    this.activeMissions[mission.id] = mission.type === 'heavy-haul' ? freezeHaulTerms(accepted) : accepted;
     this.missionObjectiveProgress[mission.id] = [];
     return true;
   }
@@ -183,7 +206,8 @@ export class MissionProgressService {
   ): StarbaseMission | null {
     const mission = this.activeMissions[missionId];
     const specimens = specimen ? ('id' in specimen ? [specimen] : specimen) : [];
-    if (!mission || this.getStatus(mission, specimens) !== 'READY') return null;
+    if (!mission || mission.type === 'heavy-haul' || this.getStatus(mission, specimens) !== 'READY')
+      return null;
     if (mission.originStarbaseId) {
       if (mission.originStarbaseId !== starbaseId) return null;
     } else if (mission.originStarbaseName !== starbaseName) {
@@ -201,6 +225,38 @@ export class MissionProgressService {
     return this.activeMissions[missionId];
   }
 
+  /** Settles only a haul at its frozen destination; the caller coordinates deployment and credits atomically. */
+  completeHaulAtDestination(
+    missionId: string,
+    address: MissionSystemAddress,
+    siteId: string
+  ): StarbaseMission | null {
+    const mission = this.activeMissions[missionId];
+    const objective = mission && getHeavyHaulObjective(mission);
+    if (
+      !mission ||
+      !objective ||
+      objective.destination.siteId !== siteId ||
+      !sameHaulAddress(objective.destination.systemAddress, address)
+    )
+      return null;
+    this.readyMissionIds.delete(missionId);
+    this.completedMissionIds.add(missionId);
+    delete this.activeMissions[missionId];
+    delete this.missionObjectiveProgress[missionId];
+    return mission;
+  }
+
+  /** Withdraws a haul without a discovery reward; the haul ledger retains its retired offer ID. */
+  cancelHaul(missionId: string): boolean {
+    if (this.activeMissions[missionId]?.type !== 'heavy-haul') return false;
+    this.acceptedMissionIds.delete(missionId);
+    this.readyMissionIds.delete(missionId);
+    delete this.activeMissions[missionId];
+    delete this.missionObjectiveProgress[missionId];
+    return true;
+  }
+
   /** Returns all accepted contracts, including physical deliveries currently ready for return. */
   getActiveMissions(): readonly StarbaseMission[] {
     return Object.values(this.activeMissions);
@@ -215,8 +271,9 @@ export class MissionProgressService {
   /** Supplies reference traits to older accepted contracts from already generated target fields. */
   resolveBiologicalReferences(fields: Readonly<Record<string, EncounterField>>): void {
     for (const mission of this.getActiveMissions()) {
+      if (mission.type === 'heavy-haul') continue;
       mission.objectives = mission.objectives.map((objective) => {
-        if (objective.kind === 'scan' || objective.reference) return objective;
+        if (!isBiologicalMissionObjective(objective) || objective.reference) return objective;
         const species = fields[objective.siteId]?.species.find((entry) => entry.id === objective.speciesId);
         return species ? { ...objective, reference: createBiologicalReference(species) } : objective;
       });
@@ -237,7 +294,9 @@ export class MissionProgressService {
     return Object.values(this.activeMissions).filter((mission) =>
       mission.objectives.some(
         (objective) =>
-          objective.kind !== 'scan' && objective.speciesId === speciesId && objective.siteId === siteId
+          isBiologicalMissionObjective(objective) &&
+          objective.speciesId === speciesId &&
+          objective.siteId === siteId
       )
     );
   }
@@ -271,6 +330,27 @@ export class MissionProgressService {
     this.readyMissionIds = new Set(snapshot.readyMissionIds);
     this.completedMissionIds = new Set(snapshot.completedMissionIds);
     this.activeMissions = structuredClone(snapshot.activeMissions);
+    for (const mission of Object.values(this.activeMissions))
+      if (mission.type === 'heavy-haul') freezeHaulTerms(mission);
     this.missionObjectiveProgress = structuredClone(snapshot.missionObjectiveProgress);
   }
+}
+
+/** Freezes only canonical haul definitions; legacy biological metadata still resolves through its existing path. */
+function freezeHaulTerms(mission: StarbaseMission): StarbaseMission {
+  const objective = getHeavyHaulObjective(mission);
+  if (!objective) return mission;
+  for (const endpoint of [objective.pickup, objective.destination]) {
+    Object.freeze(endpoint.systemAddress);
+    Object.freeze(endpoint.orbit.host);
+    Object.freeze(endpoint.orbit);
+    Object.freeze(endpoint);
+  }
+  Object.freeze(objective.package);
+  Object.freeze(objective.route);
+  Object.freeze(objective);
+  Object.freeze(mission.objectives);
+  if (mission.systemAddress) Object.freeze(mission.systemAddress);
+  Object.freeze(mission);
+  return mission;
 }
