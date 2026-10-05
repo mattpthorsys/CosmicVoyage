@@ -62,7 +62,7 @@ This directory should be treated as the consolidated operational guide.
 
 ## Feature Planning
 
-The bounded first version is implemented. Start with the
+The bounded xenobiology first version is implemented. Start with the
 [current xenobiology guide](../xenobiology.md) for controls, ownership, limits and
 verification. The planning documents preserve its design rationale:
 
@@ -71,3 +71,7 @@ verification. The planning documents preserve its design rationale:
   demand, and programming milestones.
 - [Xenobiology expansion roadmap](../plans/xenobiology-expansion-roadmap.md):
   exploratory extensions and prerequisites beyond the first playable version.
+- [Heavy-haul first-version implementation plan](../plans/heavy-haul-first-version.md):
+  proposed towing contracts, crew hypersleep, contractor support fuel, persistent
+  buoy/depot deployment, and staged programming/verification milestones. This
+  feature is not yet implemented.
