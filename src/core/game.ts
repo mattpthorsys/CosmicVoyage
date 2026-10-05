@@ -59,6 +59,7 @@ import {
   formatMissionDetailSegments,
   generateStarbaseMissions,
   generateStarbaseNotices,
+  getHeavyHaulObjective,
   getMissionStatusLabel,
   matchesSpecimenObjective,
   type MissionStatus,
@@ -70,7 +71,31 @@ import { ScienceLog } from './science_log';
 import { ObservatoryController, type ObservatoryScreenModel } from './observatory';
 import { ObservatoryService } from './observatory_service';
 import { HeavyHaulService } from './heavy_haul_service';
-import { createHeavyHaulSnapshot, type InfrastructureRecord } from './heavy_haul_types';
+import {
+  createHeavyHaulSnapshot,
+  type InfrastructureRecord,
+  type HaulQuoteResult,
+  type HaulResupplyTarget,
+} from './heavy_haul_types';
+import {
+  commitPreparedHaulJourney,
+  prepareHaulJourney,
+  resolveHaulQuoteContext,
+  type HaulJourneyRequest,
+  type HaulJourneyWorld,
+  type PreparedHaulJourney,
+} from './heavy_haul_journey';
+import {
+  capturePlanetMutations,
+  captureSystemOrbit,
+  restorePlanetProgress,
+  restoreSystemOrbits,
+  systemAddress,
+  systemAddressKey,
+  type SystemOrbitHistoryRecord,
+} from './system_orbit_state';
+import { frameToSimulatedSeconds, SIMULATED_SECONDS_PER_REAL_SECOND } from './simulation_time';
+import { getTowLocalStepFactor } from './tow_performance';
 import { getFunctionalHypersleepBerths } from './ship_modifications';
 import { TOW_COUPLERS } from '../constants/heavy_haul';
 import {
@@ -306,6 +331,9 @@ export class Game {
   private _heavyHaulService?: HeavyHaulService;
   private infrastructureRecords: InfrastructureRecord[] = [];
   private bulkAdvanceSeconds = 0;
+  private systemOrbitRegistry?: Map<string, SystemOrbitHistoryRecord>;
+  private materializedOrbitalSystem: SolarSystem | null = null;
+  private journeyCheckpointWriter?: (save: GameSave) => void;
   private observatorySearchSerial = 0;
   private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
@@ -329,7 +357,6 @@ export class Game {
   private biosphereCache?: WeakMap<Planet, { ready: boolean; biosphere: BiosphereDefinition | null }>;
   private habitatSelection = 0;
   private planetMutationRegistry = new Map<string, PlanetMutationSaveData>();
-  private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
   private static readonly GAME_START_UTC_MS = Date.UTC(3015, 0, 1, 0, 0, 0);
   private static readonly SYSTEM_RENDER_INTERVAL_MS = 1000 / 60;
   private static readonly ORBIT_RENDER_INTERVAL_MS = 1000 / 60;
@@ -355,6 +382,97 @@ export class Game {
   /** Keeps tow state tied to the existing canonical mission owner, without generating production offers. */
   private get heavyHaulService(): HeavyHaulService {
     return (this._heavyHaulService ??= new HeavyHaulService(this.missionProgress));
+  }
+
+  /** Lazily owns visited stellar/station phases, including lightweight non-canvas harnesses. */
+  private get orbitalHistory(): Map<string, SystemOrbitHistoryRecord> {
+    return (this.systemOrbitRegistry ??= new Map());
+  }
+
+  /** Gives the application an explicit throwing checkpoint boundary, independent of asynchronous autosave. */
+  setJourneyCheckpointWriter(writer: (save: GameSave) => void): void {
+    this.journeyCheckpointWriter = writer;
+  }
+
+  /** Queries fresh natural worlds without changing generator blueprints or the active system. */
+  private get haulJourneyWorld(): HaulJourneyWorld {
+    return {
+      createSystem: (address) => {
+        if (address.systemSlot !== 0) return null;
+        const properties = this.systemDataGenerator.getSystemProperties(address.worldX, address.worldY, 0);
+        if (!properties.exists || properties.objectKind !== 'stellar') return null;
+        return new SolarSystem(properties, address.worldX, address.worldY, this.gameSeedPRNG);
+      },
+    };
+  }
+
+  /** Supplies the future manifest with current, world-verified capability/fuel information. */
+  quoteHaulJourney(resupply: HaulResupplyTarget): HaulQuoteResult {
+    const active = this.heavyHaulService.createSnapshot().activeTow;
+    const mission = active && this.missionProgress.getMission(active.missionId);
+    const objective = mission && getHeavyHaulObjective(mission);
+    if (!objective) return { ok: false, quote: null, reasons: ['No active heavy-haul contract.'] };
+    try {
+      const context = resolveHaulQuoteContext(
+        this.createSaveGame(),
+        objective.destination.systemAddress,
+        resupply,
+        this.haulJourneyWorld
+      );
+      return this.heavyHaulService.quote(context);
+    } catch (error) {
+      return {
+        ok: false,
+        quote: null,
+        reasons: [error instanceof Error ? error.message : 'Supply route unavailable.'],
+      };
+    }
+  }
+
+  /** Executes a quoted transfer once; preparing or failing its checkpoint changes no physical gameplay state. */
+  departHaulJourney(request: HaulJourneyRequest): { readonly ok: boolean; readonly message: string } {
+    const source = this.stateManager.currentSystem;
+    if (!source) return { ok: false, message: 'Departure requires the contracted source system.' };
+    const prepared = prepareHaulJourney(this.createSaveGame(), source, request, this.haulJourneyWorld);
+    if (!prepared.ok) return prepared;
+    const result = commitPreparedHaulJourney(prepared.journey, this.journeyCheckpointWriter, (journey) =>
+      this.applyHaulArrival(journey)
+    );
+    this.statusMessage = result.message;
+    this._publishStatusUpdate();
+    return result;
+  }
+
+  /** Applies an already validated, durable checkpoint; no world generation or further resource calculations occur here. */
+  private applyHaulArrival(journey: PreparedHaulJourney): void {
+    const save = journey.save;
+    this.gameClockElapsedSeconds = save.gameClockElapsedSeconds;
+    this.bulkAdvanceSeconds = save.bulkAdvanceSeconds;
+    this.planetMutationRegistry = new Map(
+      save.planetMutations.map((entry) => [getPlanetMutationKey(entry), cloneSaveValue(entry)])
+    );
+    this.systemOrbitRegistry = new Map(
+      save.systemOrbitHistory.map((entry) => [systemAddressKey(entry), cloneSaveValue(entry)])
+    );
+    this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
+    this.player.position = cloneSaveValue(save.player.position);
+    this.player.render = cloneSaveValue(save.player.render);
+    // The prepared destination already includes its voyage epoch. Do not recapture the departed source at the new clock.
+    this.materializedOrbitalSystem = journey.system;
+    this.currentZoomLevelIndex = DEFAULT_SYSTEM_ZOOM_INDEX;
+    this.inputManager.clearState();
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    this.hyperspaceSurveyService.clearCache();
+    this.renderer.invalidateWorldScene();
+    this.renderer.clearOverlay();
+    this.lastMainRenderSignature = '';
+    this.autoScannedSystemName = null;
+    this.travelMode.targetMenuSelection = 0;
+    this.travelMode.targetMenuOffset = 0;
+    this.stateManager.installHaulArrival(journey.system, journey.position);
+    this.lastUpdateTime = performance.now();
+    this.forceFullRender = true;
   }
 
   /** Returns the paused instrument controller, including lightweight non-canvas harnesses. */
@@ -1198,12 +1316,17 @@ export class Game {
     this.player = new Player(CONFIG.PLAYER_START_X, CONFIG.PLAYER_START_Y, CONFIG.PLAYER_CHAR, initialSeed);
     this.inputManager = new InputManager();
     this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this.systemDataGenerator);
+    this.stateManager.setTowPolicy(() => this._heavyHaulService?.attachedTowPolicy ?? null);
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
     this.terminalOverlay = new TerminalOverlay(); // Initialize terminal overlay
     this.astrometricOverlay = new AstrometricOverlay(this.systemDataGenerator, this.hyperspaceSurveyService);
 
     // Instantiate systems
-    this.movementSystem = new MovementSystem(this.player);
+    this.movementSystem = new MovementSystem(
+      this.player,
+      () => this._heavyHaulService?.attachedTowPolicy?.wetMassKg ?? 0,
+      () => this.stateManager.state
+    );
     this.cargoSystem = new CargoSystem();
     this.miningSystem = new MiningSystem(this.player, this.stateManager, this.cargoSystem);
 
@@ -1272,24 +1395,8 @@ export class Game {
         ship: this.player.ship,
       }),
       location: this.createLocationSaveData(),
-      systemOrbit: system
-        ? {
-            lastAppliedBulkSeconds: this.bulkAdvanceSeconds ?? 0,
-            stars: system.stars.map((star) => ({
-              id: star.id,
-              orbitAngle: star.orbit?.angle ?? null,
-              systemX: star.systemX,
-              systemY: star.systemY,
-            })),
-            starbase: system.starbase
-              ? {
-                  orbitAngle: system.starbase.orbitAngle,
-                  systemX: system.starbase.systemX,
-                  systemY: system.starbase.systemY,
-                }
-              : null,
-          }
-        : null,
+      systemOrbit: system ? captureSystemOrbit(system) : null,
+      systemOrbitHistory: cloneSaveValue([...this.orbitalHistory.values()]),
       planetMutations,
       ...this.missionProgress.createSnapshot(),
       catalogueDiscoveries: this.scanService.createSnapshot(),
@@ -1312,6 +1419,20 @@ export class Game {
     // Restore world records before location resolution; M4 will materialise their service overlay here.
     this.infrastructureRecords = isLegacyGalaxyMigration ? [] : cloneSaveValue(save.infrastructure);
     this.bulkAdvanceSeconds = isLegacyGalaxyMigration ? 0 : save.bulkAdvanceSeconds;
+    this.systemOrbitRegistry = new Map(
+      (isLegacyGalaxyMigration ? [] : save.systemOrbitHistory).map((entry) => [
+        systemAddressKey(entry),
+        cloneSaveValue(entry),
+      ])
+    );
+    if (!isLegacyGalaxyMigration && save.location.kind !== 'hyperspace' && save.systemOrbit)
+      this.orbitalHistory.set(systemAddressKey(save.location), {
+        worldX: save.location.worldX,
+        worldY: save.location.worldY,
+        systemSlot: save.location.systemSlot,
+        orbit: cloneSaveValue(save.systemOrbit),
+      });
+    this.materializedOrbitalSystem = null;
     this.planetMutationRegistry = isLegacyGalaxyMigration
       ? new Map()
       : new Map(
@@ -1349,21 +1470,7 @@ export class Game {
       wasRelocatedFromLegacySystem = true;
     }
     if (system) {
-      this.applyPlanetMutations(system, true);
-      if (save.systemOrbit && !isLegacyGalaxyMigration) {
-        for (const starState of save.systemOrbit.stars) {
-          const star = system.stars.find((candidate) => candidate.id === starState.id);
-          if (!star) continue;
-          if (star.orbit && starState.orbitAngle !== null) star.orbit.angle = starState.orbitAngle;
-          star.systemX = starState.systemX;
-          star.systemY = starState.systemY;
-        }
-        if (system.starbase && save.systemOrbit.starbase) {
-          system.starbase.orbitAngle = save.systemOrbit.starbase.orbitAngle;
-          system.starbase.systemX = save.systemOrbit.starbase.systemX;
-          system.starbase.systemY = save.systemOrbit.starbase.systemY;
-        }
-      }
+      this.prepareMaterializedSystem(system);
     }
 
     this.player.position = cloneSaveValue(save.player.position);
@@ -1443,50 +1550,27 @@ export class Game {
   }
 
   /** Captures mutable planet state from the active generated system into the persistent registry. */
-  private captureCurrentPlanetMutations(): void {
-    const system = this.stateManager.currentSystem;
+  private captureCurrentPlanetMutations(system: SolarSystem | null = this.stateManager.currentSystem): void {
     if (!system) return;
-    for (const { path, planet } of getSystemPlanetPaths(system)) {
-      const mutation: PlanetMutationSaveData = {
-        lastAppliedBulkSeconds: this.bulkAdvanceSeconds ?? 0,
-        worldX: system.starX,
-        worldY: system.starY,
-        systemSlot: system.systemSlot,
-        bodyPath: path,
-        orbitAngle: planet.orbitAngle,
-        systemX: planet.systemX,
-        systemY: planet.systemY,
-        discovery: { ...planet.discovery },
-        primaryResource: planet.primaryResource,
-        minedLocations: [...planet.minedLocations],
-        minedLocationAmounts: { ...planet.minedLocationAmounts },
-      };
+    for (const mutation of capturePlanetMutations(system)) {
       this.planetMutationRegistry.set(getPlanetMutationKey(mutation), mutation);
     }
+    const address = systemAddress(system);
+    this.orbitalHistory.set(systemAddressKey(address), { ...address, orbit: captureSystemOrbit(system) });
   }
 
-  /** Applies saved scan, mining, and orbital deltas to a regenerated system. */
-  private applyPlanetMutations(system: SolarSystem, restoreOrbit: boolean = false): void {
-    for (const { path, planet } of getSystemPlanetPaths(system)) {
-      const mutation = this.planetMutationRegistry.get(
-        getPlanetMutationKey({
-          worldX: system.starX,
-          worldY: system.starY,
-          systemSlot: system.systemSlot,
-          bodyPath: path,
-        })
-      );
-      if (!mutation) continue;
-      if (restoreOrbit) {
-        planet.orbitAngle = mutation.orbitAngle;
-        planet.systemX = mutation.systemX;
-        planet.systemY = mutation.systemY;
-      }
-      planet.discovery = { ...mutation.discovery };
-      planet.primaryResource = mutation.primaryResource;
-      planet.minedLocations = new Set(mutation.minedLocations);
-      planet.minedLocationAmounts = { ...mutation.minedLocationAmounts };
-    }
+  /** Applies history and missing bulk time once per materialised instance, not once per mode change. */
+  private prepareMaterializedSystem(system: SolarSystem): void {
+    if (this.materializedOrbitalSystem === system) return;
+    const mutations = [...this.planetMutationRegistry.values()];
+    restorePlanetProgress(system, mutations);
+    restoreSystemOrbits(
+      system,
+      this.orbitalHistory.get(systemAddressKey(systemAddress(system)))?.orbit,
+      mutations,
+      this.bulkAdvanceSeconds ?? 0
+    );
+    this.materializedOrbitalSystem = system;
   }
 
   /** Pauses simulation and keyboard handling while retaining the current game instance. */
@@ -1520,8 +1604,11 @@ export class Game {
     this.lastHyperspaceUpdateSignature = '';
     this.lastHyperspaceUpdateStatus = '';
     logger.info(`[Game] State change event received: ${newState}. Forcing full render.`);
+    if (this.materializedOrbitalSystem && this.materializedOrbitalSystem !== this.stateManager.currentSystem)
+      this.captureCurrentPlanetMutations(this.materializedOrbitalSystem);
+    if (!this.stateManager.currentSystem) this.materializedOrbitalSystem = null;
     if (this.stateManager.currentSystem) {
-      this.applyPlanetMutations(this.stateManager.currentSystem);
+      this.prepareMaterializedSystem(this.stateManager.currentSystem);
       if (newState === 'system') {
         const system = this.stateManager.currentSystem;
         this.scanService.resolveCatalogueTarget(
@@ -4604,7 +4691,7 @@ export class Game {
       this.forceFullRender = true;
     }
     if (!this.isGameClockPaused()) {
-      this.gameClockElapsedSeconds += deltaTime * Game.SIMULATED_SECONDS_PER_REAL_SECOND;
+      this.gameClockElapsedSeconds += frameToSimulatedSeconds(deltaTime);
     }
 
     // --- Update Popup Animation ---
@@ -7499,7 +7586,12 @@ export class Game {
 
     const step = Math.min(
       distance - desiredDistance,
-      CONFIG.SYSTEM_MOVE_INCREMENT * this.getSystemCursorMoveSpeedMultiplier()
+      CONFIG.SYSTEM_MOVE_INCREMENT *
+        this.getSystemCursorMoveSpeedMultiplier() *
+        getTowLocalStepFactor(
+          this._heavyHaulService?.attachedTowPolicy?.wetMassKg ?? 0,
+          this.player.ship.engineClass
+        )
     );
     this.player.position.systemX += (dx / distance) * step;
     this.player.position.systemY += (dy / distance) * step;
@@ -8820,6 +8912,7 @@ export class Game {
   /** Returns current available actions. */
   private getCurrentAvailableActions(): AvailableAction[] {
     const state = this.stateManager.state;
+    const attachedTow = this._heavyHaulService?.attachedTowPolicy ?? null;
     if (state === 'hyperspace') {
       const currentProps = this.systemDataGenerator.getSystemMapProperties(
         this.player.position.worldX,
@@ -8835,6 +8928,7 @@ export class Game {
         : null;
       return createAvailableActions({
         state,
+        attachedTow,
         player: this.player,
         system: null,
         planet: null,
@@ -8849,6 +8943,7 @@ export class Game {
       if (!system) {
         return createAvailableActions({
           state,
+          attachedTow,
           player: this.player,
           system: null,
           planet: null,
@@ -8867,6 +8962,7 @@ export class Game {
       const selectedTarget = this.getSelectedTarget();
       return createAvailableActions({
         state,
+        attachedTow,
         player: this.player,
         system,
         planet: null,
@@ -8882,6 +8978,7 @@ export class Game {
     if (state === 'planet') {
       return createAvailableActions({
         state,
+        attachedTow,
         player: this.player,
         system: this.stateManager.currentSystem,
         planet: this.stateManager.currentPlanet,
@@ -8892,6 +8989,7 @@ export class Game {
     if (state === 'orbit') {
       return createAvailableActions({
         state,
+        attachedTow,
         player: this.player,
         system: this.stateManager.currentSystem,
         planet: this.getSelectedOrbitBody(),
@@ -8904,6 +9002,7 @@ export class Game {
       : [];
     return createAvailableActions({
       state,
+      attachedTow,
       player: this.player,
       system: this.stateManager.currentSystem,
       planet: null,
@@ -8955,7 +9054,7 @@ export class Game {
       parent,
       this.stateManager.currentSystem?.stars ?? [],
       this.statusMessage,
-      Game.SIMULATED_SECONDS_PER_REAL_SECOND
+      SIMULATED_SECONDS_PER_REAL_SECOND
     );
     const biosphere = this.getBiosphere(base.selectedBody);
     const surveyedBiosphere = hasDiscoveryLevel(base.selectedBody.discovery.level, 'surveyed') && biosphere;

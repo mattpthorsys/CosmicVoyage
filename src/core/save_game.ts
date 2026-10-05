@@ -36,10 +36,13 @@ import {
 } from './heavy_haul_validation';
 import { isBiologicalMissionObjective, getHeavyHaulObjective } from './mission_board';
 import { sameHaulAddress } from './heavy_haul_types';
+import type { SystemOrbitHistoryRecord } from './system_orbit_state';
 
-export const SAVE_GAME_VERSION = 18;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v18';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v18';
+export const SAVE_GAME_VERSION = 19;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v19';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v19';
+const VERSION_EIGHTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v18';
+const VERSION_EIGHTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v18';
 const VERSION_SEVENTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v17';
 const VERSION_SEVENTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v17';
 const VERSION_SIXTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v16';
@@ -250,7 +253,13 @@ export interface GameSaveV18 extends Omit<GameSaveV17, 'version'> {
   bulkAdvanceSeconds: number;
 }
 
-export type GameSave = GameSaveV18;
+export interface GameSaveV19 extends Omit<GameSaveV18, 'version'> {
+  version: 19;
+  /** Visited stellar/station phases survive leaving their local system. */
+  systemOrbitHistory: SystemOrbitHistoryRecord[];
+}
+
+export type GameSave = GameSaveV19;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -300,6 +309,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV16
     | GameSaveV17
     | GameSaveV18
+    | GameSaveV19
   >;
   if (
     record.version !== 1 &&
@@ -319,6 +329,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 15 &&
     record.version !== 16 &&
     record.version !== 17 &&
+    record.version !== 18 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -393,8 +404,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 17:
       save = migrateV17Save({ ...(candidate as unknown as GameSaveV17), version: 17 });
       break;
+    case 18:
+      save = migrateV18Save(candidate as unknown as GameSaveV18);
+      break;
     default:
-      save = candidate as unknown as GameSaveV18;
+      save = candidate as unknown as GameSaveV19;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -453,6 +467,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   assertFiniteNumber(save.bulkAdvanceSeconds, 'bulk advance seconds');
   if (save.bulkAdvanceSeconds < 0 || save.bulkAdvanceSeconds > save.gameClockElapsedSeconds)
     throw new Error('Save bulk time watermark is invalid.');
+  validateSystemOrbitHistory(save);
   validateHeavyHaulSnapshot(
     save.heavyHaul,
     save.activeMissions,
@@ -484,7 +499,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   if (
     tow &&
     tow.stage !== 'awaiting-pickup' &&
-    (save.location.kind === 'orbit' || save.location.kind === 'planet')
+    (save.location.kind === 'orbit' || save.location.kind === 'planet' || save.location.kind === 'hyperspace')
   )
     throw new Error('Attached tow cannot be in planetary operations.');
   if (tow && save.infrastructure.some((asset) => asset.sourceMissionId === tow.missionId))
@@ -540,9 +555,12 @@ function validateSystemOrbit(systemOrbit: unknown): asserts systemOrbit is Syste
   if (!isRecord(systemOrbit) || !Array.isArray(systemOrbit.stars)) {
     throw new Error('Save system orbit state is invalid.');
   }
+  const ids = new Set<string>();
   for (const star of systemOrbit.stars) {
     if (!isRecord(star)) throw new Error('Save stellar orbit state is invalid.');
     assertNonEmptyString(star.id, 'stellar orbit id');
+    if (ids.has(star.id)) throw new Error('Save contains duplicate stellar orbit ids.');
+    ids.add(star.id);
     if (star.orbitAngle !== null) assertFiniteNumber(star.orbitAngle, 'stellar orbit angle');
     assertFiniteNumber(star.systemX, 'stellar orbit systemX');
     assertFiniteNumber(star.systemY, 'stellar orbit systemY');
@@ -552,6 +570,60 @@ function validateSystemOrbit(systemOrbit: unknown): asserts systemOrbit is Syste
   assertFiniteNumber(systemOrbit.starbase.orbitAngle, 'station orbit angle');
   assertFiniteNumber(systemOrbit.starbase.systemX, 'station orbit systemX');
   assertFiniteNumber(systemOrbit.starbase.systemY, 'station orbit systemY');
+}
+
+/** Rejects duplicate addresses and future epochs without trusting current-system aliases. */
+function validateSystemOrbitHistory(save: GameSave): void {
+  if (!Array.isArray(save.systemOrbitHistory) || save.systemOrbitHistory.length > 65536)
+    throw new Error('Save system orbital history is invalid.');
+  const keys = new Set<string>();
+  for (const entry of save.systemOrbitHistory) {
+    if (!isRecord(entry)) throw new Error('Save system orbital history entry is invalid.');
+    validateLocation({
+      kind: 'system',
+      worldX: entry.worldX,
+      worldY: entry.worldY,
+      systemSlot: entry.systemSlot,
+    });
+    const key = `${entry.worldX},${entry.worldY},${entry.systemSlot}`;
+    if (keys.has(key)) throw new Error('Save contains duplicate system orbital history.');
+    keys.add(key);
+    validateSystemOrbit(entry.orbit);
+    if (!entry.orbit) throw new Error('Save orbital history has no phases.');
+    const watermark = entry.orbit.lastAppliedBulkSeconds ?? 0;
+    if (!Number.isFinite(watermark) || watermark < 0 || watermark > save.bulkAdvanceSeconds)
+      throw new Error('Save orbital history bulk watermark is invalid.');
+    if (
+      save.location.kind !== 'hyperspace' &&
+      sameHaulAddress(entry, save.location) &&
+      save.systemOrbit &&
+      !sameSystemOrbitSnapshot(entry.orbit, save.systemOrbit)
+    )
+      throw new Error('Current orbital phases disagree with saved system history.');
+  }
+}
+
+/** Compares authoritative phases by values, independent of JSON property order. */
+function sameSystemOrbitSnapshot(a: SystemOrbitSaveData, b: SystemOrbitSaveData): boolean {
+  return (
+    (a.lastAppliedBulkSeconds ?? 0) === (b.lastAppliedBulkSeconds ?? 0) &&
+    a.stars.length === b.stars.length &&
+    a.stars.every((star) =>
+      b.stars.some(
+        (other) =>
+          star.id === other.id &&
+          star.orbitAngle === other.orbitAngle &&
+          star.systemX === other.systemX &&
+          star.systemY === other.systemY
+      )
+    ) &&
+    (a.starbase === null
+      ? b.starbase === null
+      : b.starbase !== null &&
+        a.starbase.orbitAngle === b.starbase.orbitAngle &&
+        a.starbase.systemX === b.starbase.systemX &&
+        a.starbase.systemY === b.starbase.systemY)
+  );
 }
 
 /** Migrates binary scan progress from a version-one save into layered discovery state. */
@@ -749,9 +821,9 @@ function migrateV11Save(save: GameSaveV11): GameSave {
 
 /** Adds empty tow/world ledgers; old specimen stasis never becomes free crew hypersleep. */
 function migrateV17Save(save: GameSaveV17): GameSave {
-  return {
+  return migrateV18Save({
     ...save,
-    version: SAVE_GAME_VERSION,
+    version: 18,
     heavyHaul: createHeavyHaulSnapshot(),
     infrastructure: [],
     bulkAdvanceSeconds: 0,
@@ -761,6 +833,25 @@ function migrateV17Save(save: GameSaveV17): GameSave {
     },
     systemOrbit: save.systemOrbit ? { ...save.systemOrbit, lastAppliedBulkSeconds: 0 } : null,
     planetMutations: save.planetMutations.map((mutation) => ({ ...mutation, lastAppliedBulkSeconds: 0 })),
+  });
+}
+
+/** Retains existing haul receipts/equipment while seeding visited phases from the active v18 system. */
+function migrateV18Save(save: GameSaveV18): GameSave {
+  return {
+    ...save,
+    version: SAVE_GAME_VERSION,
+    systemOrbitHistory:
+      save.systemOrbit && save.location.kind !== 'hyperspace'
+        ? [
+            {
+              worldX: save.location.worldX,
+              worldY: save.location.worldY,
+              systemSlot: save.location.systemSlot,
+              orbit: structuredClone(save.systemOrbit),
+            },
+          ]
+        : [],
   };
 }
 
@@ -1230,6 +1321,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_EIGHTEEN_SESSION_SAVE_KEY,
       VERSION_SEVENTEEN_SESSION_SAVE_KEY,
       VERSION_SIXTEEN_SESSION_SAVE_KEY,
       VERSION_FIFTEEN_SESSION_SAVE_KEY,
@@ -1258,6 +1350,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_EIGHTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SEVENTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SIXTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_FIFTEEN_SESSION_SAVE_KEY);
@@ -1282,6 +1375,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_EIGHTEEN_MANUAL_SAVE_KEY,
       VERSION_SEVENTEEN_MANUAL_SAVE_KEY,
       VERSION_SIXTEEN_MANUAL_SAVE_KEY,
       VERSION_FIFTEEN_MANUAL_SAVE_KEY,
@@ -1310,6 +1404,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_EIGHTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SEVENTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SIXTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_FIFTEEN_MANUAL_SAVE_KEY);

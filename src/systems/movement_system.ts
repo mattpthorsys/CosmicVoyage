@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from '../core/event_manager';
 import { getEngineFuelUseMultiplier } from '../core/ship_modifications';
 import { getOperationalCapabilities } from '../core/operational_capabilities';
+import { getTowLocalStepFactor } from '../core/tow_performance';
 
 // Define or import the event data structure expected by handleMoveRequest
 export interface MoveRequestData {
@@ -27,7 +28,11 @@ export class MovementSystem {
   private readonly unsubscribeMoveRequest: Unsubscribe;
 
   /** Initializes MovementSystem. */
-  constructor(player: Player) {
+  constructor(
+    player: Player,
+    private readonly getAttachedMassKg: () => number = () => 0,
+    private readonly getCurrentState?: () => GameState
+  ) {
     this.player = player;
     logger.info('[MovementSystem] Initialized.');
     // Subscribe to the move request event
@@ -42,6 +47,20 @@ export class MovementSystem {
     // Basic validation of received data
     if (!data || typeof data.dx !== 'number' || typeof data.dy !== 'number' || !data.context) {
       logger.warn('[MovementSystem] Received invalid or incomplete move request data:', data);
+      return;
+    }
+    if (this.getCurrentState && data.context !== this.getCurrentState()) {
+      eventManager.publish(GameEvents.ACTION_FAILED, {
+        action: 'move',
+        reason: 'Movement context has changed.',
+      });
+      return;
+    }
+    if (this.getAttachedMassKg() > 0 && (data.context === 'hyperspace' || data.context === 'planet')) {
+      eventManager.publish(GameEvents.ACTION_FAILED, {
+        action: 'move',
+        reason: 'External tow attached: use the quoted haul voyage or contractor recovery.',
+      });
       return;
     }
 
@@ -161,7 +180,10 @@ export class MovementSystem {
     // Scale movement with the current system view so one input step remains
     // useful at both close and wide zoom levels.
     const moveScale =
-      CONFIG.SYSTEM_MOVE_INCREMENT * (isFineControl ? CONFIG.FINE_CONTROL_FACTOR : 1) * speedMultiplier;
+      CONFIG.SYSTEM_MOVE_INCREMENT *
+      (isFineControl ? CONFIG.FINE_CONTROL_FACTOR : 1) *
+      speedMultiplier *
+      getTowLocalStepFactor(this.getAttachedMassKg(), this.player.ship.engineClass);
 
     // System coordinates are stored in meters.
     position.systemX += dx * moveScale;

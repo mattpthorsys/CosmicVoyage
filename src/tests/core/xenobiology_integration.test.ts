@@ -160,6 +160,7 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
       orbitReferencePath: 'planet:0',
     },
     systemOrbit: null,
+    systemOrbitHistory: [],
     planetMutations: [],
     acceptedMissionIds: [],
     readyMissionIds: [],

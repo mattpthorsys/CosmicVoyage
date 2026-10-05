@@ -99,6 +99,7 @@ export class ApplicationController {
     this.destroyCurrentGame();
     try {
       this.game = new Game('gameCanvas', 'statusBar', seed);
+      this.game.setJourneyCheckpointWriter((checkpoint) => this.storage.saveSession(checkpoint));
       if (save) this.game.restoreSaveGame(save);
       this.splash.hidden = true;
       this.titleRenderer.stop();

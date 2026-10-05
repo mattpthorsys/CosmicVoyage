@@ -42,6 +42,13 @@ function reusedCanvas() {
 }
 
 describe('renderer buffer lifecycle', () => {
+  it('invalidates projected scene caches after a discontinuous world arrival', () => {
+    const { facade } = reusedCanvas();
+    facade.invalidateWorldScene();
+    expect((facade as any).sceneRenderer.clearCaches).toHaveBeenCalledOnce();
+    expect((facade as any).nebulaRenderer.clearCache).not.toHaveBeenCalled();
+    expect(facade.consumeLayoutInvalidation()).toBe(true);
+  });
   it('initialises a fresh logical buffer even when physical canvas dimensions already match', () => {
     const { facade, buffer, canvas, ctx, cols, rows } = reusedCanvas();
     const before = [canvas.width, canvas.height];

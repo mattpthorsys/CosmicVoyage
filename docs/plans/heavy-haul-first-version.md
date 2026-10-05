@@ -1,8 +1,10 @@
 # Heavy-Haul Contracts: First-Version Implementation Plan
 
-Status: proposed, not implemented. Baseline inspected on 2026-10-05: save schema
-17 and Galaxy model 8. Recheck these versions before implementation; do not
-overwrite migrations introduced by intervening work.
+Status: M0-M2 implemented and verified; M3 implementation and regression tests
+written, awaiting the Luna verification gate. M4 onwards remain planned.
+Baseline inspected on 2026-10-05: save schema 17 and Galaxy model 8; the M3
+working tree uses schema 19 and retains Galaxy model 8. Do not overwrite
+migrations introduced by intervening work.
 
 This plan adds a playable infrastructure-delivery loop to the current game,
 not a general towing physics engine. The implementation should leave existing

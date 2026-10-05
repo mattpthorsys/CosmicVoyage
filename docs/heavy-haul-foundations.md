@@ -1,15 +1,16 @@
 # Heavy-Haul Foundations
 
-M0-M2 build rules, lifecycle, fitting, and persistence only. Production haul
-offers remain unavailable until journey execution and useful commissioning are
-implemented in M3-M5. No real-time towing physics or cargo-mass overhaul is
-part of these foundations.
+M0-M2 establish rules, lifecycle, fitting, and persistence. M3 adds supported
+journey execution and analytic time advancement; its verification gate is
+pending. Production haul offers remain unavailable until useful commissioning
+and the playable contract interface are implemented in M4-M5. No real-time
+towing physics or cargo-mass overhaul is part of these foundations.
 
 ## Integration Inventory
 
 - `MovementSystem` owns discrete hyperspace steps and system cursor movement;
   `Game.updateApproachAssist` also directly changes local coordinates. Apply
-  future tow handling to both, and guard hyperspace requests at their owner.
+  tow handling to both, and guard hyperspace requests at their owner (M3).
 - `mission_board`, `mission_progress`, `mission_navigation`, `mission_journal`,
   `biological_mission_guidance`, `biological_contracts`, `science_log`, and
   `comparative_biology` must distinguish biology positively, not by excluding scan.
@@ -18,8 +19,8 @@ part of these foundations.
   resolution are M4 work, not a reason to alter generation in M0-M2.
 - `Game.restoreSaveGame` materialises the location before restoring missions.
   M4 must restore deployment records before resolving a docked deployed depot.
-- `Game` and `SolarSystem` duplicate frame-to-simulation time conversion. M3
-  introduces explicit bulk seconds and catch-up without changing untowed zoom.
+- `simulation_time` now owns the shared frame conversion. M3 introduces
+  explicit bulk seconds and catch-up without changing untowed zoom.
 - Save storage uses versioned keys and legacy fallback. Every schema increase
   must include migration, fallback, and clearing of the immediately prior key.
 
@@ -52,7 +53,11 @@ or reward. Better drives must improve the same quoted job.
 - M1: typed quote rules, frozen accepted terms, attachment/recovery, receipt
   validation, and prepared destination settlement written in focused services.
 - M2: shipyard fitting, itemised repair, and version-18 save support written.
-- `npm run check` passes: documentation checks, formatting, lint, app and test
+- M3: prepared arrival checkpoints, bulk-time/orbital catch-up, manual/assisted
+  tow handling, travel restrictions, and version-19 migration written. New
+  regression tests are written but have not been executed; switch to Luna
+  before verification, and commit M3 only after its gate passes.
+- M0-M2 `npm run check` passed: documentation checks, formatting, lint, app and test
   typechecks, all 981 tests, and the production build.
 - Headless Chrome confirms that the running application loads and renders its
   title scene. Playwright is unavailable here, so no interactive shipyard browser
@@ -73,16 +78,59 @@ or reward. Better drives must improve the same quoted job.
   accounting, identity, and future installation-record validation.
 - `core/ship_modifications.ts`: real yard options, one-bay hypersleep upgrades,
   external couplers, drive classes 2-3, and module repair faults.
-- `core/save_game.ts`: schema 18, explicit migration from 17, old storage-key
-  fallback/clearing, empty default ledgers, and cross-owner validation.
-- `core/game.ts`: persistence plumbing and fitting readouts only. No production
-  haul board, transit UI, bulk-time execution, or infrastructure overlay yet.
+- `core/simulation_time.ts`: the unchanged frame scale, validated bulk clock
+  preparation, and modulo-reduced orbital phases in simulated seconds.
+- `core/system_orbit_state.ts`: visited stellar/station phases and per-body
+  bulk watermarks, independent of natural generator blueprints.
+- `core/heavy_haul_journey.ts`: real onward-supply checks, source staging,
+  current quote revalidation, disposable destination preparation, safe arrival,
+  and checkpoint-before-application coordination.
+- `core/save_game.ts`: schema 19, migrations from 17/18, prior-key fallback and
+  clearing, orbital-history validation, and cross-owner checks.
+- `core/game.ts`: `quoteHaulJourney` and `departHaulJourney` orchestrate future
+  manifest commands; ApplicationController provides a throwing session writer.
+  No production haul board, transit UI, or infrastructure overlay yet.
 
 The baseline movement, quote, lifecycle, fitting, save, and biological regression
 tests have passed together with `npm run check`. Contracts themselves remain
-future M3-M5 work. M0 is committed independently; M1 and M2 are kept together
+future M4-M5 work. M0 is committed independently; M1 and M2 are kept together
 because typed objectives, save schema, equipment, and game save plumbing depend
 on the same versioned state contract.
+
+## M3 Time And Transaction Policy
+
+Preparation constructs a fresh destination, validates its full address and
+stable stellar host, computes the current quote, and produces one durable
+arrival save. The writer must succeed before Game applies the receipt, calendar,
+position, and support-fuel ledger. Storage failure leaves live position,
+orbital phases, normal resources, and attachment unchanged. The next departure
+attempt prepares/revalidates again; an arrived stage cannot depart a second time.
+
+Both the calendar and cumulative bulk watermark increase by the quoted
+simulated seconds once. The destination catches up immediately, while the
+departed/other visited systems retain their last-applied epoch and catch up only
+on materialisation. Unvisited systems start at bulk epoch zero. Saved body
+watermarks may differ from saved stellar watermarks on old voyages; only each
+body's missing interval is added before reconstructing host-relative positions.
+Existing real-frame/zoom behaviour is otherwise retained; this is not a universal
+absolute ephemeris redesign.
+
+Normal ship fuel is unchanged by transit. Support consumption comes solely from
+the package ledger. M3 requires an actual existing fuel station for onward
+safety; the commissioned-depot allowance remains M4 work. Crew, specimens,
+surface encounters, market stock, and ordinary non-expiring missions do not
+undergo years of catch-up simulation.
+
+Local transfers depart near the pickup site and arrive outside commissioning
+range. Intersystem transfers depart at the source boundary and arrive at a
+checked entry position. Final approach remains manual/assisted and uses the
+same bounded mass modifier in both paths. Attached packages cannot use ordinary
+hyperspace travel or planetary landing; the source yard may park the package
+externally for repairs until departure. Recovery retains its no-payment policy.
+
+Arrival clears held inputs, approach/selection state, terminal/HUD annotations,
+survey caches, and projected-scene caches. Cosmetic effects never advance the
+voyage clock.
 
 The full design and later stages are in
 [the implementation plan](plans/heavy-haul-first-version.md).

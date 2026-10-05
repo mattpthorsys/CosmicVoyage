@@ -11,6 +11,8 @@ import { logger } from '../utils/logger';
 import { eventManager, GameEvents, Unsubscribe } from './event_manager';
 import { isNavigablePhenomenon, SystemDataGenerator } from '../generation/system_data_generator';
 import { findSystemPlanetByPath, LocationSaveData } from './save_game';
+import { sameHaulAddress, type AttachedTowPolicy } from './heavy_haul_types';
+import { systemAddress } from './system_orbit_state';
 
 // Define GameState type here or import from a shared types file
 export type GameState = 'hyperspace' | 'system' | 'orbit' | 'planet' | 'starbase';
@@ -47,6 +49,8 @@ export class GameStateManager {
   private gameSeedPRNG: PRNG;
   private systemDataGenerator: SystemDataGenerator;
   private readonly eventUnsubscribers: Unsubscribe[];
+  /** Attachment restrictions are queried from the canonical haul owner at command time. */
+  private towPolicy: () => AttachedTowPolicy | null = () => null;
 
   /** Initializes GameStateManager. */
   constructor(player: Player, gameSeedPRNG: PRNG, systemDataGenerator: SystemDataGenerator) {
@@ -93,6 +97,29 @@ export class GameStateManager {
   /** Returns current starbase. */
   get currentStarbase(): Starbase | null {
     return this._currentStarbase;
+  }
+
+  /** Installs the canonical attachment query so direct events cannot bypass towing restrictions. */
+  setTowPolicy(provider: () => AttachedTowPolicy | null): void {
+    this.towPolicy = provider;
+  }
+
+  /** Installs a fully prepared, checkpointed arrival without regenerating the destination or charging entry fuel. */
+  installHaulArrival(system: SolarSystem, position: { x: number; y: number }): void {
+    this.player.position.worldX = system.starX;
+    this.player.position.worldY = system.starY;
+    this.player.position.systemX = position.x;
+    this.player.position.systemY = position.y;
+    this.player.render.directionGlyph = GLYPHS.SHIP_NORTH;
+    this.player.render.char = GLYPHS.SHIP_NORTH;
+    this._changeState('system', system, null, null);
+  }
+
+  /** Publishes an actionable refusal for both direct method calls and raw request events. */
+  private refuseTowTravel(): void {
+    this.statusMessage =
+      'External tow attached: use the haul voyage or contractor recovery; only the source repair yard is available.';
+    eventManager.publish(GameEvents.ACTION_FAILED, { action: 'travel', reason: this.statusMessage });
   }
 
   /** Returns a discriminated location view and rejects inconsistent internal context. */
@@ -175,6 +202,10 @@ export class GameStateManager {
 
   /** Attempts to enter a system from hyperspace. Returns true on success, false otherwise. */
   enterSystem(): boolean {
+    if (this.towPolicy()) {
+      this.refuseTowTravel();
+      return false;
+    }
     if (this._state !== 'hyperspace') {
       logger.warn(`[GameStateManager] Cannot enter system, not in hyperspace (State: ${this._state})`);
       return false;
@@ -211,6 +242,10 @@ export class GameStateManager {
 
   /** Attempts to leave the current system. Returns true on success, false otherwise. */
   leaveSystem(): boolean {
+    if (this.towPolicy()) {
+      this.refuseTowTravel();
+      return false;
+    }
     if (this._state !== 'system') {
       logger.warn(
         `[GameStateManager.leaveSystem] Attempted to leave system while not in system state (State: ${this._state})`
@@ -270,6 +305,16 @@ export class GameStateManager {
     }
 
     const nearbyObject = this._findLandableObject();
+    const tow = this.towPolicy();
+    if (
+      tow &&
+      (!(nearbyObject instanceof Starbase) ||
+        nearbyObject.id !== tow.sourceStationId ||
+        !sameHaulAddress(systemAddress(this._currentSystem), tow.sourceAddress))
+    ) {
+      this.refuseTowTravel();
+      return null;
+    }
     if (!nearbyObject) {
       logger.debug('[GameStateManager] Land failed: No object within landing distance.');
       // Publish status message directly or let Game handle it
@@ -318,6 +363,10 @@ export class GameStateManager {
 
   /** Lands the ship at the selected surface coordinates from orbit. */
   landFromOrbit(targetPlanet: Planet, surfaceX: number, surfaceY: number): Planet | null {
+    if (this.towPolicy()) {
+      this.refuseTowTravel();
+      return null;
+    }
     if (this._state !== 'orbit') {
       logger.warn(`[GameStateManager.landFromOrbit] Attempted orbital landing from state ${this._state}.`);
       return null;

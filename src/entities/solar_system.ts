@@ -2,6 +2,7 @@
 // Complete file incorporating MKS units, meter distances, 4hr=1yr timescale, and moons.
 
 import { CONFIG } from '../config';
+import { advanceOrbitalAngle, frameToSimulatedSeconds } from '../core/simulation_time';
 // Import constants including G and updated SPECTRAL_TYPES
 import { AU_IN_METERS, GRAVITATIONAL_CONSTANT_G, SOLAR_MASS_KG } from '../constants/physics';
 import { MineralRichness } from '../constants/planetary';
@@ -64,10 +65,11 @@ export class SolarSystem {
   readonly stations: readonly Starbase[];
   readonly colonyWorld: Planet | null;
   readonly edgeRadius: number; // System boundary radius in meters
+  /** Cumulative explicit voyages already reflected in this materialised system. */
+  lastAppliedBulkSeconds = 0;
   readonly isStarless: boolean;
   readonly isCompactRemnant: boolean;
   private readonly colonyWorldNames = new Set<string>();
-  private static readonly SIMULATED_SECONDS_PER_REAL_SECOND = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
   /** Initializes SolarSystem. */
   constructor(basicProps: SystemBasicProperties, starX: number, starY: number, gameSeedPRNG: PRNG) {
@@ -567,9 +569,8 @@ export class SolarSystem {
     }
   }
 
-  /** Updates star positions. */
-  private updateStarPositions(deltaTime: number): void {
-    const scaledDeltaTime = this.getScaledOrbitalDeltaTime(deltaTime);
+  /** Advances stellar phases using simulated seconds and reconstructs the Jacobi hierarchy. */
+  private updateStarPositions(scaledDeltaTime: number): void {
     for (const star of this.stars) {
       if (!star.orbit) {
         star.systemX = 0;
@@ -577,8 +578,7 @@ export class SolarSystem {
         continue;
       }
       if (scaledDeltaTime > 0 && star.orbit.periodSeconds > 0) {
-        star.orbit.angle =
-          (star.orbit.angle + (2 * Math.PI * scaledDeltaTime) / star.orbit.periodSeconds) % (Math.PI * 2);
+        star.orbit.angle = advanceOrbitalAngle(star.orbit.angle, scaledDeltaTime, star.orbit.periodSeconds);
       }
       const e = star.orbit.eccentricity ?? 0;
       if (e <= 0) {
@@ -618,12 +618,6 @@ export class SolarSystem {
         star.systemY += offsetY;
       }
     }
-  }
-
-  /** Returns scaled orbital delta time. */
-  private getScaledOrbitalDeltaTime(deltaTime: number): number {
-    if (!Number.isFinite(deltaTime) || deltaTime <= 0) return 0;
-    return deltaTime * SolarSystem.SIMULATED_SECONDS_PER_REAL_SECOND;
   }
 
   /** Calculates kepler period seconds. */
@@ -2001,9 +1995,23 @@ export class SolarSystem {
 
   /** Updates the orbital positions of planets, moons, and starbases based on elapsed time using the fixed time scale. */
   updateOrbits(deltaTime: number): void {
+    this.advanceOrbitsBySimulatedSeconds(frameToSimulatedSeconds(deltaTime));
+  }
+
+  /** Analytically advances a system; body overrides accommodate older saves with different bulk epochs. */
+  advanceOrbitsBySimulatedSeconds(
+    scaledDeltaTime: number,
+    bodySeconds: ReadonlyMap<Planet, number> = new Map(),
+    stationSeconds: number = scaledDeltaTime
+  ): void {
+    if (
+      [scaledDeltaTime, stationSeconds, ...bodySeconds.values()].some(
+        (seconds) => !Number.isFinite(seconds) || seconds < 0
+      )
+    )
+      throw new Error('Orbital advance requires nonnegative simulated seconds.');
     const G = GRAVITATIONAL_CONSTANT_G;
-    const scaledDeltaTime = this.getScaledOrbitalDeltaTime(deltaTime);
-    this.updateStarPositions(deltaTime);
+    this.updateStarPositions(scaledDeltaTime);
     const starMassKg = this.stars.reduce((sum, star) => sum + star.massKg, 0);
 
     if (!this.isStarless && (!starMassKg || starMassKg <= 0)) {
@@ -2031,8 +2039,11 @@ export class SolarSystem {
           logger.warn(`[System:${this.name}] Invalid orbital period for ${planet.name}. Skipping.`);
           return;
         }
-        const planet_deltaAngle = (2 * Math.PI * scaledDeltaTime) / planetPeriod_s;
-        planet.orbitAngle = (planet.orbitAngle + planet_deltaAngle) % (Math.PI * 2);
+        planet.orbitAngle = advanceOrbitalAngle(
+          planet.orbitAngle,
+          bodySeconds.get(planet) ?? scaledDeltaTime,
+          planetPeriod_s
+        );
         if (!Number.isFinite(planet.orbitAngle)) planet.orbitAngle = 0;
         const orbitCenter = this.getOrbitCenter(planet.orbitHost ?? { kind: 'barycentric' });
         const planetX_abs = orbitCenter.x + Math.cos(planet.orbitAngle) * planet_r;
@@ -2079,12 +2090,11 @@ export class SolarSystem {
             return;
           }
 
-          // Calculate moon's true angular speed relative to planet (rad/s)
-          const moonOmega_rad_per_s = (2 * Math.PI) / moonPeriod_s;
-          // Calculate angle change for this frame based on real physics
-          const moon_deltaAngle = moonOmega_rad_per_s * scaledDeltaTime;
-
-          moon.orbitAngle = (moon.orbitAngle + moon_deltaAngle) % (Math.PI * 2);
+          moon.orbitAngle = advanceOrbitalAngle(
+            moon.orbitAngle,
+            bodySeconds.get(moon) ?? scaledDeltaTime,
+            moonPeriod_s
+          );
           if (!Number.isFinite(moon.orbitAngle)) moon.orbitAngle = 0;
 
           const moonX_rel = Math.cos(moon.orbitAngle) * moon_r_rel;
@@ -2121,8 +2131,7 @@ export class SolarSystem {
           logger.warn(`[System:${this.name}] Invalid orbital period for starbase. Skipping.`);
           return;
         }
-        const sb_deltaAngle = (2 * Math.PI * scaledDeltaTime) / sbPeriod_s;
-        this.starbase.orbitAngle = (this.starbase.orbitAngle + sb_deltaAngle) % (Math.PI * 2);
+        this.starbase.orbitAngle = advanceOrbitalAngle(this.starbase.orbitAngle, stationSeconds, sbPeriod_s);
         if (!Number.isFinite(this.starbase.orbitAngle)) this.starbase.orbitAngle = 0;
       }
       const center = this.getOrbitCenter(this.starbase.orbitHost);

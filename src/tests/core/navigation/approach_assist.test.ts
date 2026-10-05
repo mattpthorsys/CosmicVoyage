@@ -5,6 +5,8 @@ import { Player } from '../../../core/player';
 import { Starbase } from '../../../entities/starbase';
 import { GLYPHS } from '../../../constants';
 import { Planet } from '../../../entities/planet';
+import { getTowLocalStepFactor } from '../../../core/tow_performance';
+import { haulJourneyFixture } from '../../fixtures/heavy_haul_journeys';
 
 /** Creates approach harness. */
 function createApproachHarness(zoomIndex: number): any {
@@ -29,6 +31,16 @@ function createApproachHarness(zoomIndex: number): any {
 }
 
 describe('approach assist', () => {
+  it('uses the same attached wet-mass handling factor as manual cursor movement', () => {
+    const f = haulJourneyFixture();
+    const game = createApproachHarness(4);
+    game._heavyHaulService = f.haul;
+    game.player.ship.engineClass = 2;
+    game.updateApproachAssist(0.016);
+    expect(game.player.position.systemX).toBe(
+      CONFIG.SYSTEM_MOVE_INCREMENT * 0.5 * getTowLocalStepFactor(f.objective.package.wetMassKg, 2)
+    );
+  });
   it('moves at the same system speed as cursor travel for the current zoom', () => {
     const game = createApproachHarness(3);
 

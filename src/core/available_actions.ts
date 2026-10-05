@@ -7,6 +7,8 @@ import { StellarBody } from '../entities/stellar_body';
 import { hasDiscoveryLevel } from './discovery';
 import { Player } from './player';
 import { GameState } from './game_state_manager';
+import { sameHaulAddress, type AttachedTowPolicy } from './heavy_haul_types';
+import { systemAddress } from './system_orbit_state';
 
 export type AvailableActionCategory =
   | 'movement'
@@ -43,6 +45,7 @@ export interface AvailableActionContext {
   isNearSystemEdge?: boolean;
   currentCargoTotal?: number;
   marketHasItems?: boolean;
+  attachedTow?: AttachedTowPolicy | null;
 }
 
 /** Creates available actions. */
@@ -405,6 +408,24 @@ export function createAvailableActions(context: AvailableActionContext): Availab
     )
   );
 
+  const tow = context.attachedTow;
+  if (tow)
+    for (const available of actions) {
+      const blocked =
+        (context.state === 'hyperspace' &&
+          (available.category === 'movement' || available.id === 'enter-system')) ||
+        available.id === 'leave-system' ||
+        (available.id === 'land-dock' &&
+          (!(context.nearbyObject instanceof Starbase) ||
+            context.nearbyObject.id !== tow.sourceStationId ||
+            !context.system ||
+            !sameHaulAddress(systemAddress(context.system), tow.sourceAddress))) ||
+        (context.state === 'orbit' && available.action === 'ACTIVATE_LAND_LIFTOFF');
+      if (blocked) {
+        available.enabled = false;
+        available.reason = 'External tow attached: use the haul voyage or contractor recovery.';
+      }
+    }
   return actions.sort((a, b) => a.priority - b.priority);
 }
 

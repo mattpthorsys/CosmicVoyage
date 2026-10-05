@@ -144,6 +144,7 @@ function createSave(): GameSave {
       systemSlot: 0,
     },
     systemOrbit: null,
+    systemOrbitHistory: [],
     planetMutations: [],
     acceptedMissionIds: [],
     readyMissionIds: [],
@@ -222,7 +223,7 @@ describe('heavy-haul save foundations', () => {
     const old = { ...legacy, version: 17, player: { ...legacy.player, ship: oldShip } };
     const before = structuredClone(old);
     const migrated = parseGameSave(old);
-    expect(migrated.version).toBe(18);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
     expect(migrated.heavyHaul).toEqual(createHeavyHaulSnapshot());
     expect(migrated.infrastructure).toEqual([]);
     expect(migrated.bulkAdvanceSeconds).toBe(0);
@@ -239,7 +240,7 @@ describe('heavy-haul save foundations', () => {
     store.setItem(key, JSON.stringify({ ...createSave(), version: 17 }));
     const storage = new SaveGameStorage(session, manual);
     const restored = kind === 'session' ? storage.loadSession() : storage.loadManual();
-    expect(restored?.version).toBe(18);
+    expect(restored?.version).toBe(SAVE_GAME_VERSION);
     expect(store.getItem(key)).toBeNull();
     expect(store.getItem(kind === 'session' ? SESSION_SAVE_KEY : MANUAL_SAVE_KEY)).not.toBeNull();
     store.setItem(key, JSON.stringify({ ...createSave(), version: 17 }));
@@ -317,9 +318,74 @@ describe('heavy-haul save foundations', () => {
     expect(() => parseGameSave(host)).toThrow('stellar host');
   });
 
-  it('requires explicit ledgers in version 18 rather than silently discarding damaged state', () => {
+  it('requires explicit ledgers in the current schema rather than silently discarding damaged state', () => {
     const { heavyHaul: _haul, ...incomplete } = createSave();
     expect(() => parseGameSave(incomplete)).toThrow('heavy-haul state');
+  });
+
+  it('migrates version-18 arrival records without resetting receipts, equipment, fuel or orbital epochs', () => {
+    const arrived = createHaulSave('arrived').save;
+    arrived.systemOrbit = {
+      lastAppliedBulkSeconds: arrived.bulkAdvanceSeconds,
+      stars: [{ id: 'A', orbitAngle: null, systemX: 0, systemY: 0 }],
+      starbase: null,
+    };
+    const { systemOrbitHistory: _history, ...v18 } = structuredClone(arrived);
+    const legacy = { ...v18, version: 18 };
+    const migrated = parseGameSave(legacy);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
+    expect(migrated.heavyHaul).toEqual(arrived.heavyHaul);
+    expect(migrated.bulkAdvanceSeconds).toBe(arrived.bulkAdvanceSeconds);
+    expect(migrated.player).toEqual(arrived.player);
+    expect(migrated.activeMissions).toEqual(arrived.activeMissions);
+    expect(migrated.systemOrbitHistory).toEqual([
+      {
+        worldX: arrived.location.worldX,
+        worldY: arrived.location.worldY,
+        systemSlot: arrived.location.systemSlot,
+        orbit: arrived.systemOrbit,
+      },
+    ]);
+  });
+
+  it.each(['session', 'manual'])('migrates version-18 %s keys and clears them explicitly', (kind) => {
+    const session = new MemoryStorage();
+    const manual = new MemoryStorage();
+    const store = kind === 'session' ? session : manual;
+    const legacyKey = `cosmic-voyage.${kind}.v18`;
+    const { systemOrbitHistory: _history, ...old } = createHaulSave('arrived').save;
+    store.setItem(legacyKey, JSON.stringify({ ...old, version: 18 }));
+    const storage = new SaveGameStorage(session, manual);
+    const migrated = kind === 'session' ? storage.loadSession() : storage.loadManual();
+    expect(migrated?.heavyHaul.activeTow?.stage).toBe('arrived');
+    expect(migrated?.version).toBe(SAVE_GAME_VERSION);
+    expect(store.getItem(legacyKey)).toBeNull();
+    store.setItem(legacyKey, JSON.stringify({ ...old, version: 18 }));
+    if (kind === 'session') storage.clearSession();
+    else storage.clearManual();
+    expect(store.getItem(legacyKey)).toBeNull();
+  });
+
+  it('rejects duplicated/future orbital history and attached hyperspace locations', () => {
+    const current = createSave();
+    const history = {
+      worldX: 0,
+      worldY: 0,
+      systemSlot: 0,
+      orbit: { stars: [], starbase: null, lastAppliedBulkSeconds: 0 },
+    };
+    expect(() => parseGameSave({ ...current, systemOrbitHistory: [history, history] })).toThrow(
+      'duplicate system'
+    );
+    expect(() =>
+      parseGameSave({
+        ...current,
+        systemOrbitHistory: [{ ...history, orbit: { ...history.orbit, lastAppliedBulkSeconds: 1 } }],
+      })
+    ).toThrow('watermark');
+    const attached = createHaulSave('attached').save;
+    attached.location = { ...attached.location, kind: 'hyperspace' };
+    expect(() => parseGameSave(attached)).toThrow('planetary operations');
   });
 
   it('rejects system/address mismatches, missing commissioned assets, and unaccounted journey time', () => {

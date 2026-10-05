@@ -50,6 +50,19 @@ export interface HaulOnwardPlan {
   readonly commissioningFuelUnits: number;
 }
 
+/** A concrete world target, rather than the caller's assertion that a supply route exists. */
+export interface HaulResupplyTarget {
+  readonly systemAddress: MissionSystemAddress;
+  readonly stationId: string;
+}
+
+export interface AttachedTowPolicy {
+  readonly wetMassKg: number;
+  /** Only the source repair yard may dock an externally parked, not-yet-arrived package. */
+  readonly sourceStationId: string | null;
+  readonly sourceAddress: MissionSystemAddress;
+}
+
 export interface HaulQuote {
   readonly routeKind: 'local' | 'interstellar';
   readonly distance: number;

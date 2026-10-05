@@ -96,6 +96,18 @@ export class AstrometricOverlay {
     this.hyperspaceSurveyService = hyperspaceSurveyService;
   }
 
+  /** Discards world-anchored annotations after a discontinuous journey or location restore. */
+  clear(): void {
+    this.items.length = 0;
+    this.lastCamera = null;
+    this.lastEmitAt = performance.now();
+    this.hyperspaceStarbaseMarkers = [];
+    this.hyperspaceMarkerSignature = '';
+    this.hyperspaceSurveyViewportSignature = '';
+    this.popupCycleSignature = '';
+    this.popupCycleIndex = 0;
+  }
+
   /** Updates. */
   update(context: OverlayContext, deltaTime: number, cols: number, rows: number): void {
     const now = performance.now();

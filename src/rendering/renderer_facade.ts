@@ -194,6 +194,12 @@ export class RendererFacade {
     return invalidated;
   }
 
+  /** Discards projected/orbital caches after a discontinuous journey without altering natural galaxy data. */
+  invalidateWorldScene(): void {
+    this.sceneRenderer.clearCaches();
+    this.layoutInvalidated = true;
+  }
+
   /** Handler for the statusUpdateNeeded event. */
   private _handleStatusUpdate(data: StatusUpdateEvent): void {
     logger.debug(

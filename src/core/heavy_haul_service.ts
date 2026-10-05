@@ -11,6 +11,7 @@ import {
   type HaulRendezvous,
   type HeavyHaulSnapshot,
   type InfrastructureRecord,
+  type AttachedTowPolicy,
 } from './heavy_haul_types';
 import { validateHeavyHaulSnapshot, validateInfrastructureRecords } from './heavy_haul_validation';
 import { quoteHeavyHaul, type HaulQuoteContext } from './tow_performance';
@@ -40,6 +41,19 @@ export class HeavyHaulService {
   /** Returns a defensive snapshot so controllers cannot alter support or attachment state. */
   createSnapshot(): HeavyHaulSnapshot {
     return structuredClone(this.state);
+  }
+
+  /** Exposes current restrictions cheaply, with frozen terms still owned by MissionProgress. */
+  get attachedTowPolicy(): AttachedTowPolicy | null {
+    const active = this.state.activeTow;
+    const mission = active && this.missions.getMission(active.missionId);
+    const objective = mission && getHeavyHaulObjective(mission);
+    if (!active || !mission || !objective || active.stage === 'awaiting-pickup') return null;
+    return {
+      wetMassKg: objective.package.wetMassKg,
+      sourceStationId: active.stage === 'attached' ? (mission.originStarbaseId ?? null) : null,
+      sourceAddress: objective.pickup.systemAddress,
+    };
   }
 
   /** Restores only a validated state compatible with the already restored mission owner. */

@@ -11,6 +11,9 @@ import { Game } from '../../../core/game';
 import { CONFIG } from '../../../config';
 import { isNavigablePhenomenon } from '../../../generation/system_data_generator';
 import { createHyperspaceTile } from '../../../rendering/hyperspace_tile_generation';
+import { haulJourneyFixture } from '../../fixtures/heavy_haul_journeys';
+import { heavyHaulReceiptFixture } from '../../fixtures/heavy_haul_contracts';
+import { createAvailableActions } from '../../../core/available_actions';
 
 /** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
@@ -63,6 +66,95 @@ function createManager() {
   const system = { name: 'Test System' };
   return { player, manager, system };
 }
+
+describe('GameStateManager tow restrictions', () => {
+  it('blocks ordinary exits, entry and planetary insertion through raw events as well as methods', () => {
+    const f = haulJourneyFixture();
+    const seed = new PRNG('haul-journey-fixture');
+    const manager = new GameStateManager(f.player, seed, new SystemDataGenerator(seed));
+    manager.setTowPolicy(() => f.haul.attachedTowPolicy);
+    const planet = f.source.planets.find((body) => body !== null)!;
+    const near = vi.spyOn(manager as any, '_findLandableObject').mockReturnValue(planet);
+    try {
+      (manager as any)._changeState('system', f.source, null, null);
+      eventManager.publish(GameEvents.LEAVE_SYSTEM_REQUESTED);
+      expect(manager.state).toBe('system');
+      eventManager.publish(GameEvents.LAND_REQUESTED);
+      expect(manager.state).toBe('system');
+      expect(manager.landFromOrbit(planet, 1, 1)).toBeNull();
+      expect(manager.statusMessage).toContain('haul voyage');
+      (manager as any)._changeState('hyperspace', null, null, null);
+      eventManager.publish(GameEvents.ENTER_SYSTEM_REQUESTED);
+      expect(manager.state).toBe('hyperspace');
+      expect(manager.statusMessage).toContain('haul voyage');
+    } finally {
+      near.mockRestore();
+      manager.destroy();
+    }
+  });
+
+  it('permits source-yard parking/refit but refuses all docking after arrival', () => {
+    const f = haulJourneyFixture();
+    const seed = new PRNG('haul-journey-fixture');
+    const manager = new GameStateManager(f.player, seed, new SystemDataGenerator(seed));
+    manager.setTowPolicy(() => f.haul.attachedTowPolicy);
+    const near = vi.spyOn(manager as any, '_findLandableObject').mockReturnValue(f.source.starbase);
+    try {
+      (manager as any)._changeState('system', f.source, null, null);
+      expect(manager.landOnNearbyObject()).toBe(f.source.starbase);
+      expect(manager.state).toBe('starbase');
+      expect(manager.liftOff()).toBe(true);
+      expect(manager.currentSystem).toBe(f.source);
+      expect(f.haul.recordArrival(heavyHaulReceiptFixture(f.mission, f.context), f.context).ok).toBe(true);
+      expect(manager.landOnNearbyObject()).toBeNull();
+      expect(manager.state).toBe('system');
+    } finally {
+      near.mockRestore();
+      manager.destroy();
+    }
+  });
+
+  it('matches menu readiness to owner restrictions without disabling scans or operations', () => {
+    const f = haulJourneyFixture();
+    const actions = createAvailableActions({
+      state: 'system',
+      player: f.player,
+      system: f.source,
+      planet: null,
+      starbase: null,
+      nearbyObject: f.source.planets.find((body) => body !== null),
+      isNearSystemEdge: true,
+      attachedTow: f.haul.attachedTowPolicy,
+    });
+    expect(actions.find((entry) => entry.id === 'land-dock')?.enabled).toBe(false);
+    expect(actions.find((entry) => entry.id === 'leave-system')?.enabled).toBe(false);
+    expect(actions.find((entry) => entry.id === 'scan-object')?.enabled).toBe(true);
+    expect(actions.find((entry) => entry.id === 'ship-menu')?.enabled).toBe(true);
+    const yard = createAvailableActions({
+      state: 'system',
+      player: f.player,
+      system: f.source,
+      planet: null,
+      starbase: null,
+      nearbyObject: f.source.starbase,
+      attachedTow: f.haul.attachedTowPolicy,
+    });
+    expect(yard.find((entry) => entry.id === 'land-dock')?.enabled).toBe(true);
+    const hyper = createAvailableActions({
+      state: 'hyperspace',
+      player: f.player,
+      system: null,
+      planet: null,
+      starbase: null,
+      isNearHyperspaceSystem: true,
+      attachedTow: f.haul.attachedTowPolicy,
+    });
+    expect(hyper.filter((entry) => entry.category === 'movement').every((entry) => !entry.enabled)).toBe(
+      true
+    );
+    expect(hyper.find((entry) => entry.id === 'enter-system')?.enabled).toBe(false);
+  });
+});
 
 describe('GameStateManager orbital exits', () => {
   it('publishes both sides of a location transition', () => {
