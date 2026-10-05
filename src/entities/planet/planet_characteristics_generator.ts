@@ -8,7 +8,7 @@ import { Atmosphere } from '../../entities/planet';
 import { generateAtmosphereInventory } from './atmosphere_generator';
 import { AIRLESS } from './atmosphere_physics';
 import { resolveAtmosphereClimate } from './atmosphere_climate';
-import type { AtmosphereIrradiation } from './stellar_irradiation';
+import { atmosphereBolometricFlux, type AtmosphereIrradiation } from './stellar_irradiation';
 import { calculateTemperatureProfile } from './temperature_calculator';
 import { generateHydrosphere, generateLithosphere } from './surface_descriptor';
 import { calculateElementAbundance, determineMineralRichness, getBaseMinerals } from './resource_generator';
@@ -147,6 +147,7 @@ export function generatePlanetCharacteristics(
     diameterKm: diameter,
     densityGcm3: density,
     orbitDistanceM: orbitDistance,
+    stellarFluxWm2: atmosphereBolometricFlux(environment, orbitDistance, totalFlux_W_m2),
     environment,
   });
   const lithosphere = generateLithosphere(planetPRNG, planetType);

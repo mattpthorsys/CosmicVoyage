@@ -139,7 +139,7 @@ function getLiquidCoverage(
   if (hydro.includes('shallow saline seas')) return 0.36;
   if (hydro.includes('cold brine seas')) return 0.22;
   if (hydro.includes('supercritical global water')) return atmosphere.pressure > 22 ? 0.32 : 0;
-  if (hydro.includes('significant oceans')) return 0.48;
+  if (hydro.includes('significant oceans') || hydro.includes('significant saline oceans')) return 0.48;
   if (hydro.includes('small seas')) return 0.28;
   if (hydro.includes('connected shallow seas')) return 0.42;
   if (hydro.includes('lakes') || hydro.includes('rivers')) return 0.18;

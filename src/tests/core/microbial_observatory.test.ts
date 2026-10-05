@@ -27,7 +27,7 @@ function fixture(flux = 1361) {
     },
     surfaceTemp: 294,
     hydrosphere: 'shallow saline seas',
-    diameter: 12_742_000,
+    diameter: 12_742,
     gravity: 1,
     referenceStellarFluxWm2: flux,
   });

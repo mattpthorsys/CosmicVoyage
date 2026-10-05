@@ -4,11 +4,93 @@ import {
   generateHydrosphere,
   estimateSurfaceVolatileRetention,
 } from '../../../entities/planet/surface_descriptor';
-import { createSurfaceLiquidOverlay } from '../../../entities/planet/surface_liquid';
+import {
+  createSurfaceLiquidOverlay,
+  getManagedSurfaceWaterPhase,
+  getSurfaceLiquidProfile,
+} from '../../../entities/planet/surface_liquid';
 
 const heightmap = Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => x + y));
 
 describe('scientifically constrained hydrospheres', () => {
+  it('recognises both generated substantial-ocean descriptions as real surface water', () => {
+    const atmosphere = { density: 'Earth-like', pressure: 1.3, composition: { Nitrogen: 99, Argon: 1 } };
+    const descriptions = new Set<string>();
+    for (let index = 0; index < 24; index++) {
+      const hydrosphere = generateHydrosphere(new PRNG(`saline-ocean-${index}`), 'Rock', 294, atmosphere, {
+        surfaceTempMin: 285,
+        surfaceTempMax: 305,
+        gravity: 1.2,
+        escapeVelocity: 13000,
+        orbitDistanceM: 1.495978707e11,
+        environment: { starType: 'G2V', ageGyr: 4.6, metallicityFeH: 0.2 },
+        stellarFluxWm2: 1361,
+      });
+      descriptions.add(hydrosphere);
+      const profile = getSurfaceLiquidProfile({
+        planetType: 'Rock',
+        hydrosphere,
+        surfaceTemp: 294,
+        atmosphere,
+      });
+      expect(profile?.kind).toBe('water');
+      expect(profile?.coverage).toBeGreaterThan(0);
+    }
+    expect(descriptions).toContain('Significant Saline Oceans and Seas');
+    expect(descriptions).toContain('Connected shallow seas with polar ice caps');
+  });
+
+  it('keeps thin-air water descriptions consistent with the shared saturation and biological phase screen', () => {
+    const atmosphere = { density: 'Thin', pressure: 0.04, composition: { Nitrogen: 99, Argon: 1 } };
+    expect(getManagedSurfaceWaterPhase(294, atmosphere.pressure)).toBe('liquid');
+    const hydrosphere = generateHydrosphere(new PRNG('thin-water-phase'), 'Rock', 294, atmosphere, {
+      surfaceTempMin: 294,
+      surfaceTempMax: 294,
+      gravity: 1.4,
+      escapeVelocity: 14000,
+      environment: { starType: 'G2V', ageGyr: 4.6, metallicityFeH: 0.3 },
+      stellarFluxWm2: 1361,
+    });
+    expect(
+      getSurfaceLiquidProfile({ planetType: 'Rock', hydrosphere, surfaceTemp: 294, atmosphere })?.coverage
+    ).toBeGreaterThan(0);
+  });
+
+  it('retains water around dim hosts at modest illumination without a second absolute-distance penalty', () => {
+    const atmosphere = {
+      density: 'Earth-like',
+      pressure: 1,
+      composition: { Nitrogen: 99.9, 'Carbon Dioxide': 0.1 },
+    };
+    const shared = { gravity: 1, escapeVelocity: 11200, stellarFluxWm2: 1361 };
+    const solar = estimateSurfaceVolatileRetention('Oceanic', 294, atmosphere, {
+      ...shared,
+      orbitDistanceM: 1.495978707e11,
+      environment: { starType: 'G2V', ageGyr: 5, metallicityFeH: 0 },
+    });
+    const coolContext = {
+      ...shared,
+      orbitDistanceM: 0.025 * 1.495978707e11,
+      environment: { starType: 'M8V', ageGyr: 5, metallicityFeH: 0 },
+    };
+    const cool = estimateSurfaceVolatileRetention('Oceanic', 294, atmosphere, coolContext);
+    expect(cool).toBeGreaterThan(solar * 0.7);
+    expect(cool).toBeGreaterThan(0.35);
+    expect(
+      estimateSurfaceVolatileRetention('Oceanic', 294, atmosphere, {
+        ...coolContext,
+        stellarFluxWm2: 136100,
+      })
+    ).toBeLessThan(cool * 0.6);
+    // A moon's local orbit is not its distance from the illuminating star(s).
+    expect(
+      estimateSurfaceVolatileRetention('Oceanic', 294, atmosphere, {
+        ...coolContext,
+        orbitDistanceM: 0.002 * 1.495978707e11,
+      })
+    ).toBe(cool);
+  });
+
   it('does not assign surface oceans to hot greenhouse worlds', () => {
     const hydrosphere = generateHydrosphere(
       new PRNG('hot-greenhouse-hydro'),

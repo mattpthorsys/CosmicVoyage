@@ -3,8 +3,9 @@
 import { PRNG } from '../../utils/prng';
 import { logger } from '../../utils/logger';
 import { Atmosphere } from '../../entities/planet'; // Import dependent types
-import { AU_IN_METERS } from '../../constants/physics';
 import { StellarEnvironment, estimateStellarActivity, getSpectralClass } from '../stellar_environment';
+import { atmosphereBolometricFlux } from './stellar_irradiation';
+import { saturationPressureBar } from './atmosphere_physics';
 
 export interface HydrosphereContext {
   surfaceTempMin?: number;
@@ -14,7 +15,19 @@ export interface HydrosphereContext {
   diameterKm?: number;
   densityGcm3?: number;
   orbitDistanceM?: number;
+  stellarFluxWm2?: number;
   environment?: StellarEnvironment;
+}
+
+/** Converts actual illumination to a solar-equivalent distance for the broad volatile-loss proxy. */
+function getIrradianceDistanceAu(context: HydrosphereContext): number {
+  const flux =
+    context.stellarFluxWm2 ??
+    (context.environment && context.orbitDistanceM && context.orbitDistanceM > 0
+      ? atmosphereBolometricFlux(context.environment, context.orbitDistanceM)
+      : 1361);
+  if (!Number.isFinite(flux) || flux < 0) return 1;
+  return flux > 0 ? Math.sqrt(1361 / flux) : Infinity;
 }
 
 /** Generates hydrosphere description based on phase stability, volatile retention, and stellar environment. */
@@ -33,10 +46,9 @@ export function generateHydrosphere(
   const minTemp = context.surfaceTempMin ?? surfaceTemp;
   const maxTemp = context.surfaceTempMax ?? surfaceTemp;
   const volatileScore = estimateSurfaceVolatileRetention(planetType, surfaceTemp, atmosphere, context);
-  const activity =
-    context.environment && context.orbitDistanceM
-      ? estimateStellarActivity(context.environment, context.orbitDistanceM / AU_IN_METERS)
-      : 1;
+  const activity = context.environment
+    ? estimateStellarActivity(context.environment, getIrradianceDistanceAu(context))
+    : 1;
 
   // Direct types, constrained by the current physical environment.
   if (planetType === 'GasGiant' || planetType === 'IceGiant') return 'N/A (Gaseous/Fluid Interior)';
@@ -94,7 +106,7 @@ export function generateHydrosphere(
         : 'Regional water ice deposits and dry cold traps';
   } else if (tempK > estimateWaterBoilingPointK(pressure)) {
     description =
-      pressure > 22 && volatileScore > 0.5
+      tempK >= 647.1 && pressure >= 220.64 && volatileScore > 0.5
         ? 'Supercritical water reservoir beneath dense steam'
         : 'Trace water vapour; surface liquid unstable';
   } else {
@@ -115,8 +127,9 @@ export function estimateSurfaceVolatileRetention(
   const escapeVelocity = context.escapeVelocity ?? 11000;
   const age = context.environment?.ageGyr ?? 4.6;
   const metallicity = context.environment?.metallicityFeH ?? 0;
-  const orbitAu =
-    context.orbitDistanceM && context.orbitDistanceM > 0 ? context.orbitDistanceM / AU_IN_METERS : 1;
+  // Close to a faint star is not equivalent to close to the Sun. Atmosphere escape
+  // already uses each source's high-energy flux; this remaining water proxy uses instellation.
+  const orbitAu = getIrradianceDistanceAu(context);
   const activity = context.environment ? estimateStellarActivity(context.environment, orbitAu) : 1;
   const spectralClass = context.environment ? getSpectralClass(context.environment.starType) : 'G';
   const pressure = atmosphere.pressure;
@@ -186,7 +199,7 @@ function getHyceanHydrosphere(tempK: number, pressure: number, volatileScore: nu
 function getOceanicHydrosphere(tempK: number, pressure: number, volatileScore: number): string {
   if (volatileScore < 0.35) return 'Remnant evaporite basins and hydrated crust';
   if (tempK > estimateWaterBoilingPointK(pressure))
-    return pressure > 22
+    return tempK >= 647.1 && pressure >= 220.64
       ? 'Supercritical global water layer under steam atmosphere'
       : 'Runaway steam atmosphere over desiccating ocean basins';
   if (tempK < 250) return 'Global ice shell over deep saline ocean';
@@ -271,9 +284,17 @@ function getFrozenHydrosphere(
 
 /** Estimates water boiling point k. */
 function estimateWaterBoilingPointK(pressureBar: number): number {
-  if (pressureBar <= 0.006) return 0;
-  if (pressureBar >= 22.064) return 647;
-  return Math.max(273, Math.min(647, 373.15 + Math.log(Math.max(0.01, pressureBar)) * 28));
+  if (pressureBar < 0.0061166) return 0;
+  // Use the same saturation curve as condensation and biosphere phase screening.
+  // A separate logarithmic fit used to reject otherwise stable thin-air water.
+  let lower = 273.16;
+  let upper = 647.1;
+  for (let iteration = 0; iteration < 24; iteration++) {
+    const middle = (lower + upper) / 2;
+    if (saturationPressureBar('Water Vapor', middle) > pressureBar) upper = middle;
+    else lower = middle;
+  }
+  return (lower + upper) / 2;
 }
 
 /** Returns whether hydrocarbon liquid candidate. */

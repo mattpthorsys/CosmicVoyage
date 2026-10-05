@@ -40,6 +40,7 @@ import {
 import { canAddSatellite, sufficientlySeparated } from './satellite_physics';
 import { generateAtmosphere } from './planet/atmosphere_generator';
 import { calculateAtmosphereIrradiationAt, type AtmosphereIrradiation } from './planet/stellar_irradiation';
+import { getPlanetOrbitSamplingScale } from './planet/orbit_sampling';
 
 export class SolarSystem {
   // --- Constants --- (No longer needed here if defined globally)
@@ -683,14 +684,14 @@ export class SolarSystem {
   private generatePlanets(): void {
     logger.info(`[System:${this.name}] Generating planets (using meters)...`);
 
-    // Use the constant defined in Step 1
-    // const AU_IN_METERS = 1.495978707e11; // Defined globally in constants.ts now
-
-    // Define realistic distance ranges in METERS (e.g., 0.2 AU to 50+ AU)
-    const stableRange = getStableOrbitRange(this.architecture, this.getDefaultPlanetOrbitHost());
-    const stabilityInnerLimit = this.architecture.kind === 'single' ? 0.2 * AU_IN_METERS : 0.7 * AU_IN_METERS;
+    const primaryHost = this.getDefaultPlanetOrbitHost();
+    const samplingScale = getPlanetOrbitSamplingScale(this.architecture, primaryHost);
+    const stableRange = getStableOrbitRange(this.architecture, primaryHost);
+    // Dim hosts need compact starts AND gaps; fixed AU gaps used to skip their entire warm region.
+    const stabilityInnerLimit =
+      (this.architecture.kind === 'single' ? 0.2 : 0.7) * samplingScale * AU_IN_METERS;
     const MIN_INNER_ORBIT_M = Math.max(stabilityInnerLimit, stableRange?.minRadius ?? Infinity);
-    const MAX_INNER_ORBIT_M = 0.7 * AU_IN_METERS; // e.g., ~1e11 meters
+    const MAX_INNER_ORBIT_M = 0.7 * samplingScale * AU_IN_METERS;
     const MIN_OUTER_ORBIT_M = Math.min(50 * AU_IN_METERS, stableRange?.maxRadius ?? 0);
     const hasPrimaryRegion = MIN_INNER_ORBIT_M < MIN_OUTER_ORBIT_M;
 
@@ -698,7 +699,7 @@ export class SolarSystem {
     let lastOrbitDistance = hasPrimaryRegion
       ? this.systemPRNG.random(MIN_INNER_ORBIT_M, Math.max(MIN_INNER_ORBIT_M, MAX_INNER_ORBIT_M))
       : 0;
-    const MIN_PLANET_SEPARATION_M = 0.1 * AU_IN_METERS; // e.g., 0.1 AU separation minimum
+    const MIN_PLANET_SEPARATION_M = 0.1 * samplingScale * AU_IN_METERS;
     const localHosts = this.getLocalCircumstellarPlanetHosts();
     const reservedLocalSlots = Math.min(3, localHosts.length * 2);
     const primarySlotLimit = Math.max(1, CONFIG.MAX_PLANETS_PER_SYSTEM - reservedLocalSlots);
@@ -710,7 +711,7 @@ export class SolarSystem {
 
       let currentOrbitDistance =
         lastOrbitDistance * Math.pow(orbitScaleBase, 1 + this.systemPRNG.random(-0.2, 0.2)) +
-        this.systemPRNG.random(0.01 * AU_IN_METERS, 0.1 * AU_IN_METERS);
+        this.systemPRNG.random(0.01 * samplingScale * AU_IN_METERS, 0.1 * samplingScale * AU_IN_METERS);
       currentOrbitDistance = Math.max(lastOrbitDistance + MIN_PLANET_SEPARATION_M, currentOrbitDistance);
       if (currentOrbitDistance > MIN_OUTER_ORBIT_M) break;
 
@@ -751,7 +752,7 @@ export class SolarSystem {
         currentOrbitDistance,
         totalFlux,
         parentStar.starType,
-        0.08
+        this.architecture.kind === 'single' ? 0 : 0.08
       );
       if (this.systemPRNG.random() < formationChance) {
         logger.debug(`[System:${this.name}] Slot ${i + 1}: Planet formation roll success.`);
@@ -911,11 +912,14 @@ export class SolarSystem {
     };
     const range = getStableOrbitRange(this.architecture, { kind: 'circumstellar', starId: star.id });
     if (!range) return null;
-    const minOrbit_m = Math.max(
-      range.minRadius,
-      star.radiusM * 18,
-      (minByClassAu[starClass] ?? 0.12) * AU_IN_METERS
-    );
+    const samplingScale = getPlanetOrbitSamplingScale(this.architecture, {
+      kind: 'circumstellar',
+      starId: star.id,
+    });
+    const baselineInnerAu = minByClassAu[starClass] ?? 0.12;
+    const formationInnerAu =
+      samplingScale < 1 ? Math.min(baselineInnerAu, 0.16 * samplingScale) : baselineInnerAu;
+    const minOrbit_m = Math.max(range.minRadius, star.radiusM * 18, formationInnerAu * AU_IN_METERS);
     const maxOrbit_m = range.maxRadius;
     if (maxOrbit_m <= minOrbit_m * 1.7) return null;
     return { minOrbit_m, maxOrbit_m, nearestStarDistance_m };
@@ -952,6 +956,10 @@ export class SolarSystem {
       if (remainingSlots <= 0 || generated >= 3) break;
       const stableZone = this.getCircumstellarStableZone(host);
       if (!stableZone) continue;
+      const samplingScale = getPlanetOrbitSamplingScale(this.architecture, {
+        kind: 'circumstellar',
+        starId: host.id,
+      });
 
       const hostPRNG = this.systemPRNG.seedNew(`circumstellar_${host.id}`);
       const maxForHost = Math.min(remainingSlots, 3 - generated, hostPRNG.random() < 0.72 ? 1 : 2);
@@ -967,7 +975,8 @@ export class SolarSystem {
         const orbitDistance =
           localIndex === 0
             ? lastOrbit
-            : lastOrbit * spacing + hostPRNG.random(0.03 * AU_IN_METERS, 0.12 * AU_IN_METERS);
+            : lastOrbit * spacing +
+              hostPRNG.random(0.03 * samplingScale * AU_IN_METERS, 0.12 * samplingScale * AU_IN_METERS);
         if (orbitDistance > stableZone.maxOrbit_m) break;
 
         const orbitHost: OrbitHost = { kind: 'circumstellar', starId: host.id };
