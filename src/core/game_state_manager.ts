@@ -51,6 +51,8 @@ export class GameStateManager {
   private readonly eventUnsubscribers: Unsubscribe[];
   /** Attachment restrictions are queried from the canonical haul owner at command time. */
   private towPolicy: () => AttachedTowPolicy | null = () => null;
+  /** Selection belongs to travel UI; transitions resolve it against the current world at command time. */
+  private landingTarget: () => Planet | Starbase | null = () => null;
   /** Applies persistence overlays before resolving a docked station's saved identity. */
   private initializeSystem: (system: SolarSystem) => void = () => {};
 
@@ -112,6 +114,26 @@ export class GameStateManager {
   /** Installs the canonical attachment query so direct events cannot bypass towing restrictions. */
   setTowPolicy(provider: () => AttachedTowPolicy | null): void {
     this.towPolicy = provider;
+  }
+
+  /** Makes menu readiness and raw landing events share the same selected-object policy. */
+  setLandingTargetProvider(provider: () => Planet | Starbase | null): void {
+    this.landingTarget = provider;
+  }
+
+  /** Never substitutes a nearby neighbour for an explicitly selected, out-of-range body. */
+  getLandableTarget(): Planet | Starbase | null {
+    const system = this._currentSystem;
+    if (!system || this._state !== 'system') return null;
+    const selected = this.landingTarget();
+    if (!selected) return this._findLandableObject();
+    const belongs =
+      system.stations.includes(selected as Starbase) ||
+      system.planets.some((planet) => planet === selected || planet?.moons.includes(selected as Planet));
+    return belongs &&
+      this.player.distanceSqToSystemCoords(selected.systemX, selected.systemY) <= CONFIG.LANDING_DISTANCE ** 2
+      ? selected
+      : null;
   }
 
   /** Registers natural-orbit restoration and world-overlay materialisation at the location boundary. */
@@ -326,7 +348,7 @@ export class GameStateManager {
       return null;
     }
 
-    const nearbyObject = this._findLandableObject();
+    const nearbyObject = this.getLandableTarget();
     const tow = this.towPolicy();
     if (
       tow &&
@@ -351,13 +373,11 @@ export class GameStateManager {
     try {
       if (nearbyObject instanceof Planet) {
         const orbitParent = this._currentSystem.getOrbitParentFor(nearbyObject);
-        const insertionTarget =
-          orbitParent === nearbyObject ? nearbyObject.name : `${orbitParent.name} local space`;
         this._currentOrbitReferencePlanet = orbitParent;
-        this._changeState('orbit', this._currentSystem, orbitParent, null);
+        this._changeState('orbit', this._currentSystem, nearbyObject, null);
         this.player.render.char = CONFIG.PLAYER_CHAR;
-        this.statusMessage = `Orbital insertion at ${insertionTarget}.`;
-        eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, orbitParent);
+        this.statusMessage = `Orbital insertion at ${nearbyObject.name}.`;
+        eventManager.publish(GameEvents.PLANET_ORBIT_ENTERED, nearbyObject);
         return nearbyObject;
       }
 

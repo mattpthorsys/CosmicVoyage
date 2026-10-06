@@ -156,6 +156,65 @@ describe('GameStateManager tow restrictions', () => {
   });
 });
 
+describe('GameStateManager selected orbital insertion', () => {
+  it('orbits the selected moon rather than its nearer parent, including through raw events', () => {
+    const f = haulJourneyFixture();
+    const seed = new PRNG('selected-orbit');
+    const manager = new GameStateManager(f.player, seed, new SystemDataGenerator(seed));
+    const parent = f.source.planets.find((body) => body !== null)!;
+    const moon = createOrbitingPlanet();
+    parent.moons = [moon];
+    parent.systemX = f.player.position.systemX;
+    parent.systemY = f.player.position.systemY;
+    moon.systemX = parent.systemX + 1.7e8;
+    moon.systemY = parent.systemY;
+    manager.setLandingTargetProvider(() => moon);
+    const entered = vi.fn();
+    const unsubscribe = eventManager.subscribe(GameEvents.PLANET_ORBIT_ENTERED, entered);
+    try {
+      (manager as any)._changeState('system', f.source, null, null);
+      expect(f.source.getObjectNear(parent.systemX, parent.systemY)).toBe(parent);
+      expect(manager.getLandableTarget()).toBe(moon);
+      eventManager.publish(GameEvents.LAND_REQUESTED);
+      expect(manager.state).toBe('orbit');
+      expect(manager.currentPlanet).toBe(moon);
+      expect(manager.currentOrbitReferencePlanet).toBe(parent);
+      expect(entered).toHaveBeenCalledWith(moon);
+    } finally {
+      unsubscribe();
+      manager.destroy();
+    }
+  });
+
+  it('does not replace an out-of-range or stale selection with a nearby station', () => {
+    const f = haulJourneyFixture();
+    const seed = new PRNG('selected-orbit');
+    const manager = new GameStateManager(f.player, seed, new SystemDataGenerator(seed));
+    const planet = f.source.planets.find((body) => body !== null)!;
+    const station = f.source.starbase!;
+    f.player.position.systemX = station.systemX;
+    f.player.position.systemY = station.systemY;
+    planet.systemX = station.systemX + CONFIG.LANDING_DISTANCE * 2;
+    planet.systemY = station.systemY;
+    let selected: Planet | null = planet;
+    manager.setLandingTargetProvider(() => selected);
+    try {
+      (manager as any)._changeState('system', f.source, null, null);
+      expect(manager.getLandableTarget()).toBeNull();
+      expect(manager.landOnNearbyObject()).toBeNull();
+      expect(manager.state).toBe('system');
+      selected = createOrbitingPlanet();
+      selected.systemX = station.systemX;
+      selected.systemY = station.systemY;
+      expect(manager.getLandableTarget()).toBeNull();
+      selected = null;
+      expect(manager.getLandableTarget()).toBe(station);
+    } finally {
+      manager.destroy();
+    }
+  });
+});
+
 describe('GameStateManager orbital exits', () => {
   it('publishes both sides of a location transition', () => {
     const { manager, system } = createManager();

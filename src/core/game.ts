@@ -1759,6 +1759,10 @@ export class Game {
     this.inputManager = new InputManager();
     this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this.systemDataGenerator);
     this.stateManager.setTowPolicy(() => this._heavyHaulService?.attachedTowPolicy ?? null);
+    this.stateManager.setLandingTargetProvider(() => {
+      const selected = this.getSelectedTarget();
+      return selected instanceof Planet || selected instanceof Starbase ? selected : null;
+    });
     this.stateManager.setSystemInitializer((system) => this.prepareMaterializedSystem(system));
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
     this.terminalOverlay = new TerminalOverlay(); // Initialize terminal overlay
@@ -8140,12 +8144,11 @@ export class Game {
     );
   }
 
-  /** Returns target approach distance. */
+  /** Closes to the actual contact, with physical clearance rather than a fraction of scan range. */
   private getTargetApproachDistance(target: NavigationTarget): number {
-    if (target instanceof NavigationMarker) return 1e10;
-    return target instanceof Planet || target instanceof Starbase
-      ? CONFIG.LANDING_DISTANCE * 0.62
-      : CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
+    if (target instanceof NavigationMarker || target instanceof Starbase) return 5e7;
+    if (target instanceof Planet) return Math.max(5e7, target.diameter * 500 * 3);
+    return CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
   }
 
   /** Updates ship facing toward target. */
@@ -9617,7 +9620,7 @@ export class Game {
           starbase: null,
         });
       }
-      const nearbyObject = system.getObjectNear(this.player.position.systemX, this.player.position.systemY);
+      const nearbyObject = this.stateManager.getLandableTarget();
       const nearestStar =
         system.stars.length > 0
           ? system.getNearestStar(this.player.position.systemX, this.player.position.systemY)

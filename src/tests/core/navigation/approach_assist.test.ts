@@ -84,12 +84,12 @@ describe('approach assist', () => {
     expect(game.statusMessage).toBe('');
   });
 
-  it('stops starbase approach once it reaches the inner orbit area', () => {
+  it('stops starbase approach at a close docking clearance', () => {
     const player = new Player();
     const target = Object.assign(Object.create(Starbase.prototype), {
       id: 'Dock A',
       name: 'Dock A',
-      systemX: CONFIG.LANDING_DISTANCE * 0.62,
+      systemX: 5e7,
       systemY: 0,
     }) as Starbase;
     const game = Object.assign(Object.create(Game.prototype), {
@@ -108,6 +108,31 @@ describe('approach assist', () => {
     expect(game.player.position.systemX).toBe(0);
     expect(game.approachTargetSignature).toBeNull();
     expect(game.statusMessage).toBe('Approach complete: Dock A.');
+  });
+
+  it('clamps the last movement step instead of overshooting a small contact', () => {
+    const game = createApproachHarness(3);
+    const target = Object.assign(Object.create(Starbase.prototype), {
+      id: 'close-dock',
+      name: 'Close dock',
+      systemX: 4e9,
+      systemY: 0,
+    });
+    game.getSelectedTarget = () => target;
+    game.approachTargetSignature = 'starbase:close-dock';
+    game.updateApproachAssist(0.016);
+    expect(target.systemX - game.player.position.systemX).toBe(5e7);
+    game.updateApproachAssist(0.016);
+    expect(game.approachTargetSignature).toBeNull();
+  });
+
+  it('keeps three planetary radii of clearance for very large worlds', () => {
+    const game = createApproachHarness(3);
+    const target = Object.assign(Object.create(Planet.prototype), { diameter: 160000 });
+    expect(game.getTargetApproachDistance(target)).toBe(2.4e8);
+    expect(
+      game.getTargetApproachDistance(Object.assign(Object.create(Planet.prototype), { diameter: 1000 }))
+    ).toBe(5e7);
   });
 
   it('points the ship toward the target when approach assist starts', () => {
