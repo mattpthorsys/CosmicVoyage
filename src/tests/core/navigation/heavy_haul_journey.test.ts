@@ -134,7 +134,12 @@ describe('prepared heavy-haul journeys', () => {
     expect(prepareHaulJourney(changed, f.source, f.request, f.world)).toMatchObject({ ok: false });
     changed.player.ship.hypersleepClass = 1;
     changed.player.resources.fuel = 0;
-    expect(prepareHaulJourney(changed, f.source, f.request, f.world)).toMatchObject({ ok: false });
+    // This fixture is a depot delivery with a contracted refuelling allowance;
+    // the same zero-fuel departure must fail for a buoy without that allowance.
+    const buoy = haulJourneyFixture('medium');
+    buoy.save.player.resources.fuel = 0;
+    expect(prepareHaulJourney(buoy.save, buoy.source, buoy.request, buoy.world)).toMatchObject({ ok: false });
+    expect(prepareHaulJourney(changed, f.source, f.request, f.world)).toMatchObject({ ok: true });
     expect(f.save).toEqual(before);
   });
 

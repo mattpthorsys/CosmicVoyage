@@ -1,8 +1,9 @@
 # Heavy-Haul Contracts: First-Version Implementation Plan
 
-Status: M0-M3 implemented and verified. M4-M5 implementation and regression
-tests are committed, awaiting the requested Luna verification gate. M6 onwards
-remain planned.
+Status: M0-M5 implemented; M4-M5 automated verification passed on 2026-10-06.
+A headless browser smoke covered the real manifest UI at desktop and narrow
+widths, but a complete personal delivery/save-reload playthrough remains useful.
+M6 onwards remain planned.
 Baseline inspected on 2026-10-05: save schema 17 and Galaxy model 8; M4-M5
 use schema 20 and retain Galaxy model 8. Do not overwrite
 migrations introduced by intervening work.
@@ -46,17 +47,17 @@ not excuse leaving consumers tied to the singular `system.starbase` field.
 The code is authoritative. These are existing foundations, not features that
 already implement towing:
 
-| Foundation | Reuse and required boundary |
-| --- | --- |
-| [Mission board](../../src/core/mission_board.ts) and [progress](../../src/core/mission_progress.ts) | Offers, frozen accepted terms, progress, and completion IDs. Add an explicit haul objective and destination settlement; current non-scan assumptions are biological. |
-| [Journal](../../src/core/mission_journal.ts) and [navigation](../../src/core/mission_navigation.ts) | Contract access and target selection. Hauls require separate pickup and deployment endpoints rather than one local target. |
-| [Ship modifications](../../src/core/ship_modifications.ts) | Equipment, bay accounting, damage, repairs, prices, and engine classes. Engine fuel multipliers exist, but engine purchases and payload-dependent movement do not. |
-| [Crew](../../src/core/crew.ts) | A three-person starter roster and health. There is no crew sleep state or berth inventory; specimen stasis is not crew hypersleep. |
-| [Movement](../../src/systems/movement_system.ts) | Discrete hyperspace steps and zoom-scaled system movement. There is no velocity, physical thrust, or general cargo-mass model. |
-| [Game](../../src/core/game.ts) and [SolarSystem](../../src/entities/solar_system.ts) | Calendar and analytic orbital updates. Time acceleration is duplicated, and no general bulk-time operation exists. Approach assist bypasses `MovementSystem`. |
-| [Starbase](../../src/entities/starbase.ts) and [commerce](../../src/core/starbase_commerce.ts) | Automated depots already provide trade, fuel, and basic repairs. They do not offer crew, missions, or a full shipyard. |
-| [State manager](../../src/core/game_state_manager.ts) and [saves](../../src/core/save_game.ts) | System materialisation, station identity, strict validation, and migration. Restore currently relies on a singular station, and there is no deployment registry. |
-| [Scene model](../../src/rendering/scene_view_model.ts) and [renderer](../../src/rendering/scene_renderer.ts) | Prepared snapshots, ASCII travel scenes, and modal layering. Add readonly tow/infrastructure models, not renderer-owned mission logic. |
+| Foundation                                                                                                   | Reuse and required boundary                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Mission board](../../src/core/mission_board.ts) and [progress](../../src/core/mission_progress.ts)          | Offers, frozen accepted terms, progress, and completion IDs. Add an explicit haul objective and destination settlement; current non-scan assumptions are biological. |
+| [Journal](../../src/core/mission_journal.ts) and [navigation](../../src/core/mission_navigation.ts)          | Contract access and target selection. Hauls require separate pickup and deployment endpoints rather than one local target.                                           |
+| [Ship modifications](../../src/core/ship_modifications.ts)                                                   | Equipment, bay accounting, damage, repairs, prices, and engine classes. Engine fuel multipliers exist, but engine purchases and payload-dependent movement do not.   |
+| [Crew](../../src/core/crew.ts)                                                                               | A three-person starter roster and health. There is no crew sleep state or berth inventory; specimen stasis is not crew hypersleep.                                   |
+| [Movement](../../src/systems/movement_system.ts)                                                             | Discrete hyperspace steps and zoom-scaled system movement. There is no velocity, physical thrust, or general cargo-mass model.                                       |
+| [Game](../../src/core/game.ts) and [SolarSystem](../../src/entities/solar_system.ts)                         | Calendar and analytic orbital updates. Time acceleration is duplicated, and no general bulk-time operation exists. Approach assist bypasses `MovementSystem`.        |
+| [Starbase](../../src/entities/starbase.ts) and [commerce](../../src/core/starbase_commerce.ts)               | Automated depots already provide trade, fuel, and basic repairs. They do not offer crew, missions, or a full shipyard.                                               |
+| [State manager](../../src/core/game_state_manager.ts) and [saves](../../src/core/save_game.ts)               | System materialisation, station identity, strict validation, and migration. Restore currently relies on a singular station, and there is no deployment registry.     |
+| [Scene model](../../src/rendering/scene_view_model.ts) and [renderer](../../src/rendering/scene_renderer.ts) | Prepared snapshots, ASCII travel scenes, and modal layering. Add readonly tow/infrastructure models, not renderer-owned mission logic.                               |
 
 Cargo capacity is measured in cubic metres, not kilograms. Fitted-load and
 drive-efficiency displays must not be mistaken for an existing physical mass
@@ -67,16 +68,16 @@ model. Human presence is spatially generated, not advanced by the calendar.
 Prefer a few cohesive modules to a framework of tiny classes. Names below are
 proposed; follow nearby code conventions when implementing.
 
-| Owner | Responsibility |
-| --- | --- |
-| `core/heavy_haul_types.ts` | Typed endpoints, immutable package/contract definitions, lifecycle records, quotes, and receipts. |
-| `core/tow_performance.ts` | Pure capability checks, load factors, route duration, and support-fuel estimates. |
-| `core/heavy_haul_service.ts` | One active package, validated commands, lifecycle transitions, and prepared journey/deployment outcomes. |
-| `core/heavy_haul_contracts.ts` | Bounded deterministic offers, eligible endpoints, reserved deployment sites, and fixed rewards. |
-| `core/simulation_time.ts` | Shared time units, existing frame-time conversion, and explicit bulk advancement. |
-| `core/world_infrastructure.ts` | Persistent deployment records, stable IDs, materialisation, and registry revision/query APIs. |
-| Focused haul controller/model builder | Transient selection, confirmation, manifest, and readonly presentation. Reuse existing terminal/dialogue helpers. |
-| Existing owners | `MissionProgress` owns acceptance/completion, ship modifications own fitted equipment, commerce owns station markets, and `Game` coordinates effects and saves. |
+| Owner                                 | Responsibility                                                                                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/heavy_haul_types.ts`            | Typed endpoints, immutable package/contract definitions, lifecycle records, quotes, and receipts.                                                               |
+| `core/tow_performance.ts`             | Pure capability checks, load factors, route duration, and support-fuel estimates.                                                                               |
+| `core/heavy_haul_service.ts`          | One active package, validated commands, lifecycle transitions, and prepared journey/deployment outcomes.                                                        |
+| `core/heavy_haul_contracts.ts`        | Bounded deterministic offers, eligible endpoints, reserved deployment sites, and fixed rewards.                                                                 |
+| `core/simulation_time.ts`             | Shared time units, existing frame-time conversion, and explicit bulk advancement.                                                                               |
+| `core/world_infrastructure.ts`        | Persistent deployment records, stable IDs, materialisation, and registry revision/query APIs.                                                                   |
+| Focused haul controller/model builder | Transient selection, confirmation, manifest, and readonly presentation. Reuse existing terminal/dialogue helpers.                                               |
+| Existing owners                       | `MissionProgress` owns acceptance/completion, ship modifications own fitted equipment, commerce owns station markets, and `Game` coordinates effects and saves. |
 
 Do not maintain independent copies of accepted terms in both the mission and
 tow services. Reference the frozen accepted mission definition by ID. Haul
@@ -102,14 +103,14 @@ seconds to an API that expects simulated seconds.
 
 Minimum proposed records:
 
-| Record | Contents |
-| --- | --- |
-| `HaulEndpoint` | Full system address (`worldX`, `worldY`, `systemSlot`), endpoint role, stable site/asset ID, and local orbit or staging specification. |
-| `TowPackageDefinition` | Payload kind, dry mass, conservative wet departure mass, physical-size category, support budget, and equipment requirements. |
-| Haul objective | Pickup/deployment endpoints, package definition, immutable reward, route constraints, and settlement policy. |
-| `ActiveTowRecord` | Mission/package IDs, stage, remaining auxiliary fuel, attachment state, and committed journey receipt references. |
-| `HaulQuote` | Capability result, duration, support consumption, berth requirement, onward-safety result, and specific refusal reasons. |
-| `JourneyReceipt` | Unique operation ID, route, elapsed simulated seconds, fuel consumed, departure/arrival dates, and arrival placement. |
+| Record                 | Contents                                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `HaulEndpoint`         | Full system address (`worldX`, `worldY`, `systemSlot`), endpoint role, stable site/asset ID, and local orbit or staging specification.   |
+| `TowPackageDefinition` | Payload kind, dry mass, conservative wet departure mass, physical-size category, support budget, and equipment requirements.             |
+| Haul objective         | Pickup/deployment endpoints, package definition, immutable reward, route constraints, and settlement policy.                             |
+| `ActiveTowRecord`      | Mission/package IDs, stage, remaining auxiliary fuel, attachment state, and committed journey receipt references.                        |
+| `HaulQuote`            | Capability result, duration, support consumption, berth requirement, onward-safety result, and specific refusal reasons.                 |
+| `JourneyReceipt`       | Unique operation ID, route, elapsed simulated seconds, fuel consumed, departure/arrival dates, and arrival placement.                    |
 | `InfrastructureRecord` | Stable asset ID, source contract, system address, installation kind, orbit specification/epoch, commissioning date, and service profile. |
 
 Required invariants:
@@ -325,15 +326,15 @@ time-acceleration conversion.
 
 Version-one large-time policy:
 
-| System | Policy |
-| --- | --- |
-| Game date and orbital phases | Advance by the committed duration. |
-| Sealed biological specimens and sleeping crew | Remain reliably preserved; no surprise decay or random sleep deaths. |
-| Surface encounter fields | Preserve the existing paused/local-time abstraction. Do not simulate years of creature AI. |
-| Existing missions | Preserve current non-expiring terms; do not introduce retroactive deadlines. |
-| Station markets | Preserve current stock rules. A calendar jump is not an unlimited restock or contract-refresh trigger. |
-| Salaries, ageing, colony growth, stellar evolution | Do not invent recurring charges or evolutionary changes absent from current gameplay. |
-| UI/HUD/approach state | Clear stale targets/annotations and rebuild for arrival. No wall-clock animation may drive scientific time. |
+| System                                             | Policy                                                                                                      |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Game date and orbital phases                       | Advance by the committed duration.                                                                          |
+| Sealed biological specimens and sleeping crew      | Remain reliably preserved; no surprise decay or random sleep deaths.                                        |
+| Surface encounter fields                           | Preserve the existing paused/local-time abstraction. Do not simulate years of creature AI.                  |
+| Existing missions                                  | Preserve current non-expiring terms; do not introduce retroactive deadlines.                                |
+| Station markets                                    | Preserve current stock rules. A calendar jump is not an unlimited restock or contract-refresh trigger.      |
+| Salaries, ageing, colony growth, stellar evolution | Do not invent recurring charges or evolutionary changes absent from current gameplay.                       |
+| UI/HUD/approach state                              | Clear stale targets/annotations and rebuild for arrival. No wall-clock animation may drive scientific time. |
 
 The operation must be bounded by records actually needed, not simulated days
 or every star in the Galaxy. A century-long fixture should not require more
@@ -358,9 +359,9 @@ the normal station constructor rerolling them or perturbing natural PRNG state.
 
 First useful installation types:
 
-| Type | Real first-version utility |
-| --- | --- |
-| Navigation buoy | Persistent named scan/navigation target, registered route marker, and detectable technology signal. It is not a staffed port or an unexplained drive buff. |
+| Type            | Real first-version utility                                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Navigation buoy | Persistent named scan/navigation target, registered route marker, and detectable technology signal. It is not a staffed port or an unexplained drive buff.               |
 | Automated depot | Existing depot trade, paid fuel service, and basic repairs, plus the restricted commissioning allowance where quoted. No crew office, full shipyard, or mission factory. |
 
 A separate scientific package is optional later content, not required to finish
@@ -402,11 +403,11 @@ Do not promise danger or urgency that the game does not actually simulate.
 
 Provisional reward bands, to tune during playtesting:
 
-| Tier | Initial reward target |
-| --- | --- |
-| Light local tow | 1,200-2,000 Cr |
-| Equipped intersystem haul | 3,000-6,000 Cr |
-| Uncommon demanding deployment | 8,000-15,000 Cr |
+| Tier                          | Initial reward target |
+| ----------------------------- | --------------------- |
+| Light local tow               | 1,200-2,000 Cr        |
+| Equipped intersystem haul     | 3,000-6,000 Cr        |
+| Uncommon demanding deployment | 8,000-15,000 Cr       |
 
 These are proposed values, not current economy constants. Existing survey
 fees are commonly hundreds to low thousands of credits; a cargo pod costs
@@ -555,7 +556,7 @@ Commit: `Execute supported haul journeys with analytic time advancement`.
 
 ### M4 - Persistent Buoys And Automated Depots
 
-Implementation committed in `b079c5c`; new verification gate pending Luna.
+Implementation committed in `b079c5c`; automated verification passed with M5.
 
 - Implement registry overlays, reserved stable sites, and useful buoy targets.
 - Materialise automated depots with existing services and restricted initial
@@ -573,7 +574,8 @@ Commit: `Persist and commission player-delivered frontier infrastructure`.
 ### M5 - Offers, Journal, And Playable Vertical Slice
 
 Implementation committed, including playable controls and regression coverage.
-Verification gate pending Luna; see `docs/heavy-haul-gameplay.md` for the walkthrough.
+Automated verification passed; the full browser gameplay walkthrough remains
+available in `docs/heavy-haul-gameplay.md`.
 
 - Generate bounded stable offers, including an accessible local job.
 - Integrate paused manifest, acceptance errors, pickup/arrival navigation,
@@ -615,19 +617,19 @@ Commit: `Verify and balance the first heavy-haul progression`.
 
 ## 14. Verification Matrix
 
-| Area | Required checks |
-| --- | --- |
-| Quotes | Zero tow, increasing mass, better drive, damage, overweight payload, local/intersystem units, diagonals, and finite bounded outputs. |
-| Crew/fitting | Starter roster, injured crew, extra hire, missing/full bays, replacement module, broken module, and repairs. |
-| Travel | Fine/boost/manual bypass blocked, approach-assist factor agrees, arrival outside bodies, local transfer without sleep, and unchanged untowed movement/fuel. |
-| Time | Exact quoted seconds, paused readouts, no accelerated-seconds double conversion, watermark catch-up exactly once, multi-star/moon phases, and large-duration performance. |
-| Fuel/safety | Normal tank unchanged, support insufficient refusal, reserved final approach, inaccessible resupply rejection, one-time refill allowance, and no resale/cancellation exploit. |
-| Lifecycle | Double acceptance/coupling/departure/deployment, wrong endpoint, changed capability, recovery, stale quote, and reserved-site collision. |
-| Persistence | Migration defaults, every reachable haul stage, arrival receipt, commissioned asset, docked deployed-depot restore, duplicate IDs, malformed records, and failed checkpoint recovery. |
-| Economy | Reward fixed across upgrades/idling, no issuer-return requirement for haul, other hand-ins unchanged, finite retired offers, and no time-skip restock farm. |
-| Generation | Natural fingerprints unchanged, stable contract/site IDs, load/query order independence, valid binary/trinary deployment hosts, and worker/fallback agreement. |
-| Rendering/UI | Package cleared after turning/recovery, no ship/star occlusion, modal precedence, mixed-font alignment, narrow wrapping, and no reveal-key activation leak. |
-| Existing systems | Survey/xenobiology journal and CLAIMABLE status, specimen stasis/cargo, Observatory BIO/TECH filters, station commerce/repairs, and orbital/surface scenes. |
+| Area             | Required checks                                                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Quotes           | Zero tow, increasing mass, better drive, damage, overweight payload, local/intersystem units, diagonals, and finite bounded outputs.                                                  |
+| Crew/fitting     | Starter roster, injured crew, extra hire, missing/full bays, replacement module, broken module, and repairs.                                                                          |
+| Travel           | Fine/boost/manual bypass blocked, approach-assist factor agrees, arrival outside bodies, local transfer without sleep, and unchanged untowed movement/fuel.                           |
+| Time             | Exact quoted seconds, paused readouts, no accelerated-seconds double conversion, watermark catch-up exactly once, multi-star/moon phases, and large-duration performance.             |
+| Fuel/safety      | Normal tank unchanged, support insufficient refusal, reserved final approach, inaccessible resupply rejection, one-time refill allowance, and no resale/cancellation exploit.         |
+| Lifecycle        | Double acceptance/coupling/departure/deployment, wrong endpoint, changed capability, recovery, stale quote, and reserved-site collision.                                              |
+| Persistence      | Migration defaults, every reachable haul stage, arrival receipt, commissioned asset, docked deployed-depot restore, duplicate IDs, malformed records, and failed checkpoint recovery. |
+| Economy          | Reward fixed across upgrades/idling, no issuer-return requirement for haul, other hand-ins unchanged, finite retired offers, and no time-skip restock farm.                           |
+| Generation       | Natural fingerprints unchanged, stable contract/site IDs, load/query order independence, valid binary/trinary deployment hosts, and worker/fallback agreement.                        |
+| Rendering/UI     | Package cleared after turning/recovery, no ship/star occlusion, modal precedence, mixed-font alignment, narrow wrapping, and no reveal-key activation leak.                           |
+| Existing systems | Survey/xenobiology journal and CLAIMABLE status, specimen stasis/cargo, Observatory BIO/TECH filters, station commerce/repairs, and orbital/surface scenes.                           |
 
 Place tests with current ownership: ship/navigation/interface core suites,
 movement systems, generation, and rendering. Build pure-rule tests first, then

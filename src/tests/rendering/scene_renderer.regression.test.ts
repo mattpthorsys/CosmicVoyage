@@ -277,6 +277,11 @@ function createSystem(): SolarSystem {
     ],
     planets: [],
     starbase: null,
+    stations: [],
+    navigationMarkers: [],
+    starX: 0,
+    starY: 0,
+    systemSlot: 0,
     edgeRadius: 5e12,
     getOrbitCenter: () => ({ x: 0, y: 0 }),
     getNearestStar: () => ({
@@ -641,6 +646,7 @@ describe('SceneRenderer visual regressions', () => {
     depot.systemY = 4 * scale;
     const system = createSystem();
     Object.defineProperty(system, 'starbase', { value: depot });
+    Object.defineProperty(system, 'stations', { value: [depot] });
     const getCentre = vi.spyOn(system, 'getOrbitCenter').mockReturnValue({ x: 10 * scale, y: 4 * scale });
     renderer.drawSolarSystem(player, system, scale);
     expect(getCentre).toHaveBeenCalledWith(depot.orbitHost);

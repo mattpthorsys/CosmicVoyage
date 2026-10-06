@@ -1448,7 +1448,7 @@ export class SceneRenderer {
       Math.min(104, Math.max(...model.dashboard!.map((line) => this.getDashboardLineLength(line)), 54))
     );
     const visibleRows = getDashboardVisibleRows(model.dashboard!.length, rows, footerRows);
-    const panelWidth = Math.min(cols - 4, contentWidth + 8);
+    const panelWidth = model.dashboardFullWidth ? cols : Math.min(cols - 4, contentWidth + 8);
     const panelHeight = Math.min(rows - 4, visibleRows + footerRows + 8);
     const panelX = Math.floor((cols - panelWidth) / 2);
     const panelY = Math.floor((rows - panelHeight) / 2);

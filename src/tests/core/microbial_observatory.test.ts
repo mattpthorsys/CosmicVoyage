@@ -40,6 +40,7 @@ function fixture(flux = 1361) {
     stars: [{ starType: 'G2V', luminosityW: SOLAR_LUMINOSITY_W }],
     planets: [planet],
     stations: [],
+    navigationMarkers: [],
     colonyWorld: null,
   } as unknown as SolarSystem;
   let biosphere: ReturnType<typeof generateBiosphere> = null;

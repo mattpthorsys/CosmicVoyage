@@ -61,6 +61,7 @@ describe('approach assist', () => {
   it('keeps starbase approach well inside orbital action distance', () => {
     const player = new Player();
     const target = Object.assign(Object.create(Starbase.prototype), {
+      id: 'Dock A',
       name: 'Dock A',
       systemX: CONFIG.LANDING_DISTANCE,
       systemY: 0,
@@ -86,6 +87,7 @@ describe('approach assist', () => {
   it('stops starbase approach once it reaches the inner orbit area', () => {
     const player = new Player();
     const target = Object.assign(Object.create(Starbase.prototype), {
+      id: 'Dock A',
       name: 'Dock A',
       systemX: CONFIG.LANDING_DISTANCE * 0.62,
       systemY: 0,

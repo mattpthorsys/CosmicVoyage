@@ -517,10 +517,12 @@ export class Game {
     if (parent !== 'none' && parent !== 'ship-menu' && parent !== 'mission-journal') return;
     this.haulManifest.open(this.buildHaulManifestData(mission), parent);
     this.interfaceMode.open('haul-manifest');
+    this.statusMessage = '';
     this.terminalOverlay.clear();
     this.astrometricOverlay.clear();
     this.inputManager.clearState();
     this.forceFullRender = true;
+    this._publishStatusUpdate();
   }
 
   /** Restores the parent menu or clears it for an explicitly selected travel approach. */
@@ -4680,8 +4682,12 @@ export class Game {
         : quality.confidence >= 48
           ? `${objectKind === 'neutron-star' ? '' : starType ? `${starType.slice(0, 1)}-class ` : ''}${classLabel}`
           : quality.label;
-    const registeredFacility =
-      target.stations.length > 0 || this.infrastructureRegistry.at(systemAddress(target)).length > 0;
+    const hasRegisteredStation = (target.stations?.length ?? (target.starbase ? 1 : 0)) > 0;
+    const hasDeployedFacility =
+      Number.isFinite(target.starX) &&
+      Number.isFinite(target.starY) &&
+      this.infrastructureRegistry.at(systemAddress(target)).length > 0;
+    const registeredFacility = hasRegisteredStation || hasDeployedFacility;
     const facilityTrace =
       quality.confidence >= 72 && registeredFacility
         ? 'confirmed'
@@ -8625,8 +8631,9 @@ export class Game {
       logger.error(`[Game:_publishStatusUpdate] Error getting cargo total: ${e}`);
     }
 
-    const telemetry = this.createTravelTelemetry(currentCargoTotal);
-    const hasStarbase = this.stateManager.state === 'starbase';
+    const manifestOpen = this.interfaceMode.is('haul-manifest');
+    const telemetry = manifestOpen ? undefined : this.createTravelTelemetry(currentCargoTotal);
+    const hasStarbase = !manifestOpen && this.stateManager.state === 'starbase';
 
     const actions = this.getCurrentAvailableActions();
     const commandUpdate = {
@@ -8635,11 +8642,11 @@ export class Game {
       targetName: this.getCommandStripTargetName(),
       commandBar: this.createCommandBarModel(actions),
     };
-    const statusSignature = JSON.stringify({ hasStarbase, telemetry });
+    const statusSignature = JSON.stringify({ manifestOpen, hasStarbase, telemetry });
     if (statusSignature !== this.lastPublishedStatusSignature) {
       this.lastPublishedStatusSignature = statusSignature;
       eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
-        message: telemetry.notification || '',
+        message: telemetry?.notification || '',
         hasStarbase,
         telemetry,
       });
@@ -10705,10 +10712,11 @@ export class Game {
     }
 
     const station = this.stateManager.currentStarbase;
-    const allowance =
-      this.infrastructureRegistry
-        .at(systemAddress(this.stateManager.currentSystem!))
-        .find((asset) => asset.assetId === station.id)?.commissioningFuelRemainingUnits ?? 0;
+    const system = this.stateManager.currentSystem;
+    const allowance = system
+      ? (this.infrastructureRegistry.at(systemAddress(system)).find((asset) => asset.assetId === station.id)
+          ?.commissioningFuelRemainingUnits ?? 0)
+      : 0;
     if (allowance > 0 && this.player.resources.fuel < this.player.resources.maxFuel) {
       const result = commitHaulChange(
         prepareCommissioningRefill(this.createSaveGame(), station.id),

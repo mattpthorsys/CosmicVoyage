@@ -45,6 +45,8 @@ export interface TextModalTableModel extends TextTableModel {
   subtitle?: string;
   footer?: string[];
   dashboard?: TextDashboardLine[];
+  /** Uses the full text grid for readable content on narrow terminal layouts. */
+  dashboardFullWidth?: boolean;
   /** Optional 0-1 reveal of the visible dashboard page; frame and controls remain stable. */
   dashboardReveal?: number;
 }

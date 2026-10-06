@@ -91,12 +91,16 @@ describe('paused haul manifest controls', () => {
     const manifest = manifestFixture('arrived');
     manifest.reveal.complete();
     const model = manifest.createModel(cols, rows);
+    const contentWidth = cols - (cols < 54 ? 8 : 12);
     expect(
       model.dashboard!.every(
         (line) =>
-          line.segments.reduce((length, segment) => length + segment.text.length, 0) <= Math.max(1, cols - 12)
+          line.segments.reduce((length, segment) => length + segment.text.length, 0) <=
+          Math.max(1, contentWidth)
       )
     ).toBe(true);
+    expect(model.dashboardFullWidth).toBe(cols < 54);
+    expect(model.subtitle!.length).toBeLessThanOrEqual(cols - 6);
     expect(model.dashboard!.flatMap((line) => line.segments).some((segment) => segment.font === 'thin')).toBe(
       true
     );
@@ -108,7 +112,7 @@ describe('paused haul manifest controls', () => {
       .join(' ');
     expect(text).toContain('READY TO DEPLOY');
     manifest.input(press('PAGE_DOWN'), model);
-    expect(manifest.viewOffset).toBeGreaterThan(0);
+    expect(manifest.viewOffset > 0).toBe(model.dashboard!.length > model.visibleRowCount);
     manifest.input(press('PAGE_UP'), model);
     expect(manifest.viewOffset).toBe(0);
   });

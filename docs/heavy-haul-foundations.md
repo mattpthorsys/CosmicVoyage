@@ -3,10 +3,11 @@
 M0-M2 establish rules, lifecycle, fitting, and persistence. M3 adds supported
 journey execution and analytic time advancement; its verification gate passed.
 M4 adds persistent registry overlays and checkpointed commissioning. M5 enables
-production offers and the paused, keyboard-accessible haul manifest. Both new
-verification gates await the user's Luna stage; implementation is committed
-separately from the earlier verified M3 work. No real-time towing physics or
-cargo-mass overhaul is part of these foundations.
+production offers and the paused, keyboard-accessible haul manifest. M4-M5
+automated verification passed on 2026-10-06; a headless Chrome smoke covered the
+real Operations menu and manifest at desktop and narrow widths. A complete
+manual delivery/reload playthrough remains useful. No real-time towing physics
+or cargo-mass overhaul is part of these foundations.
 
 ## Integration Inventory
 
@@ -30,18 +31,18 @@ cargo-mass overhaul is part of these foundations.
 
 All values are game-model calibration, not physical laws of hyperdrive.
 
-| Parameter | Initial choice |
-| --- | --- |
-| External coupler classes | 20,000 / 500,000 / 5,000,000 kg ratings; 600 / 2,400 / 7,200 Cr |
-| Drive classes 1-3 haul ratings | 20,000 / 250,000 / 2,000,000 kg; reference masses 1,000 / 4,000 / 16,000 kg |
-| Unloaded strategic duration | 180 / 120 / 90 simulated seconds per light-year |
-| Hyper load penalty | `1 + 25 * (wetMass / referenceMass)^2` |
-| Local handling | `max(0.35, 1 / sqrt(1 + load))`; no tow always returns 1 |
-| Local transfer profile | `distanceM / 1e7 * sqrt(1 + load)` simulated seconds |
-| Crew hypersleep | Required above 48 simulated hours; 3 / 6 berths at 2,800 / 6,500 Cr, one special bay |
-| Certification | Hull at least 75%; drive/coupler/module damage at most 20% |
-| Maximum quoted voyage | 20 simulated years; reject rather than truncate |
-| Support reserve | 10 abstract fuel units, retained for final approach |
+| Parameter                      | Initial choice                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| External coupler classes       | 20,000 / 500,000 / 5,000,000 kg ratings; 600 / 2,400 / 7,200 Cr                      |
+| Drive classes 1-3 haul ratings | 20,000 / 250,000 / 2,000,000 kg; reference masses 1,000 / 4,000 / 16,000 kg          |
+| Unloaded strategic duration    | 180 / 120 / 90 simulated seconds per light-year                                      |
+| Hyper load penalty             | `1 + 25 * (wetMass / referenceMass)^2`                                               |
+| Local handling                 | `max(0.35, 1 / sqrt(1 + load))`; no tow always returns 1                             |
+| Local transfer profile         | `distanceM / 1e7 * sqrt(1 + load)` simulated seconds                                 |
+| Crew hypersleep                | Required above 48 simulated hours; 3 / 6 berths at 2,800 / 6,500 Cr, one special bay |
+| Certification                  | Hull at least 75%; drive/coupler/module damage at most 20%                           |
+| Maximum quoted voyage          | 20 simulated years; reject rather than truncate                                      |
+| Support reserve                | 10 abstract fuel units, retained for final approach                                  |
 
 The fixed benchmarks in `src/tests/fixtures/heavy_haul.ts` cover a 1-AU buoy
 transfer, a 25-light-year medium job, and the same 100-light-year depot job with
@@ -61,17 +62,21 @@ or reward. Better drives must improve the same quoted job.
 - M4: registry overlays, moving contract sites, multi-station navigation/docking,
   depot services, observatory technology evidence, atomic escrow/deployment and
   restricted commissioning fuel implemented. Schema 20 preserves contract site
-  phases and migrates/falls back to v19 storage. New tests are written, not run.
+  phases and migrates/falls back to v19 storage. Full automated verification
+  passed with the M5 integration suite.
 - M5: bounded stable local/remote offers, paused terminal manifest, exclusive
   controls, phase-aware navigation, boundary approach, checkpointed acceptance,
-  coupling, commissioning, recovery and receipt implemented. New integration,
-  equipment-refusal, orbital-site and rendering tests are written, not run.
+  coupling, commissioning, recovery and receipt implemented. Integration,
+  equipment-refusal, orbital-site, persistence, and rendering tests passed.
+- M4-M5 `npm run check` passed: docs and formatting checks, lint, app/test
+  typechecks, all 1,071 tests across 146 files, and the production build. Vite
+  reports the existing ~987 kB minified main chunk warning.
+- Headless Chrome smoke passed from New Game through Operations into the haul
+  manifest at desktop and 390px viewport widths. Both game fonts loaded, the
+  manifest cleared stale travel telemetry, and there were no browser exceptions.
+  This was not a full contract acceptance, delivery, or save/reload playthrough.
 - M0-M2 `npm run check` passed: documentation checks, formatting, lint, app and test
   typechecks, all 981 tests, and the production build.
-- Headless Chrome confirms that the running application loads and renders its
-  title scene. Playwright is unavailable here, so no interactive shipyard browser
-  walkthrough was run; dedicated unit tests cover upgrade availability,
-  installation, bay accounting, and save round-trips.
 
 ## Implementation Map
 
@@ -125,11 +130,11 @@ is capped by remaining allowance/capacity and cannot become tradable cargo.
 Station services and markets use stable installation identity. Docked references
 are reconciled after registry refresh, including saves made inside a new depot.
 
-The earlier movement, quote, lifecycle, fitting, save, and biological regression
-tests passed together with `npm run check`. The new M4-M5 checks are pending,
-not implied by those earlier results. M0 is committed independently; M1 and M2 are kept together
-because typed objectives, save schema, equipment, and game save plumbing depend
-on the same versioned state contract.
+The movement, quote, lifecycle, fitting, save, registry, commissioning, offers,
+manifest, and biological regression suites passed together with `npm run check`.
+M0 is committed independently; M1 and M2 are kept together because typed
+objectives, save schema, equipment, and game save plumbing depend on the same
+versioned state contract.
 
 ## M3 Time And Transaction Policy
 

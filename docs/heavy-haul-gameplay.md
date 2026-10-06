@@ -1,8 +1,8 @@
 # Heavy-Haul Gameplay And Verification
 
-M4-M5 implementation is committed. Automated checks and browser walkthroughs
-are pending the requested Luna verification stage; this guide describes the
-implemented controls, not a claim that those checks have passed.
+M4-M5 implementation and automated verification are complete. The current
+browser smoke covers launch, Operations, and the empty manifest at desktop and
+narrow widths. It does not replace the full contract playthrough described below.
 
 ## First Local Contract
 
@@ -54,6 +54,18 @@ implemented controls, not a claim that those checks have passed.
 - For playtesting funds, hold **Shift** through **K, Y, R** to add 10,000 Cr.
 
 ## Verification Gate
+
+### Automated And Browser Results (2026-10-06)
+
+- `npm run check` passed, including lint, formatting, both typechecks, all 1,071
+  tests across 146 files, and the production build. The build retains Vite's
+  warning about the ~987 kB minified main bundle.
+- Headless Chrome opened the real game, Operations, and the haul manifest at
+  desktop and 390px viewport widths. Both fonts rendered, the paused manifest
+  suppressed travel telemetry, and there were no JavaScript errors.
+- Not yet personally exercised end-to-end in browser: accepting and completing
+  local/remote contracts, commissioning infrastructure, and save/reload while
+  docked at a deployed depot. Playwright is not installed in this environment.
 
 Start with focused tests:
 

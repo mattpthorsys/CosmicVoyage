@@ -631,6 +631,8 @@ describe('ship menu', () => {
       stars: [{ name: 'Aster Primary', systemX: 0, systemY: 0 }],
       planets: [planet],
       starbase,
+      stations: [starbase],
+      navigationMarkers: [],
     };
 
     const targets = game.getTargetMenuTargets();

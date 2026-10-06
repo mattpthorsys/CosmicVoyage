@@ -29,7 +29,7 @@ export function prepareHaulLifecycle(
     haul.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
     if (action.kind === 'recover') {
       const result = haul.cancel();
-      if (!result.ok) return result;
+      if (!result.ok) return { ok: false, message: result.message };
       Object.assign(save, missions.createSnapshot(), { heavyHaul: haul.createSnapshot() });
       parseGameSave(save);
       return { ok: true, save, message: result.message };
@@ -67,7 +67,7 @@ export function prepareHaulLifecycle(
       )
         throw new Error('A contracted orbital ring is occupied; this offer cannot be commissioned.');
       const result = haul.accept(mission, context);
-      if (!result.ok) return result;
+      if (!result.ok) return { ok: false, message: result.message };
       Object.assign(save, missions.createSnapshot(), { heavyHaul: haul.createSnapshot() });
       parseGameSave(save);
       return { ok: true, save, message: result.message };
@@ -86,7 +86,7 @@ export function prepareHaulLifecycle(
       },
       context
     );
-    if (!result.ok) return result;
+    if (!result.ok) return { ok: false, message: result.message };
     Object.assign(save, missions.createSnapshot(), { heavyHaul: haul.createSnapshot() });
     parseGameSave(save);
     return { ok: true, save, message: result.message };

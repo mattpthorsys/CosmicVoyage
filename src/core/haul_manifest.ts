@@ -320,7 +320,8 @@ export class HaulManifest {
       line('CONTRACT TERMS', 'cyan', true);
       line(mission.detail);
     }
-    const width = Math.max(1, Math.min(88, cols - 12));
+    const dashboardFullWidth = cols < 54;
+    const width = Math.max(1, Math.min(88, cols - (dashboardFullWidth ? 8 : 12)));
     const dashboard = wrapDashboardLines(lines, width);
     const footer = wrapDashboardLines(
       [{ segments: [{ text: 'UP/DN scroll  PGUP/DN page  ESC return' }] }],
@@ -330,7 +331,7 @@ export class HaulManifest {
     this.viewOffset = Math.min(this.viewOffset, Math.max(0, dashboard.length - visibleRowCount));
     return {
       title: 'HEAVY-HAUL MANIFEST',
-      subtitle: 'INFRASTRUCTURE LOGISTICS / ESCROW LINK',
+      subtitle: 'LOGISTICS / ESCROW',
       columns: [],
       widths: [],
       rows: [],
@@ -338,6 +339,7 @@ export class HaulManifest {
       viewOffset: this.viewOffset,
       visibleRowCount,
       dashboard,
+      dashboardFullWidth,
       dashboardReveal: this.reveal.progress,
       footer,
     };

@@ -246,8 +246,24 @@ describe('travel command menu', () => {
   });
 
   it('rejects interstellar targets beyond their source-specific sensor horizon', () => {
-    const brightTarget = { name: 'Brightfall', starType: 'G2V', starbase: null };
-    const faintTarget = { name: 'Dimfall', starType: 'T8V', starbase: null };
+    const brightTarget = {
+      name: 'Brightfall',
+      starType: 'G2V',
+      starbase: null,
+      stations: [],
+      starX: 0,
+      starY: 0,
+      systemSlot: 0,
+    };
+    const faintTarget = {
+      name: 'Dimfall',
+      starType: 'T8V',
+      starbase: null,
+      stations: [],
+      starX: 24,
+      starY: 0,
+      systemSlot: 0,
+    };
     const game = createTravelHarness('hyperspace', 'NONE');
     game.completeMissionsForScan = vi.fn();
 
@@ -281,7 +297,15 @@ describe('travel command menu', () => {
 
   it('observes a rogue planet within its wider visual horizon', () => {
     const game = createTravelHarness('hyperspace', 'NONE');
-    game.stateManager.peekAtSystem = () => ({ name: 'Rogue Mira', starType: null, starbase: null });
+    game.stateManager.peekAtSystem = () => ({
+      name: 'Rogue Mira',
+      starType: null,
+      starbase: null,
+      stations: [],
+      starX: range,
+      starY: 0,
+      systemSlot: 0,
+    });
     game.systemDataGenerator.getDeepSpacePhenomenonProperties = () => ({
       exists: true,
       type: 'rogue-planet',

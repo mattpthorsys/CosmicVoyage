@@ -48,10 +48,22 @@ describe('haul terminal drawing contract', () => {
       'none'
     );
     manifest.reveal.complete();
-    renderer.drawTextModalTable(manifest.createModel(cols, rows));
+    const model = manifest.createModel(cols, rows);
+    renderer.drawTextModalTable(model);
     const cells = (buffer as unknown as { newBuffer: CellState[] }).newBuffer;
     expect(cells.every((cell) => cell.char !== '@' && cell.bg !== '#FF0000')).toBe(true);
     expect(cells.some((cell) => cell.font === 'thin')).toBe(true);
     expect(cells.some((cell) => (cell.font ?? 'thick') === 'thick' && cell.char !== ' ')).toBe(true);
+    if (cols === 24) {
+      const renderedText = Array.from({ length: rows }, (_, y) =>
+        cells
+          .slice(y * cols, (y + 1) * cols)
+          .map((cell) => cell.char ?? ' ')
+          .join('')
+      ).join('\n');
+      expect(model.dashboardFullWidth).toBe(true);
+      expect(renderedText).toContain('HEAVY-HAUL MANIFEST');
+      expect(renderedText).toContain('LOGISTICS / ESCROW');
+    }
   });
 });
