@@ -1246,7 +1246,7 @@ export class SceneRenderer {
 
   /** Draws starbase interface. */
   drawStarbaseInterface(
-    player: PlayerViewSnapshot,
+    _player: PlayerViewSnapshot,
     starbase: Starbase,
     model: Readonly<StarbaseScreenModel>
   ): void {
@@ -1352,13 +1352,6 @@ export class SceneRenderer {
       if (index === 0) this.screenBuffer.drawString(text, x, y, fg, CONFIG.DEFAULT_BG_COLOUR, 'thin');
       else drawShortcutText(this.screenBuffer, text, x, y, fg, CONFIG.DEFAULT_BG_COLOUR);
     });
-    this.screenBuffer.drawChar(
-      player.render.char,
-      Math.floor(cols / 2),
-      Math.floor(rows / 2),
-      player.render.fgColor,
-      null
-    );
   }
 
   /** Draws text modal table. */

@@ -851,7 +851,7 @@ describe('SceneRenderer visual regressions', () => {
 
     expect(drawCalls.some((call) => call.char === GLYPHS.STAR_DIM)).toBe(false);
     expect(drawCalls.length).toBeGreaterThan(0);
-    expect(drawCalls.some((call) => call.char === player.render.char)).toBe(true);
+    expect(drawCalls.some((call) => call.char === player.render.char)).toBe(false);
     expect(createRenderSignature(drawCalls)).toMatchSnapshot();
   });
 
