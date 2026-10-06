@@ -21,6 +21,9 @@ export function systemAddress(system: SolarSystem): MissionSystemAddress {
 export function captureSystemOrbit(system: SolarSystem): SystemOrbitSaveData {
   return {
     lastAppliedBulkSeconds: system.lastAppliedBulkSeconds,
+    markers: system.navigationMarkers
+      .filter((marker) => marker.kind !== 'navigation-buoy')
+      .map((marker) => ({ id: marker.id, orbitAngle: marker.orbitAngle })),
     stars: system.stars.map((star) => ({
       id: star.id,
       orbitAngle: star.orbit?.angle ?? null,

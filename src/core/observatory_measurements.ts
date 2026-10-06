@@ -61,9 +61,10 @@ export function measureObservatoryContact(
     return record;
   }
   if (!system) return record;
-  if (system.stations.length && rangeLy <= radioReach) {
+  const buoy = system.navigationMarkers.find((marker) => marker.kind === 'navigation-buoy');
+  if ((system.stations.length || buoy) && rangeLy <= radioReach) {
     record.technology = 'registered';
-    record.features.push(`Registered facility carrier: ${system.stations[0].name}`);
+    record.features.push(`Registered facility carrier: ${system.stations[0]?.name ?? buoy!.name}`);
   }
   const documented = record.technology === 'registered' ? registeredManagedBiosphere(system) : null;
   if (documented) {

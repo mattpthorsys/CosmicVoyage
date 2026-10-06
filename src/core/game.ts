@@ -16,6 +16,14 @@ import { ActionProcessor, ActionProcessResult } from './action_processor';
 import { Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { Starbase } from '../entities/starbase';
+import { NavigationMarker } from '../entities/navigation_marker';
+import { InfrastructureRegistry } from './infrastructure_registry';
+import { materializeHaulSites } from './haul_sites';
+import {
+  commitHaulChange,
+  prepareHaulCommissioning,
+  prepareCommissioningRefill,
+} from './heavy_haul_commissioning';
 import { SolarSystem } from '../entities/solar_system';
 import { eventManager, GameEvents, GameStateChangedEvent, Unsubscribe } from './event_manager';
 import { MovementSystem, MoveRequestData } from '../systems/movement_system';
@@ -71,12 +79,7 @@ import { ScienceLog } from './science_log';
 import { ObservatoryController, type ObservatoryScreenModel } from './observatory';
 import { ObservatoryService } from './observatory_service';
 import { HeavyHaulService } from './heavy_haul_service';
-import {
-  createHeavyHaulSnapshot,
-  type InfrastructureRecord,
-  type HaulQuoteResult,
-  type HaulResupplyTarget,
-} from './heavy_haul_types';
+import { createHeavyHaulSnapshot, type HaulQuoteResult, type HaulResupplyTarget } from './heavy_haul_types';
 import {
   commitPreparedHaulJourney,
   prepareHaulJourney,
@@ -222,8 +225,8 @@ import {
 import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coordinates';
 
 // ScanTarget type includes SolarSystem now
-type ScanTarget = Planet | Starbase | StellarBody | SolarSystem;
-type NavigationTarget = Planet | Starbase | StellarBody;
+type ScanTarget = Planet | Starbase | NavigationMarker | StellarBody | SolarSystem;
+type NavigationTarget = Planet | Starbase | NavigationMarker | StellarBody;
 type RoverActionId =
   | 'operations'
   | 'science'
@@ -329,7 +332,7 @@ export class Game {
   private _observatoryService?: ObservatoryService;
   private _observatoryController?: ObservatoryController;
   private _heavyHaulService?: HeavyHaulService;
-  private infrastructureRecords: InfrastructureRecord[] = [];
+  private _infrastructureRegistry?: InfrastructureRegistry;
   private bulkAdvanceSeconds = 0;
   private systemOrbitRegistry?: Map<string, SystemOrbitHistoryRecord>;
   private materializedOrbitalSystem: SolarSystem | null = null;
@@ -376,12 +379,23 @@ export class Game {
 
   /** Owns the catalogue and evidence independently of the instrument's transient UI state. */
   private get observatoryService(): ObservatoryService {
-    return (this._observatoryService ??= new ObservatoryService(this.systemDataGenerator, this.gameSeedPRNG));
+    return (this._observatoryService ??= new ObservatoryService(
+      this.systemDataGenerator,
+      this.gameSeedPRNG,
+      undefined,
+      this.infrastructureRegistry,
+      () => this.bulkAdvanceSeconds ?? 0
+    ));
   }
 
   /** Keeps tow state tied to the existing canonical mission owner, without generating production offers. */
   private get heavyHaulService(): HeavyHaulService {
     return (this._heavyHaulService ??= new HeavyHaulService(this.missionProgress));
+  }
+
+  /** Owns persistent installations independently of generator caches and live scene objects. */
+  private get infrastructureRegistry(): InfrastructureRegistry {
+    return (this._infrastructureRegistry ??= new InfrastructureRegistry());
   }
 
   /** Lazily owns visited stellar/station phases, including lightweight non-canvas harnesses. */
@@ -417,7 +431,8 @@ export class Game {
         this.createSaveGame(),
         objective.destination.systemAddress,
         resupply,
-        this.haulJourneyWorld
+        this.haulJourneyWorld,
+        objective
       );
       return this.heavyHaulService.quote(context);
     } catch (error) {
@@ -455,6 +470,7 @@ export class Game {
       save.systemOrbitHistory.map((entry) => [systemAddressKey(entry), cloneSaveValue(entry)])
     );
     this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
+    this.infrastructureRegistry.restore(save.infrastructure);
     this.player.position = cloneSaveValue(save.player.position);
     this.player.render = cloneSaveValue(save.player.render);
     // The prepared destination already includes its voyage epoch. Do not recapture the departed source at the new clock.
@@ -473,6 +489,55 @@ export class Game {
     this.stateManager.installHaulArrival(journey.system, journey.position);
     this.lastUpdateTime = performance.now();
     this.forceFullRender = true;
+  }
+
+  /** Commits one nearby installation and its escrow payment through the same durable save boundary. */
+  deployHaulInstallation(): { readonly ok: boolean; readonly message: string } {
+    const system = this.stateManager.currentSystem;
+    if (!system) return { ok: false, message: 'Deployment requires the contracted destination system.' };
+    const result = commitHaulChange(
+      prepareHaulCommissioning(this.createSaveGame(), system),
+      this.journeyCheckpointWriter,
+      (save) => this.applyHaulChange(save)
+    );
+    this.statusMessage = result.message;
+    this._publishStatusUpdate();
+    return result;
+  }
+
+  /** Applies a validated haul checkpoint without repeating payment, refuelling or world generation. */
+  private applyHaulChange(save: GameSave): void {
+    const credits = this.player.resources.credits;
+    const fuel = this.player.resources.fuel;
+    this.missionProgress.restoreSnapshot(save);
+    this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
+    this.infrastructureRegistry.restore(save.infrastructure);
+    this.player.resources = cloneSaveValue(save.player.resources);
+    const system = this.stateManager.currentSystem;
+    if (system) {
+      this.infrastructureRegistry.materialize(system, this.bulkAdvanceSeconds ?? 0);
+      this.refreshHaulSites(system);
+      this.stateManager.reconcileDockedStation();
+    }
+    this._observatoryService?.invalidateInfrastructure();
+    this.hyperspaceSurveyService.clearCache();
+    this.renderer.invalidateWorldScene();
+    this.travelMode.approachTargetSignature = null;
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    this.inputManager.clearState();
+    this.lastMainRenderSignature = '';
+    this.forceFullRender = true;
+    if (credits !== this.player.resources.credits)
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: this.player.resources.credits - credits,
+      });
+    if (fuel !== this.player.resources.fuel)
+      eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
+        newFuel: this.player.resources.fuel,
+        amountChanged: this.player.resources.fuel - fuel,
+      });
   }
 
   /** Returns the paused instrument controller, including lightweight non-canvas harnesses. */
@@ -1317,6 +1382,7 @@ export class Game {
     this.inputManager = new InputManager();
     this.stateManager = new GameStateManager(this.player, this.gameSeedPRNG, this.systemDataGenerator);
     this.stateManager.setTowPolicy(() => this._heavyHaulService?.attachedTowPolicy ?? null);
+    this.stateManager.setSystemInitializer((system) => this.prepareMaterializedSystem(system));
     this.actionProcessor = new ActionProcessor(this.player, this.stateManager);
     this.terminalOverlay = new TerminalOverlay(); // Initialize terminal overlay
     this.astrometricOverlay = new AstrometricOverlay(this.systemDataGenerator, this.hyperspaceSurveyService);
@@ -1384,7 +1450,7 @@ export class Game {
       gameClockElapsedSeconds: this.gameClockElapsedSeconds,
       bulkAdvanceSeconds: this.bulkAdvanceSeconds ?? 0,
       heavyHaul: this._heavyHaulService?.createSnapshot() ?? createHeavyHaulSnapshot(),
-      infrastructure: cloneSaveValue(this.infrastructureRecords ?? []),
+      infrastructure: this.infrastructureRegistry.createSnapshot(),
       player: cloneSaveValue({
         position: this.player.position,
         render: this.player.render,
@@ -1416,8 +1482,8 @@ export class Game {
     const isLegacyGalaxyMigration =
       save.migratedFromGenerationVersion !== undefined &&
       save.migratedFromGenerationVersion < CONFIG.GALAXY_MODEL_VERSION;
-    // Restore world records before location resolution; M4 will materialise their service overlay here.
-    this.infrastructureRecords = isLegacyGalaxyMigration ? [] : cloneSaveValue(save.infrastructure);
+    // Restore deployment identities before a docked location tries to resolve its station.
+    this.infrastructureRegistry.restore(isLegacyGalaxyMigration ? [] : save.infrastructure);
     this.bulkAdvanceSeconds = isLegacyGalaxyMigration ? 0 : save.bulkAdvanceSeconds;
     this.systemOrbitRegistry = new Map(
       (isLegacyGalaxyMigration ? [] : save.systemOrbitHistory).map((entry) => [
@@ -1503,6 +1569,7 @@ export class Game {
       isLegacyGalaxyMigration ? createHeavyHaulSnapshot() : save.heavyHaul,
       this.gameClockElapsedSeconds
     );
+    if (this.stateManager.currentSystem) this.refreshHaulSites(this.stateManager.currentSystem);
     this.missionProgress.resolveBiologicalReferences(this.xenobiology.snapshot.fields);
     this.scanService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.catalogueDiscoveries);
     this.observatoryService.restoreSnapshot(
@@ -1552,6 +1619,7 @@ export class Game {
   /** Captures mutable planet state from the active generated system into the persistent registry. */
   private captureCurrentPlanetMutations(system: SolarSystem | null = this.stateManager.currentSystem): void {
     if (!system) return;
+    this.infrastructureRegistry.capture(system);
     for (const mutation of capturePlanetMutations(system)) {
       this.planetMutationRegistry.set(getPlanetMutationKey(mutation), mutation);
     }
@@ -1570,7 +1638,20 @@ export class Game {
       mutations,
       this.bulkAdvanceSeconds ?? 0
     );
+    this.infrastructureRegistry.materialize(system, this.bulkAdvanceSeconds ?? 0);
+    if (this._heavyHaulService) this.refreshHaulSites(system);
     this.materializedOrbitalSystem = system;
+  }
+
+  /** Reconciles moving rendezvous sites against their saved phases, independently of natural generation. */
+  private refreshHaulSites(system: SolarSystem): void {
+    const tow = this._heavyHaulService?.createSnapshot().activeTow;
+    materializeHaulSites(
+      system,
+      tow ? this.missionProgress.getMission(tow.missionId) : undefined,
+      this.orbitalHistory.get(systemAddressKey(systemAddress(system)))?.orbit,
+      this.bulkAdvanceSeconds ?? 0
+    );
   }
 
   /** Pauses simulation and keyboard handling while retaining the current game instance. */
@@ -1781,7 +1862,7 @@ export class Game {
         this.terminalOverlay.addMessageLines([
           `<h>Entered ${system.name}</h>`,
           `System: <hl>${system.architecture.kind}</hl> | Stars: <hl>${stellarSummary}</hl>`,
-          `Bodies: <hl>${planetCount}</hl> | Facility: <hl>${system.starbase ? system.starbase.name : 'None detected'}</hl>`,
+          `Bodies: <hl>${planetCount}</hl> | Facilities: <hl>${system.stations.map((station) => station.name).join(', ') || 'None detected'}</hl>`,
           `Tip: <hl>Tab</hl> cycles targets, <hl>Space</hl> performs the best action, <hl>A</hl> approaches target.`,
         ]);
       }
@@ -4063,7 +4144,11 @@ export class Game {
       ) {
         lines = this._formatStarScanPopup(target as StellarBody);
         targetName = `Star (${(target as StellarBody).name})`;
-      } else if (target instanceof Planet || target instanceof Starbase) {
+      } else if (
+        target instanceof Planet ||
+        target instanceof Starbase ||
+        target instanceof NavigationMarker
+      ) {
         targetName = target.name;
         if (target instanceof Planet) {
           const confidence = Math.min(
@@ -4657,7 +4742,7 @@ export class Game {
         );
       }
       lines.push(
-        `Facilities: <hl>${system.starbase ? (system.starbase.kind === 'automated-depot' ? 'Automated Depot Detected' : 'Starbase Detected') : 'None Detected'}</hl>`
+        `Facilities: <hl>${system.stations.map((station) => (station.kind === 'automated-depot' ? 'Automated Depot' : 'Starbase')).join(', ') || 'None Detected'}</hl>`
       );
     }
     lines.push('<h>--- SCAN COMPLETE---</h>');
@@ -5049,7 +5134,7 @@ export class Game {
       targets.push(planet);
       if (planet.moons) targets.push(...planet.moons);
     });
-    if (system.starbase) targets.push(system.starbase);
+    targets.push(...system.stations, ...system.navigationMarkers);
     return targets;
   }
 
@@ -5061,7 +5146,7 @@ export class Game {
       ...system.stars,
       ...system.planets.filter((planet): planet is Planet => planet !== null),
     ];
-    if (system.starbase) targets.push(system.starbase);
+    targets.push(...system.stations, ...system.navigationMarkers);
     return targets;
   }
 
@@ -7407,6 +7492,8 @@ export class Game {
   private getTargetClassLabel(target: NavigationTarget): string {
     if (target instanceof Planet) return 'Planet';
     if (target instanceof Starbase) return 'Starbase';
+    if (target instanceof NavigationMarker)
+      return target.kind === 'navigation-buoy' ? 'Nav Buoy' : 'Haul Site';
     return `${getStellarStageLabel(target.starType)} ${target.id}`;
   }
 
@@ -7489,7 +7576,8 @@ export class Game {
   /** Returns target signature. */
   private getTargetSignature(target: NavigationTarget): string {
     if (target instanceof Planet) return `planet:${target.name}`;
-    if (target instanceof Starbase) return `starbase:${target.name}`;
+    if (target instanceof Starbase) return `starbase:${target.id}`;
+    if (target instanceof NavigationMarker) return `marker:${target.id}`;
     return `star:${target.name}`;
   }
 
@@ -7528,11 +7616,10 @@ export class Game {
 
     const scanX = this.player.position.systemX;
     const scanY = this.player.position.systemY;
-    const nearbyObject = system.getObjectNear(scanX, scanY);
     const scannableObject = system.getScannableObjectNear(scanX, scanY);
     const objectThreshold = CONFIG.LANDING_DISTANCE;
-    const objectDistanceSq = nearbyObject
-      ? this.player.distanceSqToSystemCoords(nearbyObject.systemX, nearbyObject.systemY)
+    const objectDistanceSq = scannableObject
+      ? this.player.distanceSqToSystemCoords(scannableObject.systemX, scannableObject.systemY)
       : Infinity;
     const starThreshold = CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
     const nearbyStar = system.getStarNear(scanX, scanY, starThreshold);
@@ -7552,7 +7639,9 @@ export class Game {
   private isTargetWithinScanRange(target: NavigationTarget): boolean {
     const coords = this.getTargetCoords(target);
     const multiplier =
-      target instanceof Planet || target instanceof Starbase ? 1 : CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
+      target instanceof Planet || target instanceof Starbase || target instanceof NavigationMarker
+        ? 1
+        : CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
     return (
       this.player.distanceSqToSystemCoords(coords.x, coords.y) < (CONFIG.LANDING_DISTANCE * multiplier) ** 2
     );
@@ -7560,6 +7649,7 @@ export class Game {
 
   /** Returns target approach distance. */
   private getTargetApproachDistance(target: NavigationTarget): number {
+    if (target instanceof NavigationMarker) return 1e10;
     return target instanceof Planet || target instanceof Starbase
       ? CONFIG.LANDING_DISTANCE * 0.62
       : CONFIG.LANDING_DISTANCE * CONFIG.STAR_SCAN_DISTANCE_MULTIPLIER;
@@ -10135,6 +10225,7 @@ export class Game {
   /** Returns the stable station key used by local services and persistent economy state. */
   private getStationPersistenceKey(starbase: Starbase | null): string {
     if (!starbase) return 'default-station';
+    this.starbaseCommerce.registerStation(starbase.id || starbase.name, starbase.kind);
     return starbase.id || starbase.name;
   }
 
@@ -10269,6 +10360,21 @@ export class Game {
       return;
     }
 
+    const station = this.stateManager.currentStarbase;
+    const allowance =
+      this.infrastructureRegistry
+        .at(systemAddress(this.stateManager.currentSystem!))
+        .find((asset) => asset.assetId === station.id)?.commissioningFuelRemainingUnits ?? 0;
+    if (allowance > 0 && this.player.resources.fuel < this.player.resources.maxFuel) {
+      const result = commitHaulChange(
+        prepareCommissioningRefill(this.createSaveGame(), station.id),
+        this.journeyCheckpointWriter,
+        (save) => this.applyHaulChange(save)
+      );
+      this.statusMessage = this.starbaseMode.alert = result.message;
+      this._publishStatusUpdate();
+      return;
+    }
     const result = this.starbaseCommerce.refuel();
     this.statusMessage = result.message;
     this.publishCommerceEffects(result.effects);

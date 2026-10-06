@@ -1,8 +1,10 @@
 # Heavy-Haul Foundations
 
 M0-M2 establish rules, lifecycle, fitting, and persistence. M3 adds supported
-journey execution and analytic time advancement; its verification gate is
-pending. Production haul offers remain unavailable until useful commissioning
+journey execution and analytic time advancement; its verification gate passed.
+M4 adds persistent registry overlays and checkpointed commissioning. Its new
+regression tests await the user's Luna verification stage.
+Production haul offers remain unavailable until useful commissioning
 and the playable contract interface are implemented in M4-M5. No real-time
 towing physics or cargo-mass overhaul is part of these foundations.
 
@@ -54,9 +56,12 @@ or reward. Better drives must improve the same quoted job.
   validation, and prepared destination settlement written in focused services.
 - M2: shipyard fitting, itemised repair, and version-18 save support written.
 - M3: prepared arrival checkpoints, bulk-time/orbital catch-up, manual/assisted
-  tow handling, travel restrictions, and version-19 migration written. New
-  regression tests are written but have not been executed; switch to Luna
-  before verification, and commit M3 only after its gate passes.
+  tow handling, travel restrictions, and version-19 migration verified; full
+  check passed with 1,010 tests. Subsequent shipyard checks passed with 1,033 tests.
+- M4: registry overlays, moving contract sites, multi-station navigation/docking,
+  depot services, observatory technology evidence, atomic escrow/deployment and
+  restricted commissioning fuel implemented. Schema 20 preserves contract site
+  phases and migrates/falls back to v19 storage. New tests are written, not run.
 - M0-M2 `npm run check` passed: documentation checks, formatting, lint, app and test
   typechecks, all 981 tests, and the production build.
 - Headless Chrome confirms that the running application loads and renders its
@@ -85,11 +90,27 @@ or reward. Better drives must improve the same quoted job.
 - `core/heavy_haul_journey.ts`: real onward-supply checks, source staging,
   current quote revalidation, disposable destination preparation, safe arrival,
   and checkpoint-before-application coordination.
-- `core/save_game.ts`: schema 19, migrations from 17/18, prior-key fallback and
+- `core/save_game.ts`: schema 20, migrations including 19, prior-key fallback and
   clearing, orbital-history validation, and cross-owner checks.
 - `core/game.ts`: `quoteHaulJourney` and `departHaulJourney` orchestrate future
   manifest commands; ApplicationController provides a throwing session writer.
-  No production haul board, transit UI, or infrastructure overlay yet.
+  Infrastructure is materialized after natural catch-up. M5 adds the production
+  board and paused voyage interface.
+
+## M4 Registry And Commissioning
+
+Natural generation remains unchanged. `InfrastructureRegistry` materializes
+stable IDs as extra stations or selectable navigation transmitters, after
+restoring the host system's natural phases. Its separate per-installation epoch
+prevents applying time from before commissioning. `haul_sites` materializes
+the accepted contract's pickup/deployment contacts at the same orbital epoch.
+
+Commissioning prepares one validated save containing installation, detached
+tank, completed objective and escrow payment. Storage failure applies none of
+these effects. Depot commissioning fuel fills only the normal reactor tank,
+is capped by remaining allowance/capacity and cannot become tradable cargo.
+Station services and markets use stable installation identity. Docked references
+are reconciled after registry refresh, including saves made inside a new depot.
 
 The baseline movement, quote, lifecycle, fitting, save, and biological regression
 tests have passed together with `npm run check`. Contracts themselves remain

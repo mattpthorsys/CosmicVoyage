@@ -10,6 +10,7 @@ import { SPECTRAL_TYPES } from '../constants/stellar';
 import { PRNG } from '../utils/prng';
 import { Planet } from './planet'; // Assuming Planet class has mass, escapeVelocity, axialTilt, moons properties
 import { Starbase } from './starbase';
+import { NavigationMarker } from './navigation_marker';
 import { logger } from '../utils/logger';
 import { calculateGravity } from '../entities/planet/physical_generator';
 import {
@@ -62,9 +63,11 @@ export class SolarSystem {
   readonly stellarEnvironment: StellarEnvironment;
   readonly planets: (Planet | null)[]; // Array for planets (includes moons nested)
   readonly starbase: Starbase | null; // Optional starbase
-  readonly stations: readonly Starbase[];
+  private stationList: Starbase[] = [];
+  private markerList: NavigationMarker[] = [];
   readonly colonyWorld: Planet | null;
-  readonly edgeRadius: number; // System boundary radius in meters
+  edgeRadius: number; // System boundary radius in meters, including player-world overlays
+  private naturalEdgeRadius = 0;
   /** Cumulative explicit voyages already reflected in this materialised system. */
   lastAppliedBulkSeconds = 0;
   readonly isStarless: boolean;
@@ -202,7 +205,7 @@ export class SolarSystem {
       }
     }
     this.starbase = station;
-    this.stations = station ? Object.freeze([station]) : Object.freeze([]);
+    this.stationList = station ? [station] : [];
 
     // Calculate edge radius based on furthest object (planet or starbase)
     let maxOrbit_m = 0;
@@ -1364,7 +1367,7 @@ export class SolarSystem {
   }
 
   /** Returns orbit host mass kg. */
-  private getOrbitHostMassKg(host: OrbitHost): number {
+  getOrbitHostMassKg(host: OrbitHost): number {
     if (this.isStarless) return 0;
     if (host.kind === 'circumstellar') {
       return (
@@ -1900,9 +1903,7 @@ export class SolarSystem {
         }
       }
     });
-    if (this.starbase) {
-      objectsToCheck.push(this.starbase);
-    }
+    objectsToCheck.push(...this.stations);
 
     for (const obj of objectsToCheck) {
       if (!obj) continue;
@@ -1932,8 +1933,18 @@ export class SolarSystem {
   }
 
   /** Finds the object to scan near the given coordinates. Moons resolve to their parent planet. */
-  getScannableObjectNear(x_m: number, y_m: number): Planet | Starbase | null {
-    const nearbyObject = this.getObjectNear(x_m, y_m);
+  getScannableObjectNear(x_m: number, y_m: number): Planet | Starbase | NavigationMarker | null {
+    let nearbyObject: Planet | Starbase | NavigationMarker | null = this.getObjectNear(x_m, y_m);
+    let distance = nearbyObject
+      ? Math.hypot(nearbyObject.systemX - x_m, nearbyObject.systemY - y_m)
+      : CONFIG.LANDING_DISTANCE;
+    for (const marker of this.navigationMarkers) {
+      const range = Math.hypot(marker.systemX - x_m, marker.systemY - y_m);
+      if (range < distance) {
+        nearbyObject = marker;
+        distance = range;
+      }
+    }
     if (nearbyObject instanceof Planet) {
       return this.getOrbitParentFor(nearbyObject);
     }
@@ -2113,37 +2124,75 @@ export class SolarSystem {
     });
 
     // --- Update Starbase Orbit (uses fixed 4hr=1yr timescale) ---
-    if (this.starbase) {
-      const sb_r = this.starbase.orbitDistance;
+    for (const station of this.stations) {
+      const sb_r = station.orbitDistance;
       if (!Number.isFinite(sb_r) || sb_r <= 0) {
         logger.warn(`[System:${this.name}] Invalid orbit distance for starbase. Skipping.`);
-        return;
+        continue;
       }
-      if (this.starbase.coorbitalAngleOffset !== null && this.colonyWorld) {
-        this.starbase.orbitAngle =
-          (this.colonyWorld.orbitAngle + this.starbase.coorbitalAngleOffset + 2 * Math.PI) % (2 * Math.PI);
+      if (station.coorbitalAngleOffset !== null && this.colonyWorld) {
+        station.orbitAngle =
+          (this.colonyWorld.orbitAngle + station.coorbitalAngleOffset + 2 * Math.PI) % (2 * Math.PI);
       } else {
         const sbPeriod_s = this.calculateKeplerPeriodSeconds(
           sb_r,
-          this.getOrbitHostMassKg(this.starbase.orbitHost)
+          this.getOrbitHostMassKg(station.orbitHost)
         );
         if (!Number.isFinite(sbPeriod_s) || sbPeriod_s <= 0) {
           logger.warn(`[System:${this.name}] Invalid orbital period for starbase. Skipping.`);
-          return;
+          continue;
         }
-        this.starbase.orbitAngle = advanceOrbitalAngle(this.starbase.orbitAngle, stationSeconds, sbPeriod_s);
-        if (!Number.isFinite(this.starbase.orbitAngle)) this.starbase.orbitAngle = 0;
+        station.orbitAngle = advanceOrbitalAngle(station.orbitAngle, stationSeconds, sbPeriod_s);
+        if (!Number.isFinite(station.orbitAngle)) station.orbitAngle = 0;
       }
-      const center = this.getOrbitCenter(this.starbase.orbitHost);
-      this.starbase.systemX = center.x + Math.cos(this.starbase.orbitAngle) * sb_r;
-      this.starbase.systemY = center.y + Math.sin(this.starbase.orbitAngle) * sb_r;
-      if (!Number.isFinite(this.starbase.systemX) || !Number.isFinite(this.starbase.systemY)) {
+      const center = this.getOrbitCenter(station.orbitHost);
+      station.systemX = center.x + Math.cos(station.orbitAngle) * sb_r;
+      station.systemY = center.y + Math.sin(station.orbitAngle) * sb_r;
+      if (!Number.isFinite(station.systemX) || !Number.isFinite(station.systemY)) {
         logger.error(`[System:${this.name}] Non-finite position for starbase. Resetting.`);
-        this.starbase.systemX = 0;
-        this.starbase.systemY = 0;
+        station.systemX = 0;
+        station.systemY = 0;
       }
     }
+    for (const marker of this.navigationMarkers) {
+      const period = this.calculateKeplerPeriodSeconds(
+        marker.orbitDistance,
+        this.getOrbitHostMassKg(marker.orbitHost)
+      );
+      marker.orbitAngle = advanceOrbitalAngle(marker.orbitAngle, scaledDeltaTime, period);
+      const center = this.getOrbitCenter(marker.orbitHost);
+      marker.systemX = center.x + Math.cos(marker.orbitAngle) * marker.orbitDistance;
+      marker.systemY = center.y + Math.sin(marker.orbitAngle) * marker.orbitDistance;
+    }
   } // End updateOrbits method
+
+  /** Returns all usable stations while retaining starbase as the legacy natural primary alias. */
+  get stations(): readonly Starbase[] {
+    return this.stationList ?? (this.starbase ? [this.starbase] : []);
+  }
+
+  /** Exposes registered instruments and the active contract's orbital rendezvous markers. */
+  get navigationMarkers(): readonly NavigationMarker[] {
+    return this.markerList ?? [];
+  }
+
+  /** Replaces only player-world overlays and expands local bounds without rerolling any natural body. */
+  setInfrastructure(stations: readonly Starbase[], markers: readonly NavigationMarker[]): void {
+    if (!this.naturalEdgeRadius) this.naturalEdgeRadius = this.edgeRadius;
+    this.stationList = [...(this.starbase ? [this.starbase] : []), ...stations];
+    this.markerList = [...markers];
+    this.edgeRadius = this.naturalEdgeRadius;
+    for (const entity of [...stations, ...markers]) {
+      const center = this.getOrbitCenter(entity.orbitHost);
+      entity.systemX = center.x + Math.cos(entity.orbitAngle) * entity.orbitDistance;
+      entity.systemY = center.y + Math.sin(entity.orbitAngle) * entity.orbitDistance;
+      this.edgeRadius = Math.max(
+        this.edgeRadius,
+        (this.getOrbitCenterExtent(entity.orbitHost) + entity.orbitDistance) *
+          CONFIG.SYSTEM_EDGE_RADIUS_FACTOR
+      );
+    }
+  }
 } // End SolarSystem class
 
 /** Encodes coordinate sign explicitly so downstream slugging cannot alias mirrored locations. */

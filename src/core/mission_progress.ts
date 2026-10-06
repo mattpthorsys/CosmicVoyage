@@ -348,6 +348,10 @@ function freezeHaulTerms(mission: StarbaseMission): StarbaseMission {
   }
   Object.freeze(objective.package);
   Object.freeze(objective.route);
+  if (objective.resupply) {
+    Object.freeze(objective.resupply.systemAddress);
+    Object.freeze(objective.resupply);
+  }
   Object.freeze(objective);
   Object.freeze(mission.objectives);
   if (mission.systemAddress) Object.freeze(mission.systemAddress);

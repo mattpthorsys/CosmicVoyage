@@ -603,17 +603,30 @@ export class SceneRenderer {
     });
 
     // --- Draw Starbase ---
-    if (system.starbase) {
-      const center = system.getOrbitCenter(system.starbase.orbitHost);
+    for (const station of system.stations) {
+      const center = system.getOrbitCenter(station.orbitHost);
       const barycenterViewX = Math.floor((center.x - viewWorldStartX) / viewScale);
       const barycenterViewY = Math.floor((center.y - viewWorldStartY) / viewScale);
       this._drawStarbaseInSystem(
-        system.starbase,
+        station,
         barycenterViewX,
         barycenterViewY,
         viewWorldStartX,
         viewWorldStartY,
         viewScale
+      );
+    }
+    for (const marker of system.navigationMarkers ?? []) {
+      const x = Math.floor((marker.systemX - viewWorldStartX) / viewScale);
+      const y = Math.floor((marker.systemY - viewWorldStartY) / viewScale);
+      if (x < 0 || y < 0 || x >= cols || y >= rows || (x === viewCenterX && y === viewCenterY)) continue;
+      const colour = marker.kind === 'navigation-buoy' ? TEXT_PALETTE.green : TEXT_PALETTE.amber;
+      this.screenBuffer.drawChar(
+        marker.kind === 'pickup' ? '=' : '+',
+        x,
+        y,
+        colour,
+        CONFIG.DEFAULT_BG_COLOUR
       );
     }
 
@@ -892,8 +905,8 @@ export class SceneRenderer {
         );
       }
     });
-    if (system.starbase) {
-      const sbPos = worldToMinimap(system.starbase.systemX, system.starbase.systemY);
+    for (const station of system.stations) {
+      const sbPos = worldToMinimap(station.systemX, station.systemY);
       if (sbPos) {
         this.screenBuffer.drawChar(
           GLYPHS.STARBASE_ICON,
@@ -903,6 +916,11 @@ export class SceneRenderer {
           CONFIG.DEFAULT_BG_COLOUR
         );
       }
+    }
+    for (const marker of system.navigationMarkers ?? []) {
+      const position = worldToMinimap(marker.systemX, marker.systemY);
+      if (position)
+        this.screenBuffer.drawChar('+', position.x, position.y, TEXT_PALETTE.green, CONFIG.DEFAULT_BG_COLOUR);
     }
     const playerPos = worldToMinimap(player.position.systemX, player.position.systemY);
     if (playerPos) {

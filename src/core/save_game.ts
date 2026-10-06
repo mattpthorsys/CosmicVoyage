@@ -38,9 +38,11 @@ import { isBiologicalMissionObjective, getHeavyHaulObjective } from './mission_b
 import { sameHaulAddress } from './heavy_haul_types';
 import type { SystemOrbitHistoryRecord } from './system_orbit_state';
 
-export const SAVE_GAME_VERSION = 19;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v19';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v19';
+export const SAVE_GAME_VERSION = 20;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v20';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v20';
+const VERSION_NINETEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v19';
+const VERSION_NINETEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v19';
 const VERSION_EIGHTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v18';
 const VERSION_EIGHTEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v18';
 const VERSION_SEVENTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v17';
@@ -118,6 +120,8 @@ export interface SystemOrbitSaveData {
   stars: Array<{ id: string; orbitAngle: number | null; systemX: number; systemY: number }>;
   starbase: { orbitAngle: number; systemX: number; systemY: number } | null;
   lastAppliedBulkSeconds?: number;
+  /** Active contract sites share this system epoch; generated blueprints remain untouched. */
+  markers?: Array<{ id: string; orbitAngle: number }>;
 }
 
 export interface LegacyLocationSaveData {
@@ -259,7 +263,11 @@ export interface GameSaveV19 extends Omit<GameSaveV18, 'version'> {
   systemOrbitHistory: SystemOrbitHistoryRecord[];
 }
 
-export type GameSave = GameSaveV19;
+export interface GameSaveV20 extends Omit<GameSaveV19, 'version'> {
+  version: 20;
+}
+
+export type GameSave = GameSaveV20;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -310,6 +318,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV17
     | GameSaveV18
     | GameSaveV19
+    | GameSaveV20
   >;
   if (
     record.version !== 1 &&
@@ -330,6 +339,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 16 &&
     record.version !== 17 &&
     record.version !== 18 &&
+    record.version !== 19 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -407,8 +417,11 @@ export function parseGameSave(value: string | unknown): GameSave {
     case 18:
       save = migrateV18Save(candidate as unknown as GameSaveV18);
       break;
+    case 19:
+      save = { ...(candidate as unknown as GameSaveV19), version: SAVE_GAME_VERSION };
+      break;
     default:
-      save = candidate as unknown as GameSaveV19;
+      save = candidate as unknown as GameSaveV20;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -486,6 +499,18 @@ export function parseGameSave(value: string | unknown): GameSave {
     save.bulkAdvanceSeconds,
     save.completedMissionIds
   );
+  const savedLocation = save.location;
+  if (
+    savedLocation.kind === 'starbase' &&
+    savedLocation.stationId.startsWith('haul-installation:') &&
+    !save.infrastructure.some(
+      (asset) =>
+        asset.assetId === savedLocation.stationId &&
+        asset.kind === 'automated-depot' &&
+        sameHaulAddress(asset.systemAddress, savedLocation)
+    )
+  )
+    throw new Error('Docked installation is absent from the infrastructure registry.');
   for (const watermark of [
     save.systemOrbit?.lastAppliedBulkSeconds,
     ...save.planetMutations.map((mutation) => mutation.lastAppliedBulkSeconds),
@@ -565,6 +590,19 @@ function validateSystemOrbit(systemOrbit: unknown): asserts systemOrbit is Syste
     assertFiniteNumber(star.systemX, 'stellar orbit systemX');
     assertFiniteNumber(star.systemY, 'stellar orbit systemY');
   }
+  if (systemOrbit.markers !== undefined) {
+    if (!Array.isArray(systemOrbit.markers) || systemOrbit.markers.length > 2)
+      throw new Error('Save contract marker phases are invalid.');
+    const markers = new Set<string>();
+    for (const marker of systemOrbit.markers) {
+      if (!isRecord(marker)) throw new Error('Save contract marker is invalid.');
+      assertNonEmptyString(marker.id, 'contract marker id');
+      assertFiniteNumber(marker.orbitAngle, 'contract marker angle');
+      if (markers.has(marker.id) || marker.orbitAngle < 0 || marker.orbitAngle >= 2 * Math.PI)
+        throw new Error('Save contract marker identity or phase is invalid.');
+      markers.add(marker.id);
+    }
+  }
   if (systemOrbit.starbase === null) return;
   if (!isRecord(systemOrbit.starbase)) throw new Error('Save station orbit state is invalid.');
   assertFiniteNumber(systemOrbit.starbase.orbitAngle, 'station orbit angle');
@@ -607,6 +645,10 @@ function validateSystemOrbitHistory(save: GameSave): void {
 function sameSystemOrbitSnapshot(a: SystemOrbitSaveData, b: SystemOrbitSaveData): boolean {
   return (
     (a.lastAppliedBulkSeconds ?? 0) === (b.lastAppliedBulkSeconds ?? 0) &&
+    (a.markers ?? []).length === (b.markers ?? []).length &&
+    (a.markers ?? []).every((marker) =>
+      (b.markers ?? []).some((other) => other.id === marker.id && other.orbitAngle === marker.orbitAngle)
+    ) &&
     a.stars.length === b.stars.length &&
     a.stars.every((star) =>
       b.stars.some(
@@ -1321,6 +1363,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_NINETEEN_SESSION_SAVE_KEY,
       VERSION_EIGHTEEN_SESSION_SAVE_KEY,
       VERSION_SEVENTEEN_SESSION_SAVE_KEY,
       VERSION_SIXTEEN_SESSION_SAVE_KEY,
@@ -1350,6 +1393,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_NINETEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_EIGHTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SEVENTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SIXTEEN_SESSION_SAVE_KEY);
@@ -1375,6 +1419,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_NINETEEN_MANUAL_SAVE_KEY,
       VERSION_EIGHTEEN_MANUAL_SAVE_KEY,
       VERSION_SEVENTEEN_MANUAL_SAVE_KEY,
       VERSION_SIXTEEN_MANUAL_SAVE_KEY,
@@ -1404,6 +1449,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_NINETEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_EIGHTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SEVENTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SIXTEEN_MANUAL_SAVE_KEY);

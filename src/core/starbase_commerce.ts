@@ -6,6 +6,7 @@ import { fastHash } from '../utils/hash';
 import { Player } from './player';
 import { CargoSystem } from '../systems/cargo_systems';
 import { getOperationalCapabilities } from './operational_capabilities';
+import type { StationKind } from '../entities/starbase';
 
 export interface TradeDepotItem {
   itemKey: string;
@@ -71,6 +72,7 @@ const DEPOT_KEYS = [
 
 export class StarbaseCommerceService {
   private stations = new Map<string, StationEconomyState>();
+  private stationKinds = new Map<string, StationKind>();
 
   /** Initializes StarbaseCommerceService. */
   constructor(
@@ -78,6 +80,11 @@ export class StarbaseCommerceService {
     private readonly cargoSystem: CargoSystem,
     private readonly worldSeed: number
   ) {}
+
+  /** Registers materialised service profiles; restored market identity never depends on a display name. */
+  registerStation(id: string, kind: StationKind): void {
+    this.stationKinds.set(id, kind);
+  }
 
   /** Returns manifest. */
   getManifest(starbaseName: string): TradeDepotItem[] {
@@ -103,8 +110,10 @@ export class StarbaseCommerceService {
   private getOrCreateStation(starbaseName: string): StationEconomyState {
     const existing = this.stations.get(starbaseName);
     if (existing) return existing;
-    const isAutomatedDepot =
-      starbaseName.includes(':automated-depot:') || starbaseName.endsWith('Automated Depot');
+    const knownKind = this.stationKinds.get(starbaseName);
+    const isAutomatedDepot = knownKind
+      ? knownKind === 'automated-depot'
+      : starbaseName.includes(':automated-depot:') || starbaseName.endsWith('Automated Depot');
     const automatedStock = new Set([
       'WATER_ICE',
       'HELIUM_3',

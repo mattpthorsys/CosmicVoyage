@@ -3,6 +3,7 @@ import { MineralRichness } from '../constants/planetary';
 import { PRNG } from '../utils/prng';
 import { logger } from '../utils/logger'; // Import the logger
 import type { OrbitHost } from './stellar_body';
+import type { HaulOrbitSpecification } from '../core/heavy_haul_types';
 
 export type StationKind = 'starbase' | 'automated-depot';
 
@@ -69,21 +70,26 @@ export class Starbase {
     systemName: string,
     kind: StationKind = 'starbase',
     colonyWorldName: string | null = null,
-    preferredOrbitDistance?: number
+    preferredOrbitDistance?: number,
+    deployment?: { readonly id: string; readonly name: string; readonly orbit: HaulOrbitSpecification }
   ) {
     // The address-derived identifier remains unique even when two stations receive the same display name.
-    this.id = `station:${CONFIG.GALAXY_MODEL_VERSION}:${kind}:${baseNameSeed}`;
+    this.id = deployment?.id ?? `station:${CONFIG.GALAXY_MODEL_VERSION}:${kind}:${baseNameSeed}`;
     // Seed a PRNG specifically for this starbase
     this.systemPRNG = systemPRNG.seedNew('starbase_' + baseNameSeed); //
     this.kind = kind;
     this.capabilities = kind === 'automated-depot' ? DEPOT_CAPABILITIES : STARBASE_CAPABILITIES;
     this.colonyWorldName = colonyWorldName;
-    this.name = kind === 'automated-depot' ? `${systemName} Automated Depot` : `${systemName} Starbase Delta`;
+    this.name =
+      deployment?.name ??
+      (kind === 'automated-depot' ? `${systemName} Automated Depot` : `${systemName} Starbase Delta`);
 
     // Calculate orbital parameters using the starbase's PRNG
     this.orbitDistance =
-      (preferredOrbitDistance ?? CONFIG.STARBASE_ORBIT_DISTANCE) * this.systemPRNG.random(0.97, 1.03); //
-    this.orbitAngle = this.systemPRNG.random(0, Math.PI * 2); //
+      deployment?.orbit.radiusM ??
+      (preferredOrbitDistance ?? CONFIG.STARBASE_ORBIT_DISTANCE) * this.systemPRNG.random(0.97, 1.03);
+    this.orbitAngle = deployment?.orbit.angleRad ?? this.systemPRNG.random(0, Math.PI * 2);
+    if (deployment) this.orbitHost = { ...deployment.orbit.host };
     // Calculate initial position
     this.systemX = Math.cos(this.orbitAngle) * this.orbitDistance; //
     this.systemY = Math.sin(this.orbitAngle) * this.orbitDistance; //

@@ -5,6 +5,7 @@ import type { StellarArchitecture } from '../entities/stellar_body';
 import { AU_IN_METERS } from '../constants/physics';
 import type { BiologyOrigin } from '../entities/biology/biology_types';
 import { PRNG } from '../utils/prng';
+import type { InfrastructureRegistry } from './infrastructure_registry';
 import {
   getHyperspaceSurveyCellProvider,
   LocalHyperspaceSurveyCellProvider,
@@ -38,9 +39,27 @@ export class ObservatoryService {
   constructor(
     private readonly generator: SystemDataGenerator,
     private readonly seed: PRNG,
-    provider: HyperspaceSurveyCellProvider | null = getHyperspaceSurveyCellProvider()
+    provider: HyperspaceSurveyCellProvider | null = getHyperspaceSurveyCellProvider(),
+    private readonly infrastructure?: InfrastructureRegistry,
+    private readonly bulkEpoch: () => number = () => 0
   ) {
     this.provider = provider ?? new LocalHyperspaceSurveyCellProvider(generator);
+  }
+
+  /** Rebuilds registered technology evidence when a deployment changes the world, preserving biology. */
+  invalidateInfrastructure(): void {
+    this.cancel();
+    this.searchCache.clear();
+    this.physicalCache.clear();
+    for (const record of Object.values(this.snapshot.observations)) {
+      const assets = this.infrastructure?.at(record.address) ?? [];
+      if (assets.length) {
+        record.technology = 'registered';
+        record.features = [
+          ...new Set([...record.features, 'Registered player-delivered infrastructure.']),
+        ].slice(0, 24);
+      }
+    }
   }
 
   /** Invalidates work when a modal closes or a new search supersedes it. */
@@ -100,7 +119,9 @@ export class ObservatoryService {
             medium.sensorRangeMultiplier * capabilities.stellarRangeMultiplier
           );
           // Charted facility targets remain available when the host is faint; verify their carrier on observation.
-          const chartedCarrier = capabilities.equipmentClass > 0 && Boolean(cell.system.stationKind);
+          const chartedCarrier =
+            capabilities.equipmentClass > 0 &&
+            (Boolean(cell.system.stationKind) || !!this.infrastructure?.at(address).length);
           if (distanceLy / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS > detection.statusRadius && !chartedCarrier)
             continue;
           const architecture = this.generator.getSystemProperties(cell.worldX, cell.worldY).architecture;
@@ -150,6 +171,7 @@ export class ObservatoryService {
     const properties = this.generator.getSystemProperties(contact.worldX, contact.worldY, contact.systemSlot);
     if (!properties.exists) return null;
     const system = new SolarSystem(properties, contact.worldX, contact.worldY, this.seed);
+    this.infrastructure?.materialize(system, this.bulkEpoch());
     this.physicalCache.set(contact.id, system);
     if (this.physicalCache.size > 48) this.physicalCache.delete(this.physicalCache.keys().next().value!);
     return system;
@@ -173,6 +195,7 @@ export class ObservatoryService {
         (contact) =>
           contact.kind === 'signal' ||
           contact.system?.stationKind ||
+          this.infrastructure?.at(contact).length ||
           (contact.system?.objectKind === 'stellar' && contact.distanceLy <= reach)
       )
       .sort((a, b) => sampled(a) - sampled(b) || a.distanceLy - b.distanceLy || a.id.localeCompare(b.id))
@@ -182,6 +205,14 @@ export class ObservatoryService {
   /** Retains the best evidence; passive revisits cannot downgrade a deliberate exposure. */
   retain(contact: ObservatoryContact, observation: ObservatoryObservation): void {
     const previous = this.snapshot.observations[contact.id];
+    if (this.infrastructure?.at(contact).length) {
+      observation = {
+        ...observation,
+        technology: 'registered',
+        features: ['Registered player-delivered infrastructure.', ...observation.features].slice(0, 24),
+      };
+      if (previous) previous.technology = 'registered';
+    }
     if (previous?.biology === 'catalogued') {
       observation = {
         ...observation,

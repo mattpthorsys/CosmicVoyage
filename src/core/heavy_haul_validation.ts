@@ -17,6 +17,11 @@ export function validateHeavyHaulObjective(value: unknown): asserts value is Hea
   const destination = objective.destination;
   validateEndpoint(pickup);
   validateEndpoint(destination);
+  if (objective.resupply !== undefined) {
+    const resupply = record(objective.resupply, 'resupply target');
+    validateAddress(resupply.systemAddress);
+    text(resupply.stationId, 'resupply station');
+  }
   const payload = record(objective.package, 'package');
   text(payload.id, 'package id');
   if (!['navigation-buoy', 'automated-depot'].includes(String(payload.installationKind)))
@@ -139,6 +144,7 @@ export function validateInfrastructureRecords(
     const asset = record(item, 'installation');
     text(asset.assetId, 'asset id');
     text(asset.sourceMissionId, 'source contract');
+    if (asset.assetId !== `haul-installation:${asset.sourceMissionId}`) fail('installation identity');
     text(asset.systemName, 'installation system name');
     validateAddress(asset.systemAddress);
     validateOrbit(asset.orbit);

@@ -37,6 +37,8 @@ export interface HeavyHaulObjective {
   readonly destination: HaulEndpoint;
   readonly package: TowPackageDefinition;
   readonly route: { readonly kind: 'local'; readonly distanceM: number } | { readonly kind: 'interstellar' };
+  /** Concrete supply endpoint certified when an offer is generated, rechecked before departure. */
+  readonly resupply?: HaulResupplyTarget;
   /** Haul endpoints are external installations, never planetary landing sites. */
   location?: never;
 }

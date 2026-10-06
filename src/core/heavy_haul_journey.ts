@@ -24,6 +24,9 @@ import {
   systemAddressKey,
 } from './system_orbit_state';
 import { quoteHeavyHaul, type HaulQuoteContext } from './tow_performance';
+import { InfrastructureRegistry } from './infrastructure_registry';
+import { materializeHaulSites } from './haul_sites';
+import type { HeavyHaulObjective } from './heavy_haul_types';
 
 export interface HaulJourneyRequest {
   readonly resupply: HaulResupplyTarget;
@@ -53,9 +56,15 @@ export function resolveHaulQuoteContext(
   save: GameSave,
   destination: MissionSystemAddress,
   resupply: HaulResupplyTarget,
-  world: HaulJourneyWorld
+  world: HaulJourneyWorld,
+  objective?: HeavyHaulObjective
 ): HaulQuoteContext {
   const supplySystem = world.createSystem(resupply.systemAddress);
+  if (supplySystem) {
+    const registry = new InfrastructureRegistry();
+    registry.restore(save.infrastructure);
+    registry.materialize(supplySystem, save.bulkAdvanceSeconds);
+  }
   const station = supplySystem?.stations.find(
     (entry) => entry.id === resupply.stationId && entry.capabilities.fuel
   );
@@ -74,8 +83,10 @@ export function resolveHaulQuoteContext(
           destination.worldX - resupply.systemAddress.worldX,
           destination.worldY - resupply.systemAddress.worldY
         ) * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS,
-      // M4 may supply a restricted commissioned-depot allowance; M3 requires an existing station.
-      commissioningFuelUnits: 0,
+      commissioningFuelUnits:
+        objective?.package.installationKind === 'automated-depot'
+          ? objective.package.commissioningFuelAllowanceUnits
+          : 0,
     },
   };
 }
@@ -126,7 +137,8 @@ export function prepareHaulJourney(
       save,
       objective.destination.systemAddress,
       request.resupply,
-      world
+      world,
+      objective
     );
     const quoted = quoteHeavyHaul(objective, context, active.remainingSupportFuelUnits);
     if (!quoted.ok) throw new Error(quoted.reasons.join(' '));
@@ -157,6 +169,12 @@ export function prepareHaulJourney(
     const history = new Map(save.systemOrbitHistory.map((entry) => [systemAddressKey(entry), entry]));
     restorePlanetProgress(destination, save.planetMutations);
     restoreSystemOrbits(destination, history.get(key)?.orbit, save.planetMutations, time.bulkAdvanceSeconds);
+    const infrastructure = new InfrastructureRegistry();
+    infrastructure.restore(save.infrastructure);
+    infrastructure.materialize(destination, time.bulkAdvanceSeconds);
+    materializeHaulSites(destination, mission, history.get(key)?.orbit, time.bulkAdvanceSeconds);
+    infrastructure.capture(destination);
+    save.infrastructure = infrastructure.createSnapshot();
     const position = findArrivalPosition(destination, objective.destination, objective.route.kind);
     const orbit = captureSystemOrbit(destination);
     history.set(key, { ...systemAddress(destination), orbit });
@@ -212,6 +230,8 @@ function endpointPosition(system: SolarSystem, endpoint: HaulEndpoint): { x: num
   const range = getStableOrbitRange(system.architecture, endpoint.orbit.host);
   if (!range || endpoint.orbit.radiusM < range.minRadius || endpoint.orbit.radiusM > range.maxRadius)
     throw new Error('Contract site has no stable orbit around its specified stellar host.');
+  const marker = system.navigationMarkers?.find((entry) => entry.id === endpoint.siteId);
+  if (marker) return { x: marker.systemX, y: marker.systemY };
   const center = system.getOrbitCenter(endpoint.orbit.host);
   return {
     x: center.x + Math.cos(endpoint.orbit.angleRad) * endpoint.orbit.radiusM,

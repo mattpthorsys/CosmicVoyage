@@ -51,6 +51,8 @@ export class GameStateManager {
   private readonly eventUnsubscribers: Unsubscribe[];
   /** Attachment restrictions are queried from the canonical haul owner at command time. */
   private towPolicy: () => AttachedTowPolicy | null = () => null;
+  /** Applies persistence overlays before resolving a docked station's saved identity. */
+  private initializeSystem: (system: SolarSystem) => void = () => {};
 
   /** Initializes GameStateManager. */
   constructor(player: Player, gameSeedPRNG: PRNG, systemDataGenerator: SystemDataGenerator) {
@@ -99,9 +101,22 @@ export class GameStateManager {
     return this._currentStarbase;
   }
 
+  /** Rebinds a docked reference after registry refresh without replaying docking events. */
+  reconcileDockedStation(): void {
+    if (!this._currentStarbase || !this._currentSystem) return;
+    const station = this._currentSystem.stations.find((entry) => entry.id === this._currentStarbase?.id);
+    if (!station) throw new Error('Docked station disappeared during infrastructure refresh.');
+    this._currentStarbase = station;
+  }
+
   /** Installs the canonical attachment query so direct events cannot bypass towing restrictions. */
   setTowPolicy(provider: () => AttachedTowPolicy | null): void {
     this.towPolicy = provider;
+  }
+
+  /** Registers natural-orbit restoration and world-overlay materialisation at the location boundary. */
+  setSystemInitializer(initializer: (system: SolarSystem) => void): void {
+    this.initializeSystem = initializer;
   }
 
   /** Installs a fully prepared, checkpointed arrival without regenerating the destination or charging entry fuel. */
@@ -168,6 +183,7 @@ export class GameStateManager {
     }
 
     const system = new SolarSystem(basicProps, location.worldX, location.worldY, this.gameSeedPRNG);
+    this.initializeSystem(system);
     const planet =
       location.kind === 'orbit' || location.kind === 'planet'
         ? findSystemPlanetByPath(system, location.bodyPath)
@@ -176,7 +192,12 @@ export class GameStateManager {
       location.kind === 'orbit' || location.kind === 'planet'
         ? findSystemPlanetByPath(system, location.orbitReferencePath)
         : null;
-    const starbase = location.kind === 'starbase' ? system.starbase : null;
+    const starbase =
+      location.kind === 'starbase'
+        ? location.stationId === 'legacy-current-starbase'
+          ? system.starbase
+          : (system.stations.find((station) => station.id === location.stationId) ?? null)
+        : null;
 
     if ((location.kind === 'orbit' || location.kind === 'planet') && !planet) {
       throw new Error(`Saved planetary body "${location.bodyPath}" could not be restored.`);
@@ -222,6 +243,7 @@ export class GameStateManager {
 
     try {
       const system = this._createAndInitializeSystem();
+      this.initializeSystem(system);
       this._setPlayerStateForSystemEntry(system);
       this._changeState('system', system, null, null); // Use helper to change state and publish event
       this.statusMessage = system.isStarless
