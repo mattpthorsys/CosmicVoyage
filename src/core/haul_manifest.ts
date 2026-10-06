@@ -45,7 +45,6 @@ export class HaulManifest {
   viewOffset = 0;
   notice = '';
   noticeTone: TextTone = 'amber';
-  confirmation: HaulManifestAction | null = null;
   readonly reveal = new TerminalTextReveal();
 
   /** Begins one inspection; quote computation happens at this boundary, not during every render. */
@@ -54,7 +53,6 @@ export class HaulManifest {
     this.returnTo = returnTo;
     this.viewOffset = 0;
     this.notice = '';
-    this.confirmation = null;
     this.reveal.start();
   }
 
@@ -63,7 +61,6 @@ export class HaulManifest {
     this.data = data;
     this.notice = message;
     this.noticeTone = ok ? 'green' : 'red';
-    this.confirmation = null;
     this.viewOffset = 0;
     this.reveal.complete();
   }
@@ -84,7 +81,7 @@ export class HaulManifest {
     }
   }
 
-  /** Consumes reveal-skipping keys and requires a second explicit confirmation for irreversible actions. */
+  /** Consumes reveal-skipping keys and emits actions for the outer owner's explicit Yes/No dialog. */
   input(
     input: Pick<InputManager, 'wasActionJustPressed' | 'wasAnyKeyJustPressed'>,
     model: TextModalTableModel
@@ -94,33 +91,19 @@ export class HaulManifest {
       return;
     }
     if (input.wasActionJustPressed('QUIT') || input.wasActionJustPressed('LEAVE_SYSTEM')) {
-      if (this.confirmation) {
-        this.confirmation = null;
-        return;
-      }
       return 'close';
     }
     if (input.wasActionJustPressed('TARGET_MENU') && this.primary()) {
-      this.confirmation = null;
       return 'navigate';
     }
     if (
       input.wasActionJustPressed('BIOLOGY_COLLECT') &&
       ['awaiting-pickup', 'attached', 'arrived'].includes(this.data?.stage ?? '')
     ) {
-      this.confirmation = 'recover';
-      this.viewOffset = 0;
-      return;
+      return 'recover';
     }
     if (input.wasActionJustPressed('ENTER_SYSTEM') || input.wasActionJustPressed('PRIMARY_ACTION')) {
-      if (this.confirmation) {
-        const action = this.confirmation;
-        this.confirmation = null;
-        return action;
-      }
-      this.confirmation = this.primary();
-      this.viewOffset = 0;
-      return;
+      return this.primary() ?? undefined;
     }
     const delta = input.wasActionJustPressed('MOVE_UP')
       ? -1
@@ -151,14 +134,10 @@ export class HaulManifest {
         ...(primary
           ? [
               commandButton(
-                'confirm',
-                this.confirmation
-                  ? `Confirm ${this.confirmation}`
-                  : primary === 'depart'
-                    ? 'Begin voyage'
-                    : `${primary[0].toUpperCase()}${primary.slice(1)}`,
+                'primary',
+                primary === 'depart' ? 'Begin voyage' : `${primary[0].toUpperCase()}${primary.slice(1)}`,
                 'ENTER_SYSTEM',
-                { key: 'Enter', tone: this.confirmation === 'recover' ? 'red' : 'green' }
+                { key: 'Enter', tone: 'green' }
               ),
               commandButton('navigate', 'Route / approach', 'TARGET_MENU', { key: 'N' }),
             ]
@@ -166,7 +145,7 @@ export class HaulManifest {
         ...(['awaiting-pickup', 'attached', 'arrived'].includes(this.data?.stage ?? '')
           ? [commandButton('recover', 'Contractor recovery', 'BIOLOGY_COLLECT', { key: 'C', tone: 'red' })]
           : []),
-        commandButton('return', this.confirmation ? 'Cancel confirmation' : 'Return', 'QUIT', { key: 'Esc' }),
+        commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
       ],
     };
   }
@@ -181,27 +160,6 @@ export class HaulManifest {
     const line = (text: string, tone: TextTone = 'normal', heading = false): void => {
       lines.push({ segments: [{ text, tone, font: heading ? 'thick' : 'thin' }] });
     };
-    if (this.confirmation) {
-      line(
-        `CONFIRM ${this.confirmation.toUpperCase()}`,
-        this.confirmation === 'recover' ? 'red' : 'amber',
-        true
-      );
-      line(
-        this.confirmation === 'recover'
-          ? 'Package and support tank will be recovered. No payment; offer permanently retired.'
-          : this.confirmation === 'depart'
-            ? `Advance ${formatHaulDuration(data?.quote.quote?.durationSeconds ?? 0)} of voyage time. Crew and normal reactor fuel remain secured.`
-            : this.confirmation === 'deploy'
-              ? 'Commission this installation, release the contractor tank and settle escrow once.'
-              : this.confirmation === 'accept'
-                ? "Reserve this job as the ship's one active external haul."
-                : 'Attach the external package and its sealed propulsion-support tank.',
-        'amber'
-      );
-      line('ENTER confirm / ESC cancel', 'green');
-      line('');
-    }
     if (this.notice) {
       line(this.notice, this.noticeTone);
       line('');

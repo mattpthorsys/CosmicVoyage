@@ -31,6 +31,8 @@ import { GalaxyMapRenderer } from './galaxy_map_renderer';
 import type { GalaxyMapModel } from '../core/galaxy_map';
 import type { ObservatoryScreenModel } from '../core/observatory';
 import { drawObservatory } from './observatory_renderer';
+import type { TerminalDialogModel } from '../core/terminal_dialog';
+import { drawTerminalDialog } from './terminal_dialog_renderer';
 
 /**
  * Facade class for the rendering system.
@@ -448,6 +450,22 @@ export class RendererFacade {
   /** Draws text modal table. */
   drawTextModalTable(model: TextModalTableModel): void {
     this.sceneRenderer.drawTextModalTable(model);
+  }
+
+  /** Places an explicit choice or persistent notice above the current scene and parent menu. */
+  drawTerminalDialog(model: TerminalDialogModel): void {
+    drawTerminalDialog(this.screenBuffer, model);
+  }
+
+  /** Fades all game canvas layers through the foreground overlay using visual opacity only. */
+  drawScreenFade(alpha: number): void {
+    const opacity = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0;
+    if (!opacity) return;
+    this.overlayCtx.save();
+    this.overlayCtx.globalAlpha = opacity;
+    this.overlayCtx.fillStyle = CONFIG.DEFAULT_BG_COLOUR;
+    this.overlayCtx.fillRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+    this.overlayCtx.restore();
   }
 
   /** Draws the modal top-down Milky Way instrument through the shared detailed raster layer. */

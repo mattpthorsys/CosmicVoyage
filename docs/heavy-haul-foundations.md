@@ -110,8 +110,16 @@ or reward. Better drives must improve the same quoted job.
 - `core/heavy_haul_lifecycle.ts`: isolated acceptance, coupling and recovery
   preparation; no live owner changes before the durable checkpoint.
 - `core/haul_manifest.ts`: presentation/reveal, responsive paragraphs, scrolling
-  and separate confirmations; expensive world queries occur only on inspection
+  and action intents; expensive world queries occur only on inspection
   and actions, not per rendered frame.
+- `core/terminal_dialog.ts`: reusable foreground Yes/No choices and persistent
+  notices, preserving the underlying menu and owning keyboard/click input.
+- `core/screen_transition.ts`: visual preparation, fade out, one operation at
+  blackout, and fade in. Visual timing never changes the simulation calendar.
+- `core/mission_dialogs.ts`: concise offer, crew preparation, committed arrival,
+  delivery/payment, and refusal messages prepared from domain records.
+- `rendering/terminal_dialog_renderer.ts`: responsive dialog drawing and scaled
+  raster occlusion above staged scenes; the facade draws fades on the overlay canvas.
 - `core/haul_navigation.ts`: phase-aware full-address navigation and staging
   descriptions. Remote addresses never become local body coordinates.
 
@@ -192,8 +200,14 @@ damage, coupler, berth and onward-fuel requirements are checked before acceptanc
 coupling and departure. Mass, reward, endpoints and support terms freeze at acceptance.
 
 The manifest owns input and pauses simulation. Its first key completes the
-terminal reveal; actions then require an explicit confirmation. Confirmations
-scroll to the top so recovery warnings cannot be hidden beneath the dossier.
+terminal reveal; actions then open an explicit Yes/No foreground dialog. Recovery
+defaults to No. Cancelling restores the existing readout and scroll position.
+Voyages validate staging and prepare their checkpoint before announcing crew
+hypersleep. The source stays paused until the blackout commits that checkpoint;
+failed storage leaves the source intact and produces a persistent refusal.
+Fade-in ends with a committed arrival report, distinct from final deployment
+and payment. Skipping the animation never skips or repeats the transaction.
+These subsequent presentation changes have tests written, awaiting Luna execution.
 Pickup/deployment contacts move with their host; the departure-boundary contact
 is an explicitly non-orbiting waypoint, excluded from orbital phase snapshots.
 Arrival opens a paused receipt, not another departure action. Journal entries

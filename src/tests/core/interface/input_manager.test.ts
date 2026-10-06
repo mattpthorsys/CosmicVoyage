@@ -13,6 +13,25 @@ function keyEvent(key: string, code: string): KeyboardEvent {
 }
 
 describe('InputManager', () => {
+  it('exposes fresh Y/N keys without changing navigation bindings and clears them between frames', () => {
+    const input = new InputManager();
+    input.startListening();
+    try {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN' }));
+      expect(input.wasKeyJustPressed('n')).toBe(true);
+      expect(input.wasActionJustPressed('TARGET_MENU')).toBe(true);
+      input.update();
+      expect(input.wasKeyJustPressed('n')).toBe(false);
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'n', code: 'KeyN' }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Y', code: 'KeyY' }));
+      expect(input.wasKeyJustPressed('y')).toBe(true);
+      input.clearState();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Y', code: 'KeyY', repeat: true }));
+      expect(input.wasKeyJustPressed('y')).toBe(false);
+    } finally {
+      input.stopListening();
+    }
+  });
   it.each([
     ['o', 'KeyO', 'SHIP_MENU'],
     ['O', 'KeyO', 'SHIP_MENU'],

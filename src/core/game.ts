@@ -81,7 +81,23 @@ import { ObservatoryService } from './observatory_service';
 import { HeavyHaulService } from './heavy_haul_service';
 import { createHeavyHaulSnapshot, type HaulQuoteResult, type HaulResupplyTarget } from './heavy_haul_types';
 import { HeavyHaulOffers } from './heavy_haul_offers';
-import { HaulManifest, type HaulManifestData, type HaulManifestStage } from './haul_manifest';
+import {
+  HaulManifest,
+  type HaulManifestAction,
+  type HaulManifestData,
+  type HaulManifestStage,
+} from './haul_manifest';
+import { TerminalDialog, type TerminalDialogResult, type TerminalDialogSpec } from './terminal_dialog';
+import { ScreenTransition } from './screen_transition';
+import {
+  createMissionAcceptanceDialog,
+  createMissionStatusDialog,
+  createHaulActionDialog,
+  createHaulPrelude,
+  createHaulArrivalDialog,
+  createHaulResultDialog,
+  type MissionDialogIntent,
+} from './mission_dialogs';
 import { prepareHaulLifecycle } from './heavy_haul_lifecycle';
 import { resolveHaulNavigation, describeHaulStage } from './haul_navigation';
 import {
@@ -338,6 +354,9 @@ export class Game {
   private _heavyHaulService?: HeavyHaulService;
   private _haulOffers?: HeavyHaulOffers;
   private _haulManifest?: HaulManifest;
+  private _terminalDialog?: TerminalDialog<MissionDialogIntent>;
+  private _screenTransition?: ScreenTransition<{ mission: StarbaseMission; journey: PreparedHaulJourney }>;
+  private sleepingHaulCrew = 0;
   private _infrastructureRegistry?: InfrastructureRegistry;
   private bulkAdvanceSeconds = 0;
   private systemOrbitRegistry?: Map<string, SystemOrbitHistoryRecord>;
@@ -415,6 +434,50 @@ export class Game {
   /** Owns the paused voyage terminal independently of the mission board and travel controls. */
   private get haulManifest(): HaulManifest {
     return (this._haulManifest ??= new HaulManifest());
+  }
+
+  /** Owns foreground confirmations independently of the station, journal or manifest underneath. */
+  private get terminalDialog(): TerminalDialog<MissionDialogIntent> {
+    return (this._terminalDialog ??= new TerminalDialog());
+  }
+
+  /** Coordinates a visual blackout around one prepared, checkpointed voyage. */
+  private get screenTransition(): ScreenTransition<{
+    mission: StarbaseMission;
+    journey: PreparedHaulJourney;
+  }> {
+    return (this._screenTransition ??= new ScreenTransition());
+  }
+
+  /** Clears held keys and transient HUD when a terminal choice takes foreground ownership. */
+  private showTerminalDialog(spec: TerminalDialogSpec<MissionDialogIntent>): void {
+    this.terminalDialog.open(spec);
+    this.inputManager.clearState();
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    this.forceFullRender = true;
+    this._publishStatusUpdate();
+  }
+
+  /** Consumes every keyboard shortcut while a choice or persistent message is visible. */
+  private handleTerminalDialogInput(): boolean {
+    if (!this.terminalDialog.isOpen) return false;
+    const model = this.terminalDialog.createModel(this.renderer.getGridCols(), this.renderer.getGridRows());
+    const result = this.terminalDialog.input(this.inputManager, model);
+    if (result) this.finishTerminalDialog(result);
+    if (this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
+  }
+
+  /** Applies only an explicit choice, then prevents its key from acting on the restored parent. */
+  private finishTerminalDialog(result: TerminalDialogResult<MissionDialogIntent>): void {
+    this.inputManager.clearState();
+    const intent = result.intent;
+    if (intent?.kind === 'accept-mission') this.confirmMissionAcceptance(intent.mission, intent.stationId);
+    else if (intent?.kind === 'haul-action') this.performHaulAction(intent.mission, intent.action);
+    else if (intent?.kind === 'view-haul') this.openHaulManifest(intent.mission);
+    this.forceFullRender = true;
+    this._publishStatusUpdate();
   }
 
   /** Builds a world-verified quote once per inspection/action, never in the drawing loop. */
@@ -582,42 +645,119 @@ export class Game {
     else if (intent) {
       const mission = this.haulManifest.data?.mission;
       const objective = mission && getHeavyHaulObjective(mission);
-      let result = { ok: false, message: 'No contract selected.' };
-      if (intent === 'depart' && objective?.resupply) {
-        result = this.departHaulJourney({
-          resupply: objective.resupply,
-          expectedQuote: this.haulManifest.data?.quote.quote ?? undefined,
-        });
-      } else if (intent === 'deploy') result = this.deployHaulInstallation();
-      else if (intent === 'recover' || intent === 'couple' || (intent === 'accept' && mission)) {
-        const action =
-          intent === 'accept' ? { kind: 'accept' as const, mission: mission! } : { kind: intent };
-        result = commitHaulChange(
-          prepareHaulLifecycle(
-            this.createSaveGame(),
-            action,
-            this.stateManager.currentSystem,
-            this.haulJourneyWorld
-          ),
-          this.journeyCheckpointWriter,
-          (save) => this.applyHaulChange(save)
-        );
+      if (mission && objective && this.haulManifest.data) {
+        this.showTerminalDialog(createHaulActionDialog(mission, intent, this.haulManifest.data));
       }
-      // Arrival changes the world mode and clears transient menus; restore only this deliberate paused receipt.
-      this.interfaceMode.open('haul-manifest');
-      if (intent === 'depart' && result.ok) this.haulManifest.returnTo = 'none';
-      this.haulManifest.refresh(
-        this.buildHaulManifestData(intent === 'recover' && result.ok ? undefined : mission),
-        result.message,
-        result.ok
-      );
-      this.statusMessage = result.message;
-      if (this.stateManager.state === 'starbase') this.starbaseMode.alert = result.message;
-      this.inputManager.clearState();
-      this.forceFullRender = true;
     }
     if (this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
     return true;
+  }
+
+  /** Executes a confirmed haul operation and keeps its durable outcome visible until acknowledged. */
+  private performHaulAction(mission: StarbaseMission, action: HaulManifestAction): void {
+    if (action === 'depart') {
+      this.beginHaulVoyage(mission);
+      return;
+    }
+    const result =
+      action === 'deploy'
+        ? this.deployHaulInstallation()
+        : commitHaulChange(
+            prepareHaulLifecycle(
+              this.createSaveGame(),
+              action === 'accept' ? { kind: 'accept', mission } : { kind: action },
+              this.stateManager.currentSystem,
+              this.haulJourneyWorld
+            ),
+            this.journeyCheckpointWriter,
+            (save) => this.applyHaulChange(save)
+          );
+    this.refreshHaulActionResult(mission, action, result);
+    this.showTerminalDialog(createHaulResultDialog(mission, action, result));
+  }
+
+  /** Rebuilds the paused readout after domain effects without repeating any transaction. */
+  private refreshHaulActionResult(
+    mission: StarbaseMission,
+    action: HaulManifestAction,
+    result: { readonly ok: boolean; readonly message: string },
+    openManifest = true
+  ): void {
+    if (openManifest) this.interfaceMode.open('haul-manifest');
+    if (action === 'depart' && result.ok) this.haulManifest.returnTo = 'none';
+    this.haulManifest.refresh(
+      this.buildHaulManifestData(action === 'recover' && result.ok ? undefined : mission),
+      result.message,
+      result.ok
+    );
+    this.statusMessage = result.message;
+    if (this.stateManager.state === 'starbase') this.starbaseMode.alert = result.message;
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Verifies staging and equipment before announcing sleep, then freezes the source until blackout. */
+  private beginHaulVoyage(mission: StarbaseMission): void {
+    const source = this.stateManager.currentSystem;
+    const objective = getHeavyHaulObjective(mission);
+    const prepared =
+      source && objective?.resupply
+        ? prepareHaulJourney(
+            this.createSaveGame(),
+            source,
+            { resupply: objective.resupply, expectedQuote: this.haulManifest.data?.quote.quote ?? undefined },
+            this.haulJourneyWorld
+          )
+        : { ok: false as const, message: 'Departure requires the contracted source and supply route.' };
+    if (!prepared.ok) {
+      this.refreshHaulActionResult(mission, 'depart', prepared);
+      this.showTerminalDialog(createHaulResultDialog(mission, 'depart', prepared));
+      return;
+    }
+    this.sleepingHaulCrew = prepared.journey.quote.requiredBerths;
+    this.screenTransition.start(
+      { mission, journey: prepared.journey },
+      {
+        preludeSeconds: this.sleepingHaulCrew ? 1.2 : 0.7,
+        reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+      }
+    );
+    this.interfaceMode.close('haul-manifest');
+    this.showTerminalDialog(
+      createHaulPrelude({
+        ...this.haulManifest.data!,
+        quote: { ok: true, quote: prepared.journey.quote, reasons: [] },
+      })
+    );
+  }
+
+  /** Drives visual phases while the calendar is paused, committing the prepared voyage once at blackout. */
+  private updateHaulVoyageTransition(deltaTime: number): void {
+    const phase = this.screenTransition.phase;
+    const event = this.screenTransition.update(this.currentVisualDeltaSeconds || deltaTime);
+    if (phase === 'prelude' && this.screenTransition.phase !== 'prelude') {
+      this.terminalDialog.close();
+      this.forceFullRender = true;
+    }
+    if (event?.kind === 'commit') {
+      const result = this.commitHaulJourney(event.intent.journey);
+      this.refreshHaulActionResult(event.intent.mission, 'depart', result, !result.ok);
+      if (result.ok) this.screenTransition.resume();
+      else {
+        this.screenTransition.reset();
+        this.showTerminalDialog(createHaulResultDialog(event.intent.mission, 'depart', result));
+      }
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+    } else if (event?.kind === 'complete') {
+      const data = this.haulManifest.data;
+      if (data?.receipt)
+        this.showTerminalDialog(
+          createHaulArrivalDialog({ ...data, receipt: data.receipt }, this.sleepingHaulCrew)
+        );
+      this.sleepingHaulCrew = 0;
+      this.forceFullRender = true;
+    }
   }
 
   /** Lazily owns visited stellar/station phases, including lightweight non-canvas harnesses. */
@@ -672,7 +812,15 @@ export class Game {
     if (!source) return { ok: false, message: 'Departure requires the contracted source system.' };
     const prepared = prepareHaulJourney(this.createSaveGame(), source, request, this.haulJourneyWorld);
     if (!prepared.ok) return prepared;
-    const result = commitPreparedHaulJourney(prepared.journey, this.journeyCheckpointWriter, (journey) =>
+    return this.commitHaulJourney(prepared.journey);
+  }
+
+  /** Shares the single durable voyage boundary between immediate callers and the visual transition. */
+  private commitHaulJourney(prepared: PreparedHaulJourney): {
+    readonly ok: boolean;
+    readonly message: string;
+  } {
+    const result = commitPreparedHaulJourney(prepared, this.journeyCheckpointWriter, (journey) =>
       this.applyHaulArrival(journey)
     );
     this.statusMessage = result.message;
@@ -1700,6 +1848,9 @@ export class Game {
     if (save.seed !== this.gameSeedPRNG.getInitialSeed()) {
       throw new Error('Save seed does not match the constructed game universe.');
     }
+    this._terminalDialog?.close();
+    this._screenTransition?.reset();
+    this.sleepingHaulCrew = 0;
 
     const isLegacyGalaxyMigration =
       save.migratedFromGenerationVersion !== undefined &&
@@ -1904,6 +2055,7 @@ export class Game {
   // --- Event Handlers ---
   /** Handles game state change. */
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
+    this._terminalDialog?.close();
     this.forceFullRender = true; // Always force redraw on state change
     this.orbitModeState.invalidateScreen();
     if (newState !== 'orbit') this.orbitModeState.dossier.close();
@@ -1991,6 +2143,19 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.screenTransition.isActive) {
+      if (data.action === 'TRANSITION_SKIP' || data.action === 'ENTER_SYSTEM') this.screenTransition.skip();
+      this.forceFullRender = true;
+      return;
+    }
+    if (this.terminalDialog.isOpen) {
+      const model = this.terminalDialog.createModel(this.renderer.getGridCols(), this.renderer.getGridRows());
+      const result = this.terminalDialog.action(data.action, model);
+      if (result) this.finishTerminalDialog(result);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('haul-manifest')) {
       if (this.haulManifest.reveal.isActive) this.haulManifest.reveal.complete();
       else {
@@ -4163,7 +4328,16 @@ export class Game {
 
   /** Processes all input for the current frame by calling helper methods. */
   private _processInput(): void {
-    // Playtest funds are global so opening a modal never blocks the shortcut.
+    if (this.screenTransition.isActive) {
+      if (
+        ['ENTER_SYSTEM', 'PRIMARY_ACTION', 'QUIT', 'LEAVE_SYSTEM'].some((action) =>
+          this.inputManager.wasActionJustPressed(action)
+        )
+      )
+        this.screenTransition.skip();
+      return;
+    }
+    // A prepared transfer freezes funds too; other menus retain the global playtest shortcut.
     if (this.inputManager.wasActionJustPressed('TEST_CREDITS')) {
       const amount = CONFIG.TEST_CREDIT_GRANT;
       this.player.resources.credits += amount;
@@ -4174,6 +4348,10 @@ export class Game {
         newCredits: this.player.resources.credits,
         amountChanged: amount,
       });
+      this._publishStatusUpdate();
+      return;
+    }
+    if (this.handleTerminalDialogInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -5000,6 +5178,11 @@ export class Game {
   // --- Game State Update ---
   /** Updates. */
   private _update(deltaTime: number): void {
+    if (this.screenTransition.isActive) {
+      this.updateHaulVoyageTransition(deltaTime);
+      return;
+    }
+    if (this.terminalDialog.isOpen) return;
     this.captureCurrentPlanetMutations();
     this.hyperspaceSurveyService?.setInstrumentMultiplier?.(
       getObservatoryCapabilities(this.player.ship).stellarRangeMultiplier
@@ -8249,6 +8432,11 @@ export class Game {
           );
         }
 
+        if (this.terminalDialog.isOpen)
+          this.renderer.drawTerminalDialog(
+            this.terminalDialog.createModel(this.renderer.getGridCols(), this.renderer.getGridRows())
+          );
+
         if (fullCanvasRepaint) {
           this.renderer.renderBufferFull();
         } else {
@@ -8282,6 +8470,7 @@ export class Game {
           );
         }
         this.renderPerformanceOverlay();
+        if (this.screenTransition.isActive) this.renderer.drawScreenFade(this.screenTransition.opacity);
         this.lastFrameProfile.overlayMs = performance.now() - overlayStart;
         this.lastOverlayRenderAt = renderNow;
       } else {
@@ -8307,6 +8496,8 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      this.terminalDialog.isOpen ||
+      this.screenTransition.isActive ||
       this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('ship-repairs') ||
@@ -8358,6 +8549,8 @@ export class Game {
   /** Returns whether game clock paused. */
   private isGameClockPaused(): boolean {
     return (
+      this.terminalDialog.isOpen ||
+      this.screenTransition.isActive ||
       this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('science-log') ||
@@ -8396,11 +8589,22 @@ export class Game {
 
   /** Returns whether the animated overlay layer is due for another frame. */
   private shouldRenderOverlay(now: number): boolean {
-    return this.forceFullRender || now - this.lastOverlayRenderAt >= Game.OVERLAY_RENDER_INTERVAL_MS;
+    return (
+      this.forceFullRender ||
+      this.screenTransition.isActive ||
+      now - this.lastOverlayRenderAt >= Game.OVERLAY_RENDER_INTERVAL_MS
+    );
   }
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.terminalDialog.isOpen)
+      return [
+        'terminal-dialog',
+        this.terminalDialog.revision,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
     if (this.interfaceMode.is('haul-manifest'))
       return [
         'haul-manifest',
@@ -8408,7 +8612,6 @@ export class Game {
         this.haulManifest.data?.stage,
         this.haulManifest.viewOffset,
         this.haulManifest.notice,
-        this.haulManifest.confirmation,
         this.haulManifest.reveal.progress,
         this.renderer.getGridCols(),
         this.renderer.getGridRows(),
@@ -8631,9 +8834,10 @@ export class Game {
       logger.error(`[Game:_publishStatusUpdate] Error getting cargo total: ${e}`);
     }
 
-    const manifestOpen = this.interfaceMode.is('haul-manifest');
-    const telemetry = manifestOpen ? undefined : this.createTravelTelemetry(currentCargoTotal);
-    const hasStarbase = !manifestOpen && this.stateManager.state === 'starbase';
+    const terminalForeground =
+      this.interfaceMode.is('haul-manifest') || this.terminalDialog.isOpen || this.screenTransition.isActive;
+    const telemetry = terminalForeground ? undefined : this.createTravelTelemetry(currentCargoTotal);
+    const hasStarbase = !terminalForeground && this.stateManager.state === 'starbase';
 
     const actions = this.getCurrentAvailableActions();
     const commandUpdate = {
@@ -8642,7 +8846,7 @@ export class Game {
       targetName: this.getCommandStripTargetName(),
       commandBar: this.createCommandBarModel(actions),
     };
-    const statusSignature = JSON.stringify({ manifestOpen, hasStarbase, telemetry });
+    const statusSignature = JSON.stringify({ terminalForeground, hasStarbase, telemetry });
     if (statusSignature !== this.lastPublishedStatusSignature) {
       this.lastPublishedStatusSignature = statusSignature;
       eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
@@ -8953,6 +9157,12 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.screenTransition.isActive)
+      return {
+        context: this.sleepingHaulCrew ? 'crew hypersleep' : 'tow transfer',
+        buttons: [commandButton('transition-skip', 'Continue', 'TRANSITION_SKIP', { key: 'Enter' })],
+      };
+    if (this.terminalDialog.isOpen) return this.terminalDialog.createCommandBar();
     if (this.interfaceMode.is('haul-manifest')) return this.haulManifest.createCommandBar();
     if (this.interfaceMode.is('observatory'))
       return {
@@ -9831,7 +10041,25 @@ export class Game {
       return;
     }
 
-    this.missionProgress.accept(mission);
+    this.showTerminalDialog(createMissionAcceptanceDialog(mission, starbase.id));
+  }
+
+  /** Rechecks the issuer and offer before applying an explicit Yes to a normal mission. */
+  private confirmMissionAcceptance(mission: StarbaseMission, stationId: string): void {
+    const station = this.stateManager.currentStarbase;
+    if (
+      this.stateManager.state !== 'starbase' ||
+      !station ||
+      station.id !== stationId ||
+      !this.getCurrentStarbaseMissions(station).some((offer) => offer.id === mission.id) ||
+      this.missionProgress.getStatus(mission, this.ownedSpecimens) !== 'AVAILABLE' ||
+      !this.missionProgress.accept(mission)
+    ) {
+      this.showTerminalDialog(
+        createMissionStatusDialog(mission, 'This offer is no longer available at the issuing station.', false)
+      );
+      return;
+    }
     for (const evidence of Object.values(this.xenobiology.snapshot.evidence)) {
       for (const origin of evidence.origins ?? [])
         if (origin.level !== undefined)
@@ -9845,6 +10073,7 @@ export class Game {
     }
     this.starbaseMode.alert = `Accepted: ${mission.title}. ${mission.objectives[0]?.targetLabel ?? 'Review contract objectives'}.`;
     this.statusMessage = this.starbaseMode.alert;
+    this.showTerminalDialog(createMissionStatusDialog(mission, this.starbaseMode.alert, true));
   }
 
   /** Builds one real biological offer once surface data is ready, retaining authoritative accepted targets. */

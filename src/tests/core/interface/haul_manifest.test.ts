@@ -34,16 +34,13 @@ function press(action: string) {
 }
 
 describe('paused haul manifest controls', () => {
-  it('consumes reveal skipping without accepting, then confirms the selected stage in two steps', () => {
+  it('consumes reveal skipping without accepting, then delegates acceptance to the foreground dialog', () => {
     const manifest = manifestFixture();
     const model = manifest.createModel(100, 40);
     expect(manifest.input(press('ENTER_SYSTEM'), model)).toBeUndefined();
     expect(manifest.reveal.isActive).toBe(false);
-    expect(manifest.confirmation).toBeNull();
-    expect(manifest.input(press('ENTER_SYSTEM'), model)).toBeUndefined();
-    expect(manifest.confirmation).toBe('accept');
     expect(manifest.input(press('ENTER_SYSTEM'), model)).toBe('accept');
-    expect(manifest.confirmation).toBeNull();
+    expect(manifest.data?.stage).toBe('available');
   });
 
   it.each([
@@ -56,30 +53,24 @@ describe('paused haul manifest controls', () => {
     expect(manifest.createCommandBar().buttons.some((button) => button.action === 'TARGET_MENU')).toBe(true);
   });
 
-  it('requires explicit recovery confirmation and supports cancellation without closing its parent', () => {
+  it('delegates recovery without closing the parent or changing the tow stage', () => {
     const manifest = manifestFixture('attached');
     manifest.reveal.complete();
     const model = manifest.createModel(100, 40);
-    expect(manifest.input(press('BIOLOGY_COLLECT'), model)).toBeUndefined();
-    expect(manifest.confirmation).toBe('recover');
-    expect(manifest.input(press('QUIT'), model)).toBeUndefined();
-    expect(manifest.confirmation).toBeNull();
-    manifest.input(press('BIOLOGY_COLLECT'), model);
-    expect(manifest.input(press('ENTER_SYSTEM'), model)).toBe('recover');
+    expect(manifest.input(press('BIOLOGY_COLLECT'), model)).toBe('recover');
+    expect(manifest.data?.stage).toBe('attached');
     expect(manifest.returnTo).toBe('ship-menu');
   });
 
-  it('brings confirmation warnings into view instead of leaving them above a scrolled dossier', () => {
+  it('preserves the scrolled dossier while its recovery choice is shown separately', () => {
     const manifest = manifestFixture('attached');
     manifest.reveal.complete();
     const model = manifest.createModel(40, 24);
     manifest.input(press('PAGE_DOWN'), model);
     expect(manifest.viewOffset).toBeGreaterThan(0);
-    manifest.input(press('BIOLOGY_COLLECT'), model);
-    expect(manifest.viewOffset).toBe(0);
-    const confirmed = manifest.createModel(40, 24);
-    expect(confirmed.dashboard?.[0].segments[0]).toMatchObject({ text: 'CONFIRM RECOVER', tone: 'red' });
-    expect(manifest.createCommandBar().buttons.find((button) => button.id === 'confirm')?.tone).toBe('red');
+    const offset = manifest.viewOffset;
+    expect(manifest.input(press('BIOLOGY_COLLECT'), model)).toBe('recover');
+    expect(manifest.viewOffset).toBe(offset);
   });
 
   it.each([

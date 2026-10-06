@@ -18,6 +18,7 @@ export class InputManager {
   // Set of actions that became active *this frame* (cleared each update)
   public justPressedActions: Set<string> = new Set();
   private keyJustPressed = false;
+  private readonly justPressedKeys = new Set<string>();
   private isListening: boolean = false;
   // Memoized mapping from key codes to action names for faster lookups
   private keyToActionMap: Map<string, string> = new Map();
@@ -102,6 +103,7 @@ export class InputManager {
     this.activeActions.clear();
     this.justPressedActions.clear();
     this.keyJustPressed = false;
+    this.justPressedKeys.clear();
     this.testCreditSequenceIndex = 0;
     this.testCreditSequenceLastKeyAt = 0;
   }
@@ -116,6 +118,7 @@ export class InputManager {
     // Clear the 'just pressed' actions at the beginning of each frame update
     this.justPressedActions.clear();
     this.keyJustPressed = false;
+    this.justPressedKeys.clear();
   }
 
   /**
@@ -140,6 +143,11 @@ export class InputManager {
   /** Detects a fresh physical key press, including keys without an action binding. */
   wasAnyKeyJustPressed(): boolean {
     return this.keyJustPressed;
+  }
+
+  /** Exposes fresh physical keys to modal choices without replacing normal action bindings. */
+  wasKeyJustPressed(key: string): boolean {
+    return this.justPressedKeys.has(key.toLowerCase());
   }
 
   // --- Private Event Handlers ---
@@ -206,6 +214,7 @@ export class InputManager {
     // Partial cheat input must not dismiss popups or reveal terminal animations.
     if (this.handleTestCreditSequence(e)) return;
     this.keyJustPressed = true;
+    this.justPressedKeys.add(lowerKey);
 
     // --- Handle Base Actions (including zoom keys mapped via lowercase) ---
     // Determine the action associated with the pressed key

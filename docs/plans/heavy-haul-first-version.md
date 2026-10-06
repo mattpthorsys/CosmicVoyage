@@ -4,6 +4,8 @@ Status: M0-M5 implemented; M4-M5 automated verification passed on 2026-10-06.
 A headless browser smoke covered the real manifest UI at desktop and narrow
 widths, but a complete personal delivery/save-reload playthrough remains useful.
 M6 onwards remain planned.
+Subsequent mission confirmations and haul voyage feedback are implemented with
+new regression coverage, awaiting the requested Luna verification stage.
 Baseline inspected on 2026-10-05: save schema 17 and Galaxy model 8; M4-M5
 use schema 20 and retain Galaxy model 8. Do not overwrite
 migrations introduced by intervening work.

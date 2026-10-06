@@ -3,6 +3,8 @@
 M4-M5 implementation and automated verification are complete. The current
 browser smoke covers launch, Operations, and the empty manifest at desktop and
 narrow widths. It does not replace the full contract playthrough described below.
+The subsequent Yes/No dialogs and voyage presentation have regression coverage
+written; their automated and browser verification is awaiting the Luna stage.
 
 ## First Local Contract
 
@@ -11,22 +13,28 @@ narrow widths. It does not replace the full contract playthrough described below
    local buoy job; it does not normally require crew hypersleep.
 2. Open Missions and select **Local navigation buoy transfer**. Enter opens
    the terminal manifest. Read mass, escrow, route, duration and certification.
-   A key during the reveal only finishes the text. Enter once arms acceptance;
-   Enter again confirms. Missing equipment or unsafe fuel produces a refusal
+   A key during the reveal only finishes the text. Enter opens a **Yes / No**
+   acceptance popup; **Y** accepts, **N** or **Escape** cancels, and Enter uses
+   the highlighted choice. Missing equipment or unsafe fuel produces a refusal
    instead of accepting an unusable job.
 3. Escape returns to the station. Undock with the station's departure control.
    Open **O -> Heavy-Haul Manifest**, or **J -> select the haul -> Enter**.
 4. In the manifest, **N** selects the current-stage contact and starts approach
    assist when undocked in its actual system. At pickup, reopen the manifest and
-   confirm **Couple** with Enter twice. The sealed contractor tank attaches with
+   select **Couple** and confirm **Yes**. The sealed contractor tank attaches with
    the external package; neither occupies internal cargo space.
-5. Confirm **Begin voyage** with Enter twice. A local transfer starts near pickup;
+5. Select **Begin voyage** and confirm **Yes**. A local transfer starts near pickup;
    a remote transfer must start at the departure boundary. The quoted calendar
    time passes immediately, support fuel is recorded once and normal fuel is
-   preserved. Arrival opens a paused receipt.
+   preserved. Required crew hypersleep is announced before a short fade out/in.
+   **Enter** skips the visual transition without cancelling the voyage. A paused
+   arrival popup reports the destination, elapsed time, dates and fuel use.
+   Acknowledge it to return to the manifest for final approach.
 6. Use **N** to approach the deployment contact. Reopen the manifest and confirm
-   **Deploy**. Commissioning releases the package and tank, creates the permanent
-   installation and credits escrow at the destination. No issuer return is needed.
+   **Deploy**, then **Yes**. Commissioning releases the package and tank, creates
+   the permanent installation and credits escrow at the destination. A separate
+   **TOW DELIVERED** popup confirms where it was deployed and how much was paid.
+   No issuer return is needed.
 7. Leave and revisit, or save/reload. The buoy remains selectable and scannable.
    The manifest can also show the most recent voyage receipt after settlement.
 
@@ -46,12 +54,15 @@ narrow widths. It does not replace the full contract playthrough described below
 - Its initial reactor refill allowance is free, capped by remaining allowance and
   normal tank capacity. It cannot be sold, moved to cargo or reset by docking again.
   Later refuelling follows normal station rules.
-- **C** requests contractor recovery. **Enter** confirms; **Escape** cancels the
+- **C** requests contractor recovery. **Y** confirms; **N** or **Escape** cancels the
   confirmation. Recovery removes the package/support, pays nothing and permanently
   retires that offer. This is the escape hatch for an inconvenient haul.
 - **Up/Down** scroll, **Page Up/Page Down** page, and **Escape** returns to the
   parent menu. The bottom command strip supports the same actions by clicking.
 - For playtesting funds, hold **Shift** through **K, Y, R** to add 10,000 Cr.
+- Ordinary mission-board contracts also use the **Yes / No** acceptance popup.
+  Dialogs pause time, preserve the parent selection, support scrolling, and
+  expose the same choices as clickable bottom commands.
 
 ## Verification Gate
 
@@ -67,11 +78,21 @@ narrow widths. It does not replace the full contract playthrough described below
   local/remote contracts, commissioning infrastructure, and save/reload while
   docked at a deployed depot. Playwright is not installed in this environment.
 
+The subsequent confirmation and voyage-feedback changes are not included in
+those baseline results. Their new dialog, input, transition, mission-acceptance,
+voyage-checkpoint, and rendering regression suites are ready for Luna verification.
+
 Start with focused tests:
 
 ```sh
 npm run test:run -- src/tests/core/navigation/heavy_haul_commissioning.test.ts src/tests/core/navigation/infrastructure_registry.test.ts src/tests/core/navigation/heavy_haul_offers.test.ts src/tests/core/navigation/heavy_haul_gameplay.test.ts src/tests/core/interface/haul_manifest.test.ts src/tests/rendering/haul_manifest_renderer.test.ts
 npm run check
+```
+
+Additional focused presentation coverage:
+
+```sh
+npm run test:run -- src/tests/core/interface/terminal_dialog.test.ts src/tests/core/interface/screen_transition.test.ts src/tests/core/interface/mission_dialogs.test.ts src/tests/core/interface/mission_dialog_integration.test.ts src/tests/core/interface/input_manager.test.ts src/tests/core/navigation/haul_presentation.test.ts src/tests/rendering/terminal_dialog_renderer.test.ts
 ```
 
 The full check must include the existing haul journey/service, save migrations,
@@ -81,6 +102,10 @@ behaviour; do not loosen assertions merely to accept new drawing output.
 
 Browser walkthroughs should cover:
 
+- Yes/No acceptance on ordinary and haul missions, cancellation restoring the
+  parent screen, repeat-key protection, and keyboard/clickable choices.
+- Hypersleep preparation, fade out/in and skip, persistent arrival acknowledgement,
+  reduced-motion mode, final delivery/payment acknowledgement, and checkpoint failure.
 - Starter local job from the real starting staffed port, not only fixture worlds.
 - Missing coupler and insufficient-berth refusal, then a properly equipped job.
 - Long remote transit with exactly one time jump, protected normal fuel and a
