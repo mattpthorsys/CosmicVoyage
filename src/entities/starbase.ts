@@ -7,6 +7,8 @@ import type { HaulOrbitSpecification } from '../core/heavy_haul_types';
 
 export type StationKind = 'starbase' | 'automated-depot';
 
+export const DEPLOYED_DEPOT_NOTICE = 'Full starport services awaiting staff and resource arrival.';
+
 export interface StationCapabilities {
   readonly trade: boolean;
   readonly fuel: boolean;
@@ -44,6 +46,7 @@ export class Starbase {
   readonly kind: StationKind;
   readonly capabilities: StationCapabilities;
   readonly colonyWorldName: string | null;
+  readonly serviceNotice: string | null;
 
   // Orbital Properties - Made MUTABLE to allow SolarSystem to update them
   orbitDistance: number; // Made mutable (removed readonly)
@@ -80,6 +83,7 @@ export class Starbase {
     this.kind = kind;
     this.capabilities = kind === 'automated-depot' ? DEPOT_CAPABILITIES : STARBASE_CAPABILITIES;
     this.colonyWorldName = colonyWorldName;
+    this.serviceNotice = deployment && kind === 'automated-depot' ? DEPLOYED_DEPOT_NOTICE : null;
     this.name =
       deployment?.name ??
       (kind === 'automated-depot' ? `${systemName} Automated Depot` : `${systemName} Starbase Delta`);
@@ -117,7 +121,8 @@ export class Starbase {
       `Type: <hl>${this.kind === 'automated-depot' ? 'Uncrewed Automated Depot' : 'Orbital Starbase'}</hl>`,
       `Services: <hl>${services.join(', ')}</hl>`,
       ...(this.colonyWorldName ? [`Colony World: <hl>${this.colonyWorldName}</hl>`] : []),
-      `Status: <hl>Operational</hl>`,
+      `Status: <hl>${this.serviceNotice ? 'Automated services online' : 'Operational'}</hl>`,
+      ...(this.serviceNotice ? [`Commissioning: <hl>${this.serviceNotice}</hl>`] : []),
       `Mineral Scan: <hl>N/A</hl>`, // Starbases don't have minerals
       '<h>--- SCAN COMPLETE ---</h>',
     ]; //

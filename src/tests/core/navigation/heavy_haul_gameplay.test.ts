@@ -14,6 +14,11 @@ import { haulJourneyFixture, haulSystemFixture } from '../../fixtures/heavy_haul
 import { CONFIG } from '../../../config';
 import { sameHaulAddress } from '../../../core/heavy_haul_types';
 import { capturePlanetMutations, captureSystemOrbit, systemAddress } from '../../../core/system_orbit_state';
+import { findHaulHomeboundRoute } from '../../../core/haul_navigation';
+import { GameStateManager } from '../../../core/game_state_manager';
+import { Player } from '../../../core/player';
+import { PRNG } from '../../../utils/prng';
+import { SystemDataGenerator } from '../../../generation/system_data_generator';
 
 /** Builds the starter local offer against real host geometry and the existing save/ship owners. */
 function gameplayFixture() {
@@ -124,6 +129,28 @@ describe('production haul vertical slice', () => {
       crew: false,
     });
     expect(fresh.getObjectNear(depot.systemX, depot.systemY)).toBe(depot);
+    expect(depot.getScanInfo().join(' ')).toContain('awaiting staff and resource arrival');
+    const restored = parseGameSave(JSON.stringify(commissioned.save));
+    if (restored.observatory) restored.observatory.destination = null;
+    expect(findHaulHomeboundRoute(restored.infrastructure)).toEqual({
+      systemAddress: objective.pickup.systemAddress,
+      stationId: mission.originStarbaseId,
+      stationName: mission.originStarbaseName,
+    });
+    const player = new Player();
+    player.position.systemX = depot.systemX + 5e7;
+    player.position.systemY = depot.systemY;
+    const seed = new PRNG('haul-journey-fixture');
+    const manager = new GameStateManager(player, seed, new SystemDataGenerator(seed));
+    try {
+      manager.installHaulArrival(fresh, { x: player.position.systemX, y: player.position.systemY });
+      manager.setLandingTargetProvider(() => depot);
+      expect(manager.landOnNearbyObject()).toBe(depot);
+      expect(manager.currentStarbase).toBe(depot);
+      expect(manager.state).toBe('starbase');
+    } finally {
+      manager.destroy();
+    }
     commissioned.save.location = {
       kind: 'starbase',
       ...objective.destination.systemAddress,

@@ -5,6 +5,9 @@ import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { PRNG } from '../../../utils/prng';
 import { Planet } from '../../../entities/planet';
+import { haulSystemFixture } from '../../fixtures/heavy_haul_journeys';
+import type { InfrastructureRecord } from '../../../core/heavy_haul_types';
+import { InfrastructureRegistry } from '../../../core/infrastructure_registry';
 
 /** Creates ship menu harness. */
 function createShipMenuHarness(state: string = 'hyperspace'): any {
@@ -74,6 +77,86 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
 }
 
 describe('ship menu', () => {
+  it('retains a delivered haul homebound route, confirms navigation, and preserves fuel and time', () => {
+    const game = createShipMenuHarness();
+    const address = { worldX: 0, worldY: 0, systemSlot: 0 };
+    const port = haulSystemFixture(address).starbase!;
+    const route = { systemAddress: address, stationId: port.id, stationName: port.name };
+    const asset: InfrastructureRecord = {
+      assetId: 'haul-installation:finished',
+      sourceMissionId: 'finished',
+      kind: 'automated-depot',
+      systemAddress: { worldX: 50, worldY: 10, systemSlot: 0 },
+      systemName: 'Frontier',
+      orbit: { host: { kind: 'barycentric' }, radiusM: 2e11, angleRad: 0 },
+      commissionedAtSeconds: 100,
+      lastAppliedBulkSeconds: 0,
+      commissioningFuelRemainingUnits: 500,
+      homeboundRoute: route,
+    };
+    game._infrastructureRegistry = new InfrastructureRegistry();
+    game._infrastructureRegistry.restore([asset]);
+    game.shipMenuOpen = true;
+    game.inputManager.clearState = vi.fn();
+    game.terminalOverlay = { clear: vi.fn() };
+    game.astrometricOverlay = { clear: vi.fn() };
+    game.gameClockElapsedSeconds = 100;
+    const fuel = game.player.resources.fuel;
+    const position = structuredClone(game.player.position);
+    const row = game.createShipMenuModel().rows.find((entry: any) => entry.id === 'homebound');
+    expect(row.disabled).toBe(false);
+    expect(row.cells[1]).toBe(port.name);
+    game.activateShipMenuSelection(row);
+    let model = game.terminalDialog.createModel(100, 50);
+    expect(model.kind).toBe('confirmation');
+    game.finishTerminalDialog(game.terminalDialog.action('DIALOG_NO', model));
+    expect(game.shipMenuOpen).toBe(true);
+    expect(game._observatoryService?.snapshot.destination).toBeUndefined();
+    game.activateShipMenuSelection(row);
+    model = game.terminalDialog.createModel(100, 50);
+    game.finishTerminalDialog(game.terminalDialog.action('DIALOG_YES', model));
+    expect(game.observatoryService.snapshot.destination).toEqual({
+      ...address,
+      name: port.name,
+      kind: 'system',
+    });
+    expect(game.shipMenuOpen).toBe(false);
+    expect(game.player.resources.fuel).toBe(fuel);
+    expect(game.player.position).toEqual(position);
+    expect(game.gameClockElapsedSeconds).toBe(100);
+
+    game.stateManager.state = 'system';
+    game.stateManager.currentSystem = haulSystemFixture(address);
+    game.shipMenuOpen = true;
+    game.navigateHomeboundRoute(route);
+    expect(game.currentTargetSignature).toBe(`starbase:${port.id}`);
+    expect(game.approachTargetSignature).toBe(`starbase:${port.id}`);
+    expect(game.shipMenuOpen).toBe(false);
+  });
+
+  it('explains delivered depot commissioning in the port overview and keeps services accessible', () => {
+    const game = createShipMenuHarness('starbase');
+    const station = new Starbase(
+      'delivered',
+      new PRNG('ship-menu-test'),
+      'Frontier',
+      'automated-depot',
+      null,
+      undefined,
+      {
+        id: 'haul-installation:delivered',
+        name: 'Frontier Logistics Depot',
+        orbit: { host: { kind: 'barycentric' }, radiusM: 2e11, angleRad: 0 },
+      }
+    );
+    game.stateManager.currentStarbase = station;
+    const rows = game.getStarbaseRows(station, 'overview');
+    expect(rows[0].detail).toContain('awaiting staff and resource arrival');
+    expect(rows[0].cellTones).toContain('amber');
+    expect(rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['buy', 'sell', 'services']));
+    expect(rows.map((row: any) => row.id)).not.toContain('crew');
+  });
+
   it('shows the operations menu without the explanatory subtitle', () => {
     const model = createShipMenuHarness().createShipMenuModel();
     expect(model.title).toBe('Ship Operations');

@@ -1,6 +1,45 @@
-import { sameHaulAddress, type HaulEndpoint, type HeavyHaulObjective } from './heavy_haul_types';
+import {
+  sameHaulAddress,
+  type HaulEndpoint,
+  type HaulHomeboundRoute,
+  type HeavyHaulObjective,
+  type InfrastructureRecord,
+} from './heavy_haul_types';
 import type { HaulManifestStage } from './haul_manifest';
 import type { MissionSystemAddress } from './mission_board';
+import type { ObservatoryDestination } from './observatory_types';
+
+/** Recovers the most recent remote haul's issuer independently of the current navigation mark. */
+export function findHaulHomeboundRoute(
+  installations: readonly InfrastructureRecord[],
+  legacyDestination?: ObservatoryDestination | null
+): HaulHomeboundRoute | null {
+  const latest = installations.reduce<InfrastructureRecord | null>(
+    (previous, asset) =>
+      asset.homeboundRoute && (!previous || asset.commissionedAtSeconds >= previous.commissionedAtSeconds)
+        ? asset
+        : previous,
+    null
+  );
+  if (latest?.homeboundRoute) return structuredClone(latest.homeboundRoute);
+  // Before issuer metadata existed, settlement saved only a named port destination.
+  if (
+    legacyDestination?.kind === 'system' &&
+    /starbase|depot/i.test(legacyDestination.name) &&
+    installations.some((asset) => !sameHaulAddress(asset.systemAddress, legacyDestination))
+  ) {
+    return {
+      systemAddress: {
+        worldX: legacyDestination.worldX,
+        worldY: legacyDestination.worldY,
+        systemSlot: legacyDestination.systemSlot,
+      },
+      stationId: null,
+      stationName: legacyDestination.name,
+    };
+  }
+  return null;
+}
 
 /** Describes the next physical staging requirement, independently of presentation and action execution. */
 export function describeHaulStage(

@@ -148,6 +148,12 @@ export function validateInfrastructureRecords(
     text(asset.systemName, 'installation system name');
     validateAddress(asset.systemAddress);
     validateOrbit(asset.orbit);
+    if (asset.homeboundRoute !== undefined) {
+      const route = record(asset.homeboundRoute, 'homebound route');
+      validateAddress(route.systemAddress);
+      text(route.stationName, 'homebound port name');
+      if (route.stationId !== null) text(route.stationId, 'homebound port id');
+    }
     if (!['navigation-buoy', 'automated-depot'].includes(String(asset.kind)))
       fail('deployed installation kind');
     number(asset.commissionedAtSeconds, 'commissioning time');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Starbase } from '../../../entities/starbase';
+import { DEPLOYED_DEPOT_NOTICE, Starbase } from '../../../entities/starbase';
 import { PRNG } from '../../../utils/prng';
 import { CONFIG } from '../../../config';
 
@@ -31,5 +31,31 @@ describe('Starbase', () => {
     expect(scanInfo[0]).toContain(starbase.name);
     expect(scanInfo).toContain('Type: <hl>Orbital Starbase</hl>');
     expect(scanInfo).toContain('Mineral Scan: <hl>N/A</hl>');
+  });
+
+  it('explains delivered depot staffing while preserving its usable automated services', () => {
+    const station = new Starbase(
+      'delivered',
+      new PRNG('system-seed'),
+      'Frontier',
+      'automated-depot',
+      null,
+      undefined,
+      {
+        id: 'haul-installation:depot',
+        name: 'Frontier Logistics Depot',
+        orbit: { host: { kind: 'barycentric' }, radiusM: 2e11, angleRad: 0 },
+      }
+    );
+    expect(station.serviceNotice).toBe(DEPLOYED_DEPOT_NOTICE);
+    expect(station.getScanInfo().join(' ')).toContain(DEPLOYED_DEPOT_NOTICE);
+    expect(station.capabilities).toMatchObject({
+      trade: true,
+      fuel: true,
+      repairs: 'basic',
+      crew: false,
+      shipyard: false,
+    });
+    expect(new Starbase('natural', new PRNG('system-seed'), 'TestSystem').serviceNotice).toBeNull();
   });
 });

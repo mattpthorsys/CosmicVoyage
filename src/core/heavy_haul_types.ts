@@ -105,6 +105,13 @@ export interface HeavyHaulSnapshot {
   journeyReceipts: Record<string, HaulJourneyReceipt>;
 }
 
+export interface HaulHomeboundRoute {
+  readonly systemAddress: MissionSystemAddress;
+  /** Older deliveries may retain the port name without its stable identifier. */
+  readonly stationId: string | null;
+  readonly stationName: string;
+}
+
 export interface InfrastructureRecord {
   readonly assetId: string;
   readonly sourceMissionId: string;
@@ -115,6 +122,8 @@ export interface InfrastructureRecord {
   readonly commissionedAtSeconds: number;
   readonly lastAppliedBulkSeconds: number;
   commissioningFuelRemainingUnits: number;
+  /** Keeps the issuer reachable after settlement removes the active contract. */
+  readonly homeboundRoute?: HaulHomeboundRoute;
 }
 
 export interface HaulRendezvous {

@@ -5,18 +5,42 @@ import {
   type StarbaseMission,
 } from './mission_board';
 import { formatHaulDuration, type HaulManifestAction, type HaulManifestData } from './haul_manifest';
-import type { HaulJourneyReceipt } from './heavy_haul_types';
+import type { HaulHomeboundRoute, HaulJourneyReceipt } from './heavy_haul_types';
 import type { TerminalDialogSpec } from './terminal_dialog';
 import type { TextDashboardLine, TextTone } from './text_ui';
+import { DEPLOYED_DEPOT_NOTICE } from '../entities/starbase';
 
 export type MissionDialogIntent =
   | { readonly kind: 'accept-mission'; readonly mission: StarbaseMission; readonly stationId: string }
   | { readonly kind: 'haul-action'; readonly action: HaulManifestAction; readonly mission: StarbaseMission }
-  | { readonly kind: 'view-haul'; readonly mission?: StarbaseMission };
+  | { readonly kind: 'view-haul'; readonly mission?: StarbaseMission }
+  | { readonly kind: 'homebound-route'; readonly route: HaulHomeboundRoute };
 
 /** Adds one semantic terminal paragraph, preserving its tone through responsive wrapping. */
 function line(text: string, tone: TextTone = 'normal', heading = false): TextDashboardLine {
   return { segments: [{ text, tone, font: heading ? 'thick' : 'thin' }] };
+}
+
+/** Makes deferred return navigation available after the paid contract leaves the mission journal. */
+export function createHomeboundRouteDialog(
+  route: HaulHomeboundRoute,
+  distanceLy: number
+): TerminalDialogSpec<MissionDialogIntent> {
+  return {
+    title: 'HOMEBOUND NAVIGATION',
+    kind: 'confirmation',
+    defaultYes: true,
+    intent: { kind: 'homebound-route', route },
+    lines: [
+      line(route.stationName, 'cyan', true),
+      line(`X ${route.systemAddress.worldX} / Y ${route.systemAddress.worldY}`, 'green'),
+      line(`Range ${distanceLy.toFixed(1)} light-years`, 'amber'),
+      line('Return untowed using normal reactor fuel.'),
+      line('Set the homeward destination and follow its bearing in hyperspace.', 'muted'),
+      line('In the home system, approach assist selects the issuing port.', 'muted'),
+      line('Set course for home?', 'green'),
+    ],
+  };
 }
 
 /** Presents the actual offer and biological reference before accepting a normal mission. */
@@ -214,10 +238,14 @@ export function createHaulResultDialog(
                 : 'Navigation buoy is now available as a permanent target.',
               'green'
             ),
+            ...(objective.package.installationKind === 'automated-depot'
+              ? [line(DEPLOYED_DEPOT_NOTICE, 'amber')]
+              : []),
             ...(objective.route.kind === 'interstellar'
               ? [
                   line(`Optional route home marked: ${mission.originStarbaseName}.`, 'cyan'),
                   line('Return untowed using normal reactor fuel, or continue exploring.'),
+                  line('Deferred returns remain available in Ship Operations / Homebound Route.', 'muted'),
                 ]
               : []),
           ]

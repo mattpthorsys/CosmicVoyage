@@ -4,6 +4,7 @@ import {
   createHaulPrelude,
   createHaulArrivalDialog,
   createHaulResultDialog,
+  createHomeboundRouteDialog,
 } from '../../../core/mission_dialogs';
 import { formatHaulDuration, type HaulManifestData } from '../../../core/haul_manifest';
 import { getHeavyHaulObjective } from '../../../core/mission_board';
@@ -69,6 +70,22 @@ describe('mission and haul notices', () => {
     expect(delivery.title).toBe('TOW DELIVERED');
     expect(messageText(delivery)).toContain('5,800 Cr credited');
     expect(messageText(delivery)).toContain('Depot open for trade');
+    expect(messageText(delivery)).toContain('awaiting staff and resource arrival');
+  });
+
+  it('shows homebound coordinates and normal-fuel travel before selecting the return route', () => {
+    const route = {
+      systemAddress: { worldX: -10, worldY: 20, systemSlot: 0 },
+      stationId: 'issuer',
+      stationName: 'Home Starbase Delta',
+    };
+    const spec = createHomeboundRouteDialog(route, 350);
+    expect(spec.intent).toEqual({ kind: 'homebound-route', route });
+    expect(spec.kind).toBe('confirmation');
+    expect(messageText(spec)).toContain('X -10 / Y 20');
+    expect(messageText(spec)).toContain('350.0 light-years');
+    expect(messageText(spec)).toContain('normal reactor fuel');
+    expect(messageText(spec)).toContain('issuing port');
   });
 
   it('does not claim successful delivery on failure, and makes recovery an explicit default-No choice', () => {

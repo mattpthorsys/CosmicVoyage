@@ -79,7 +79,13 @@ import { ScienceLog } from './science_log';
 import { ObservatoryController, type ObservatoryScreenModel } from './observatory';
 import { ObservatoryService } from './observatory_service';
 import { HeavyHaulService } from './heavy_haul_service';
-import { createHeavyHaulSnapshot, type HaulQuoteResult, type HaulResupplyTarget } from './heavy_haul_types';
+import {
+  createHeavyHaulSnapshot,
+  sameHaulAddress,
+  type HaulHomeboundRoute,
+  type HaulQuoteResult,
+  type HaulResupplyTarget,
+} from './heavy_haul_types';
 import { HeavyHaulOffers, type HaulOfferWorld } from './heavy_haul_offers';
 import { selectStationMissionOffers } from './station_mission_offers';
 import {
@@ -97,10 +103,11 @@ import {
   createHaulPrelude,
   createHaulArrivalDialog,
   createHaulResultDialog,
+  createHomeboundRouteDialog,
   type MissionDialogIntent,
 } from './mission_dialogs';
 import { prepareHaulLifecycle } from './heavy_haul_lifecycle';
-import { resolveHaulNavigation, describeHaulStage } from './haul_navigation';
+import { resolveHaulNavigation, describeHaulStage, findHaulHomeboundRoute } from './haul_navigation';
 import {
   commitPreparedHaulJourney,
   prepareHaulJourney,
@@ -476,8 +483,43 @@ export class Game {
     if (intent?.kind === 'accept-mission') this.confirmMissionAcceptance(intent.mission, intent.stationId);
     else if (intent?.kind === 'haul-action') this.performHaulAction(intent.mission, intent.action);
     else if (intent?.kind === 'view-haul') this.openHaulManifest(intent.mission);
+    else if (intent?.kind === 'homebound-route') this.navigateHomeboundRoute(intent.route);
     this.forceFullRender = true;
     this._publishStatusUpdate();
+  }
+
+  /** Retrieves durable issuer metadata, retaining the last marked port for pre-metadata deliveries. */
+  private getHomeboundRoute(): HaulHomeboundRoute | null {
+    return findHaulHomeboundRoute(
+      this.infrastructureRegistry.createSnapshot(),
+      this._observatoryService?.snapshot.destination
+    );
+  }
+
+  /** Plots an untowed return or approaches the actual home port without teleporting or changing the calendar. */
+  private navigateHomeboundRoute(route: HaulHomeboundRoute): void {
+    if (this.heavyHaulService.attachedTowPolicy) {
+      this.statusMessage = 'Release the external tow before selecting homebound travel.';
+      return;
+    }
+    this.observatoryService.markSystemDestination(route.systemAddress, route.stationName);
+    const system = this.stateManager.state === 'system' ? this.stateManager.currentSystem : null;
+    const station =
+      system && sameHaulAddress(systemAddress(system), route.systemAddress)
+        ? system.stations.find((entry) =>
+            route.stationId ? entry.id === route.stationId : entry.name === route.stationName
+          )
+        : null;
+    if (station) {
+      this.closeShipMenu();
+      this.selectNavigationTarget(station, true);
+    } else {
+      const message = `Homeward route set: ${route.stationName} / X ${route.systemAddress.worldX}, Y ${route.systemAddress.worldY}. Follow the destination bearing in hyperspace; normal fuel applies.`;
+      if (this.isShipOperationsRequiredOnSurface()) this.statusMessage = message;
+      else this.closeShipMenu(message);
+    }
+    this.inputManager.clearState();
+    this.forceFullRender = true;
   }
 
   /** Builds a world-verified quote once per inspection/action, never in the drawing loop. */
@@ -851,7 +893,7 @@ export class Game {
       save.systemOrbitHistory.map((entry) => [systemAddressKey(entry), cloneSaveValue(entry)])
     );
     this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
-    this.infrastructureRegistry.restore(save.infrastructure);
+    this.infrastructureRegistry.restore(save.infrastructure, save.observatory?.destination);
     this.player.position = cloneSaveValue(save.player.position);
     this.player.render = cloneSaveValue(save.player.render);
     // The prepared destination already includes its voyage epoch. Do not recapture the departed source at the new clock.
@@ -876,11 +918,17 @@ export class Game {
   deployHaulInstallation(): { readonly ok: boolean; readonly message: string } {
     const system = this.stateManager.currentSystem;
     if (!system) return { ok: false, message: 'Deployment requires the contracted destination system.' };
+    const missionId = this.heavyHaulService.createSnapshot().activeTow?.missionId;
     const result = commitHaulChange(
       prepareHaulCommissioning(this.createSaveGame(), system),
       this.journeyCheckpointWriter,
       (save) => this.applyHaulChange(save)
     );
+    if (result.ok && missionId) {
+      // Replace the retired deployment marker with the delivered station for the next docking action.
+      const depot = system.stations.find((station) => station.id === `haul-installation:${missionId}`);
+      if (depot) this.selectNavigationTarget(depot, false);
+    }
     this.statusMessage = result.message;
     this._publishStatusUpdate();
     return result;
@@ -892,7 +940,7 @@ export class Game {
     const fuel = this.player.resources.fuel;
     this.missionProgress.restoreSnapshot(save);
     this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
-    this.infrastructureRegistry.restore(save.infrastructure);
+    this.infrastructureRegistry.restore(save.infrastructure, save.observatory?.destination);
     this.player.resources = cloneSaveValue(save.player.resources);
     if (this._observatoryService || save.observatory?.destination)
       this.observatoryService.snapshot.destination = cloneSaveValue(save.observatory?.destination ?? null);
@@ -1880,7 +1928,10 @@ export class Game {
       save.migratedFromGenerationVersion !== undefined &&
       save.migratedFromGenerationVersion < CONFIG.GALAXY_MODEL_VERSION;
     // Restore deployment identities before a docked location tries to resolve its station.
-    this.infrastructureRegistry.restore(isLegacyGalaxyMigration ? [] : save.infrastructure);
+    this.infrastructureRegistry.restore(
+      isLegacyGalaxyMigration ? [] : save.infrastructure,
+      isLegacyGalaxyMigration ? null : save.observatory?.destination
+    );
     this.bulkAdvanceSeconds = isLegacyGalaxyMigration ? 0 : save.bulkAdvanceSeconds;
     this.systemOrbitRegistry = new Map(
       (isLegacyGalaxyMigration ? [] : save.systemOrbitHistory).map((entry) => [
@@ -6979,6 +7030,21 @@ export class Game {
       this.openHaulManifest();
       return;
     }
+    if (row.id === 'homebound') {
+      const route = this.getHomeboundRoute();
+      if (route)
+        this.showTerminalDialog(
+          createHomeboundRouteDialog(
+            route,
+            observatoryDistanceLy(
+              this.player.position.worldX,
+              this.player.position.worldY,
+              route.systemAddress
+            )
+          )
+        );
+      return;
+    }
     if (row.id === 'observatory') {
       this.openObservatory();
       return;
@@ -7256,6 +7322,8 @@ export class Game {
         const canLaunch = this.isAtParkedShip() && !this.player.terrainVehicle.onFoot;
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         const focus = getShipCompartment(this.currentShipCompartmentId);
+        const homebound = this.getHomeboundRoute();
+        const canReturnHome = homebound && !this._heavyHaulService?.attachedTowPolicy;
         const rows: TextTableRow[] = [
           {
             id: 'deck',
@@ -7326,6 +7394,23 @@ export class Game {
               'External package, voyage certification, coupling, hypersleep transfer and deployment escrow.',
             cellTones: ['cyan', 'amber'],
             detailTone: 'cyan',
+          },
+          {
+            id: 'homebound',
+            cells: [
+              'Homebound Route',
+              homebound
+                ? canReturnHome
+                  ? homebound.stationName
+                  : 'Release external tow first'
+                : 'No remote haul delivered',
+            ],
+            detail: homebound
+              ? `X ${homebound.systemAddress.worldX} / Y ${homebound.systemAddress.worldY}. Set course back to the issuing port using normal, untowed travel.`
+              : 'Remote deliveries retain their issuing port here after payment and across reloads.',
+            cellTones: ['cyan', canReturnHome ? 'green' : 'muted'],
+            detailTone: canReturnHome ? 'cyan' : 'muted',
+            disabled: !canReturnHome,
           },
           {
             id: 'science',
@@ -10234,13 +10319,28 @@ export class Game {
     const market = this.getTradeDepotManifest(starbase);
     switch (sectionId) {
       case 'overview':
-        return getStationSections(starbase)
-          .filter((section) => section.id !== 'overview')
-          .map((section) => ({
-            id: section.id,
-            cells: [section.label, this.getSectionStatus(section.id)],
-            detail: `${this.getSectionSummary(section.id)} Enter opens ${section.label}.`,
-          }));
+        const serviceRows: StarbaseTableRow[] = starbase.serviceNotice
+          ? [
+              {
+                id: 'commissioning-status',
+                cells: ['Full starport services', 'Awaiting staff / resources'],
+                detail: `${starbase.serviceNotice} Automated trade, fuel and basic repairs are online.`,
+                cellTones: ['cyan', 'amber'],
+                detailTone: 'amber',
+                disabled: true,
+              },
+            ]
+          : [];
+        return [
+          ...serviceRows,
+          ...getStationSections(starbase)
+            .filter((section) => section.id !== 'overview')
+            .map((section) => ({
+              id: section.id,
+              cells: [section.label, this.getSectionStatus(section.id)],
+              detail: `${this.getSectionSummary(section.id)} Enter opens ${section.label}.`,
+            })),
+        ];
       case 'cargo':
         return this.getCargoRows();
       case 'research':

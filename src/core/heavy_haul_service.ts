@@ -195,6 +195,15 @@ export class HeavyHaulService {
       commissionedAtSeconds: context.gameClockSeconds,
       lastAppliedBulkSeconds: context.bulkAdvanceSeconds,
       commissioningFuelRemainingUnits: objective.package.commissioningFuelAllowanceUnits,
+      ...(objective.route.kind === 'interstellar'
+        ? {
+            homeboundRoute: {
+              systemAddress: structuredClone(objective.pickup.systemAddress),
+              stationId: mission.originStarbaseId ?? null,
+              stationName: mission.originStarbaseName,
+            },
+          }
+        : {}),
     };
     try {
       validateInfrastructureRecords([installation], context.gameClockSeconds, context.bulkAdvanceSeconds, [

@@ -52,6 +52,10 @@ written; their automated and browser verification is awaiting the Luna stage.
 - A commissioned depot is a real station alongside any natural station. Select
   and dock there for trade, reactor fuel, and basic hull/rover repair. It has no
   crew office, research department, mission office or full equipment refits.
+  Delivery selects the new depot as the docking target. Its scan and port overview
+  explain that full starport services await staff and resource arrival; automated
+  trade, fuel and basic repairs are already online. This status does not currently
+  schedule a later upgrade to a staffed port.
 - Its initial reactor refill allowance is free, capped by remaining allowance and
   normal tank capacity. It cannot be sold, moved to cargo or reset by docking again.
   Later refuelling follows normal station rules.
@@ -84,6 +88,13 @@ written; their automated and browser verification is awaiting the Luna stage.
   manifest marks that route; in the source system it approaches the issuing port.
   Return travel is optional and untowed, not another instant tow voyage. Escrow
   is paid at deployment; there is no second payment for going home.
+- **O -> Homebound Route** restores the latest remote delivery's issuing port
+  even after settlement removes the mission and other destinations are selected.
+  The Yes/No terminal shows its coordinates and current range. **Yes** plots the
+  normal, untowed return route; in that system it selects the issuing station and
+  engages local approach assist. The option remains available after save/reload.
+  Older deliveries can recover their issuing port while their original homeward
+  navigation mark remains present. An attached tow must be released first.
 - Previously accepted hauls retain their original distance, mass and payment.
   New offers use the updated generator; accepting an old offer does not convert
   it into a long-range job.
@@ -99,6 +110,11 @@ opens its own orbital view while retaining its parent as the local-space referen
 
 The station-variety, longer-route and precise-approach changes have regression
 coverage prepared but have not yet undergone the Luna verification pass.
+
+The subsequent delivered-depot notices, explicit docking target and deferred
+homebound navigation have regression coverage prepared for the next Luna pass.
+Verify remote deployment, deferred return after reload and changing another
+navigation destination, Yes/No cancellation, and docking at the delivered depot.
 
 ## Verification Gate
 
@@ -123,6 +139,12 @@ Start with focused tests:
 ```sh
 npm run test:run -- src/tests/core/navigation/heavy_haul_commissioning.test.ts src/tests/core/navigation/infrastructure_registry.test.ts src/tests/core/navigation/heavy_haul_offers.test.ts src/tests/core/navigation/heavy_haul_gameplay.test.ts src/tests/core/interface/haul_manifest.test.ts src/tests/rendering/haul_manifest_renderer.test.ts
 npm run check
+```
+
+Deferred homebound navigation and depot presentation:
+
+```sh
+npm run test:run -- src/tests/core/navigation/haul_homebound_navigation.test.ts src/tests/core/navigation/heavy_haul_gameplay.test.ts src/tests/core/navigation/infrastructure_registry.test.ts src/tests/core/interface/mission_dialogs.test.ts src/tests/core/ship/ship_menu.test.ts src/tests/entities/stellar/starbase.test.ts
 ```
 
 Additional focused presentation coverage:

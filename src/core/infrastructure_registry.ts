@@ -10,6 +10,8 @@ import { advanceOrbitalAngle } from './simulation_time';
 import { sameHaulAddress, type InfrastructureRecord, type HaulOrbitSpecification } from './heavy_haul_types';
 import type { MissionSystemAddress } from './mission_board';
 import { systemAddress } from './system_orbit_state';
+import { findHaulHomeboundRoute } from './haul_navigation';
+import type { ObservatoryDestination } from './observatory_types';
 
 /** Resolves stable Kepler motion using the actual host mass, including inner pairs in triples. */
 export function advanceInstallationAngle(
@@ -85,8 +87,25 @@ export class InfrastructureRegistry {
   revision = 0;
 
   /** Restores records that have already passed the save boundary's cross-owner validation. */
-  restore(records: readonly InfrastructureRecord[]): void {
+  restore(records: readonly InfrastructureRecord[], legacyDestination?: ObservatoryDestination | null): void {
     this.records = structuredClone([...records]);
+    const route = findHaulHomeboundRoute(this.records, legacyDestination);
+    if (route && !this.records.some((asset) => asset.homeboundRoute)) {
+      const latest = this.records.reduce<InfrastructureRecord | null>(
+        (previous, asset) =>
+          !sameHaulAddress(asset.systemAddress, route.systemAddress) &&
+          (!previous || asset.commissionedAtSeconds >= previous.commissionedAtSeconds)
+            ? asset
+            : previous,
+        null
+      );
+      if (latest) {
+        // Save the recovered legacy issuer before another navigation choice replaces its only remaining mark.
+        this.records = this.records.map((asset) =>
+          asset === latest ? { ...asset, homeboundRoute: route } : asset
+        );
+      }
+    }
     this.revision++;
   }
 
