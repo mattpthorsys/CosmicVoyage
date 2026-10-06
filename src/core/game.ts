@@ -1069,6 +1069,13 @@ export class Game {
       this.forceFullRender = true;
       return true;
     }
+    if (
+      this.inputManager.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF') &&
+      ['drive', 'menu'].includes(this.encounterController.interaction.kind)
+    ) {
+      this.launchFromParkedShip();
+      return true;
+    }
     const intent = this.encounterController.input(this.inputManager.justPressedActions, field);
     if (this.encounterController.interaction.kind !== 'drive') this.interfaceMode.open('xenobiology');
     else this.interfaceMode.close('xenobiology');
@@ -6764,7 +6771,17 @@ export class Game {
       this.forceFullRender = true;
       return;
     }
+    const field = this.activeEncounter;
     const transferred = this.transferRoverCargoToShip();
+    if (field) {
+      // A field can be entered from a neighbouring regional cell. Boarding at its
+      // entry places the rover at the actual ship, then releases the local view.
+      this.player.position.surfaceX = field.site.x;
+      this.player.position.surfaceY = field.site.y;
+      this.xenobiology.snapshot.activeSiteId = null;
+      this.encounterController.reset();
+      this.interfaceMode.close('xenobiology');
+    }
     this.player.terrainVehicle.deployed = false;
     this.player.terrainVehicle.moving = false;
     this.player.terrainVehicle.onFoot = false;
@@ -6815,12 +6832,15 @@ export class Game {
     this.forceFullRender = true;
   }
 
-  /** Returns whether at parked ship. */
+  /** Matches the regional rover or a habitat's local entry to the parked ship. */
   private isAtParkedShip(): boolean {
+    const field = this.activeEncounter;
+    const x = field?.site.x ?? this.player.position.surfaceX;
+    const y = field?.site.y ?? this.player.position.surfaceY;
     return (
-      !this.activeEncounter &&
-      Math.floor(this.player.position.surfaceX) === Math.floor(this.player.terrainVehicle.shipSurfaceX) &&
-      Math.floor(this.player.position.surfaceY) === Math.floor(this.player.terrainVehicle.shipSurfaceY)
+      (!field || Math.hypot(field.roverX - 16, field.roverY - 21) <= 1.5) &&
+      Math.floor(x) === Math.floor(this.player.terrainVehicle.shipSurfaceX) &&
+      Math.floor(y) === Math.floor(this.player.terrainVehicle.shipSurfaceY)
     );
   }
 
@@ -9440,7 +9460,21 @@ export class Game {
             commandButton('close', 'Return to field', 'QUIT', { key: 'Esc' }),
           ],
         };
-      return this.encounterController.createCommandBar(this.activeEncounter);
+      const bar = this.encounterController.createCommandBar(this.activeEncounter);
+      if (['drive', 'menu'].includes(this.encounterController.interaction.kind))
+        bar.rightButtons = [
+          commandButton('launch', 'Launch', 'ACTIVATE_LAND_LIFTOFF', {
+            key: CONFIG.KEY_BINDINGS.ACTIVATE_LAND_LIFTOFF,
+            enabled: this.isAtParkedShip() && !rover.onFoot,
+            tone: 'green',
+            detail: rover.onFoot
+              ? 'Board the terrain vehicle before launching.'
+              : this.isAtParkedShip()
+                ? 'Auto-embark the terrain vehicle and launch to orbit.'
+                : 'Ship must be parked at this habitat; return to entry X16 Y21 to launch.',
+          }),
+        ];
+      return bar;
     }
     if (!rover.deployed && !rover.onFoot) {
       return {

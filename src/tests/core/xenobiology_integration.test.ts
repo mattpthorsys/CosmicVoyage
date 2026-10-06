@@ -25,6 +25,7 @@ import { createBehaviourContracts } from '../../core/behaviour_research';
 import type { MissionJournalEntry } from '../../core/mission_journal';
 import { TerminalDialog, type TerminalDialogResult } from '../../core/terminal_dialog';
 import type { MissionDialogIntent } from '../../core/mission_dialogs';
+import type { CommandBarModel } from '../../core/command_bar';
 
 interface BiologyGameHarness {
   player: Player;
@@ -56,6 +57,7 @@ interface BiologyGameHarness {
   activateMissionSelection(starbase: Starbase, row: TextTableRow): void;
   terminalDialog: TerminalDialog<MissionDialogIntent>;
   finishTerminalDialog(result: TerminalDialogResult<MissionDialogIntent>): void;
+  createSurfaceCommandBar(): CommandBarModel;
 }
 
 /** Connects production Game orchestration to a bounded test field without a canvas or generated universe. */
@@ -507,6 +509,101 @@ describe('xenobiology Game integration', () => {
     expect(game.shipMenuOpen).toBe(false);
     expect(game.createRoverCargoModel().title).toBe('Terrain Vehicle Cargo');
   });
+  it.each(['drive', 'menu'])('launches from the %s field view and retains sealed cargo overflow', (mode) => {
+    const { game, keys, field, player, service } = harness();
+    const rover = player.terrainVehicle;
+    rover.shipSurfaceX = field.site.x;
+    rover.shipSurfaceY = field.site.y;
+    // Entering from a neighbouring regional cell must not obscure a ship at the habitat itself.
+    player.position.surfaceX = field.site.x - 1;
+    player.position.surfaceY = field.site.y;
+    const specimen = createCollectionContainer(field, field.individuals[0], 'live');
+    field.individuals[0].state = 'collected';
+    rover.cargoHold.specimens = [specimen];
+    player.cargoHold.items.IRON = player.cargoHold.capacity;
+    const manager = {
+      state: 'planet',
+      currentPlanet: null,
+      currentSystem: null,
+      statusMessage: '',
+      launchFromSurfaceToOrbit: vi.fn(() => {
+        manager.state = 'orbit';
+        manager.statusMessage = 'Launched to orbit of Test Planet.';
+        return true;
+      }),
+    };
+    Object.assign(game, {
+      stateManager: manager,
+      getShipMenuRows: () => [{ id: 'rover', cells: ['Terrain Vehicle'] }],
+    });
+    if (mode === 'menu') {
+      keys.add('ENTER_SYSTEM');
+      game.handleEncounterInput();
+      keys.clear();
+    }
+    expect(game.createSurfaceCommandBar().rightButtons).toEqual([
+      expect.objectContaining({ id: 'launch', action: 'ACTIVATE_LAND_LIFTOFF', enabled: true }),
+    ]);
+    const before = structuredClone(field);
+    keys.add('ACTIVATE_LAND_LIFTOFF');
+    expect(game.handleEncounterInput()).toBe(true);
+    expect(manager.launchFromSurfaceToOrbit).toHaveBeenCalledOnce();
+    expect(manager.state).toBe('orbit');
+    expect(rover.deployed).toBe(false);
+    expect(rover.cargoHold.specimens).toEqual([specimen]);
+    expect(player.cargoHold.items.IRON).toBe(player.cargoHold.capacity);
+    expect(player.position.surfaceX).toBe(field.site.x);
+    expect(player.position.surfaceY).toBe(field.site.y);
+    expect(service.snapshot.activeSiteId).toBeNull();
+    expect(service.snapshot.fields[field.site.id]).toEqual(before);
+    expect(game.encounterController.interaction.kind).toBe('drive');
+    expect(game.shipMenuOpen).toBe(false);
+    expect(game.statusMessage).toContain('Terrain vehicle auto-embarked. Launched to orbit');
+    expect(game.gameClockElapsedSeconds).toBe(100);
+    const save = saveFixture(player, service);
+    expect(() => parseGameSave({ ...save, location: { ...save.location, kind: 'orbit' } })).not.toThrow();
+  });
+  it.each(['ship elsewhere', 'away from entry', 'on foot'])(
+    'refuses field launch when %s without withdrawing or moving cargo',
+    (condition) => {
+      const { game, keys, field, player, service } = harness();
+      const rover = player.terrainVehicle;
+      rover.shipSurfaceX = field.site.x + (condition === 'ship elsewhere' ? 1 : 0);
+      rover.shipSurfaceY = field.site.y;
+      player.position.surfaceX = rover.shipSurfaceX;
+      player.position.surfaceY = rover.shipSurfaceY;
+      if (condition === 'away from entry') field.roverX += 4;
+      rover.onFoot = condition === 'on foot';
+      const launch = vi.fn();
+      Object.assign(game, { stateManager: { state: 'planet', launchFromSurfaceToOrbit: launch } });
+      const before = structuredClone({ field, rover, position: player.position });
+      expect(game.createSurfaceCommandBar().rightButtons?.[0].enabled).toBe(false);
+      keys.add('ACTIVATE_LAND_LIFTOFF');
+      game.handleEncounterInput();
+      expect(launch).not.toHaveBeenCalled();
+      expect(service.snapshot.activeSiteId).toBe(field.site.id);
+      expect({ field, rover, position: player.position }).toEqual(before);
+      expect(game.gameClockElapsedSeconds).toBe(100);
+    }
+  );
+  it.each(['BIOLOGY_SHOOT', 'TRADE', 'ORBIT_DOSSIER'])(
+    'keeps %s field confirmation or reading controls in charge of the launch key',
+    (action) => {
+      const { game, keys, field, player } = harness();
+      player.terrainVehicle.shipSurfaceX = field.site.x;
+      player.terrainVehicle.shipSurfaceY = field.site.y;
+      const launch = vi.fn();
+      Object.assign(game, { stateManager: { state: 'planet', launchFromSurfaceToOrbit: launch } });
+      game.encounterController.input(new Set([action]), field);
+      game.encounterController.reveal.complete();
+      const interaction = structuredClone(game.encounterController.interaction);
+      expect(game.createSurfaceCommandBar().rightButtons).toBeUndefined();
+      keys.add('ACTIVATE_LAND_LIFTOFF');
+      game.handleEncounterInput();
+      expect(launch).not.toHaveBeenCalled();
+      expect(game.encounterController.interaction).toEqual(interaction);
+    }
+  );
   it('keeps a visited habitat accessible if new biology generation finds no new biosphere', () => {
     const { game, field } = harness();
     const planet = { name: 'Retained field', mapSeed: 'retained', moons: [], isSurfaceReady: () => true };

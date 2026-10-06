@@ -104,6 +104,7 @@ a predictive model of alien evolution. Introduced colony taxa remain familiar.
 | N             | Personal species/evidence record                        |
 | I             | Rover cargo manifest                                    |
 | O             | Ship Operations through the rover link                   |
+| L             | Launch at field entry if ship is parked at the habitat   |
 | X             | Shipboard science log and recorded return sites          |
 | Escape        | Close a panel, or withdraw near the entry at X16 Y21    |
 
@@ -111,6 +112,11 @@ The bottom menu includes Observe, Analyse, Stun, Sample, Collect, Shoot,
 Watch, Dossier, Species, Cargo, Missions, Science log and Withdraw. Left/Right (or Up/Down) select;
 Enter executes. Buttons also work directly with the mouse or their hotkeys.
 Escape leaves menu selection and restores driving.
+
+If the ship is parked at the habitat's regional coordinates, return to the local
+entry at X16 Y21 and use **L Launch** directly from the field view. The rover
+auto-embarks, transferring cargo into available ship storage and retaining
+overflow specimens aboard the rover.
 
 The close field view retains the habitat's regional terrain colour. Tiny
 four-colour silhouettes distinguish the rover, mobile organisms and sessile
