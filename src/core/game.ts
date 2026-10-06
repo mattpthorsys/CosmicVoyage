@@ -80,7 +80,8 @@ import { ObservatoryController, type ObservatoryScreenModel } from './observator
 import { ObservatoryService } from './observatory_service';
 import { HeavyHaulService } from './heavy_haul_service';
 import { createHeavyHaulSnapshot, type HaulQuoteResult, type HaulResupplyTarget } from './heavy_haul_types';
-import { HeavyHaulOffers } from './heavy_haul_offers';
+import { HeavyHaulOffers, type HaulOfferWorld } from './heavy_haul_offers';
+import { selectStationMissionOffers } from './station_mission_offers';
 import {
   HaulManifest,
   type HaulManifestAction,
@@ -105,7 +106,6 @@ import {
   prepareHaulJourney,
   resolveHaulQuoteContext,
   type HaulJourneyRequest,
-  type HaulJourneyWorld,
   type PreparedHaulJourney,
 } from './heavy_haul_journey';
 import {
@@ -609,10 +609,14 @@ export class Game {
       mission.id,
       objective,
       data.stage,
-      system ? systemAddress(system) : null
+      system ? systemAddress(system) : null,
+      mission.originStarbaseId
     );
     if (solution.localSiteId && system) {
-      const target = system.navigationMarkers.find((entry) => entry.id === solution.localSiteId);
+      const target =
+        data.stage === 'complete'
+          ? system.stations.find((entry) => entry.id === solution.localSiteId)
+          : system.navigationMarkers.find((entry) => entry.id === solution.localSiteId);
       if (target) {
         this.closeHaulManifest(true);
         this.selectNavigationTarget(target, true);
@@ -622,14 +626,16 @@ export class Game {
     } else {
       this.observatoryService.markSystemDestination(
         solution.endpoint.systemAddress,
-        solution.endpoint.systemName
+        data.stage === 'complete' ? mission.originStarbaseName : solution.endpoint.systemName
       );
       this.haulManifest.notice =
-        this.stateManager.state === 'starbase'
-          ? 'Destination marked. Undock before engaging local approach.'
-          : data.stage === 'available'
-            ? 'Destination marked. Accept the contract to reserve local rendezvous contacts.'
-            : `Destination marked: ${solution.endpoint.systemName}. Enter the contracted system before local approach.`;
+        data.stage === 'complete'
+          ? `Homeward route marked to ${mission.originStarbaseName}. Return using normal, untowed travel.`
+          : this.stateManager.state === 'starbase'
+            ? 'Destination marked. Undock before engaging local approach.'
+            : data.stage === 'available'
+              ? 'Destination marked. Accept the contract to reserve local rendezvous contacts.'
+              : `Destination marked: ${solution.endpoint.systemName}. Enter the contracted system before local approach.`;
     }
     this.haulManifest.viewOffset = 0;
     this.forceFullRender = true;
@@ -771,8 +777,13 @@ export class Game {
   }
 
   /** Queries fresh natural worlds without changing generator blueprints or the active system. */
-  private get haulJourneyWorld(): HaulJourneyWorld {
+  private get haulJourneyWorld(): HaulOfferWorld {
     return {
+      hasStellarSystem: (address) => {
+        if (address.systemSlot !== 0) return false;
+        const properties = this.systemDataGenerator.getSystemMapProperties(address.worldX, address.worldY, 0);
+        return properties.exists && properties.objectKind === 'stellar';
+      },
       createSystem: (address) => {
         if (address.systemSlot !== 0) return null;
         const properties = this.systemDataGenerator.getSystemProperties(address.worldX, address.worldY, 0);
@@ -883,6 +894,8 @@ export class Game {
     this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
     this.infrastructureRegistry.restore(save.infrastructure);
     this.player.resources = cloneSaveValue(save.player.resources);
+    if (this._observatoryService || save.observatory.destination)
+      this.observatoryService.snapshot.destination = cloneSaveValue(save.observatory.destination);
     const system = this.stateManager.currentSystem;
     if (system) {
       this.infrastructureRegistry.materialize(system, this.bulkAdvanceSeconds ?? 0);
@@ -10153,7 +10166,14 @@ export class Game {
     );
     for (const contract of contracts) missions.push(resolveMissionNavigation(contract, system, biospheres));
     this.missionProgress.resolveNavigation(system, biospheres);
-    const combined = new Map(missions.map((mission) => [mission.id, mission]));
+    const offers = selectStationMissionOffers(
+      this.gameSeedPRNG.getInitialSeed(),
+      starbase,
+      systemAddress(system),
+      missions
+    );
+    // Accepted terms stay visible even if a port's offer budget or local field availability changes.
+    const combined = new Map(offers.map((mission) => [mission.id, mission]));
     for (const mission of this.missionProgress.getStationMissions(starbase.name, starbase.id))
       combined.set(mission.id, mission);
     return [...combined.values()];

@@ -8,7 +8,7 @@ written; their automated and browser verification is awaiting the Luna stage.
 
 ## First Local Contract
 
-1. Dock at a staffed port, not an automated depot. In Shipyard, buy a class-1
+1. Dock at the starting hub's staffed port, not an automated depot. In Shipyard, buy a class-1
    external tow coupler (600 Cr). The normal class-1 drive handles the small
    local buoy job; it does not normally require crew hypersleep.
 2. Open Missions and select **Local navigation buoy transfer**. Enter opens
@@ -40,7 +40,8 @@ written; their automated and browser verification is awaiting the Luna stage.
 
 ## Remote And Depot Jobs
 
-- A remote buoy uses at least a class-1 drive/coupler. Its duration usually makes
+- A regional buoy uses at least a class-1 drive/coupler; deep-range relays need
+  a class-2 drive. Its duration usually makes
   hypersleep necessary; a three-person living crew needs three functional berths.
 - A logistics depot needs at least a class-2 drive/coupler and appropriate berths.
   Shipyard equipment, available bays and damage determine whether the fit is valid.
@@ -63,6 +64,41 @@ written; their automated and browser verification is awaiting the Luna stage.
 - Ordinary mission-board contracts also use the **Yes / No** acceptance popup.
   Dialogs pause time, preserve the parent selection, support scrolling, and
   expose the same choices as clickable bottom commands.
+
+## Station Variety And Longer Routes
+
+- The starting hub retains a generous board and its starter local tow when safe
+  orbital geometry exists. Other ports specialise in survey, research or
+  logistics, offering at most four or five new jobs across those categories.
+  Accepted contracts remain visible regardless of that offer budget.
+- Local buoy work is occasional elsewhere, not guaranteed at every port. Regional
+  routes span roughly 35-140 light-years; long-range routes span 450-1,800
+  light-years. Ports have different seeded package masses and route mixes, with
+  logistics depots as well as navigation relays. Offers do not reroll on reopening.
+- Destination searches remain bounded. Sparse regions or unsuitable deployment
+  geometry may yield fewer jobs; the board never invents an unreachable star.
+  Contractor support and the normal-fuel route back to the issuer are certified
+  before an offer is shown, and checked again against the actual ship on acceptance.
+- Remote deployment saves a navigation mark back to the issuing port, including
+  across reloads. The delivery popup confirms it. **N / Route home** in the settled
+  manifest marks that route; in the source system it approaches the issuing port.
+  Return travel is optional and untowed, not another instant tow voyage. Escrow
+  is paid at deployment; there is no second payment for going home.
+- Previously accepted hauls retain their original distance, mass and payment.
+  New offers use the updated generator; accepting an old offer does not convert
+  it into a long-range job.
+
+## Precise Local Approach
+
+Select a planet, moon or station with navigation, then engage **A / Approach**.
+The final movement step closes to 50,000 km for stations and small contacts,
+or three planetary radii for larger bodies, without overshooting. **L / Orbit**
+or docking uses that selected body even if its parent or a neighbour is closer.
+An out-of-range selection does not silently substitute another object. A moon
+opens its own orbital view while retaining its parent as the local-space reference.
+
+The station-variety, longer-route and precise-approach changes have regression
+coverage prepared but have not yet undergone the Luna verification pass.
 
 ## Verification Gate
 

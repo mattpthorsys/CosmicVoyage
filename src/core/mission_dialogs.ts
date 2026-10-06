@@ -214,6 +214,12 @@ export function createHaulResultDialog(
                 : 'Navigation buoy is now available as a permanent target.',
               'green'
             ),
+            ...(objective.route.kind === 'interstellar'
+              ? [
+                  line(`Optional route home marked: ${mission.originStarbaseName}.`, 'cyan'),
+                  line('Return untowed using normal reactor fuel, or continue exploring.'),
+                ]
+              : []),
           ]
         : [
             line(mission.title, 'cyan', true),

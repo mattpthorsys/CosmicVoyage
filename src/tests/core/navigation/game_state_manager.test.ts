@@ -157,6 +157,29 @@ describe('GameStateManager tow restrictions', () => {
 });
 
 describe('GameStateManager selected orbital insertion', () => {
+  it('docks at the selected port even when a planet is closer', () => {
+    const f = haulJourneyFixture();
+    const seed = new PRNG('selected-dock');
+    const manager = new GameStateManager(f.player, seed, new SystemDataGenerator(seed));
+    const planet = f.source.planets.find((body) => body !== null)!;
+    const station = f.source.starbase!;
+    f.player.position.systemX = station.systemX - 5e7;
+    f.player.position.systemY = station.systemY;
+    planet.systemX = f.player.position.systemX;
+    planet.systemY = f.player.position.systemY;
+    manager.setLandingTargetProvider(() => station);
+    try {
+      (manager as any)._changeState('system', f.source, null, null);
+      expect(f.source.getObjectNear(planet.systemX, planet.systemY)).toBe(planet);
+      expect(manager.getLandableTarget()).toBe(station);
+      expect(manager.landOnNearbyObject()).toBe(station);
+      expect(manager.state).toBe('starbase');
+      expect(manager.currentStarbase).toBe(station);
+    } finally {
+      manager.destroy();
+    }
+  });
+
   it('orbits the selected moon rather than its nearer parent, including through raw events', () => {
     const f = haulJourneyFixture();
     const seed = new PRNG('selected-orbit');

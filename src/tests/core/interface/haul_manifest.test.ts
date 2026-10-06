@@ -114,6 +114,11 @@ describe('paused haul manifest controls', () => {
     expect(manifest.createCommandBar().buttons.some((button) => button.action === 'ENTER_SYSTEM')).toBe(
       false
     );
+    manifest.reveal.complete();
+    expect(manifest.input(press('TARGET_MENU'), manifest.createModel(100, 40))).toBe('navigate');
+    expect(manifest.createCommandBar().buttons.find((button) => button.action === 'TARGET_MENU')?.label).toBe(
+      'Route home'
+    );
   });
 
   it('pauses the real Game update path and suppresses foreground HUD for the terminal', () => {

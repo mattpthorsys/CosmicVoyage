@@ -19,6 +19,7 @@ export function prepareHaulCommissioning(original: GameSave, system: SolarSystem
     const mission = tow && save.activeMissions[tow.missionId];
     const objective = mission && getHeavyHaulObjective(mission);
     if (
+      !mission ||
       !objective ||
       save.location.kind !== 'system' ||
       !sameHaulAddress(systemAddress(system), objective.destination.systemAddress)
@@ -47,13 +48,21 @@ export function prepareHaulCommissioning(original: GameSave, system: SolarSystem
     if (!result.ok) return result;
     save.infrastructure.push(result.installation);
     save.player.resources.credits += result.credits;
+    if (objective.route.kind === 'interstellar') {
+      // Keep the optional homeward route after the settled contract leaves active mission storage.
+      save.observatory.destination = {
+        ...objective.pickup.systemAddress,
+        name: mission.originStarbaseName,
+        kind: 'system',
+      };
+    }
     Object.assign(save, missions.createSnapshot(), { heavyHaul: haul.createSnapshot() });
     save.savedAt = new Date().toISOString();
     parseGameSave(save);
     return {
       ok: true,
       save,
-      message: `Installation commissioned. Escrow ${result.credits.toLocaleString()} Cr paid; contractor tank released.`,
+      message: `Installation commissioned. Escrow ${result.credits.toLocaleString()} Cr paid; contractor tank released.${objective.route.kind === 'interstellar' ? ` Homeward route marked to ${mission.originStarbaseName}.` : ''}`,
     };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : 'Commissioning unavailable.' };

@@ -11,16 +11,27 @@ import { MissionProgressService } from '../../../core/mission_progress';
 import { parseGameSave } from '../../../core/save_game';
 import { createDefaultShipModifications } from '../../../core/ship_modifications';
 import { haulJourneyFixture, haulSystemFixture } from '../../fixtures/heavy_haul_journeys';
+import { CONFIG } from '../../../config';
+import { sameHaulAddress } from '../../../core/heavy_haul_types';
+import { capturePlanetMutations, captureSystemOrbit, systemAddress } from '../../../core/system_orbit_state';
 
 /** Builds the starter local offer against real host geometry and the existing save/ship owners. */
 function gameplayFixture() {
   const fixture = haulJourneyFixture('local');
-  const source = fixture.source;
+  const hub = {
+    worldX: CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X,
+    worldY: CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y,
+    systemSlot: 0,
+  };
+  const world = {
+    createSystem: (address: MissionSystemAddress) =>
+      haulSystemFixture(address, null, sameHaulAddress(address, hub)),
+  };
+  const source = world.createSystem(hub);
   Object.assign(source.starbase!, {
     kind: 'starbase',
     capabilities: { ...source.starbase!.capabilities, missions: true },
   });
-  const world = { createSystem: (address: MissionSystemAddress) => haulSystemFixture(address) };
   const offers = new HeavyHaulOffers(fixture.save.seed, world).list(source, source.starbase!, [], []);
   const mission = offers.find((entry) => getHeavyHaulObjective(entry)?.route.kind === 'local')!;
   const save = fixture.save;
@@ -29,11 +40,14 @@ function gameplayFixture() {
   });
   save.player.ship = createDefaultShipModifications();
   save.player.ship.towCouplerClass = 1;
+  save.player.position.worldX = source.starX;
+  save.player.position.worldY = source.starY;
+  save.systemOrbit = captureSystemOrbit(source);
+  save.systemOrbitHistory = [{ ...systemAddress(source), orbit: save.systemOrbit }];
+  save.planetMutations = capturePlanetMutations(source);
   save.location = {
     kind: 'starbase',
-    worldX: 0,
-    worldY: 0,
-    systemSlot: 0,
+    ...systemAddress(source),
     stationId: source.starbase!.id,
     starbaseName: source.starbase!.name,
   };
@@ -58,7 +72,7 @@ describe('production haul vertical slice', () => {
       fixture.world
     );
     if (!accepted.ok) throw new Error(accepted.message);
-    accepted.save.location = { kind: 'system', worldX: 0, worldY: 0, systemSlot: 0 };
+    accepted.save.location = { kind: 'system', ...systemAddress(fixture.source) };
     materializeHaulSites(
       fixture.source,
       accepted.save.activeMissions[mission.id],
@@ -119,6 +133,11 @@ describe('production haul vertical slice', () => {
     expect(parseGameSave(JSON.stringify(commissioned.save)).location).toEqual(commissioned.save.location);
     expect(commissioned.save.player.resources.fuel).toBe(fixture.save.player.resources.fuel);
     expect(registry.createSnapshot()[0].commissioningFuelRemainingUnits).toBe(500);
+    expect(commissioned.save.observatory.destination).toEqual({
+      ...objective.pickup.systemAddress,
+      name: mission.originStarbaseName,
+      kind: 'system',
+    });
   });
   it('accepts, couples, travels, commissions and reloads without consuming ordinary fuel or internal cargo', () => {
     const fixture = gameplayFixture();
@@ -132,7 +151,7 @@ describe('production haul vertical slice', () => {
     if (!accepted.ok) throw new Error(accepted.message);
     expect(fixture.save).toEqual(original);
     const save = accepted.save;
-    save.location = { kind: 'system', worldX: 0, worldY: 0, systemSlot: 0 };
+    save.location = { kind: 'system', ...systemAddress(fixture.source) };
     const objective = getHeavyHaulObjective(fixture.mission)!;
     materializeHaulSites(
       fixture.source,

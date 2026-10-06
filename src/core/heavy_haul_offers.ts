@@ -11,6 +11,24 @@ import { getHeavyHaulObjective, type StarbaseMission } from './mission_board';
 import { createDefaultShipModifications } from './ship_modifications';
 import { systemAddress } from './system_orbit_state';
 import { quoteHeavyHaul } from './tow_performance';
+import { getStationMissionProfile } from './station_mission_offers';
+
+export interface HaulOfferWorld extends HaulJourneyWorld {
+  /** Optional cheap catalogue query; only promising contacts need a complete planetary system. */
+  hasStellarSystem?(address: HeavyHaulObjective['pickup']['systemAddress']): boolean;
+}
+
+interface HaulOfferSpec {
+  readonly slot: number;
+  readonly title: string;
+  readonly targetName: string;
+  readonly depot: boolean;
+  readonly wetMassKg: number;
+  readonly engineClass: number;
+  readonly minimumDistanceLy: number;
+  readonly maximumDistanceLy: number;
+  readonly baseReward: number;
+}
 
 /** Produces bounded, stable jobs; ship upgrades and board reopening never reroll terms or escrow. */
 export class HeavyHaulOffers {
@@ -19,7 +37,7 @@ export class HeavyHaulOffers {
   /** Uses fresh natural worlds; deployment overlays and the gameplay PRNG never enter offer generation. */
   constructor(
     private readonly seed: string,
-    private readonly world: HaulJourneyWorld
+    private readonly world: HaulOfferWorld
   ) {}
 
   /** Lists unretired offers at staffed ports, leaving accepted canonical contracts to MissionProgress. */
@@ -54,54 +72,98 @@ export class HeavyHaulOffers {
     );
   }
 
-  /** Guarantees a starter-sized local job where safe geometry exists, then attempts two frontier routes. */
+  /** Gives ports distinct logistics workloads while guaranteeing a small tow at the starting hub. */
   private generate(local: SolarSystem, station: Starbase): StarbaseMission[] {
     const source = this.world.createSystem(systemAddress(local));
     if (!source || !source.stations.some((entry) => entry.id === station.id && entry.capabilities.fuel))
       return [];
-    const rng = new PRNG(`${this.seed}:haul-offers:v1:${station.id}`);
+    const rng = new PRNG(`${this.seed}:haul-offers:v2:${station.id}`);
+    const profile = getStationMissionProfile(this.seed, station.id, systemAddress(source));
     const pickup = reserveInstallationOrbit(source, AU_IN_METERS * 0.7, rng.random() * 2 * Math.PI);
     if (!pickup) return [];
     const offers: StarbaseMission[] = [];
-    const localOrbit = reserveInstallationOrbit(
-      source,
-      pickup.radiusM * 1.14,
-      (pickup.angleRad + 0.3) % (2 * Math.PI),
-      [pickup]
-    );
-    if (localOrbit) {
-      const mission = this.build(source, station, source, pickup, localOrbit, 0);
-      if (mission) offers.push(mission);
+    if (profile.starter || rng.random() < 0.18) {
+      const localOrbit = reserveInstallationOrbit(
+        source,
+        pickup.radiusM * 1.14,
+        (pickup.angleRad + 0.3) % (2 * Math.PI),
+        [pickup]
+      );
+      if (localOrbit) {
+        const mission = this.build(source, station, source, pickup, localOrbit, {
+          slot: 0,
+          title: 'Local navigation buoy transfer',
+          targetName: 'Navigation Buoy',
+          depot: false,
+          wetMassKg: 3000,
+          engineClass: 1,
+          minimumDistanceLy: 0,
+          maximumDistanceLy: 0,
+          baseReward: 1600,
+        });
+        if (mission) offers.push(mission);
+      }
     }
+    const regionalDepot = rng.random() < 0.65;
+    const specs: HaulOfferSpec[] = [
+      {
+        slot: 1,
+        title: regionalDepot ? 'Regional logistics depot' : 'Regional navigation relay',
+        targetName: regionalDepot ? 'Automated Logistics Depot' : 'Navigation Relay Buoy',
+        depot: regionalDepot,
+        wetMassKg: regionalDepot ? rng.randomInt(16, 24) * 4000 : rng.randomInt(8, 15) * 1000,
+        engineClass: regionalDepot ? 2 : 1,
+        minimumDistanceLy: 35,
+        maximumDistanceLy: 140,
+        baseReward: regionalDepot ? 4600 : 2800,
+      },
+      {
+        slot: 2,
+        title: regionalDepot ? 'Deep-range navigation relay' : 'Long-range depot commissioning',
+        targetName: regionalDepot ? 'Deep-Range Navigation Buoy' : 'Automated Logistics Depot',
+        depot: !regionalDepot,
+        wetMassKg: regionalDepot ? rng.randomInt(12, 18) * 1000 : rng.randomInt(8, 10) * 4000,
+        engineClass: 2,
+        minimumDistanceLy: 450,
+        maximumDistanceLy: 1800,
+        baseReward: regionalDepot ? 3600 : 5600,
+      },
+    ];
+    // Small offices still sometimes sponsor a distant job; larger boards show both route tiers.
+    if (profile.heavyHaul - offers.length < 2 && rng.random() < 0.65) specs.reverse();
     const seen = new Set<string>();
-    // A fixed candidate budget bounds board latency even in sparse regions; no nearest-world global search.
-    for (
-      let attempt = 0;
-      attempt < 12 &&
-      offers.filter((mission) => getHeavyHaulObjective(mission)?.route.kind === 'interstellar').length < 2;
-      attempt++
-    ) {
-      const angle = rng.random() * 2 * Math.PI;
-      const radius = rng.randomInt(16, 42);
-      const address = {
-        worldX: source.starX + Math.round(Math.cos(angle) * radius),
-        worldY: source.starY + Math.round(Math.sin(angle) * radius),
-        systemSlot: 0,
-      };
-      const key = `${address.worldX},${address.worldY}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const destination = this.world.createSystem(address);
-      if (!destination || destination.isStarless || !sameHaulAddress(address, systemAddress(destination)))
-        continue;
-      const index = offers.some((mission) => getHeavyHaulObjective(mission)?.route.kind === 'interstellar')
-        ? 2
-        : 1;
-      if (index === 2 && destination.stations.length) continue;
-      const orbit = reserveInstallationOrbit(destination, AU_IN_METERS, rng.random() * 2 * Math.PI);
-      if (!orbit) continue;
-      const mission = this.build(source, station, destination, pickup, orbit, index);
-      if (mission) offers.push(mission);
+    for (const spec of specs) {
+      if (offers.length >= profile.heavyHaul) break;
+      let materialized = 0;
+      // Sparse projection needs many cheap catalogue checks, not many expensive planetary generations.
+      const catalogueBudget = this.world.hasStellarSystem ? 512 : 12;
+      for (let attempt = 0; attempt < catalogueBudget && materialized < 12; attempt++) {
+        const angle = rng.random() * 2 * Math.PI;
+        const radius =
+          rng.random(spec.minimumDistanceLy, spec.maximumDistanceLy) / CONFIG.HYPERSPACE_CELL_LIGHT_YEARS;
+        const address = {
+          worldX: source.starX + Math.round(Math.cos(angle) * radius),
+          worldY: source.starY + Math.round(Math.sin(angle) * radius),
+          systemSlot: 0,
+        };
+        const key = `${address.worldX},${address.worldY}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (this.world.hasStellarSystem && !this.world.hasStellarSystem(address)) continue;
+        materialized++;
+        const destination = this.world.createSystem(address);
+        if (!destination || destination.isStarless || !sameHaulAddress(address, systemAddress(destination)))
+          continue;
+        // An existing fuel depot already satisfies the infrastructure request.
+        if (spec.depot && destination.stations.some((entry) => entry.capabilities.fuel)) continue;
+        const orbit = reserveInstallationOrbit(destination, AU_IN_METERS, rng.random() * 2 * Math.PI);
+        if (!orbit) continue;
+        const mission = this.build(source, station, destination, pickup, orbit, spec);
+        if (mission) {
+          offers.push(mission);
+          break;
+        }
+      }
     }
     return offers;
   }
@@ -113,11 +175,11 @@ export class HeavyHaulOffers {
     destination: SolarSystem,
     pickup: HeavyHaulObjective['pickup']['orbit'],
     deployment: HeavyHaulObjective['destination']['orbit'],
-    index: number
+    spec: HaulOfferSpec
   ): StarbaseMission | null {
-    const local = index === 0;
-    const depot = index === 2;
-    const id = `haul-v1:${station.id}:${index}`;
+    const local = spec.slot === 0;
+    const depot = spec.depot;
+    const id = `haul-v2:${station.id}:${spec.slot}`;
     const distanceLy =
       Math.hypot(source.starX - destination.starX, source.starY - destination.starY) *
       CONFIG.HYPERSPACE_CELL_LIGHT_YEARS;
@@ -136,7 +198,7 @@ export class HeavyHaulOffers {
     const objective: HeavyHaulObjective = {
       id: `${id}:commission`,
       kind: 'haul',
-      targetName: depot ? 'Automated Logistics Depot' : 'Navigation Buoy',
+      targetName: spec.targetName,
       targetLabel: 'Rendezvous, couple, transfer and commission',
       pickup: {
         systemAddress: systemAddress(source),
@@ -154,12 +216,12 @@ export class HeavyHaulOffers {
       package: {
         id: `${id}:package`,
         installationKind: depot ? 'automated-depot' : 'navigation-buoy',
-        dryMassKg: local ? 2400 : depot ? 64000 : 10000,
-        wetMassKg: local ? 3000 : depot ? 80000 : 12500,
+        dryMassKg: spec.wetMassKg * 0.8,
+        wetMassKg: spec.wetMassKg,
         sizeClass: local ? 'compact' : 'module',
         supportFuelCapacityUnits: 1e9,
         commissioningFuelAllowanceUnits: depot ? 500 : 0,
-        minimumEngineClass: depot ? 2 : 1,
+        minimumEngineClass: spec.engineClass,
         minimumCouplerClass: depot ? 2 : 1,
       },
       route: local ? { kind: 'local', distanceM: localDistanceM } : { kind: 'interstellar' },
@@ -194,20 +256,17 @@ export class HeavyHaulOffers {
     return {
       id,
       type: 'heavy-haul',
-      title: local
-        ? 'Local navigation buoy transfer'
-        : depot
-          ? 'Frontier depot commissioning'
-          : 'Frontier navigation buoy',
+      title: spec.title,
       issuer: 'Infrastructure Logistics',
       originStarbaseId: station.id,
       originStarbaseName: station.name,
       systemName: destination.name,
       systemAddress: systemAddress(destination),
       summary: `${local ? 'Local' : `${distanceLy.toFixed(0)} ly`} / ${(funded.package.wetMassKg / 1000).toFixed(1)} t external tow`,
-      detail:
-        'Contractor propulsion support included. Escrow releases on commissioning; no return to issuer required. Recovery forfeits payment and retires this offer.',
-      rewardCredits: local ? 1600 : Math.round((depot ? 4600 : 2800) + Math.min(1200, distanceLy * 20)),
+      detail: `Contractor propulsion support included. Escrow releases on commissioning. Normal reactor fuel is reserved for the ${distanceLy.toFixed(0)} ly route back to ${station.name}; return is optional and untowed. Recovery forfeits payment and retires this offer.`,
+      rewardCredits: local
+        ? spec.baseReward
+        : Math.round(spec.baseReward + (spec.wetMassKg / 1000) * 16 + Math.min(5000, distanceLy * 3)),
       risk: local ? 'Low' : 'Med',
       objectives: [funded],
     };

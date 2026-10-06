@@ -28,7 +28,7 @@ export function describeHaulStage(
         ? 'Deployment contact in range / escrow ready'
         : 'Approach the destination deployment contact';
     case 'complete':
-      return 'Installation operational / no return to issuer required';
+      return 'Installation operational / optional untowed route home available';
     case 'none':
       return 'No external package attached';
     default:
@@ -41,14 +41,22 @@ export function resolveHaulNavigation(
   missionId: string,
   objective: HeavyHaulObjective,
   stage: HaulManifestStage,
-  current: MissionSystemAddress | null
+  current: MissionSystemAddress | null,
+  originStationId?: string
 ): { endpoint: HaulEndpoint; localSiteId: string | null } {
   const endpoint =
-    stage === 'awaiting-pickup' || stage === 'attached' ? objective.pickup : objective.destination;
+    stage === 'awaiting-pickup' || stage === 'attached' || stage === 'complete'
+      ? objective.pickup
+      : objective.destination;
   const local = current && sameHaulAddress(current, endpoint.systemAddress);
   const siteId =
-    stage === 'attached' && objective.route.kind === 'interstellar'
-      ? `${missionId}:departure`
-      : endpoint.siteId;
-  return { endpoint, localSiteId: local && stage !== 'available' && stage !== 'complete' ? siteId : null };
+    stage === 'complete'
+      ? (originStationId ??
+        (objective.resupply && sameHaulAddress(objective.resupply.systemAddress, endpoint.systemAddress)
+          ? objective.resupply.stationId
+          : null))
+      : stage === 'attached' && objective.route.kind === 'interstellar'
+        ? `${missionId}:departure`
+        : endpoint.siteId;
+  return { endpoint, localSiteId: local && stage !== 'available' ? siteId : null };
 }

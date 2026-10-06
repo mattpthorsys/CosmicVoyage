@@ -19,15 +19,16 @@ import {
 /** Creates a real, deterministic local world without assuming production stars exist at fixture coordinates. */
 export function haulSystemFixture(
   address: MissionSystemAddress,
-  architecture: StellarArchitecture | null = null
+  architecture: StellarArchitecture | null = null,
+  hasStation = address.worldX === 0
 ): SolarSystem {
   return new SolarSystem(
     {
       exists: true,
       starType: 'G',
       name: `Haul fixture ${address.worldX}`,
-      hasStarbase: address.worldX === 0,
-      stationKind: address.worldX === 0 ? 'automated-depot' : null,
+      hasStarbase: hasStation,
+      stationKind: hasStation ? 'automated-depot' : null,
       ageGyr: 5,
       metallicityFeH: 0,
       architecture,

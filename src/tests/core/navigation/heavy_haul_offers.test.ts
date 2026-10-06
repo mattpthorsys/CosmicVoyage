@@ -11,12 +11,21 @@ import { heavyHaulMissionFixture } from '../../fixtures/heavy_haul_contracts';
 import { materializeHaulSites } from '../../../core/haul_sites';
 import { captureSystemOrbit, restoreSystemOrbits } from '../../../core/system_orbit_state';
 import { InfrastructureRegistry } from '../../../core/infrastructure_registry';
+import { CONFIG } from '../../../config';
+import { sameHaulAddress } from '../../../core/heavy_haul_types';
+import { getStationMissionProfile } from '../../../core/station_mission_offers';
+
+const hubAddress = {
+  worldX: CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X,
+  worldY: CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y,
+  systemSlot: 0,
+};
 
 /** Supplies real deterministic host systems and one staffed fixture port, without terrain preparation. */
-function offersFixture() {
+function offersFixture(sourceAddress = hubAddress) {
   const world = {
     createSystem: vi.fn((address: MissionSystemAddress) => {
-      const system = haulSystemFixture(address);
+      const system = haulSystemFixture(address, null, sameHaulAddress(address, sourceAddress));
       if (system.starbase)
         Object.assign(system.starbase, {
           kind: 'starbase',
@@ -25,17 +34,43 @@ function offersFixture() {
       return system;
     }),
   };
-  const system = world.createSystem({ worldX: 0, worldY: 0, systemSlot: 0 });
+  const system = world.createSystem(sourceAddress);
   return { world, system, station: system.starbase! };
 }
 
 describe('stable production haul offers', () => {
+  it('finds sparse catalogue contacts without generating a world at every empty coordinate', () => {
+    const { world, system, station } = offersFixture();
+    let probes = 0;
+    const hasStellarSystem = vi.fn(() => ++probes % 40 === 0);
+    const offers = new HeavyHaulOffers('sparse-catalogue', { ...world, hasStellarSystem }).list(
+      system,
+      station,
+      [],
+      []
+    );
+    expect(offers).toHaveLength(3);
+    expect(hasStellarSystem.mock.calls.length).toBeGreaterThanOrEqual(80);
+    expect(hasStellarSystem.mock.calls.length).toBeLessThanOrEqual(1024);
+    expect(world.createSystem.mock.calls.length).toBeLessThanOrEqual(26);
+  });
+
+  it('bounds lightweight queries as well as materialization in completely empty regions', () => {
+    const { world, system, station } = offersFixture();
+    const hasStellarSystem = vi.fn(() => false);
+    expect(
+      new HeavyHaulOffers('empty-catalogue', { ...world, hasStellarSystem }).list(system, station, [], [])
+    ).toHaveLength(1);
+    expect(hasStellarSystem.mock.calls.length).toBeLessThanOrEqual(1024);
+    expect(world.createSystem.mock.calls.length).toBe(2);
+  });
+
   it('offers one achievable local job and bounded frontier jobs without rerolling on reopen', () => {
     const { world, system, station } = offersFixture();
     const service = new HeavyHaulOffers('offers-test', world);
     const offers = service.list(system, station, [], []);
     expect(offers).toHaveLength(3);
-    expect(world.createSystem.mock.calls.length).toBeLessThanOrEqual(14);
+    expect(world.createSystem.mock.calls.length).toBeLessThanOrEqual(26);
     const local = offers.find((mission) => getHeavyHaulObjective(mission)?.route.kind === 'local')!;
     const ship = createDefaultShipModifications();
     ship.towCouplerClass = 1;
@@ -60,14 +95,90 @@ describe('stable production haul offers', () => {
   it('bounds searches when no remote stellar endpoints exist and never enables depot mission offices', () => {
     const { system, station } = offersFixture();
     const createSystem = vi.fn((address: MissionSystemAddress) =>
-      address.worldX === 0 && address.worldY === 0 ? haulSystemFixture(address) : null
+      sameHaulAddress(address, hubAddress) ? haulSystemFixture(address, null, true) : null
     );
     expect(
       new HeavyHaulOffers('empty-neighbourhood', { createSystem }).list(system, station, [], [])
     ).toHaveLength(1);
-    expect(createSystem.mock.calls.length).toBeLessThanOrEqual(13);
+    expect(createSystem.mock.calls.length).toBeLessThanOrEqual(25);
     const depot = haulSystemFixture({ worldX: 0, worldY: 0, systemSlot: 0 });
     expect(new HeavyHaulOffers('depot', { createSystem }).list(depot, depot.starbase!, [], [])).toEqual([]);
+  });
+
+  it('offers real long-distance routes, different installation types and funded return capability', () => {
+    const { world, system, station } = offersFixture();
+    const offers = new HeavyHaulOffers('long-hauls', world).list(system, station, [], []);
+    const objectives = offers.map((mission) => getHeavyHaulObjective(mission)!);
+    expect(new Set(objectives.map((objective) => objective.package.installationKind)).size).toBe(2);
+    const remote = objectives.filter((objective) => objective.route.kind === 'interstellar');
+    expect(remote).toHaveLength(2);
+    expect(
+      Math.max(
+        ...remote.map(
+          (objective) =>
+            Math.hypot(
+              objective.pickup.systemAddress.worldX - objective.destination.systemAddress.worldX,
+              objective.pickup.systemAddress.worldY - objective.destination.systemAddress.worldY
+            ) * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS
+        )
+      )
+    ).toBeGreaterThan(440);
+    for (const objective of remote) {
+      const ship = createDefaultShipModifications();
+      ship.engineClass = objective.package.minimumEngineClass;
+      ship.towCouplerClass = objective.package.minimumCouplerClass;
+      ship.hypersleepClass = 1;
+      ship.specialBaysOccupied = 2;
+      const distanceLy =
+        Math.hypot(
+          objective.pickup.systemAddress.worldX - objective.destination.systemAddress.worldX,
+          objective.pickup.systemAddress.worldY - objective.destination.systemAddress.worldY
+        ) * CONFIG.HYPERSPACE_CELL_LIGHT_YEARS;
+      const quote = quoteHeavyHaul(objective, {
+        ship,
+        crew: createStartingCrew('long-hauls'),
+        normalFuelUnits: 500,
+        maximumNormalFuelUnits: 500,
+        onward: {
+          verified: true,
+          resupplyStationId: station.id,
+          distanceLy,
+          commissioningFuelUnits: objective.package.commissioningFuelAllowanceUnits,
+        },
+      });
+      expect(quote.ok).toBe(true);
+      expect(quote.quote!.onwardFuelRequiredUnits).toBeLessThan(500);
+      expect(objective.package.supportFuelCapacityUnits).toBeGreaterThan(
+        quote.quote!.requiredSupportFuelUnits
+      );
+      expect(objective.resupply?.stationId).toBe(station.id);
+    }
+  });
+
+  it('varies workloads between ports rather than guaranteeing three buoy jobs everywhere', () => {
+    const workloads = Array.from({ length: 8 }, (_, index) => {
+      const { world, system, station } = offersFixture({
+        worldX: 300 + index * 40,
+        worldY: 20,
+        systemSlot: 0,
+      });
+      const offers = new HeavyHaulOffers('different-ports', world).list(system, station, [], []);
+      expect(offers.length).toBeLessThanOrEqual(
+        getStationMissionProfile('different-ports', station.id, {
+          worldX: system.starX,
+          worldY: system.starY,
+          systemSlot: 0,
+        }).heavyHaul
+      );
+      return offers.map((mission) => ({
+        title: mission.title,
+        mass: getHeavyHaulObjective(mission)!.package.wetMassKg,
+      }));
+    });
+    expect(new Set(workloads.map((jobs) => JSON.stringify(jobs))).size).toBeGreaterThan(1);
+    expect(
+      workloads.some((jobs) => !jobs.some((job) => job.title === 'Local navigation buoy transfer'))
+    ).toBe(true);
   });
 
   it('filters occupied deployment rings without changing the remaining offers or rerolling terms', () => {
@@ -115,6 +226,24 @@ describe('phase-aware haul navigation', () => {
     expect(
       resolveHaulNavigation(mission.id, objective, 'attached', objective.pickup.systemAddress).localSiteId
     ).toBe(`${mission.id}:departure`);
+  });
+
+  it('routes a settled haul home and approaches only its issuing station in the actual source system', () => {
+    const mission = heavyHaulMissionFixture('heavy');
+    const objective = getHeavyHaulObjective(mission)!;
+    const away = resolveHaulNavigation(
+      mission.id,
+      objective,
+      'complete',
+      objective.destination.systemAddress,
+      'issuer-port'
+    );
+    expect(away.endpoint).toBe(objective.pickup);
+    expect(away.localSiteId).toBeNull();
+    expect(
+      resolveHaulNavigation(mission.id, objective, 'complete', objective.pickup.systemAddress, 'issuer-port')
+        .localSiteId
+    ).toBe('issuer-port');
   });
 
   it('restores moving site phases and provides a non-orbiting departure waypoint beyond the boundary', () => {

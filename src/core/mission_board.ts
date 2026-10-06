@@ -14,6 +14,7 @@ import { individualSizeClass } from '../entities/biology/biology_rules';
 import type { TextDashboardSegment } from './text_ui';
 import { resolveMissionNavigation } from './mission_navigation';
 import type { HeavyHaulObjective } from './heavy_haul_types';
+import { PRNG } from '../utils/prng';
 
 export type MissionRisk = 'Low' | 'Med' | 'High';
 export type MissionStatus = 'AVAILABLE' | 'ACTIVE' | 'READY' | 'COMPLETE';
@@ -368,9 +369,10 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
   const primaryStar = system.stars[0];
   const prefix = getBoardIdPrefix(starbase);
   const missions: StarbaseMission[] = [];
+  const rng = new PRNG(`station-surveys:v2:${starbase.id}:${system.starX},${system.starY}`);
 
   if (solid.length > 0) {
-    const target = solid[Math.abs(starbase.name.length + system.name.length) % solid.length];
+    const target = rng.choice(solid)!;
     missions.push({
       id: `${prefix}:mission:survey-primary`,
       title: `${target.name} survey`,
@@ -406,7 +408,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
   }
 
   if (giants.length > 0) {
-    const target = giants[0];
+    const target = rng.choice(giants)!;
     missions.push({
       id: `${prefix}:mission:giant-weather`,
       title: `${target.name} weather pass`,
@@ -471,7 +473,7 @@ export function generateStarbaseMissions(starbase: Starbase, system: SolarSystem
   });
 
   if (system.architecture.kind !== 'single' || giants.length > 0) {
-    const target = giants[0] ?? planets[planets.length - 1];
+    const target = rng.choice(giants.length ? giants : planets);
     if (target) {
       missions.push({
         id: `${prefix}:mission:signal-recovery`,

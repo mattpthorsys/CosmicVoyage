@@ -93,7 +93,7 @@ export class HaulManifest {
     if (input.wasActionJustPressed('QUIT') || input.wasActionJustPressed('LEAVE_SYSTEM')) {
       return 'close';
     }
-    if (input.wasActionJustPressed('TARGET_MENU') && this.primary()) {
+    if (input.wasActionJustPressed('TARGET_MENU') && (this.primary() || this.data?.stage === 'complete')) {
       return 'navigate';
     }
     if (
@@ -139,7 +139,16 @@ export class HaulManifest {
                 'ENTER_SYSTEM',
                 { key: 'Enter', tone: 'green' }
               ),
-              commandButton('navigate', 'Route / approach', 'TARGET_MENU', { key: 'N' }),
+            ]
+          : []),
+        ...(primary || this.data?.stage === 'complete'
+          ? [
+              commandButton(
+                'navigate',
+                this.data?.stage === 'complete' ? 'Route home' : 'Route / approach',
+                'TARGET_MENU',
+                { key: 'N' }
+              ),
             ]
           : []),
         ...(['awaiting-pickup', 'attached', 'arrived'].includes(this.data?.stage ?? '')
@@ -205,6 +214,16 @@ export class HaulManifest {
           `${(endpoint.orbit.radiusM / AU_IN_METERS).toFixed(2)} AU / ${endpoint.orbit.host.kind}${endpoint.orbit.host.starId ? ` star ${endpoint.orbit.host.starId}` : ''}`,
           'muted'
         );
+      }
+      if (objective.route.kind === 'interstellar') {
+        line('');
+        line('HOMEWARD ROUTE / OPTIONAL', 'cyan', true);
+        line(mission.originStarbaseName, 'green');
+        line(
+          `X ${objective.pickup.systemAddress.worldX} / Y ${objective.pickup.systemAddress.worldY} / return untowed`,
+          'green'
+        );
+        line('Payment at deployment / normal reactor fuel reserved for the route home', 'muted');
       }
       line('');
       line('EXTERNAL PACKAGE', 'cyan', true);
