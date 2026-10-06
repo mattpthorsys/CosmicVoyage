@@ -133,7 +133,7 @@ describe('production haul vertical slice', () => {
     expect(parseGameSave(JSON.stringify(commissioned.save)).location).toEqual(commissioned.save.location);
     expect(commissioned.save.player.resources.fuel).toBe(fixture.save.player.resources.fuel);
     expect(registry.createSnapshot()[0].commissioningFuelRemainingUnits).toBe(500);
-    expect(commissioned.save.observatory.destination).toEqual({
+    expect(commissioned.save.observatory?.destination).toEqual({
       ...objective.pickup.systemAddress,
       name: mission.originStarbaseName,
       kind: 'system',
