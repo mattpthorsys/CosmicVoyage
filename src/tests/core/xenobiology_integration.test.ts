@@ -23,6 +23,8 @@ import type { MissionProgressService } from '../../core/mission_progress';
 import { ethologyFixture } from '../fixtures/ethology';
 import { createBehaviourContracts } from '../../core/behaviour_research';
 import type { MissionJournalEntry } from '../../core/mission_journal';
+import { TerminalDialog, type TerminalDialogResult } from '../../core/terminal_dialog';
+import type { MissionDialogIntent } from '../../core/mission_dialogs';
 
 interface BiologyGameHarness {
   player: Player;
@@ -52,6 +54,8 @@ interface BiologyGameHarness {
   getStarbaseRows(starbase: Starbase, sectionId: StarbaseSectionId): TextTableRow[];
   activateStarbaseSelection(starbase: Starbase, row: TextTableRow): void;
   activateMissionSelection(starbase: Starbase, row: TextTableRow): void;
+  terminalDialog: TerminalDialog<MissionDialogIntent>;
+  finishTerminalDialog(result: TerminalDialogResult<MissionDialogIntent>): void;
 }
 
 /** Connects production Game orchestration to a bounded test field without a canvas or generated universe. */
@@ -89,6 +93,7 @@ function harness() {
       justPressedActions: keys,
       wasActionJustPressed: (action: string) => keys.has(action),
       wasAnyKeyJustPressed: () => keys.size > 0,
+      clearState: () => keys.clear(),
     },
     renderer: { getGridCols: () => 30, getGridRows: () => 50 },
     statusMessage: '',
@@ -418,10 +423,15 @@ describe('xenobiology Game integration', () => {
       service
     )[0];
     Object.assign(game, {
-      stateManager: { currentSystem: { name: 'Fixture' } },
+      stateManager: { state: 'starbase', currentStarbase: station, currentSystem: { name: 'Fixture' } },
       getCurrentStarbaseMissions: () => [mission],
+      terminalOverlay: { clear: vi.fn() },
+      astrometricOverlay: { clear: vi.fn() },
+      _publishStatusUpdate: vi.fn(),
     });
     game.activateMissionSelection(station, { id: mission.id, cells: [mission.title] });
+    const result = game.terminalDialog.action('DIALOG_YES', game.terminalDialog.createModel(30, 50));
+    if (result) game.finishTerminalDialog(result);
     expect(game.missionProgress.getStatus(mission)).toBe('READY');
   });
   it('records real passive activity through Watch, updates the mission and freezes episodes while reading', () => {
