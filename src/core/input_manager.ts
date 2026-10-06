@@ -1,6 +1,9 @@
 import { CONFIG } from '../config';
 import { logger } from '../utils/logger';
 
+const TEST_CREDIT_SEQUENCE = ['k', 'y', 'r'];
+const TEST_CREDIT_SEQUENCE_TIMEOUT_MS = 3000;
+
 /**
  * Handles keyboard input, tracking currently held keys, active actions,
  * and actions that were just pressed.
@@ -8,7 +11,7 @@ import { logger } from '../utils/logger';
  * and discrete actions (like landing).
  */
 export class InputManager {
-  // Set of currently physically held down keys (e.g., "ArrowUp", "Shift")
+  // Physical codes keep held keys identifiable even if Shift changes before keyup.
   private keysPressed: Set<string> = new Set();
   // Set of actions currently active based on held keys (e.g., "MOVE_UP", "FINE_CONTROL")
   private activeActions: Set<string> = new Set();
@@ -18,6 +21,8 @@ export class InputManager {
   private isListening: boolean = false;
   // Memoized mapping from key codes to action names for faster lookups
   private keyToActionMap: Map<string, string> = new Map();
+  private testCreditSequenceIndex = 0;
+  private testCreditSequenceLastKeyAt = 0;
 
   /** Initializes InputManager. */
   constructor() {
@@ -97,6 +102,8 @@ export class InputManager {
     this.activeActions.clear();
     this.justPressedActions.clear();
     this.keyJustPressed = false;
+    this.testCreditSequenceIndex = 0;
+    this.testCreditSequenceLastKeyAt = 0;
   }
 
   /**
@@ -137,6 +144,36 @@ export class InputManager {
 
   // --- Private Event Handlers ---
 
+  /** Consumes Shift+K,Y,R before gameplay bindings can fire or refuel. */
+  private handleTestCreditSequence(event: KeyboardEvent): boolean {
+    if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+      this.testCreditSequenceIndex = 0;
+      return false;
+    }
+    if (event.key === 'Shift') return false;
+
+    const now = performance.now();
+    if (now - this.testCreditSequenceLastKeyAt > TEST_CREDIT_SEQUENCE_TIMEOUT_MS) {
+      this.testCreditSequenceIndex = 0;
+    }
+
+    const key = event.key.toLowerCase();
+    if (key !== TEST_CREDIT_SEQUENCE[this.testCreditSequenceIndex]) {
+      this.testCreditSequenceIndex = 0;
+    }
+    // A second K restarts the sequence; unrelated keys retain their usual bindings.
+    if (key !== TEST_CREDIT_SEQUENCE[this.testCreditSequenceIndex]) return false;
+
+    this.testCreditSequenceIndex += 1;
+    this.testCreditSequenceLastKeyAt = now;
+    event.preventDefault();
+    if (this.testCreditSequenceIndex === TEST_CREDIT_SEQUENCE.length) {
+      this.testCreditSequenceIndex = 0;
+      this.justPressedActions.add('TEST_CREDITS');
+    }
+    return true;
+  }
+
   /** Handles keydown events. Arrow function for correct 'this'. */
   private _handleKeyDown = (e: KeyboardEvent): void => {
     if (!this.isListening) return;
@@ -147,11 +184,11 @@ export class InputManager {
     const lowerCode = code.toLowerCase();
 
     // Closing a modal can clear held-key state; an OS repeat must not confirm the next screen.
-    if (e.repeat || this.keysPressed.has(key)) {
+    const heldKey = code || key;
+    if (e.repeat || this.keysPressed.has(heldKey)) {
       return;
     }
-    this.keysPressed.add(key);
-    this.keyJustPressed = true;
+    this.keysPressed.add(heldKey);
     logger.debug(`[InputManager] Keydown registered: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`);
 
     // --- Handle Modifiers Directly ---
@@ -165,6 +202,10 @@ export class InputManager {
       this.activeActions.add('BOOST');
       this.justPressedActions.add('BOOST'); // Track initial press
     }
+
+    // Partial cheat input must not dismiss popups or reveal terminal animations.
+    if (this.handleTestCreditSequence(e)) return;
+    this.keyJustPressed = true;
 
     // --- Handle Base Actions (including zoom keys mapped via lowercase) ---
     // Determine the action associated with the pressed key
@@ -216,13 +257,14 @@ export class InputManager {
     const lowerCode = code.toLowerCase();
 
     logger.debug(`[InputManager] Keyup: ${key} (Shift: ${e.shiftKey}, Ctrl: ${e.ctrlKey})`);
-    this.keysPressed.delete(key);
+    this.keysPressed.delete(code || key);
 
     // --- Handle Modifier Releases ---
     // If Shift is released, deactivate FINE_CONTROL
     if (key === 'Shift') {
       logger.debug(`[InputManager] FINE_CONTROL deactivated.`);
       this.activeActions.delete('FINE_CONTROL');
+      this.testCreditSequenceIndex = 0;
     }
     // If Control is released, deactivate BOOST
     if (key === 'Control') {

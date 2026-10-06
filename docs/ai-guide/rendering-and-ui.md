@@ -140,6 +140,12 @@ Prepare menus and tables in `src/core`:
 - controllers own selection and scroll offsets;
 - renderers clip and draw models but do not perform business actions.
 
+Starbase tables share `getStarbaseTableLayout` in `core/starbase_ui.ts` between
+the controller and renderer. Its visible-row budget includes section-specific
+details, alerts and footers; use it for scrolling and Page Up/Down as well as
+drawing. Screen construction reconciles the stored selection/offset after a
+resize or a change in available rows, so the highlighted row stays visible.
+
 Every active action should be discoverable in one of:
 
 - command strip;

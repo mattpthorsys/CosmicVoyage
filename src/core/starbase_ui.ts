@@ -1,6 +1,6 @@
 import { Player } from './player';
 import { Starbase } from '../entities/starbase';
-import { clampIndex, TextMenuSection, TextTableModel, TextTableRow } from './text_ui';
+import { setSelection, TextMenuSection, TextTableModel, TextTableRow } from './text_ui';
 import { CargoSystem } from '../systems/cargo_systems';
 
 export type StarbaseSectionId =
@@ -41,6 +41,17 @@ export const STARBASE_SECTIONS: StarbaseSection[] = [
   { id: 'crew', label: 'Crew' },
 ];
 
+/** Shares the frame's row budget between starbase scrolling and drawing. */
+export function getStarbaseTableLayout(
+  viewportRows: number,
+  detailLineCount = 1
+): { panelHeight: number; visibleRowCount: number } {
+  const panelHeight = Math.min(34, Math.max(18, viewportRows - 5));
+  const detailRows = Math.max(0, Math.min(4, Math.floor(detailLineCount)));
+  // Reserve headings, tabs, table headers, detail spacing, alert, and both footer lines.
+  return { panelHeight, visibleRowCount: Math.max(1, panelHeight - 17 - detailRows) };
+}
+
 /** Returns only the panels supported by a station's declared mechanical capabilities. */
 export function getStationSections(starbase: Starbase): StarbaseSection[] {
   return STARBASE_SECTIONS.filter((section) => {
@@ -71,7 +82,7 @@ export function createStarbaseScreenModel(args: {
   alert?: string;
 }): StarbaseScreenModel {
   const cargoTotal = new CargoSystem().getTotalUnits(args.player.cargoHold);
-  const maxOffset = Math.max(0, args.rows.length - args.visibleRowCount);
+  const viewport = setSelection(args.selectedIndex, args.rows.length, args.visibleRowCount, args.viewOffset);
   const footer = [
     `Cr ${args.player.resources.credits.toLocaleString()}   Fuel ${args.player.resources.fuel.toFixed(0)}/${args.player.resources.maxFuel}   Cargo ${cargoTotal}/${args.player.cargoHold.capacity} m^3`,
     'Up/Down select  PgUp/PgDn page  Left/Right sections  Enter use  L depart',
@@ -86,8 +97,7 @@ export function createStarbaseScreenModel(args: {
     columns: args.columns,
     widths: args.widths,
     rows: args.rows,
-    selectedIndex: clampIndex(args.selectedIndex, args.rows.length),
-    viewOffset: Math.max(0, Math.min(args.viewOffset, maxOffset)),
+    ...viewport,
     visibleRowCount: args.visibleRowCount,
     detailLineCount: args.detailLineCount,
     footer,

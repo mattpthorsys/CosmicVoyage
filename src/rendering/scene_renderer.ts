@@ -17,7 +17,7 @@ import { logger } from '../utils/logger';
 import { adjustBrightness, hexToRgb, interpolateColour, rgbToHex, RgbColour } from './colour';
 import { SystemDataGenerator } from '../generation/system_data_generator';
 import { createSystemTravelStarfield } from './starfield';
-import { StarbaseScreenModel } from '../core/starbase_ui';
+import { getStarbaseTableLayout, StarbaseScreenModel } from '../core/starbase_ui';
 import { OrbitScreenModel } from '../core/orbit_ui';
 import {
   ORBIT_CAMERA_DISTANCE,
@@ -1241,7 +1241,8 @@ export class SceneRenderer {
     const renderModel = { ...model, widths: tableLayout.model.widths };
     const defaultPanelWidth = Math.min(112, Math.max(48, cols - 6));
     const panelWidth = Math.min(maxPanelWidth, Math.max(defaultPanelWidth, tableLayout.tableWidth + 9));
-    const panelHeight = Math.min(34, Math.max(18, rows - 5));
+    const tableViewport = getStarbaseTableLayout(rows, this.getTextTableDetailLineCount(model));
+    const panelHeight = tableViewport.panelHeight;
     const panelX = Math.max(2, Math.floor((cols - panelWidth) / 2));
     const panelY = Math.max(2, Math.floor((rows - panelHeight) / 2));
 
@@ -1295,8 +1296,7 @@ export class SceneRenderer {
     const tableX = panelX + 4;
     const tableY = panelY + 8;
     const tableWidth = panelWidth - 9;
-    const detailRows = this.getTextTableDetailLineCount(model);
-    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, panelHeight - 17 - detailRows));
+    const visibleRows = Math.max(1, Math.min(model.visibleRowCount, tableViewport.visibleRowCount));
     this.drawTextTableHeader(renderModel, tableX, tableY, tableWidth);
     this.drawTextTableRows(renderModel, tableX, tableY + 2, tableWidth, visibleRows);
     this.drawTextScrollbar(

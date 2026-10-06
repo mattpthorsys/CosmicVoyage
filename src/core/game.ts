@@ -3841,6 +3841,20 @@ export class Game {
 
   /** Processes all input for the current frame by calling helper methods. */
   private _processInput(): void {
+    // Playtest funds are global so opening a modal never blocks the shortcut.
+    if (this.inputManager.wasActionJustPressed('TEST_CREDITS')) {
+      const amount = CONFIG.TEST_CREDIT_GRANT;
+      this.player.resources.credits += amount;
+      this.statusMessage = `Test funds: +${amount.toLocaleString()} Cr.`;
+      if (this.stateManager.state === 'starbase') this.starbaseMode.alert = this.statusMessage;
+      this.forceFullRender = true;
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: amount,
+      });
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.handleShipRepairInput()) {
       this._publishStatusUpdate();
       return;

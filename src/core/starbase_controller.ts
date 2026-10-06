@@ -6,6 +6,7 @@ import {
   StarbaseTableRow,
   STARBASE_SECTIONS,
   getStationSections,
+  getStarbaseTableLayout,
 } from './starbase_ui';
 import { moveSelection } from './text_ui';
 import { Starbase } from '../entities/starbase';
@@ -86,17 +87,23 @@ export class StarbaseController {
     return STARBASE_SECTIONS.find((section) => section.id === this.sectionId)?.label ?? 'Operations';
   }
 
-  /** Returns visible row count. */
+  /** Returns the rows actually drawn, including the current section's detail budget. */
   getVisibleRowCount(canvasHeight: number, charHeight: number): number {
     const rows = Math.max(1, Math.floor(canvasHeight / Math.max(1, charHeight)));
-    return Math.max(6, Math.min(18, rows - 18));
+    return getStarbaseTableLayout(rows, this.getDetailLineCount()).visibleRowCount;
   }
 
-  /** Creates screen. */
+  /** Reserves contextual description lines below the table for each section. */
+  private getDetailLineCount(): number {
+    if (['missions', 'research'].includes(this.sectionId)) return 3;
+    return ['overview', 'sell'].includes(this.sectionId) ? 2 : 1;
+  }
+
+  /** Creates the screen and reconciles selection after resize or row removal. */
   createScreen(context: StarbaseScreenContext): StarbaseScreenModel {
     const visibleRowCount = this.getVisibleRowCount(context.canvasHeight, context.charHeight);
     const meta = this.getSectionMeta(context.starbase);
-    return createStarbaseScreenModel({
+    const model = createStarbaseScreenModel({
       starbase: context.starbase,
       player: context.player,
       sectionId: this.sectionId,
@@ -108,13 +115,13 @@ export class StarbaseController {
       widths: meta.widths,
       title: meta.title,
       subtitle: meta.subtitle,
-      detailLineCount: ['missions', 'research'].includes(this.sectionId)
-        ? 3
-        : ['overview', 'sell'].includes(this.sectionId)
-          ? 2
-          : 1,
+      detailLineCount: this.getDetailLineCount(),
       alert: this.alert || context.statusMessage,
     });
+    // The stored viewport must match the drawing model before the next arrow/page input.
+    this.selectionBySection[this.sectionId] = model.selectedIndex;
+    this.offsetBySection[this.sectionId] = model.viewOffset;
+    return model;
   }
 
   /** Returns section meta. */

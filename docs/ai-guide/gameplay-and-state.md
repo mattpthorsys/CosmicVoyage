@@ -66,6 +66,13 @@ a Galaxy-model migration.
 - `justPressedActions` drives discrete menus, surface steps, and confirmations.
 - Browser defaults are prevented for recognized gameplay keys.
 
+The documented playtest shortcut is `Shift` held through `K`, `Y`, `R`, with a
+three-second timeout between letters. `InputManager` consumes the sequence and
+emits the discrete `TEST_CREDITS` action. `Game` handles it before modal input,
+adds `CONFIG.TEST_CREDIT_GRANT` to normal credits, and publishes the usual credit
+and status notifications. Partial sequences reset on Shift release or input
+reset and are never saved. No gameplay key binding or save field is needed.
+
 Do not add hidden controls. Update command bars, footers, and help content when
 adding actions.
 

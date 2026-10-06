@@ -59,6 +59,11 @@ Common controls:
 - `F3`: performance profiler.
 - `F10`: pause and open the save/game menu.
 
+For playtesting, hold `Shift` and press `K`, `Y`, then `R` (within three seconds
+between letters) to add 10,000 credits. Repeat for additional funds. It works
+in active gameplay and in-game menus, but not the title screen or F10 pause
+menu. Added credits are saved normally; the letters do not fire or refuel.
+
 Travel command strips:
 
 - Interstellar: Move, Scan, Operations, Observe, with a green Enter System button when available.

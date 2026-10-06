@@ -9,6 +9,7 @@ import type { OrbitStellarSource } from '../../core/orbit_ui';
 import type { TextModalTableModel } from '../../core/text_ui';
 import { MissionJournal } from '../../core/mission_journal';
 import { ShipRepairConsole } from '../../core/ship_repair_console';
+import { StarbaseController } from '../../core/starbase_controller';
 import { SurfaceEncounterController } from '../../core/modes/surface_encounter_controller';
 import { XenobiologyService } from '../../core/xenobiology_service';
 import { SurfaceEncounterSystem } from '../../systems/surface_encounter_system';
@@ -976,6 +977,55 @@ describe('SceneRenderer visual regressions', () => {
 
     const renderedRows = renderTextRows(drawCalls);
     expect(renderedRows.some((line) => line.includes('Auxiliary probe bay'))).toBe(true);
+  });
+
+  it.each([
+    [120, 54],
+    [70, 32],
+    [70, 24],
+  ])('keeps bottom shipyard selections drawn above details and footers in a %sx%s port', (cols, height) => {
+    const { buffer, drawCalls } = createMockScreenBuffer(cols, height);
+    const renderer = createSceneRenderer(buffer);
+    const player = new Player();
+    const starbase = new Starbase('scroll-yard', new PRNG('scroll-yard'), 'Regression');
+    const controller = new StarbaseController();
+    controller.openSection('shipyard');
+    const orders = Array.from({ length: 40 }, (_, index) => ({
+      id: `order-${index}`,
+      cells: [`Refit ${String(index).padStart(2, '0')}`, '600 Cr', '1h', 'Install module.'],
+      detail: `Work order ${index} details.`,
+    }));
+    const visibleRows = controller.getVisibleRowCount(height * 12, 12);
+
+    // Exercise the formerly hidden last two rows, then both page directions and the final order.
+    for (const delta of [visibleRows - 1, 1, 1, visibleRows, -visibleRows, orders.length]) {
+      controller.moveSelection(delta, orders.length, visibleRows);
+      const model = controller.createScreen({
+        starbase,
+        player,
+        rows: orders,
+        canvasHeight: height * 12,
+        charHeight: 12,
+        statusMessage: 'Docked.',
+      });
+      drawCalls.length = 0;
+      renderer.drawStarbaseInterface(player, starbase, model);
+      const lines = renderTextRows(drawCalls);
+      const label = orders[model.selectedIndex].cells[0];
+      expect(lines.some((line) => line.includes(`> ${label}`))).toBe(true);
+
+      const marker = drawCalls.find((call) => call.char === '>' && call.fg === TEXT_PALETTE.greenBright)!;
+      const alert = drawCalls.find((call) => call.char === 'D' && call.fg === TEXT_PALETTE.amber)!;
+      const detail = drawCalls.find((call) => call.char === ':' && call.fg === TEXT_PALETTE.cyan)!;
+      expect(marker.y).toBeLessThan(detail.y);
+      expect(detail.y).toBeLessThan(alert.y);
+      expect(drawCalls.filter((call) => call.char === '│' && call.fg === TEXT_PALETTE.cyanDeep)).toHaveLength(
+        model.visibleRowCount
+      );
+      expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < height)).toBe(
+        true
+      );
+    }
   });
 
   it('keeps autosized starbase tables inside narrow viewports', () => {
