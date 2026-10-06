@@ -262,7 +262,9 @@ export class HeavyHaulOffers {
       originStarbaseName: station.name,
       systemName: destination.name,
       systemAddress: systemAddress(destination),
-      summary: `${local ? 'Local' : `${distanceLy.toFixed(0)} ly`} / ${(funded.package.wetMassKg / 1000).toFixed(1)} t external tow`,
+      summary: local
+        ? `Local / ${(funded.package.wetMassKg / 1000).toFixed(0)} t tow`
+        : `${distanceLy.toFixed(0)} ly / ${(funded.package.wetMassKg / 1000).toFixed(0)} t tow`,
       detail: `Contractor propulsion support included. Escrow releases on commissioning. Normal reactor fuel is reserved for the ${distanceLy.toFixed(0)} ly route back to ${station.name}; return is optional and untowed. Recovery forfeits payment and retires this offer.`,
       rewardCredits: local
         ? spec.baseReward

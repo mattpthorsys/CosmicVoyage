@@ -50,6 +50,7 @@ describe('stable production haul offers', () => {
       []
     );
     expect(offers).toHaveLength(3);
+    expect(offers.every((mission) => mission.summary.length <= 22)).toBe(true);
     expect(hasStellarSystem.mock.calls.length).toBeGreaterThanOrEqual(80);
     expect(hasStellarSystem.mock.calls.length).toBeLessThanOrEqual(1024);
     expect(world.createSystem.mock.calls.length).toBeLessThanOrEqual(26);
