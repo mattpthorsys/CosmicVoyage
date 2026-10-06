@@ -9,6 +9,7 @@ import { Player } from './player';
 import { GameState } from './game_state_manager';
 import { sameHaulAddress, type AttachedTowPolicy } from './heavy_haul_types';
 import { systemAddress } from './system_orbit_state';
+import { describeTowTravelRestriction } from './haul_navigation';
 
 export type AvailableActionCategory =
   | 'movement'
@@ -423,7 +424,7 @@ export function createAvailableActions(context: AvailableActionContext): Availab
         (context.state === 'orbit' && available.action === 'ACTIVATE_LAND_LIFTOFF');
       if (blocked) {
         available.enabled = false;
-        available.reason = 'External tow attached: use the haul voyage or contractor recovery.';
+        available.reason = describeTowTravelRestriction(tow);
       }
     }
   return actions.sort((a, b) => a.priority - b.priority);

@@ -2,6 +2,7 @@ import { SolarSystem } from '../entities/solar_system';
 import { Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { Starbase } from '../entities/starbase';
+import { describeTowTravelRestriction } from './haul_navigation';
 import { Player } from './player';
 import { PRNG } from '../utils/prng';
 import { CONFIG } from '../config';
@@ -154,8 +155,10 @@ export class GameStateManager {
 
   /** Publishes an actionable refusal for both direct method calls and raw request events. */
   private refuseTowTravel(): void {
-    this.statusMessage =
-      'External tow attached: use the haul voyage or contractor recovery; only the source repair yard is available.';
+    const tow = this.towPolicy();
+    this.statusMessage = tow
+      ? describeTowTravelRestriction(tow)
+      : 'External tow must be released before travel.';
     eventManager.publish(GameEvents.ACTION_FAILED, { action: 'travel', reason: this.statusMessage });
   }
 
@@ -362,8 +365,9 @@ export class GameStateManager {
     if (!nearbyObject) {
       logger.debug('[GameStateManager] Land failed: No object within landing distance.');
       // Publish status message directly or let Game handle it
+      this.statusMessage = STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET;
       eventManager.publish(GameEvents.STATUS_UPDATE_NEEDED, {
-        message: STATUS_MESSAGES.SYSTEM_LAND_FAIL_NO_TARGET,
+        message: this.statusMessage,
         hasStarbase: false,
       });
       return null;

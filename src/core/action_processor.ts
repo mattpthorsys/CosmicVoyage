@@ -172,7 +172,8 @@ export class ActionProcessor {
       case 'LAND':
         {
           eventManager.publish(GameEvents.LAND_REQUESTED);
-          message = 'Landing sequence initiated...';
+          // Landing events resolve synchronously; preserve a refusal instead of announcing false success.
+          message = this.stateManager.statusMessage;
         }
         break;
       case 'SCAN_SYSTEM_OBJECT': {

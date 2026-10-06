@@ -9,12 +9,15 @@ import type { HaulHomeboundRoute, HaulJourneyReceipt } from './heavy_haul_types'
 import type { TerminalDialogSpec } from './terminal_dialog';
 import type { TextDashboardLine, TextTone } from './text_ui';
 import { DEPLOYED_DEPOT_NOTICE } from '../entities/starbase';
+import type { HomeboundQuote, HomeboundQuoteResult, PreparedHomeboundJourney } from './homebound_journey';
 
 export type MissionDialogIntent =
   | { readonly kind: 'accept-mission'; readonly mission: StarbaseMission; readonly stationId: string }
   | { readonly kind: 'haul-action'; readonly action: HaulManifestAction; readonly mission: StarbaseMission }
   | { readonly kind: 'view-haul'; readonly mission?: StarbaseMission }
-  | { readonly kind: 'homebound-route'; readonly route: HaulHomeboundRoute };
+  | { readonly kind: 'homebound-route'; readonly route: HaulHomeboundRoute }
+  | { readonly kind: 'offer-homebound'; readonly assetId: string }
+  | { readonly kind: 'begin-homebound'; readonly assetId: string; readonly quote: HomeboundQuote };
 
 /** Adds one semantic terminal paragraph, preserving its tone through responsive wrapping. */
 function line(text: string, tone: TextTone = 'normal', heading = false): TextDashboardLine {
@@ -39,6 +42,99 @@ export function createHomeboundRouteDialog(
       line('Set the homeward destination and follow its bearing in hyperspace.', 'muted'),
       line('In the home system, approach assist selects the issuing port.', 'muted'),
       line('Set course for home?', 'green'),
+    ],
+  };
+}
+
+/** Presents unloaded travel, normal-fuel costs and sleep capacity before an automatic return. */
+export function createHomeboundVoyageDialog(
+  route: HaulHomeboundRoute,
+  assetId: string,
+  result: HomeboundQuoteResult,
+  currentFuel: number
+): TerminalDialogSpec<MissionDialogIntent> {
+  const quote = result.quote;
+  return {
+    title: 'AUTOMATIC RETURN VOYAGE',
+    kind: result.ok ? 'confirmation' : 'message',
+    caution: !result.ok,
+    defaultYes: true,
+    intent: result.ok ? { kind: 'begin-homebound', assetId, quote: result.quote } : undefined,
+    lines: [
+      line(route.stationName, 'cyan', true),
+      line(`X ${route.systemAddress.worldX} / Y ${route.systemAddress.worldY}`, 'green'),
+      ...(quote
+        ? [
+            line(
+              `Range ${quote.distanceLy.toFixed(1)} light-years / travel ${formatHaulDuration(quote.durationSeconds)}`,
+              'amber'
+            ),
+            line(
+              `Reactor fuel ${quote.fuelUnits.toFixed(1)} units / ${currentFuel.toFixed(1)} aboard`,
+              'green'
+            ),
+            line(
+              quote.requiredBerths
+                ? `Hypersleep ${quote.requiredBerths} crew / ${quote.functionalBerths} functional berths`
+                : 'Crew remain on duty.',
+              'cyan'
+            ),
+          ]
+        : []),
+      line('Autopilot handles transit and stages the ship near the original port.', 'muted'),
+      line('The calendar advances; ship fuel is consumed. No external tow or second payment.', 'muted'),
+      ...(!result.ok
+        ? result.reasons.map((reason) => line(reason, 'red'))
+        : [line('Begin automatic return now?', 'green')]),
+    ],
+  };
+}
+
+/** Announces hypersleep only when the unloaded return is long enough to require it. */
+export function createHomeboundPrelude(
+  journey: PreparedHomeboundJourney
+): TerminalDialogSpec<MissionDialogIntent> {
+  return {
+    title: journey.quote.requiredBerths ? 'HYPERSLEEP / HOMEBOUND' : 'HOMEBOUND TRANSIT',
+    kind: 'progress',
+    lines: [
+      line(journey.route.stationName, 'cyan', true),
+      line(
+        journey.quote.requiredBerths
+          ? `${journey.quote.requiredBerths} crew entering hypersleep.`
+          : 'Crew on duty / autopilot engaged.',
+        'green'
+      ),
+      line(`Transit ${formatHaulDuration(journey.quote.durationSeconds)}`, 'amber'),
+      line('Ship reactor online / untowed return.', 'muted'),
+    ],
+  };
+}
+
+/** Keeps successful automatic arrival, elapsed time and normal-fuel use visible until acknowledged. */
+export function createHomeboundArrivalDialog(
+  journey: PreparedHomeboundJourney,
+  departureDate: string,
+  arrivalDate: string
+): TerminalDialogSpec<MissionDialogIntent> {
+  return {
+    title: 'HOME PORT ARRIVAL',
+    kind: 'message',
+    lines: [
+      line(journey.route.stationName, 'cyan', true),
+      line('Automatic return complete / home port selected for docking.', 'green'),
+      line(`Elapsed ${formatHaulDuration(journey.receipt.durationSeconds)}`, 'amber'),
+      line(`Departed ${departureDate}`, 'muted'),
+      line(`Arrived ${arrivalDate}`, 'green'),
+      line(
+        journey.quote.requiredBerths
+          ? `${journey.quote.requiredBerths} crew awakened from hypersleep.`
+          : 'Crew remained on duty.'
+      ),
+      line(
+        `Reactor fuel used ${journey.receipt.fuelConsumedUnits.toFixed(1)} / ${journey.save.player.resources.fuel.toFixed(1)} remaining`,
+        'green'
+      ),
     ],
   };
 }
@@ -197,6 +293,7 @@ export function createHaulArrivalDialog(
         'green'
       ),
       line('Approach the deployment contact, then deploy to complete delivery and receive payment.', 'amber'),
+      line('Tow remains attached: planetary orbits and independent travel unlock after deployment.', 'amber'),
     ],
   };
 }
@@ -224,7 +321,12 @@ export function createHaulResultDialog(
   };
   return {
     title: titles[action],
-    kind: 'message',
+    kind: action === 'deploy' && objective.route.kind === 'interstellar' ? 'confirmation' : 'message',
+    defaultYes: false,
+    intent:
+      action === 'deploy' && objective.route.kind === 'interstellar'
+        ? { kind: 'offer-homebound', assetId: `haul-installation:${mission.id}` }
+        : undefined,
     lines:
       action === 'deploy'
         ? [
@@ -245,7 +347,7 @@ export function createHaulResultDialog(
               ? [
                   line(`Optional route home marked: ${mission.originStarbaseName}.`, 'cyan'),
                   line('Return untowed using normal reactor fuel, or continue exploring.'),
-                  line('Deferred returns remain available in Ship Operations / Homebound Route.', 'muted'),
+                  line('Return now? No defers it to Ship Operations / Homebound Travel.', 'green'),
                 ]
               : []),
           ]

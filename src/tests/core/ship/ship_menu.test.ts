@@ -77,7 +77,7 @@ function createShipMenuHarness(state: string = 'hyperspace'): any {
 }
 
 describe('ship menu', () => {
-  it('retains a delivered haul homebound route, confirms navigation, and preserves fuel and time', () => {
+  it('retains issuer navigation after automatic return without charging fuel or advancing time again', () => {
     const game = createShipMenuHarness();
     const address = { worldX: 0, worldY: 0, systemSlot: 0 };
     const port = haulSystemFixture(address).starbase!;
@@ -93,6 +93,13 @@ describe('ship menu', () => {
       lastAppliedBulkSeconds: 0,
       commissioningFuelRemainingUnits: 500,
       homeboundRoute: route,
+      homeboundReceipt: {
+        operationId: 'haul-installation:finished:return',
+        departureSeconds: 100,
+        arrivalSeconds: 160,
+        durationSeconds: 60,
+        fuelConsumedUnits: 10,
+      },
     };
     game._infrastructureRegistry = new InfrastructureRegistry();
     game._infrastructureRegistry.restore([asset]);

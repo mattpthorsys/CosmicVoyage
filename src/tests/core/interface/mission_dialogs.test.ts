@@ -5,6 +5,9 @@ import {
   createHaulArrivalDialog,
   createHaulResultDialog,
   createHomeboundRouteDialog,
+  createHomeboundVoyageDialog,
+  createHomeboundPrelude,
+  createHomeboundArrivalDialog,
 } from '../../../core/mission_dialogs';
 import { formatHaulDuration, type HaulManifestData } from '../../../core/haul_manifest';
 import { getHeavyHaulObjective } from '../../../core/mission_board';
@@ -15,6 +18,8 @@ import {
   heavyHaulMissionFixture,
   heavyHaulReceiptFixture,
 } from '../../fixtures/heavy_haul_contracts';
+import { homeboundJourneyFixture } from '../../fixtures/homebound_journeys';
+import { prepareHomeboundJourney } from '../../../core/homebound_journey';
 
 /** Builds dialog inputs from the same certified terms and receipt used by the haul service. */
 function readout(kind: 'local' | 'heavy') {
@@ -64,13 +69,68 @@ describe('mission and haul notices', () => {
     const arrival = createHaulArrivalDialog(f.data, 3);
     expect(messageText(arrival)).toContain(formatHaulDuration(f.data.receipt.durationSeconds));
     expect(messageText(arrival)).toContain('then deploy');
+    expect(messageText(arrival)).toContain('Tow remains attached');
     expect(messageText(arrival)).not.toContain('credited');
     expect(arrival.dismissIntent).toMatchObject({ kind: 'view-haul' });
     const delivery = createHaulResultDialog(f.mission, 'deploy', { ok: true, message: 'Commissioned.' });
     expect(delivery.title).toBe('TOW DELIVERED');
+    expect(delivery.kind).toBe('confirmation');
+    expect(delivery.defaultYes).toBe(false);
+    expect(delivery.intent).toEqual({
+      kind: 'offer-homebound',
+      assetId: `haul-installation:${f.mission.id}`,
+    });
     expect(messageText(delivery)).toContain('5,800 Cr credited');
     expect(messageText(delivery)).toContain('Depot open for trade');
     expect(messageText(delivery)).toContain('awaiting staff and resource arrival');
+    expect(messageText(delivery)).toContain('Homebound Travel');
+    const local = createHaulResultDialog(readout('local').mission, 'deploy', {
+      ok: true,
+      message: 'Commissioned.',
+    });
+    expect(local.kind).toBe('message');
+    expect(local.intent).toBeUndefined();
+  });
+
+  it('quotes ordinary fuel/time before returning and reports actual arrival without another reward', () => {
+    const fixture = homeboundJourneyFixture();
+    const result = prepareHomeboundJourney(fixture.save, fixture.source, fixture.assetId, fixture.world);
+    if (!result.ok) throw new Error(result.message);
+    const journey = result.journey;
+    const quote = createHomeboundVoyageDialog(
+      journey.route,
+      fixture.assetId,
+      {
+        ok: true,
+        quote: journey.quote,
+        reasons: [],
+      },
+      fixture.save.player.resources.fuel
+    );
+    expect(quote.intent).toEqual({ kind: 'begin-homebound', assetId: fixture.assetId, quote: journey.quote });
+    expect(messageText(quote)).toContain(journey.quote.fuelUnits.toFixed(1));
+    expect(messageText(quote)).toContain(formatHaulDuration(journey.quote.durationSeconds));
+    expect(messageText(createHomeboundPrelude(journey))).toContain('Crew on duty');
+    const arrival = createHomeboundArrivalDialog(journey, 'Departure date', 'Arrival date');
+    expect(arrival.kind).toBe('message');
+    expect(messageText(arrival)).toContain('home port selected for docking');
+    expect(messageText(arrival)).toContain('Departure date');
+    expect(messageText(arrival)).toContain('Arrival date');
+    expect(messageText(arrival)).not.toContain('credited');
+    const refusal = createHomeboundVoyageDialog(
+      journey.route,
+      fixture.assetId,
+      {
+        ok: false,
+        quote: journey.quote,
+        reasons: ['Refuel before departure.'],
+      },
+      0
+    );
+    expect(refusal.kind).toBe('message');
+    expect(refusal.caution).toBe(true);
+    expect(refusal.intent).toBeUndefined();
+    expect(messageText(refusal)).toContain('Refuel before departure');
   });
 
   it('shows homebound coordinates and normal-fuel travel before selecting the return route', () => {

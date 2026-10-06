@@ -4,23 +4,25 @@ import {
   type HaulHomeboundRoute,
   type HeavyHaulObjective,
   type InfrastructureRecord,
+  type AttachedTowPolicy,
 } from './heavy_haul_types';
 import type { HaulManifestStage } from './haul_manifest';
 import type { MissionSystemAddress } from './mission_board';
 import type { ObservatoryDestination } from './observatory_types';
+
+/** Explains the next usable action instead of treating an arrived tow as a source-yard departure. */
+export function describeTowTravelRestriction(tow: AttachedTowPolicy): string {
+  return tow.stage === 'arrived'
+    ? 'Haul arrived: tow still attached. Approach its deployment contact, then deploy via O / Heavy-Haul Manifest before orbiting planets or leaving.'
+    : 'External tow attached: use the haul voyage or contractor recovery; only the source repair yard is available.';
+}
 
 /** Recovers the most recent remote haul's issuer independently of the current navigation mark. */
 export function findHaulHomeboundRoute(
   installations: readonly InfrastructureRecord[],
   legacyDestination?: ObservatoryDestination | null
 ): HaulHomeboundRoute | null {
-  const latest = installations.reduce<InfrastructureRecord | null>(
-    (previous, asset) =>
-      asset.homeboundRoute && (!previous || asset.commissionedAtSeconds >= previous.commissionedAtSeconds)
-        ? asset
-        : previous,
-    null
-  );
+  const latest = findHaulHomeboundInstallation(installations);
   if (latest?.homeboundRoute) return structuredClone(latest.homeboundRoute);
   // Before issuer metadata existed, settlement saved only a named port destination.
   if (
@@ -39,6 +41,19 @@ export function findHaulHomeboundRoute(
     };
   }
   return null;
+}
+
+/** Links the latest issuer to its one-time return receipt without reviving a settled mission. */
+export function findHaulHomeboundInstallation(
+  installations: readonly InfrastructureRecord[]
+): InfrastructureRecord | null {
+  return installations.reduce<InfrastructureRecord | null>(
+    (previous, asset) =>
+      asset.homeboundRoute && (!previous || asset.commissionedAtSeconds >= previous.commissionedAtSeconds)
+        ? asset
+        : previous,
+    null
+  );
 }
 
 /** Describes the next physical staging requirement, independently of presentation and action execution. */

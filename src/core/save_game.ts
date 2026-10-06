@@ -487,18 +487,22 @@ export function parseGameSave(value: string | unknown): GameSave {
     save.completedMissionIds,
     save.gameClockElapsedSeconds
   );
-  const recordedBulkSeconds = Object.values(save.heavyHaul.journeyReceipts).reduce(
+  const recordedTowSeconds = Object.values(save.heavyHaul.journeyReceipts).reduce(
     (sum, receipt) => sum + receipt.durationSeconds,
     0
   );
-  if (recordedBulkSeconds > save.bulkAdvanceSeconds + 1e-3)
-    throw new Error('Save journey receipts exceed bulk time advanced.');
   validateInfrastructureRecords(
     save.infrastructure,
     save.gameClockElapsedSeconds,
     save.bulkAdvanceSeconds,
     save.completedMissionIds
   );
+  const recordedReturnSeconds = save.infrastructure.reduce(
+    (sum, asset) => sum + (asset.homeboundReceipt?.durationSeconds ?? 0),
+    0
+  );
+  if (recordedTowSeconds + recordedReturnSeconds > save.bulkAdvanceSeconds + 1e-3)
+    throw new Error('Save journey receipts exceed bulk time advanced.');
   const savedLocation = save.location;
   if (
     savedLocation.kind === 'starbase' &&

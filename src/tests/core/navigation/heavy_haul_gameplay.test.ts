@@ -8,6 +8,7 @@ import { InfrastructureRegistry } from '../../../core/infrastructure_registry';
 import { materializeHaulSites } from '../../../core/haul_sites';
 import { getHeavyHaulObjective, type MissionSystemAddress } from '../../../core/mission_board';
 import { MissionProgressService } from '../../../core/mission_progress';
+import { HeavyHaulService } from '../../../core/heavy_haul_service';
 import { parseGameSave } from '../../../core/save_game';
 import { createDefaultShipModifications } from '../../../core/ship_modifications';
 import { haulJourneyFixture, haulSystemFixture } from '../../fixtures/heavy_haul_journeys';
@@ -142,12 +143,25 @@ describe('production haul vertical slice', () => {
     player.position.systemY = depot.systemY;
     const seed = new PRNG('haul-journey-fixture');
     const manager = new GameStateManager(player, seed, new SystemDataGenerator(seed));
+    const progress = new MissionProgressService();
+    progress.restoreSnapshot(restored);
+    const haul = new HeavyHaulService(progress);
+    haul.restoreSnapshot(restored.heavyHaul, restored.gameClockElapsedSeconds);
+    manager.setTowPolicy(() => haul.attachedTowPolicy);
+    expect(haul.attachedTowPolicy).toBeNull();
     try {
       manager.installHaulArrival(fresh, { x: player.position.systemX, y: player.position.systemY });
       manager.setLandingTargetProvider(() => depot);
       expect(manager.landOnNearbyObject()).toBe(depot);
       expect(manager.currentStarbase).toBe(depot);
       expect(manager.state).toBe('starbase');
+      expect(manager.liftOff()).toBe(true);
+      const planet = fresh.planets.find((body) => body !== null)!;
+      player.position.systemX = planet.systemX + 5e7;
+      player.position.systemY = planet.systemY;
+      manager.setLandingTargetProvider(() => planet);
+      expect(manager.landOnNearbyObject()).toBe(planet);
+      expect(manager.state).toBe('orbit');
     } finally {
       manager.destroy();
     }

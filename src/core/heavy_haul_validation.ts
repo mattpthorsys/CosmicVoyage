@@ -148,15 +148,35 @@ export function validateInfrastructureRecords(
     text(asset.systemName, 'installation system name');
     validateAddress(asset.systemAddress);
     validateOrbit(asset.orbit);
+    number(asset.commissionedAtSeconds, 'commissioning time');
     if (asset.homeboundRoute !== undefined) {
       const route = record(asset.homeboundRoute, 'homebound route');
       validateAddress(route.systemAddress);
       text(route.stationName, 'homebound port name');
       if (route.stationId !== null) text(route.stationId, 'homebound port id');
     }
+    if (asset.homeboundReceipt !== undefined) {
+      if (!asset.homeboundRoute) fail('return receipt has no homebound port');
+      const receipt = record(asset.homeboundReceipt, 'homebound receipt');
+      if (receipt.operationId !== `${asset.assetId}:return`) fail('homebound receipt identity');
+      number(receipt.departureSeconds, 'homebound departure');
+      number(receipt.arrivalSeconds, 'homebound arrival');
+      number(receipt.durationSeconds, 'homebound duration', true);
+      number(receipt.fuelConsumedUnits, 'homebound fuel');
+      if (
+        (receipt.departureSeconds as number) < (asset.commissionedAtSeconds as number) ||
+        (receipt.arrivalSeconds as number) > gameClockSeconds ||
+        (receipt.durationSeconds as number) > HAUL_MAX_DURATION_SECONDS ||
+        Math.abs(
+          (receipt.arrivalSeconds as number) -
+            (receipt.departureSeconds as number) -
+            (receipt.durationSeconds as number)
+        ) > 1e-3
+      )
+        fail('homebound receipt time');
+    }
     if (!['navigation-buoy', 'automated-depot'].includes(String(asset.kind)))
       fail('deployed installation kind');
-    number(asset.commissionedAtSeconds, 'commissioning time');
     number(asset.lastAppliedBulkSeconds, 'installation bulk watermark');
     number(asset.commissioningFuelRemainingUnits, 'commissioning fuel allowance');
     if (

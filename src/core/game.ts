@@ -104,10 +104,25 @@ import {
   createHaulArrivalDialog,
   createHaulResultDialog,
   createHomeboundRouteDialog,
+  createHomeboundVoyageDialog,
+  createHomeboundPrelude,
+  createHomeboundArrivalDialog,
   type MissionDialogIntent,
 } from './mission_dialogs';
 import { prepareHaulLifecycle } from './heavy_haul_lifecycle';
-import { resolveHaulNavigation, describeHaulStage, findHaulHomeboundRoute } from './haul_navigation';
+import {
+  resolveHaulNavigation,
+  describeHaulStage,
+  findHaulHomeboundRoute,
+  findHaulHomeboundInstallation,
+} from './haul_navigation';
+import {
+  quoteHomeboundJourney,
+  prepareHomeboundJourney,
+  commitPreparedHomeboundJourney,
+  type HomeboundQuote,
+  type PreparedHomeboundJourney,
+} from './homebound_journey';
 import {
   commitPreparedHaulJourney,
   prepareHaulJourney,
@@ -254,6 +269,9 @@ import { surfaceCoordinates, surfaceLongitudeDelta } from '../utils/surface_coor
 // ScanTarget type includes SolarSystem now
 type ScanTarget = Planet | Starbase | NavigationMarker | StellarBody | SolarSystem;
 type NavigationTarget = Planet | Starbase | NavigationMarker | StellarBody;
+type VoyageTransitionIntent =
+  | { readonly mission: StarbaseMission; readonly journey: PreparedHaulJourney }
+  | { readonly kind: 'homebound'; readonly journey: PreparedHomeboundJourney };
 type RoverActionId =
   | 'operations'
   | 'science'
@@ -362,7 +380,8 @@ export class Game {
   private _haulOffers?: HeavyHaulOffers;
   private _haulManifest?: HaulManifest;
   private _terminalDialog?: TerminalDialog<MissionDialogIntent>;
-  private _screenTransition?: ScreenTransition<{ mission: StarbaseMission; journey: PreparedHaulJourney }>;
+  private _screenTransition?: ScreenTransition<VoyageTransitionIntent>;
+  private pendingHomeboundArrival: PreparedHomeboundJourney | null = null;
   private sleepingHaulCrew = 0;
   private _infrastructureRegistry?: InfrastructureRegistry;
   private bulkAdvanceSeconds = 0;
@@ -449,10 +468,7 @@ export class Game {
   }
 
   /** Coordinates a visual blackout around one prepared, checkpointed voyage. */
-  private get screenTransition(): ScreenTransition<{
-    mission: StarbaseMission;
-    journey: PreparedHaulJourney;
-  }> {
+  private get screenTransition(): ScreenTransition<VoyageTransitionIntent> {
     return (this._screenTransition ??= new ScreenTransition());
   }
 
@@ -484,6 +500,8 @@ export class Game {
     else if (intent?.kind === 'haul-action') this.performHaulAction(intent.mission, intent.action);
     else if (intent?.kind === 'view-haul') this.openHaulManifest(intent.mission);
     else if (intent?.kind === 'homebound-route') this.navigateHomeboundRoute(intent.route);
+    else if (intent?.kind === 'offer-homebound') this.openHomeboundVoyage(intent.assetId);
+    else if (intent?.kind === 'begin-homebound') this.beginHomeboundVoyage(intent.assetId, intent.quote);
     this.forceFullRender = true;
     this._publishStatusUpdate();
   }
@@ -494,6 +512,80 @@ export class Game {
       this.infrastructureRegistry.createSnapshot(),
       this._observatoryService?.snapshot.destination
     );
+  }
+
+  /** Offers the latest deferred automatic return, keeping local or completed returns as ordinary port navigation. */
+  private openHomeboundVoyage(assetId?: string): void {
+    const installations = this.infrastructureRegistry.createSnapshot();
+    const asset = assetId
+      ? installations.find((entry) => entry.assetId === assetId)
+      : findHaulHomeboundInstallation(installations);
+    if (assetId && !asset) {
+      this.showHomeboundFailure('The delivered installation no longer has a saved return route.');
+      return;
+    }
+    const route = asset?.homeboundRoute ?? this.getHomeboundRoute();
+    if (!route) return;
+    const inHomeSystem =
+      this.stateManager.state === 'system' &&
+      this.stateManager.currentSystem &&
+      sameHaulAddress(systemAddress(this.stateManager.currentSystem), route.systemAddress);
+    if (!asset || asset.homeboundReceipt || inHomeSystem) {
+      this.showTerminalDialog(
+        createHomeboundRouteDialog(
+          route,
+          observatoryDistanceLy(this.player.position.worldX, this.player.position.worldY, route.systemAddress)
+        )
+      );
+      return;
+    }
+    const save = this.createSaveGame();
+    this.showTerminalDialog(
+      createHomeboundVoyageDialog(
+        route,
+        asset.assetId,
+        quoteHomeboundJourney(save, asset.assetId),
+        save.player.resources.fuel
+      )
+    );
+  }
+
+  /** Revalidates the displayed quote before starting a one-time automatic voyage through the existing blackout. */
+  private beginHomeboundVoyage(assetId: string, quote: HomeboundQuote): void {
+    const prepared = prepareHomeboundJourney(
+      this.createSaveGame(),
+      this.stateManager.currentSystem,
+      assetId,
+      this.haulJourneyWorld,
+      quote
+    );
+    if (!prepared.ok) {
+      this.showHomeboundFailure(prepared.message);
+      return;
+    }
+    this.pendingHomeboundArrival = null;
+    this.sleepingHaulCrew = prepared.journey.quote.requiredBerths;
+    this.screenTransition.start(
+      { kind: 'homebound', journey: prepared.journey },
+      {
+        preludeSeconds: this.sleepingHaulCrew ? 1.2 : 0.7,
+        reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+      }
+    );
+    this.shipOperations.close();
+    this.interfaceMode.close();
+    this.showTerminalDialog(createHomeboundPrelude(prepared.journey));
+  }
+
+  /** Leaves refusal or checkpoint failure visible without advancing time or draining fuel. */
+  private showHomeboundFailure(message: string): void {
+    this.statusMessage = message;
+    this.showTerminalDialog({
+      title: 'RETURN UNAVAILABLE',
+      kind: 'message',
+      caution: true,
+      lines: [{ segments: [{ text: message, tone: 'red', font: 'thin' }] }],
+    });
   }
 
   /** Plots an untowed return or approaches the actual home port without teleporting or changing the calendar. */
@@ -762,6 +854,7 @@ export class Game {
       this.showTerminalDialog(createHaulResultDialog(mission, 'depart', prepared));
       return;
     }
+    this.pendingHomeboundArrival = null;
     this.sleepingHaulCrew = prepared.journey.quote.requiredBerths;
     this.screenTransition.start(
       { mission, journey: prepared.journey },
@@ -788,6 +881,26 @@ export class Game {
       this.forceFullRender = true;
     }
     if (event?.kind === 'commit') {
+      if ('kind' in event.intent) {
+        const journey = event.intent.journey;
+        const result = commitPreparedHomeboundJourney(journey, this.journeyCheckpointWriter, (arrival) => {
+          this.applyHaulArrival(arrival);
+          const port = arrival.system.stations.find((station) => station.id === arrival.stationId);
+          if (port) this.selectNavigationTarget(port, false);
+        });
+        this.statusMessage = result.message;
+        if (result.ok) {
+          this.pendingHomeboundArrival = journey;
+          this.screenTransition.resume();
+        } else {
+          this.screenTransition.reset();
+          this.sleepingHaulCrew = 0;
+          this.showHomeboundFailure(result.message);
+        }
+        this.forceFullRender = true;
+        this._publishStatusUpdate();
+        return;
+      }
       const result = this.commitHaulJourney(event.intent.journey);
       this.refreshHaulActionResult(event.intent.mission, 'depart', result, !result.ok);
       if (result.ok) this.screenTransition.resume();
@@ -798,8 +911,18 @@ export class Game {
       this.forceFullRender = true;
       this._publishStatusUpdate();
     } else if (event?.kind === 'complete') {
+      const homebound = this.pendingHomeboundArrival;
+      this.pendingHomeboundArrival = null;
       const data = this.haulManifest.data;
-      if (data?.receipt)
+      if (homebound)
+        this.showTerminalDialog(
+          createHomeboundArrivalDialog(
+            homebound,
+            this.getGameDateTimeLabel(homebound.receipt.departureSeconds),
+            this.getGameDateTimeLabel(homebound.receipt.arrivalSeconds)
+          )
+        );
+      else if (data?.receipt)
         this.showTerminalDialog(
           createHaulArrivalDialog({ ...data, receipt: data.receipt }, this.sleepingHaulCrew)
         );
@@ -882,8 +1005,9 @@ export class Game {
   }
 
   /** Applies an already validated, durable checkpoint; no world generation or further resource calculations occur here. */
-  private applyHaulArrival(journey: PreparedHaulJourney): void {
+  private applyHaulArrival(journey: Pick<PreparedHaulJourney, 'save' | 'system' | 'position'>): void {
     const save = journey.save;
+    const previousFuel = this.player.resources.fuel;
     this.gameClockElapsedSeconds = save.gameClockElapsedSeconds;
     this.bulkAdvanceSeconds = save.bulkAdvanceSeconds;
     this.planetMutationRegistry = new Map(
@@ -896,6 +1020,9 @@ export class Game {
     this.infrastructureRegistry.restore(save.infrastructure, save.observatory?.destination);
     this.player.position = cloneSaveValue(save.player.position);
     this.player.render = cloneSaveValue(save.player.render);
+    this.player.resources = cloneSaveValue(save.player.resources);
+    if (this._observatoryService || save.observatory?.destination)
+      this.observatoryService.snapshot.destination = cloneSaveValue(save.observatory?.destination ?? null);
     // The prepared destination already includes its voyage epoch. Do not recapture the departed source at the new clock.
     this.materializedOrbitalSystem = journey.system;
     this.currentZoomLevelIndex = DEFAULT_SYSTEM_ZOOM_INDEX;
@@ -912,6 +1039,11 @@ export class Game {
     this.stateManager.installHaulArrival(journey.system, journey.position);
     this.lastUpdateTime = performance.now();
     this.forceFullRender = true;
+    if (previousFuel !== this.player.resources.fuel)
+      eventManager.publish(GameEvents.PLAYER_FUEL_CHANGED, {
+        newFuel: this.player.resources.fuel,
+        amountChanged: this.player.resources.fuel - previousFuel,
+      });
   }
 
   /** Commits one nearby installation and its escrow payment through the same durable save boundary. */
@@ -1923,6 +2055,7 @@ export class Game {
     this._terminalDialog?.close();
     this._screenTransition?.reset();
     this.sleepingHaulCrew = 0;
+    this.pendingHomeboundArrival = null;
 
     const isLegacyGalaxyMigration =
       save.migratedFromGenerationVersion !== undefined &&
@@ -7031,18 +7164,7 @@ export class Game {
       return;
     }
     if (row.id === 'homebound') {
-      const route = this.getHomeboundRoute();
-      if (route)
-        this.showTerminalDialog(
-          createHomeboundRouteDialog(
-            route,
-            observatoryDistanceLy(
-              this.player.position.worldX,
-              this.player.position.worldY,
-              route.systemAddress
-            )
-          )
-        );
+      this.openHomeboundVoyage();
       return;
     }
     if (row.id === 'observatory') {
@@ -7322,7 +7444,8 @@ export class Game {
         const canLaunch = this.isAtParkedShip() && !this.player.terrainVehicle.onFoot;
         const wounded = this.player.crew.filter((member) => member.hitPoints < member.maxHitPoints).length;
         const focus = getShipCompartment(this.currentShipCompartmentId);
-        const homebound = this.getHomeboundRoute();
+        const homeboundAsset = findHaulHomeboundInstallation(this.infrastructureRegistry.createSnapshot());
+        const homebound = homeboundAsset?.homeboundRoute ?? this.getHomeboundRoute();
         const canReturnHome = homebound && !this._heavyHaulService?.attachedTowPolicy;
         const rows: TextTableRow[] = [
           {
@@ -7398,7 +7521,7 @@ export class Game {
           {
             id: 'homebound',
             cells: [
-              'Homebound Route',
+              'Homebound Travel',
               homebound
                 ? canReturnHome
                   ? homebound.stationName
@@ -7406,7 +7529,9 @@ export class Game {
                 : 'No remote haul delivered',
             ],
             detail: homebound
-              ? `X ${homebound.systemAddress.worldX} / Y ${homebound.systemAddress.worldY}. Set course back to the issuing port using normal, untowed travel.`
+              ? homeboundAsset?.homeboundReceipt
+                ? `Automatic return completed. Original port X ${homebound.systemAddress.worldX} / Y ${homebound.systemAddress.worldY} remains available for normal navigation.`
+                : `X ${homebound.systemAddress.worldX} / Y ${homebound.systemAddress.worldY}. Review time, normal fuel and hypersleep before an automatic return to the issuing port.`
               : 'Remote deliveries retain their issuing port here after payment and across reloads.',
             cellTones: ['cyan', canReturnHome ? 'green' : 'muted'],
             detailTone: canReturnHome ? 'cyan' : 'muted',
@@ -9280,7 +9405,7 @@ export class Game {
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
     if (this.screenTransition.isActive)
       return {
-        context: this.sleepingHaulCrew ? 'crew hypersleep' : 'tow transfer',
+        context: this.sleepingHaulCrew ? 'crew hypersleep' : 'automatic transit',
         buttons: [commandButton('transition-skip', 'Continue', 'TRANSITION_SKIP', { key: 'Enter' })],
       };
     if (this.terminalDialog.isOpen) return this.terminalDialog.createCommandBar();

@@ -51,6 +51,7 @@ export class HeavyHaulService {
     if (!active || !mission || !objective || active.stage === 'awaiting-pickup') return null;
     return {
       wetMassKg: objective.package.wetMassKg,
+      stage: active.stage,
       sourceStationId: active.stage === 'attached' ? (mission.originStarbaseId ?? null) : null,
       sourceAddress: objective.pickup.systemAddress,
     };

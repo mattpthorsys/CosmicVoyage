@@ -60,6 +60,7 @@ export interface HaulResupplyTarget {
 
 export interface AttachedTowPolicy {
   readonly wetMassKg: number;
+  readonly stage?: 'attached' | 'arrived';
   /** Only the source repair yard may dock an externally parked, not-yet-arrived package. */
   readonly sourceStationId: string | null;
   readonly sourceAddress: MissionSystemAddress;
@@ -112,6 +113,14 @@ export interface HaulHomeboundRoute {
   readonly stationName: string;
 }
 
+export interface HomeboundJourneyReceipt {
+  readonly operationId: string;
+  readonly departureSeconds: number;
+  readonly arrivalSeconds: number;
+  readonly durationSeconds: number;
+  readonly fuelConsumedUnits: number;
+}
+
 export interface InfrastructureRecord {
   readonly assetId: string;
   readonly sourceMissionId: string;
@@ -124,6 +133,8 @@ export interface InfrastructureRecord {
   commissioningFuelRemainingUnits: number;
   /** Keeps the issuer reachable after settlement removes the active contract. */
   readonly homeboundRoute?: HaulHomeboundRoute;
+  /** An automatic return is a separate, paid-fuel journey, never another tow settlement. */
+  readonly homeboundReceipt?: HomeboundJourneyReceipt;
 }
 
 export interface HaulRendezvous {

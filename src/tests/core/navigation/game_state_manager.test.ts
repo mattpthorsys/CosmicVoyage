@@ -14,6 +14,7 @@ import { createHyperspaceTile } from '../../../rendering/hyperspace_tile_generat
 import { haulJourneyFixture } from '../../fixtures/heavy_haul_journeys';
 import { heavyHaulReceiptFixture } from '../../fixtures/heavy_haul_contracts';
 import { createAvailableActions } from '../../../core/available_actions';
+import { ActionProcessor } from '../../../core/action_processor';
 
 /** Creates characteristics. */
 function createCharacteristics(): PlanetCharacteristics {
@@ -108,6 +109,10 @@ describe('GameStateManager tow restrictions', () => {
       expect(f.haul.recordArrival(heavyHaulReceiptFixture(f.mission, f.context), f.context).ok).toBe(true);
       expect(manager.landOnNearbyObject()).toBeNull();
       expect(manager.state).toBe('system');
+      expect(manager.statusMessage).toContain('deploy via O / Heavy-Haul Manifest');
+      expect(
+        new ActionProcessor(f.player, manager).processAction('ACTIVATE_LAND_LIFTOFF', 'system')
+      ).toContain('deploy via O / Heavy-Haul Manifest');
     } finally {
       near.mockRestore();
       manager.destroy();

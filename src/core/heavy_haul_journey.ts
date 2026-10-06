@@ -113,7 +113,7 @@ export function prepareHaulJourney(
       throw new Error('Depart from the contracted source system, undocked.');
     if (source.lastAppliedBulkSeconds !== save.bulkAdvanceSeconds)
       throw new Error('Source orbital catch-up must complete before departure.');
-    if (!isSafePosition(source, { x: save.player.position.systemX, y: save.player.position.systemY }))
+    if (!isSafeJourneyPosition(source, { x: save.player.position.systemX, y: save.player.position.systemY }))
       throw new Error('Move clear of stars and planetary bodies before departure.');
     const pickup = endpointPosition(source, objective.pickup);
     if (objective.route.kind === 'local') {
@@ -240,7 +240,7 @@ function endpointPosition(system: SolarSystem, endpoint: HaulEndpoint): { x: num
 }
 
 /** Checks physical clearances; docking tolerance is intentionally much larger than an object's radius. */
-function isSafePosition(system: SolarSystem, position: { x: number; y: number }): boolean {
+export function isSafeJourneyPosition(system: SolarSystem, position: { x: number; y: number }): boolean {
   if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return false;
   const objects = [
     ...system.stars.map((star) => ({ x: star.systemX, y: star.systemY, radius: star.radiusM * 3 })),
@@ -267,7 +267,7 @@ function findArrivalPosition(
       y: (kind === 'local' ? site.y : 0) + Math.sin(angle) * radius,
     };
     if (
-      isSafePosition(system, position) &&
+      isSafeJourneyPosition(system, position) &&
       Math.hypot(position.x - site.x, position.y - site.y) > HAUL_RENDEZVOUS_RANGE_M
     )
       return position;

@@ -30,6 +30,9 @@ written; their automated and browser verification is awaiting the Luna stage.
    **Enter** skips the visual transition without cancelling the voyage. A paused
    arrival popup reports the destination, elapsed time, dates and fuel use.
    Acknowledge it to return to the manifest for final approach.
+   **Arrival does not detach the tow.** Orbital insertion and independent travel
+   remain unavailable until deployment; the refusal now states how to release it
+   instead of falsely announcing a landing sequence.
 6. Use **N** to approach the deployment contact. Reopen the manifest and confirm
    **Deploy**, then **Yes**. Commissioning releases the package and tank, creates
    the permanent installation and credits escrow at the destination. A separate
@@ -84,15 +87,24 @@ written; their automated and browser verification is awaiting the Luna stage.
   Contractor support and the normal-fuel route back to the issuer are certified
   before an offer is shown, and checked again against the actual ship on acceptance.
 - Remote deployment saves a navigation mark back to the issuing port, including
-  across reloads. The delivery popup confirms it. **N / Route home** in the settled
-  manifest marks that route; in the source system it approaches the issuing port.
-  Return travel is optional and untowed, not another instant tow voyage. Escrow
-  is paid at deployment; there is no second payment for going home.
-- **O -> Homebound Route** restores the latest remote delivery's issuing port
-  even after settlement removes the mission and other destinations are selected.
-  The Yes/No terminal shows its coordinates and current range. **Yes** plots the
-  normal, untowed return route; in that system it selects the issuing station and
-  engages local approach assist. The option remains available after save/reload.
+  across reloads. After successful remote deployment, the **TOW DELIVERED** popup
+  asks whether to return now. **Y** opens a second confirmation with unloaded
+  travel time, normal reactor fuel cost and any required hypersleep berths.
+  Confirming starts autopilot, a short blackout and instant calendar advancement,
+  then a paused home-port arrival receipt. No tow support fuel is used. The ship
+  arrives near the original port with that station selected for docking.
+- **N** or **Escape** defers the return without losing it. **O -> Homebound Travel**
+  reopens the same automatic-return quote after settlement removes the mission,
+  even when another destination is selected or the game is saved and reloaded.
+  Undock or launch first if visiting a station or planet. A return needs enough
+  normal fuel to leave a manoeuvring reserve, a safe hull/drive and functional
+  hypersleep berths for all living crew if the unloaded journey exceeds 48 hours.
+  Missing requirements give a persistent refusal rather than moving the ship.
+- A durable receipt makes this automatic return one-time per delivery. Escrow is
+  paid only at deployment; going home never pays again. Later use of this option,
+  or use while already in the home system, offers ordinary port navigation instead
+  of another time jump. **N / Route home** in the settled manifest also remains an
+  ordinary navigation mark, approaching the issuing port when already there.
   Older deliveries can recover their issuing port while their original homeward
   navigation mark remains present. An attached tow must be released first.
 - Previously accepted hauls retain their original distance, mass and payment.
@@ -111,10 +123,12 @@ opens its own orbital view while retaining its parent as the local-space referen
 The station-variety, longer-route and precise-approach changes have regression
 coverage prepared but have not yet undergone the Luna verification pass.
 
-The subsequent delivered-depot notices, explicit docking target and deferred
-homebound navigation have regression coverage prepared for the next Luna pass.
+The subsequent delivered-depot notices, explicit docking target, automatic
+homebound voyages and orbital-refusal feedback have regression coverage prepared
+for the next Luna pass.
 Verify remote deployment, deferred return after reload and changing another
-navigation destination, Yes/No cancellation, and docking at the delivered depot.
+navigation destination, Yes/No cancellation, docking at the delivered depot,
+orbital insertion after deployment, fuel/time accounting and repeat-return refusal.
 
 ## Verification Gate
 
@@ -141,10 +155,11 @@ npm run test:run -- src/tests/core/navigation/heavy_haul_commissioning.test.ts s
 npm run check
 ```
 
-Deferred homebound navigation and depot presentation:
+Homebound voyages, deferred navigation and depot presentation:
 
 ```sh
 npm run test:run -- src/tests/core/navigation/haul_homebound_navigation.test.ts src/tests/core/navigation/heavy_haul_gameplay.test.ts src/tests/core/navigation/infrastructure_registry.test.ts src/tests/core/interface/mission_dialogs.test.ts src/tests/core/ship/ship_menu.test.ts src/tests/entities/stellar/starbase.test.ts
+npm run test:run -- src/tests/core/navigation/homebound_journey.test.ts src/tests/core/navigation/homebound_presentation.test.ts src/tests/core/navigation/game_state_manager.test.ts src/tests/core/navigation/haul_presentation.test.ts
 ```
 
 Additional focused presentation coverage:
@@ -170,6 +185,13 @@ Browser walkthroughs should cover:
   paused arrival receipt; duplicate departure/settlement must not pay or jump time.
 - Final approach, deployment, automatic escrow, navigation buoy scan, depot trade,
   restricted free refill, basic repair, departure and re-entry.
+- Orbit refusal before deployment must explain the attached tow. After deployment,
+  selecting/approaching a planet must permit orbital insertion normally.
+- Remote delivery's immediate return offer, No/Escape deferral, Operations return
+  after reload/another destination, ordinary fuel debit, unloaded travel time,
+  hypersleep when required and the paused home-port arrival receipt. Confirm the
+  actual issuing station is selected, return receipt survives reload, and going
+  home cannot replay delivery payment or consume contractor fuel.
 - Save/reload at pickup, attached at source, arrived at destination and docked
   inside a deployed depot. Confirm phases, station identity and market stock persist.
 - Keyboard and clickable controls at desktop and narrow viewports; terminal text,
