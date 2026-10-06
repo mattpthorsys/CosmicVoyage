@@ -6,6 +6,7 @@ import { getHeavyHaulObjective } from './mission_board';
 import { MissionProgressService } from './mission_progress';
 import { parseGameSave, type GameSave } from './save_game';
 import { systemAddress } from './system_orbit_state';
+import { createObservatorySnapshot } from './observatory_types';
 
 export type PreparedHaulChange =
   | { readonly ok: false; readonly message: string }
@@ -50,6 +51,7 @@ export function prepareHaulCommissioning(original: GameSave, system: SolarSystem
     save.player.resources.credits += result.credits;
     if (objective.route.kind === 'interstellar') {
       // Keep the optional homeward route after the settled contract leaves active mission storage.
+      save.observatory ??= createObservatorySnapshot();
       save.observatory.destination = {
         ...objective.pickup.systemAddress,
         name: mission.originStarbaseName,

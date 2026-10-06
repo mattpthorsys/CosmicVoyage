@@ -894,8 +894,8 @@ export class Game {
     this.heavyHaulService.restoreSnapshot(save.heavyHaul, save.gameClockElapsedSeconds);
     this.infrastructureRegistry.restore(save.infrastructure);
     this.player.resources = cloneSaveValue(save.player.resources);
-    if (this._observatoryService || save.observatory.destination)
-      this.observatoryService.snapshot.destination = cloneSaveValue(save.observatory.destination);
+    if (this._observatoryService || save.observatory?.destination)
+      this.observatoryService.snapshot.destination = cloneSaveValue(save.observatory?.destination ?? null);
     const system = this.stateManager.currentSystem;
     if (system) {
       this.infrastructureRegistry.materialize(system, this.bulkAdvanceSeconds ?? 0);
