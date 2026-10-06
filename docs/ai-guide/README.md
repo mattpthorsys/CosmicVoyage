@@ -77,3 +77,7 @@ verification. The planning documents preserve its design rationale:
   feature is not yet implemented.
 - [Heavy-haul foundations](../heavy-haul-foundations.md): current M0-M2 module
   boundaries, equipment/quote calibration, persistence work, and pending checks.
+- [Automated frontier-depot implementation plan](../plans/automated-depots-first-version.md):
+  resource-limited robotic services, medical care, bounded extraction, supply/survey
+  jobs, chart exchange, broadcasts, persistence and staged verification. Planned,
+  not implemented.

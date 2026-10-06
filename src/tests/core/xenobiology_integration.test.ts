@@ -142,6 +142,7 @@ function propaguleRequest(field: EncounterField): StarbaseMission {
 function saveFixture(player: Player, service: XenobiologyService): GameSave {
   return {
     version: SAVE_GAME_VERSION,
+    depots: {},
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-10-03T00:00:00Z',
     seed: 'biology-fixture',

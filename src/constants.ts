@@ -1594,6 +1594,22 @@ export const TRADE_COMMODITIES: Record<string, TradeCommodityInfo> = {
     rarity: 0.015,
     category: 'Curio',
   },
+  REPAIR_SPARES: {
+    name: 'Workshop Spares',
+    symbol: 'RPR',
+    description: 'Sealed batches of actuators, seals and bonded patch hardware for robotic workshops.',
+    baseValue: 24,
+    rarity: 0.7,
+    category: 'Maintenance',
+  },
+  MEDICAL_SUPPLIES: {
+    name: 'Medical Supplies',
+    symbol: 'MED+',
+    description: 'Sterile dressings, fluids and pharmaceuticals for shipboard and robotic trauma care.',
+    baseValue: 30,
+    rarity: 0.65,
+    category: 'Medical',
+  },
 };
 
 // --- User-Facing Messages --- [cite: 28, 479]

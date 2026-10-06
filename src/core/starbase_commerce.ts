@@ -68,6 +68,8 @@ const DEPOT_KEYS = [
   'NAV_BEACONS',
   'VACUUM_COFFEE',
   'CAPTAINS_SOCKS',
+  'REPAIR_SPARES',
+  'MEDICAL_SUPPLIES',
 ] as const;
 
 export class StarbaseCommerceService {
@@ -84,6 +86,34 @@ export class StarbaseCommerceService {
   /** Registers materialised service profiles; restored market identity never depends on a display name. */
   registerStation(id: string, kind: StationKind): void {
     this.stationKinds.set(id, kind);
+  }
+
+  /** Seeds only a missing listing; an explicitly empty legacy or depleted store stays empty. */
+  initialiseStock(stationId: string, itemKey: string, units: number): void {
+    if (!Number.isSafeInteger(units) || units < 0) throw new Error('Invalid initial station stock.');
+    const station = this.getOrCreateStation(stationId);
+    if (Object.hasOwn(station.items, itemKey)) return;
+    const item = this.createLocalItem(stationId, itemKey, units);
+    if (!item) throw new Error(`Unknown station supply: ${itemKey}.`);
+    station.items[itemKey] = item;
+  }
+
+  /** Returns canonical physical stock without negotiated prices or mutable market references. */
+  getStock(stationId: string, itemKey: string): number {
+    return this.getOrCreateStation(stationId).items[itemKey]?.units ?? 0;
+  }
+
+  /** Consumes a whole validated work order atomically, never partly debiting an unavailable recipe. */
+  consumeStock(stationId: string, requirements: Readonly<Record<string, number>>): boolean {
+    const entries = Object.entries(requirements);
+    if (
+      entries.some(
+        ([key, units]) => !Number.isSafeInteger(units) || units < 0 || this.getStock(stationId, key) < units
+      )
+    )
+      return false;
+    for (const [key, units] of entries) this.adjustStock(stationId, key, -units);
+    return true;
   }
 
   /** Returns manifest. */

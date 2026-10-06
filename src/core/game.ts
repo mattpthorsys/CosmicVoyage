@@ -18,6 +18,7 @@ import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { Starbase } from '../entities/starbase';
 import { NavigationMarker } from '../entities/navigation_marker';
 import { InfrastructureRegistry } from './infrastructure_registry';
+import { DepotService } from './depot_service';
 import { materializeHaulSites } from './haul_sites';
 import {
   commitHaulChange,
@@ -392,6 +393,7 @@ export class Game {
   private _surfacePrefetch?: SurfacePrefetchService;
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
+  private _depotService?: DepotService;
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
   private _surfaceMode?: SurfaceModeController;
@@ -447,6 +449,25 @@ export class Game {
   /** Owns persistent installations independently of generator caches and live scene objects. */
   private get infrastructureRegistry(): InfrastructureRegistry {
     return (this._infrastructureRegistry ??= new InfrastructureRegistry());
+  }
+
+  /** Shares one persistent operations owner between natural and player-commissioned depots. */
+  private get depotService(): DepotService {
+    return (this._depotService ??= new DepotService(
+      this.starbaseCommerce,
+      this.gameSeedPRNG.getInitialSeed()
+    ));
+  }
+
+  /** Initialises real service inventories on materialisation, never inside station rendering. */
+  private prepareSystemDepots(system: SolarSystem): void {
+    const address = systemAddress(system);
+    const assets = this.infrastructureRegistry.at(address);
+    for (const station of system.stations ?? []) {
+      if (station.kind !== 'automated-depot') continue;
+      const commissioned = assets.find((asset) => asset.assetId === station.id)?.commissionedAtSeconds;
+      this.depotService.ensureStation(station, address, this.gameClockElapsedSeconds ?? 0, commissioned);
+    }
   }
 
   /** Keeps bounded offer generation independent of ship state and the gameplay random stream. */
@@ -1037,6 +1058,7 @@ export class Game {
     this.travelMode.targetMenuSelection = 0;
     this.travelMode.targetMenuOffset = 0;
     this.stateManager.installHaulArrival(journey.system, journey.position);
+    this.prepareSystemDepots(journey.system);
     this.lastUpdateTime = performance.now();
     this.forceFullRender = true;
     if (previousFuel !== this.player.resources.fuel)
@@ -1079,6 +1101,7 @@ export class Game {
     const system = this.stateManager.currentSystem;
     if (system) {
       this.infrastructureRegistry.materialize(system, this.bulkAdvanceSeconds ?? 0);
+      this.prepareSystemDepots(system);
       this.refreshHaulSites(system);
       this.stateManager.reconcileDockedStation();
     }
@@ -2042,6 +2065,7 @@ export class Game {
       catalogueDiscoveries: this.scanService.createSnapshot(),
       observatory: this._observatoryService?.createSnapshot() ?? createObservatorySnapshot(),
       economy: this.starbaseCommerce.createSnapshot(),
+      depots: this._depotService?.createSnapshot() ?? {},
       xenobiology: this.xenobiology.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
     };
@@ -2060,6 +2084,10 @@ export class Game {
     const isLegacyGalaxyMigration =
       save.migratedFromGenerationVersion !== undefined &&
       save.migratedFromGenerationVersion < CONFIG.GALAXY_MODEL_VERSION;
+    // Restore stock/epochs before resolving a docked depot; otherwise materialisation seeds over the save.
+    this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
+    this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
+    this.depotService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.depots);
     // Restore deployment identities before a docked location tries to resolve its station.
     this.infrastructureRegistry.restore(
       isLegacyGalaxyMigration ? [] : save.infrastructure,
@@ -2160,7 +2188,6 @@ export class Game {
     );
     if (!isLegacyGalaxyMigration && save.infrastructure.length)
       this.observatoryService.invalidateInfrastructure();
-    this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
     this.statusMessage = wasRelocatedFromLegacySystem
       ? 'Legacy voyage loaded. Galactic remapping placed the vessel safely in hyperspace and retired incompatible local records.'
@@ -2222,6 +2249,7 @@ export class Game {
       this.bulkAdvanceSeconds ?? 0
     );
     this.infrastructureRegistry.materialize(system, this.bulkAdvanceSeconds ?? 0);
+    this.prepareSystemDepots(system);
     if (this._heavyHaulService) this.refreshHaulSites(system);
     this.materializedOrbitalSystem = system;
   }

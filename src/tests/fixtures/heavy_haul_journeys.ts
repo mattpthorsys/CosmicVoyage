@@ -71,6 +71,7 @@ export function haulJourneyFixture(kind: 'local' | 'medium' | 'heavy' = 'heavy')
   const orbit = captureSystemOrbit(source);
   const save: GameSave = {
     version: SAVE_GAME_VERSION,
+    depots: {},
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     seed: 'haul-journey-fixture',
     savedAt: '2026-10-05T00:00:00Z',

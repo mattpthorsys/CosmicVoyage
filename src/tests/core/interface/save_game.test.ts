@@ -74,6 +74,7 @@ class MemoryStorage implements Storage {
 function createSave(): GameSave {
   return {
     version: SAVE_GAME_VERSION,
+    depots: {},
     xenobiology: createXenobiologySnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-06-20T00:00:00.000Z',

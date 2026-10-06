@@ -37,10 +37,13 @@ import {
 import { isBiologicalMissionObjective, getHeavyHaulObjective } from './mission_board';
 import { sameHaulAddress } from './heavy_haul_types';
 import type { SystemOrbitHistoryRecord } from './system_orbit_state';
+import { validateDepotSnapshot, type DepotSnapshot } from './depot_types';
 
-export const SAVE_GAME_VERSION = 20;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v20';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v20';
+export const SAVE_GAME_VERSION = 21;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v21';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v21';
+const VERSION_TWENTY_SESSION_SAVE_KEY = 'cosmic-voyage.session.v20';
+const VERSION_TWENTY_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v20';
 const VERSION_NINETEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v19';
 const VERSION_NINETEEN_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v19';
 const VERSION_EIGHTEEN_SESSION_SAVE_KEY = 'cosmic-voyage.session.v18';
@@ -267,7 +270,12 @@ export interface GameSaveV20 extends Omit<GameSaveV19, 'version'> {
   version: 20;
 }
 
-export type GameSave = GameSaveV20;
+export interface GameSaveV21 extends Omit<GameSaveV20, 'version'> {
+  version: 21;
+  depots: DepotSnapshot;
+}
+
+export type GameSave = GameSaveV21;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -319,6 +327,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV18
     | GameSaveV19
     | GameSaveV20
+    | GameSaveV21
   >;
   if (
     record.version !== 1 &&
@@ -340,6 +349,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 17 &&
     record.version !== 18 &&
     record.version !== 19 &&
+    record.version !== 20 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -418,10 +428,11 @@ export function parseGameSave(value: string | unknown): GameSave {
       save = migrateV18Save(candidate as unknown as GameSaveV18);
       break;
     case 19:
-      save = { ...(candidate as unknown as GameSaveV19), version: SAVE_GAME_VERSION };
+    case 20:
+      save = { ...(candidate as unknown as GameSaveV20), version: SAVE_GAME_VERSION, depots: {} };
       break;
     default:
-      save = candidate as unknown as GameSaveV20;
+      save = candidate as unknown as GameSaveV21;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -563,6 +574,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   }
   validatePlanetMutations(save.planetMutations);
   validateEconomy(save.economy);
+  validateDepotSnapshot(save.depots, save.gameClockElapsedSeconds, save.economy);
   return record.version !== SAVE_GAME_VERSION ? migrateMatReproduction(save) : save;
 }
 
@@ -887,6 +899,7 @@ function migrateV18Save(save: GameSaveV18): GameSave {
   return {
     ...save,
     version: SAVE_GAME_VERSION,
+    depots: {},
     systemOrbitHistory:
       save.systemOrbit && save.location.kind !== 'hyperspace'
         ? [
@@ -1367,6 +1380,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_TWENTY_SESSION_SAVE_KEY,
       VERSION_NINETEEN_SESSION_SAVE_KEY,
       VERSION_EIGHTEEN_SESSION_SAVE_KEY,
       VERSION_SEVENTEEN_SESSION_SAVE_KEY,
@@ -1397,6 +1411,7 @@ export class SaveGameStorage {
   /** Clears the current tab's automatic checkpoint. */
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_TWENTY_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_NINETEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_EIGHTEEN_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_SEVENTEEN_SESSION_SAVE_KEY);
@@ -1423,6 +1438,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_TWENTY_MANUAL_SAVE_KEY,
       VERSION_NINETEEN_MANUAL_SAVE_KEY,
       VERSION_EIGHTEEN_MANUAL_SAVE_KEY,
       VERSION_SEVENTEEN_MANUAL_SAVE_KEY,
@@ -1453,6 +1469,7 @@ export class SaveGameStorage {
   /** Clears the explicit persistent browser save. */
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_TWENTY_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_NINETEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_EIGHTEEN_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_SEVENTEEN_MANUAL_SAVE_KEY);
