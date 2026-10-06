@@ -3,6 +3,8 @@ import { NavigationMarker } from '../entities/navigation_marker';
 import { advanceInstallationAngle } from './infrastructure_registry';
 import { getHeavyHaulObjective, type StarbaseMission } from './mission_board';
 import { sameHaulAddress } from './heavy_haul_types';
+import type { ActiveTowRecord } from './heavy_haul_types';
+import { CONFIG } from '../config';
 import type { SystemOrbitSaveData } from './save_game';
 import { systemAddress } from './system_orbit_state';
 
@@ -11,7 +13,8 @@ export function materializeHaulSites(
   system: SolarSystem,
   mission: StarbaseMission | undefined,
   snapshot: SystemOrbitSaveData | undefined,
-  bulkSeconds: number
+  bulkSeconds: number,
+  stage?: ActiveTowRecord['stage']
 ): void {
   const markers = [...system.navigationMarkers.filter((marker) => marker.kind === 'navigation-buoy')];
   const objective = mission && getHeavyHaulObjective(mission);
@@ -45,4 +48,29 @@ export function materializeHaulSites(
     system.stations.filter((station) => station !== system.starbase),
     markers
   );
+  if (
+    objective &&
+    stage === 'attached' &&
+    objective.route.kind === 'interstellar' &&
+    sameHaulAddress(systemAddress(system), objective.pickup.systemAddress)
+  ) {
+    const bearing = Math.atan2(
+      objective.destination.systemAddress.worldY - system.starY,
+      objective.destination.systemAddress.worldX - system.starX
+    );
+    // This is a fixed departure waypoint, not a massive body on a fictitious orbital ring.
+    const radius = system.edgeRadius * CONFIG.SYSTEM_EDGE_LEAVE_FACTOR + 3e10;
+    const marker = new NavigationMarker(
+      `${mission!.id}:departure`,
+      'Haul departure boundary',
+      'departure',
+      { kind: 'barycentric' },
+      radius,
+      (bearing + 2 * Math.PI) % (2 * Math.PI)
+    );
+    system.setInfrastructure(
+      system.stations.filter((station) => station !== system.starbase),
+      [...markers, marker]
+    );
+  }
 }

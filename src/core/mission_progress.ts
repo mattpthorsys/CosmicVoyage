@@ -289,6 +289,11 @@ export class MissionProgressService {
     );
   }
 
+  /** Supplies board retirement filters without cloning every accepted mission and its scientific metadata. */
+  getCompletedMissionIds(): readonly string[] {
+    return [...this.completedMissionIds];
+  }
+
   /** Returns active requests relevant to an encountered species at its actual collection site. */
   getSpecimenRequests(speciesId: string, siteId: string): StarbaseMission[] {
     return Object.values(this.activeMissions).filter((mission) =>

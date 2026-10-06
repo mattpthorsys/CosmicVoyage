@@ -22,7 +22,7 @@ export function captureSystemOrbit(system: SolarSystem): SystemOrbitSaveData {
   return {
     lastAppliedBulkSeconds: system.lastAppliedBulkSeconds,
     markers: system.navigationMarkers
-      .filter((marker) => marker.kind !== 'navigation-buoy')
+      .filter((marker) => marker.kind === 'pickup' || marker.kind === 'deployment')
       .map((marker) => ({ id: marker.id, orbitAngle: marker.orbitAngle })),
     stars: system.stars.map((star) => ({
       id: star.id,

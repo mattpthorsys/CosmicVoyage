@@ -2155,6 +2155,7 @@ export class SolarSystem {
       }
     }
     for (const marker of this.navigationMarkers) {
+      if (marker.kind === 'departure') continue;
       const period = this.calculateKeplerPeriodSeconds(
         marker.orbitDistance,
         this.getOrbitHostMassKg(marker.orbitHost)
@@ -2186,6 +2187,7 @@ export class SolarSystem {
       const center = this.getOrbitCenter(entity.orbitHost);
       entity.systemX = center.x + Math.cos(entity.orbitAngle) * entity.orbitDistance;
       entity.systemY = center.y + Math.sin(entity.orbitAngle) * entity.orbitDistance;
+      if (entity instanceof NavigationMarker && entity.kind === 'departure') continue;
       this.edgeRadius = Math.max(
         this.edgeRadius,
         (this.getOrbitCenterExtent(entity.orbitHost) + entity.orbitDistance) *

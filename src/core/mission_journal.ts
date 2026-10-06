@@ -8,6 +8,7 @@ import {
 import { getMissionLandingObjectiveIndices } from './mission_navigation';
 import { TerminalTextReveal } from './terminal_text_reveal';
 import { BEHAVIOUR_OBSERVATION_LABELS } from '../entities/biology/behaviour_observations';
+import type { ActiveTowRecord } from './heavy_haul_types';
 import {
   clampIndex,
   getDashboardVisibleRows,
@@ -24,6 +25,7 @@ export interface MissionJournalEntry {
   total: number;
   completedObjectiveIds?: readonly string[];
   objectiveShortfalls?: Readonly<Record<string, string>>;
+  haulStage?: ActiveTowRecord['stage'];
 }
 
 export type MissionJournalReturn = 'none' | 'ship-menu' | 'rover-cargo' | 'xenobiology';
@@ -64,7 +66,7 @@ export class MissionJournal {
     input: Pick<InputManager, 'wasActionJustPressed' | 'wasAnyKeyJustPressed'>,
     entries: readonly MissionJournalEntry[],
     model: TextModalTableModel
-  ): 'close' | 'landing' | undefined {
+  ): 'close' | 'landing' | 'haul' | undefined {
     if (this.reveal.isActive && input.wasAnyKeyJustPressed()) {
       this.reveal.complete();
       return;
@@ -74,7 +76,7 @@ export class MissionJournal {
       entries.length &&
       (input.wasActionJustPressed('ENTER_SYSTEM') || input.wasActionJustPressed('PRIMARY_ACTION'))
     )
-      return 'landing';
+      return this.selected(entries)?.mission.type === 'heavy-haul' ? 'haul' : 'landing';
     if (input.wasActionJustPressed('BIOLOGY_SITE')) {
       const mission = this.selected(entries)?.mission;
       if (mission) {
@@ -133,8 +135,10 @@ export class MissionJournal {
       const { mission, status } = entry;
       line(mission.title, 'cyan', true);
       line(
-        `${getMissionStatusLabel(status)} / objectives ${entry.completed}/${entry.total}`,
-        status === 'READY' ? 'green' : 'amber'
+        entry.haulStage === 'arrived'
+          ? 'READY TO DEPLOY / escrow settles at installation'
+          : `${getMissionStatusLabel(status)} / objectives ${entry.completed}/${entry.total}`,
+        status === 'READY' || entry.haulStage === 'arrived' ? 'green' : 'amber'
       );
       if (status === 'READY' && mission.type !== 'heavy-haul')
         line(
@@ -219,7 +223,12 @@ export class MissionJournal {
       }
       line('');
       line('DELIVERY', 'cyan', true);
-      line(`Return to: ${mission.originStarbaseName}`, 'green');
+      line(
+        mission.type === 'heavy-haul'
+          ? 'Settlement: commission at destination / no issuer return'
+          : `Return to: ${mission.originStarbaseName}`,
+        'green'
+      );
       line(`Issuer: ${mission.issuer}`, 'muted');
       line(
         `Payment: ${mission.rewardCredits.toLocaleString()} Cr${mission.objectives.every((objective) => objective.kind === 'biology-behaviour') ? ' / fixed field-study fee' : mission.type === 'xenobiology' ? ' + remaining research value' : ''}`,
@@ -247,7 +256,11 @@ export class MissionJournal {
           ],
         },
         {
-          segments: [{ text: `${canSelectLanding ? 'ENTER select landing site  ' : ''}ESC return  J close` }],
+          segments: [
+            {
+              text: `${entry?.mission.type === 'heavy-haul' ? 'ENTER haul manifest  ' : canSelectLanding ? 'ENTER select landing site  ' : ''}ESC return  J close`,
+            },
+          ],
         },
       ],
       width

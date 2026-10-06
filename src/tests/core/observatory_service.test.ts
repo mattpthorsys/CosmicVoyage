@@ -10,6 +10,8 @@ import type {
   HyperspaceSurveyCellRequest,
 } from '../../core/hyperspace_survey_cell_provider';
 import { observatoryContactFixture, observatoryObservationFixture } from '../fixtures/observatory';
+import { InfrastructureRegistry } from '../../core/infrastructure_registry';
+import { AU_IN_METERS } from '../../constants/physics';
 
 /** Provides a tiny bounded catalogue without planetary construction or a browser worker. */
 function harness() {
@@ -51,6 +53,41 @@ function harness() {
 }
 
 describe('observatory catalogue', () => {
+  it('refreshes registered deployment evidence at rest without inventing or erasing biological evidence', () => {
+    const { generator, provider, contact } = harness();
+    const registry = new InfrastructureRegistry();
+    const service = new ObservatoryService(generator, new PRNG('deployed-evidence'), provider, registry);
+    const observation = observatoryObservationFixture(contact, { biology: 'strong', origin: 'native' });
+    service.retain(contact, observation);
+    registry.restore([
+      {
+        assetId: 'haul-installation:evidence',
+        sourceMissionId: 'evidence',
+        kind: 'navigation-buoy',
+        systemAddress: { worldX: contact.worldX, worldY: contact.worldY, systemSlot: contact.systemSlot },
+        systemName: contact.name,
+        orbit: { host: { kind: 'barycentric' }, radiusM: AU_IN_METERS, angleRad: 0 },
+        commissionedAtSeconds: 0,
+        lastAppliedBulkSeconds: 0,
+        commissioningFuelRemainingUnits: 0,
+      },
+    ]);
+    service.invalidateInfrastructure();
+    expect(service.snapshot.observations[contact.id]).toMatchObject({
+      technology: 'registered',
+      biology: 'strong',
+      origin: 'native',
+    });
+    service.retain(
+      contact,
+      observatoryObservationFixture(contact, { quality: 0, technology: 'no-signal', biology: 'insufficient' })
+    );
+    expect(service.snapshot.observations[contact.id]).toMatchObject({
+      technology: 'registered',
+      biology: 'strong',
+      origin: 'native',
+    });
+  });
   it('progresses bounded preliminary sweeps beyond the same nearest contacts', () => {
     const { service } = harness();
     const ship = createDefaultShipModifications();

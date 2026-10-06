@@ -22,6 +22,7 @@ import {
   type ObservatoryContact,
   type ObservatoryObservation,
   type ObservatorySnapshot,
+  type ObservatoryAddress,
 } from './observatory_types';
 
 /** Owns bounded catalogue searches and persistent evidence, never terrain or physical travel state. */
@@ -271,6 +272,11 @@ export class ObservatoryService {
       name: contact.name,
       kind: contact.kind,
     };
+  }
+
+  /** Marks a contract's verified stellar address without requiring a prior observatory contact or scan. */
+  markSystemDestination(address: ObservatoryAddress, name: string): void {
+    this.snapshot.destination = { ...address, name, kind: 'system' };
   }
 
   /** Imports confirmed surface provenance, never the hidden contents of an unvisited generated biosphere. */

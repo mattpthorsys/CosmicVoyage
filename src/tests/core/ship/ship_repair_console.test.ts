@@ -77,6 +77,16 @@ function repairGame() {
 }
 
 describe('shipyard repair work orders', () => {
+  it('restricts automated depot work to hull and rover, even when repair-all is selected', () => {
+    const player = damagedPlayer();
+    expect(createRepairQuotes(player, true).map((quote) => quote.target)).toEqual(['all', 'hull', 'rover']);
+    expect(purchaseRepairs(player, 'drive', true).ok).toBe(false);
+    expect(purchaseRepairs(player, 'all', true)).toMatchObject({ ok: true, cost: 440 });
+    expect(player.ship.damage.hullIntegrity).toBe(100);
+    expect(player.terrainVehicle.integrity).toBe(100);
+    expect(player.ship.damage.subsystemDamage).toEqual({ drive: 25, shield: 10 });
+    expect(player.resources.credits).toBe(9560);
+  });
   it('uses itemised ship quotes for the complete total and excludes healthy equipment', () => {
     const player = damagedPlayer();
     const orders = createShipRepairOrders(player.ship);

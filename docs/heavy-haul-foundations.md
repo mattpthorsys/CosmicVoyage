@@ -2,11 +2,11 @@
 
 M0-M2 establish rules, lifecycle, fitting, and persistence. M3 adds supported
 journey execution and analytic time advancement; its verification gate passed.
-M4 adds persistent registry overlays and checkpointed commissioning. Its new
-regression tests await the user's Luna verification stage.
-Production haul offers remain unavailable until useful commissioning
-and the playable contract interface are implemented in M4-M5. No real-time
-towing physics or cargo-mass overhaul is part of these foundations.
+M4 adds persistent registry overlays and checkpointed commissioning. M5 enables
+production offers and the paused, keyboard-accessible haul manifest. Both new
+verification gates await the user's Luna stage; implementation is committed
+separately from the earlier verified M3 work. No real-time towing physics or
+cargo-mass overhaul is part of these foundations.
 
 ## Integration Inventory
 
@@ -17,10 +17,10 @@ towing physics or cargo-mass overhaul is part of these foundations.
   `biological_mission_guidance`, `biological_contracts`, `science_log`, and
   `comparative_biology` must distinguish biology positively, not by excluding scan.
 - Station targeting, nearby lookup, rendering, orbit updates, docking and restore
-  currently rely on `system.starbase`. Infrastructure collections and identity
-  resolution are M4 work, not a reason to alter generation in M0-M2.
+  use `system.stations`; `system.starbase` remains the natural primary alias.
+  M4 added infrastructure collections without altering natural generation.
 - `Game.restoreSaveGame` materialises the location before restoring missions.
-  M4 must restore deployment records before resolving a docked deployed depot.
+  M4 restores deployment records before resolving a docked deployed depot.
 - `simulation_time` now owns the shared frame conversion. M3 introduces
   explicit bulk seconds and catch-up without changing untowed zoom.
 - Save storage uses versioned keys and legacy fallback. Every schema increase
@@ -62,6 +62,10 @@ or reward. Better drives must improve the same quoted job.
   depot services, observatory technology evidence, atomic escrow/deployment and
   restricted commissioning fuel implemented. Schema 20 preserves contract site
   phases and migrates/falls back to v19 storage. New tests are written, not run.
+- M5: bounded stable local/remote offers, paused terminal manifest, exclusive
+  controls, phase-aware navigation, boundary approach, checkpointed acceptance,
+  coupling, commissioning, recovery and receipt implemented. New integration,
+  equipment-refusal, orbital-site and rendering tests are written, not run.
 - M0-M2 `npm run check` passed: documentation checks, formatting, lint, app and test
   typechecks, all 981 tests, and the production build.
 - Headless Chrome confirms that the running application loads and renders its
@@ -80,7 +84,7 @@ or reward. Better drives must improve the same quoted job.
   the canonical accepted-contract owner. Arrival/deployment methods prepare
   domain effects; they do not implement flight, payment, or station spawning.
 - `core/heavy_haul_validation.ts`: strict definitions, chronology, support
-  accounting, identity, and future installation-record validation.
+  accounting, identity, and installation-record validation.
 - `core/ship_modifications.ts`: real yard options, one-bay hypersleep upgrades,
   external couplers, drive classes 2-3, and module repair faults.
 - `core/simulation_time.ts`: the unchanged frame scale, validated bulk clock
@@ -92,10 +96,19 @@ or reward. Better drives must improve the same quoted job.
   and checkpoint-before-application coordination.
 - `core/save_game.ts`: schema 20, migrations including 19, prior-key fallback and
   clearing, orbital-history validation, and cross-owner checks.
-- `core/game.ts`: `quoteHaulJourney` and `departHaulJourney` orchestrate future
+- `core/game.ts`: `quoteHaulJourney` and `departHaulJourney` orchestrate
   manifest commands; ApplicationController provides a throwing session writer.
-  Infrastructure is materialized after natural catch-up. M5 adds the production
-  board and paused voyage interface.
+  Infrastructure is materialized after natural catch-up. The production mission
+  board, journal and Operations menu route to the paused voyage interface.
+- `core/heavy_haul_offers.ts`: stable bounded offer generation, conservative
+  reference equipment, actual host geometry and deployment-occupancy filters.
+- `core/heavy_haul_lifecycle.ts`: isolated acceptance, coupling and recovery
+  preparation; no live owner changes before the durable checkpoint.
+- `core/haul_manifest.ts`: presentation/reveal, responsive paragraphs, scrolling
+  and separate confirmations; expensive world queries occur only on inspection
+  and actions, not per rendered frame.
+- `core/haul_navigation.ts`: phase-aware full-address navigation and staging
+  descriptions. Remote addresses never become local body coordinates.
 
 ## M4 Registry And Commissioning
 
@@ -112,9 +125,9 @@ is capped by remaining allowance/capacity and cannot become tradable cargo.
 Station services and markets use stable installation identity. Docked references
 are reconciled after registry refresh, including saves made inside a new depot.
 
-The baseline movement, quote, lifecycle, fitting, save, and biological regression
-tests have passed together with `npm run check`. Contracts themselves remain
-future M4-M5 work. M0 is committed independently; M1 and M2 are kept together
+The earlier movement, quote, lifecycle, fitting, save, and biological regression
+tests passed together with `npm run check`. The new M4-M5 checks are pending,
+not implied by those earlier results. M0 is committed independently; M1 and M2 are kept together
 because typed objectives, save schema, equipment, and game save plumbing depend
 on the same versioned state contract.
 
@@ -138,7 +151,7 @@ absolute ephemeris redesign.
 
 Normal ship fuel is unchanged by transit. Support consumption comes solely from
 the package ledger. M3 requires an actual existing fuel station for onward
-safety; the commissioned-depot allowance remains M4 work. Crew, specimens,
+safety; M4 also accounts for the depot's restricted commissioning allowance. Crew, specimens,
 surface encounters, market stock, and ordinary non-expiring missions do not
 undergo years of catch-up simulation.
 
@@ -155,3 +168,33 @@ voyage clock.
 
 The full design and later stages are in
 [the implementation plan](plans/heavy-haul-first-version.md).
+
+## M5 Offer And Interface Policy
+
+Each staffed port has at most three v1 jobs: a 3-tonne local buoy transfer, a
+12.5-tonne remote buoy, and an 80-tonne depot where suitable actual endpoints
+are found. Twelve remote candidates are the maximum search budget. Offers are
+cached by stable station identity and reconstructed from a separate versioned
+PRNG on reload. Opening a board, upgrading a drive, or passage of time never
+rerolls terms. Paid and recovered IDs stay retired; occupied deployment rings
+are filtered rather than silently moved. Natural-system blueprints are unchanged.
+
+Local escrow is 1,600 Cr; remote buoy/depot escrow scales modestly with route
+length from 2,800/4,600 Cr, with a capped distance contribution. Contractor tank
+capacity is conservatively funded against the minimum eligible drive and an
+uncrewed planning reference, not the player's current crew bonus. Actual crew,
+damage, coupler, berth and onward-fuel requirements are checked before acceptance,
+coupling and departure. Mass, reward, endpoints and support terms freeze at acceptance.
+
+The manifest owns input and pauses simulation. Its first key completes the
+terminal reveal; actions then require an explicit confirmation. Confirmations
+scroll to the top so recovery warnings cannot be hidden beneath the dossier.
+Pickup/deployment contacts move with their host; the departure-boundary contact
+is an explicitly non-orbiting waypoint, excluded from orbital phase snapshots.
+Arrival opens a paused receipt, not another departure action. Journal entries
+show READY TO DEPLOY rather than suggesting issuer hand-in. Last voyage receipts
+remain readable from Operations after commissioning or recovery and reload.
+
+See [the playing and verification guide](heavy-haul-gameplay.md). M6's attached
+package silhouettes, larger structures, urgency and richer infrastructure
+simulation remain deferred.

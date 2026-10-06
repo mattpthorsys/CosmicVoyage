@@ -31,13 +31,15 @@ export interface RepairQuote {
 export type RepairConsoleIntent = { kind: 'close' } | { kind: 'repair'; target: RepairTarget };
 
 /** Quotes only current damage, including a secured rover at the same established port service rate. */
-export function createRepairQuotes(player: RepairAccount): RepairQuote[] {
-  const orders: RepairQuote[] = createShipRepairOrders(player.ship).map((order) => ({
-    target: order.target,
-    label: order.label,
-    condition: `${order.integrityPercent}% integrity`,
-    cost: order.cost,
-  }));
+export function createRepairQuotes(player: RepairAccount, basic = false): RepairQuote[] {
+  const orders: RepairQuote[] = createShipRepairOrders(player.ship)
+    .filter((order) => !basic || order.target === 'hull')
+    .map((order) => ({
+      target: order.target,
+      label: order.label,
+      condition: `${order.integrityPercent}% integrity`,
+      cost: order.cost,
+    }));
   const rover = player.terrainVehicle;
   const integrity = Math.max(0, Math.min(100, rover.integrity ?? 100));
   if (rover.available && integrity < 100)
@@ -50,7 +52,7 @@ export function createRepairQuotes(player: RepairAccount): RepairQuote[] {
   return [
     {
       target: 'all',
-      label: 'Complete restoration',
+      label: basic ? 'Basic hull / rover restoration' : 'Complete restoration',
       condition: orders.length ? `${orders.length} damaged systems` : 'All systems nominal',
       cost: orders.reduce((total, order) => total + order.cost, 0),
     },
@@ -61,9 +63,10 @@ export function createRepairQuotes(player: RepairAccount): RepairQuote[] {
 /** Requotes at purchase time and performs an affordable work order without touching unrelated damage. */
 export function purchaseRepairs(
   player: RepairAccount,
-  target: RepairTarget
+  target: RepairTarget,
+  basic = false
 ): { ok: boolean; cost: number; message: string } {
-  const quote = createRepairQuotes(player).find((order) => order.target === target);
+  const quote = createRepairQuotes(player, basic).find((order) => order.target === target);
   if (!quote || quote.cost <= 0)
     return { ok: false, cost: 0, message: 'No repair work required for this selection.' };
   if (player.resources.credits < quote.cost)
@@ -73,7 +76,8 @@ export function purchaseRepairs(
       message: `Insufficient credits. Required ${quote.cost.toLocaleString()} Cr.`,
     };
   if (target === 'all') {
-    repairShipDamage(player.ship);
+    if (basic) player.ship.damage.hullIntegrity = player.ship.damage.maxHullIntegrity;
+    else repairShipDamage(player.ship);
     if (player.terrainVehicle.available) player.terrainVehicle.integrity = 100;
   } else if (target === 'hull') player.ship.damage.hullIntegrity = player.ship.damage.maxHullIntegrity;
   else if (target === 'rover') player.terrainVehicle.integrity = 100;
@@ -136,7 +140,7 @@ export class ShipRepairConsole {
   }
 
   /** Exposes the same work-order controls to the clickable bottom menu. */
-  createCommandBar(): CommandBarModel {
+  createCommandBar(returnLabel = 'Shipyard'): CommandBarModel {
     return {
       context: 'repair control',
       buttons: [
@@ -146,7 +150,7 @@ export class ShipRepairConsole {
         commandButton('page-down', 'Next page', 'PAGE_DOWN', { key: 'PgDn' }),
         commandButton('repair', 'Repair selected', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' }),
         commandButton('all', 'Repair all', 'APPROACH_TARGET', { key: 'A', tone: 'green' }),
-        commandButton('return', 'Shipyard', 'QUIT', { key: 'Esc' }),
+        commandButton('return', returnLabel, 'QUIT', { key: 'Esc' }),
       ],
     };
   }
@@ -157,10 +161,12 @@ export class ShipRepairConsole {
     stationName: string,
     profile: StarbaseShipyardProfile,
     cols: number,
-    rows: number
+    rows: number,
+    basic = false,
+    returnLabel = basic ? 'Services' : 'Shipyard'
   ): TextModalTableModel {
     const width = Math.max(1, Math.min(72, cols - 12));
-    const quotes = createRepairQuotes(player);
+    const quotes = createRepairQuotes(player, basic);
     if (!quotes.some((quote) => quote.target === this.selectedTarget)) this.selectedTarget = 'all';
     const lines: TextDashboardLine[] = [];
     /** Adds a terminal paragraph while preserving semantic colours through word wrapping. */
@@ -216,7 +222,7 @@ export class ShipRepairConsole {
     const footer = wrapDashboardLines(
       [
         { segments: [{ text: 'UP/DN select  PGUP/DN page' }] },
-        { segments: [{ text: 'ENTER repair  A repair all  ESC shipyard' }] },
+        { segments: [{ text: `ENTER repair  A repair all  ESC ${returnLabel}` }] },
       ],
       width
     ).map((entry) => entry.segments.map((segment) => segment.text).join(''));
@@ -227,7 +233,9 @@ export class ShipRepairConsole {
     if (selectedStart < this.viewOffset) this.viewOffset = selectedStart;
     return {
       title: 'REPAIR CONTROL',
-      subtitle: `${profile.label} / ${profile.repairQuality.toUpperCase()} SERVICE`,
+      subtitle: basic
+        ? 'AUTOMATED DRONES / HULL & ROVER SERVICE'
+        : `${profile.label} / ${profile.repairQuality.toUpperCase()} SERVICE`,
       columns: [],
       widths: [],
       rows: [],

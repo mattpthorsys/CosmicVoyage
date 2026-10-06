@@ -11,7 +11,7 @@ export class NavigationMarker {
   constructor(
     readonly id: string,
     readonly name: string,
-    readonly kind: 'navigation-buoy' | 'pickup' | 'deployment',
+    readonly kind: 'navigation-buoy' | 'pickup' | 'deployment' | 'departure',
     readonly orbitHost: OrbitHost,
     readonly orbitDistance: number,
     public orbitAngle: number
@@ -19,6 +19,13 @@ export class NavigationMarker {
 
   /** Describes the instrument without granting planetary discovery or station services. */
   getScanInfo(): string[] {
+    if (this.kind === 'departure')
+      return [
+        `<h>${this.name}</h>`,
+        'Fixed strategic departure waypoint / not an orbiting body.',
+        `Barycentric radius: <hl>${(this.orbitDistance / AU_IN_METERS).toFixed(2)} AU</hl>`,
+        'Open the heavy-haul manifest to review and confirm the supported voyage.',
+      ];
     return [
       `<h>${this.name}</h>`,
       `Type: <hl>${this.kind === 'navigation-buoy' ? 'Registered navigation buoy' : 'Contractor orbital rendezvous'}</hl>`,

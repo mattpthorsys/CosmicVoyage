@@ -1,9 +1,10 @@
 # Heavy-Haul Contracts: First-Version Implementation Plan
 
-Status: M0-M2 implemented and verified; M3 implementation and regression tests
-written, awaiting the Luna verification gate. M4 onwards remain planned.
-Baseline inspected on 2026-10-05: save schema 17 and Galaxy model 8; the M3
-working tree uses schema 19 and retains Galaxy model 8. Do not overwrite
+Status: M0-M3 implemented and verified. M4-M5 implementation and regression
+tests are committed, awaiting the requested Luna verification gate. M6 onwards
+remain planned.
+Baseline inspected on 2026-10-05: save schema 17 and Galaxy model 8; M4-M5
+use schema 20 and retain Galaxy model 8. Do not overwrite
 migrations introduced by intervening work.
 
 This plan adds a playable infrastructure-delivery loop to the current game,
@@ -554,6 +555,8 @@ Commit: `Execute supported haul journeys with analytic time advancement`.
 
 ### M4 - Persistent Buoys And Automated Depots
 
+Implementation committed in `b079c5c`; new verification gate pending Luna.
+
 - Implement registry overlays, reserved stable sites, and useful buoy targets.
 - Materialise automated depots with existing services and restricted initial
   refuelling allowance.
@@ -568,6 +571,9 @@ and work in single/multiple-star fixtures without changing natural generation.
 Commit: `Persist and commission player-delivered frontier infrastructure`.
 
 ### M5 - Offers, Journal, And Playable Vertical Slice
+
+Implementation committed, including playable controls and regression coverage.
+Verification gate pending Luna; see `docs/heavy-haul-gameplay.md` for the walkthrough.
 
 - Generate bounded stable offers, including an accessible local job.
 - Integrate paused manifest, acceptance errors, pickup/arrival navigation,

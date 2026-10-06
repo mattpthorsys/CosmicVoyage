@@ -80,6 +80,10 @@ import { ObservatoryController, type ObservatoryScreenModel } from './observator
 import { ObservatoryService } from './observatory_service';
 import { HeavyHaulService } from './heavy_haul_service';
 import { createHeavyHaulSnapshot, type HaulQuoteResult, type HaulResupplyTarget } from './heavy_haul_types';
+import { HeavyHaulOffers } from './heavy_haul_offers';
+import { HaulManifest, type HaulManifestData, type HaulManifestStage } from './haul_manifest';
+import { prepareHaulLifecycle } from './heavy_haul_lifecycle';
+import { resolveHaulNavigation, describeHaulStage } from './haul_navigation';
 import {
   commitPreparedHaulJourney,
   prepareHaulJourney,
@@ -98,9 +102,9 @@ import {
   type SystemOrbitHistoryRecord,
 } from './system_orbit_state';
 import { frameToSimulatedSeconds, SIMULATED_SECONDS_PER_REAL_SECOND } from './simulation_time';
-import { getTowLocalStepFactor } from './tow_performance';
+import { getTowLocalStepFactor, quoteHeavyHaul } from './tow_performance';
 import { getFunctionalHypersleepBerths } from './ship_modifications';
-import { TOW_COUPLERS } from '../constants/heavy_haul';
+import { TOW_COUPLERS, HAUL_RENDEZVOUS_RANGE_M } from '../constants/heavy_haul';
 import {
   createObservatorySnapshot,
   getObservatoryCapabilities,
@@ -332,6 +336,8 @@ export class Game {
   private _observatoryService?: ObservatoryService;
   private _observatoryController?: ObservatoryController;
   private _heavyHaulService?: HeavyHaulService;
+  private _haulOffers?: HeavyHaulOffers;
+  private _haulManifest?: HaulManifest;
   private _infrastructureRegistry?: InfrastructureRegistry;
   private bulkAdvanceSeconds = 0;
   private systemOrbitRegistry?: Map<string, SystemOrbitHistoryRecord>;
@@ -396,6 +402,220 @@ export class Game {
   /** Owns persistent installations independently of generator caches and live scene objects. */
   private get infrastructureRegistry(): InfrastructureRegistry {
     return (this._infrastructureRegistry ??= new InfrastructureRegistry());
+  }
+
+  /** Keeps bounded offer generation independent of ship state and the gameplay random stream. */
+  private get haulOffers(): HeavyHaulOffers {
+    return (this._haulOffers ??= new HeavyHaulOffers(
+      this.gameSeedPRNG.getInitialSeed(),
+      this.haulJourneyWorld
+    ));
+  }
+
+  /** Owns the paused voyage terminal independently of the mission board and travel controls. */
+  private get haulManifest(): HaulManifest {
+    return (this._haulManifest ??= new HaulManifest());
+  }
+
+  /** Builds a world-verified quote once per inspection/action, never in the drawing loop. */
+  private buildHaulManifestData(selected?: StarbaseMission): HaulManifestData {
+    const save = this.createSaveGame();
+    const tow = save.heavyHaul.activeTow;
+    const mission = selected ?? (tow ? this.missionProgress.getMission(tow.missionId) : undefined);
+    const objective = mission && getHeavyHaulObjective(mission);
+    const stage: HaulManifestStage = !mission
+      ? 'none'
+      : save.completedMissionIds.includes(mission.id)
+        ? 'complete'
+        : tow?.missionId === mission.id
+          ? tow.stage
+          : 'available';
+    let quote: HaulQuoteResult = { ok: false, quote: null, reasons: ['No external haul selected.'] };
+    if (objective && mission) {
+      const resupply =
+        objective.resupply ??
+        (mission.originStarbaseId
+          ? { systemAddress: objective.pickup.systemAddress, stationId: mission.originStarbaseId }
+          : null);
+      try {
+        if (!resupply) throw new Error('No certified supply endpoint recorded.');
+        const context = resolveHaulQuoteContext(
+          save,
+          objective.destination.systemAddress,
+          resupply,
+          this.haulJourneyWorld,
+          objective
+        );
+        quote = quoteHeavyHaul(
+          objective,
+          context,
+          stage === 'attached' ? tow?.remainingSupportFuelUnits : undefined
+        );
+      } catch (error) {
+        quote = {
+          ok: false,
+          quote: null,
+          reasons: [error instanceof Error ? error.message : 'Supply verification failed.'],
+        };
+      }
+    }
+    const system = this.stateManager.currentSystem;
+    const marker =
+      objective &&
+      system?.navigationMarkers.find(
+        (entry) => entry.id === (stage === 'arrived' ? objective.destination.siteId : objective.pickup.siteId)
+      );
+    const nearby =
+      marker &&
+      Math.hypot(
+        this.player.position.systemX - marker.systemX,
+        this.player.position.systemY - marker.systemY
+      ) <= HAUL_RENDEZVOUS_RANGE_M;
+    const staging = describeHaulStage(
+      stage,
+      objective?.route.kind === 'interstellar',
+      !!nearby,
+      !!system?.isAtEdge(this.player.position.systemX, this.player.position.systemY),
+      this.stateManager.state === 'system'
+    );
+    const receipt = mission
+      ? save.heavyHaul.journeyReceipts[`${mission.id}:transit`]
+      : Object.values(save.heavyHaul.journeyReceipts).sort((a, b) => b.arrivalSeconds - a.arrivalSeconds)[0];
+    const installation =
+      receipt && save.infrastructure.find((asset) => asset.sourceMissionId === receipt.missionId);
+    return {
+      mission,
+      stage,
+      quote,
+      normalFuel: save.player.resources.fuel,
+      maximumFuel: save.player.resources.maxFuel,
+      remainingSupport:
+        stage === 'complete'
+          ? 0
+          : tow?.missionId === mission?.id
+            ? (tow?.remainingSupportFuelUnits ?? 0)
+            : (objective?.package.supportFuelCapacityUnits ?? 0),
+      departureDate: this.getGameDateTimeLabel(receipt?.departureSeconds ?? this.gameClockElapsedSeconds),
+      arrivalDate: this.getGameDateTimeLabel(
+        receipt?.arrivalSeconds ?? this.gameClockElapsedSeconds + (quote.quote?.durationSeconds ?? 0)
+      ),
+      staging,
+      receipt,
+      recentOutcome: receipt
+        ? installation
+          ? `Commissioned at ${installation.systemName} / escrow settled`
+          : save.heavyHaul.retiredMissionIds.includes(receipt.missionId)
+            ? 'Contractor recovery / no payment'
+            : 'Arrival recorded / deployment pending'
+        : undefined,
+    };
+  }
+
+  /** Opens from a station board, Operations or journal without advancing the game calendar. */
+  private openHaulManifest(mission?: StarbaseMission): void {
+    const parent = this.interfaceMode.kind;
+    if (parent !== 'none' && parent !== 'ship-menu' && parent !== 'mission-journal') return;
+    this.haulManifest.open(this.buildHaulManifestData(mission), parent);
+    this.interfaceMode.open('haul-manifest');
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Restores the parent menu or clears it for an explicitly selected travel approach. */
+  private closeHaulManifest(toTravel = false): void {
+    const parent = toTravel ? 'none' : this.haulManifest.returnTo;
+    if (parent === 'none') this.interfaceMode.close('haul-manifest');
+    else this.interfaceMode.open(parent);
+    this.haulManifest.reveal.complete();
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Selects only materialized local contacts; remote endpoints become interstellar destination marks. */
+  private navigateHaulManifest(): void {
+    const data = this.haulManifest.data;
+    const mission = data?.mission;
+    const objective = mission && getHeavyHaulObjective(mission);
+    if (!data || !mission || !objective) return;
+    const system = this.stateManager.state === 'system' ? this.stateManager.currentSystem : null;
+    const solution = resolveHaulNavigation(
+      mission.id,
+      objective,
+      data.stage,
+      system ? systemAddress(system) : null
+    );
+    if (solution.localSiteId && system) {
+      const target = system.navigationMarkers.find((entry) => entry.id === solution.localSiteId);
+      if (target) {
+        this.closeHaulManifest(true);
+        this.selectNavigationTarget(target, true);
+        return;
+      }
+      this.haulManifest.notice = 'Local contact unavailable. Reopen the manifest after entering its system.';
+    } else {
+      this.observatoryService.markSystemDestination(
+        solution.endpoint.systemAddress,
+        solution.endpoint.systemName
+      );
+      this.haulManifest.notice =
+        this.stateManager.state === 'starbase'
+          ? 'Destination marked. Undock before engaging local approach.'
+          : data.stage === 'available'
+            ? 'Destination marked. Accept the contract to reserve local rendezvous contacts.'
+            : `Destination marked: ${solution.endpoint.systemName}. Enter the contracted system before local approach.`;
+    }
+    this.haulManifest.viewOffset = 0;
+    this.forceFullRender = true;
+  }
+
+  /** Routes exclusive modal controls through durable lifecycle, voyage and commissioning coordinators. */
+  private handleHaulManifestInput(): boolean {
+    if (!this.interfaceMode.is('haul-manifest')) return false;
+    const model = this.haulManifest.createModel(this.renderer.getGridCols(), this.renderer.getGridRows());
+    const intent = this.haulManifest.input(this.inputManager, model);
+    if (intent === 'close') this.closeHaulManifest();
+    else if (intent === 'navigate') this.navigateHaulManifest();
+    else if (intent) {
+      const mission = this.haulManifest.data?.mission;
+      const objective = mission && getHeavyHaulObjective(mission);
+      let result = { ok: false, message: 'No contract selected.' };
+      if (intent === 'depart' && objective?.resupply) {
+        result = this.departHaulJourney({
+          resupply: objective.resupply,
+          expectedQuote: this.haulManifest.data?.quote.quote ?? undefined,
+        });
+      } else if (intent === 'deploy') result = this.deployHaulInstallation();
+      else if (intent === 'recover' || intent === 'couple' || (intent === 'accept' && mission)) {
+        const action =
+          intent === 'accept' ? { kind: 'accept' as const, mission: mission! } : { kind: intent };
+        result = commitHaulChange(
+          prepareHaulLifecycle(
+            this.createSaveGame(),
+            action,
+            this.stateManager.currentSystem,
+            this.haulJourneyWorld
+          ),
+          this.journeyCheckpointWriter,
+          (save) => this.applyHaulChange(save)
+        );
+      }
+      // Arrival changes the world mode and clears transient menus; restore only this deliberate paused receipt.
+      this.interfaceMode.open('haul-manifest');
+      if (intent === 'depart' && result.ok) this.haulManifest.returnTo = 'none';
+      this.haulManifest.refresh(
+        this.buildHaulManifestData(intent === 'recover' && result.ok ? undefined : mission),
+        result.message,
+        result.ok
+      );
+      this.statusMessage = result.message;
+      if (this.stateManager.state === 'starbase') this.starbaseMode.alert = result.message;
+      this.inputManager.clearState();
+      this.forceFullRender = true;
+    }
+    if (this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
   }
 
   /** Lazily owns visited stellar/station phases, including lightweight non-canvas harnesses. */
@@ -1577,6 +1797,8 @@ export class Game {
         ? createObservatorySnapshot()
         : (save.observatory ?? createObservatorySnapshot())
     );
+    if (!isLegacyGalaxyMigration && save.infrastructure.length)
+      this.observatoryService.invalidateInfrastructure();
     this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.tutorialHintsShown = new Set(save.tutorialHintsShown);
     this.statusMessage = wasRelocatedFromLegacySystem
@@ -1650,7 +1872,8 @@ export class Game {
       system,
       tow ? this.missionProgress.getMission(tow.missionId) : undefined,
       this.orbitalHistory.get(systemAddressKey(systemAddress(system)))?.orbit,
-      this.bulkAdvanceSeconds ?? 0
+      this.bulkAdvanceSeconds ?? 0,
+      tow?.stage
     );
   }
 
@@ -1766,6 +1989,17 @@ export class Game {
   /** Handles command bar action. */
   private _handleCommandBarAction(data?: { id?: string; action?: string }): void {
     if (!data?.action) return;
+    if (this.interfaceMode.is('haul-manifest')) {
+      if (this.haulManifest.reveal.isActive) this.haulManifest.reveal.complete();
+      else {
+        this.inputManager.justPressedActions.add(data.action);
+        this.handleHaulManifestInput();
+        this.inputManager.justPressedActions.delete(data.action);
+      }
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('observatory')) {
       if (this.observatoryController.reveal.isActive) this.observatoryController.reveal.complete();
       else {
@@ -2094,11 +2328,10 @@ export class Game {
     return false; // No zoom change
   }
 
-  /** Opens diagnostic work orders while retaining the parent Shipyard selection. */
+  /** Opens diagnostic work orders while retaining the current station Services or Shipyard selection. */
   private openShipRepairConsole(): void {
     const station = this.stateManager.currentStarbase;
-    if (this.stateManager.state !== 'starbase' || !station || station.capabilities?.shipyard === false)
-      return;
+    if (this.stateManager.state !== 'starbase' || !station) return;
     if (this.interfaceMode.kind !== 'none') return;
     this.shipRepairConsole.open();
     this.interfaceMode.open('ship-repairs');
@@ -2114,7 +2347,9 @@ export class Game {
       station.name,
       getStarbaseShipyardProfile(this.getStationPersistenceKey(station)),
       this.renderer.getGridCols(),
-      this.renderer.getGridRows()
+      this.renderer.getGridRows(),
+      station.capabilities.repairs === 'basic',
+      this.starbaseMode.getSectionLabel()
     );
   }
 
@@ -2122,7 +2357,7 @@ export class Game {
   private handleShipRepairInput(): boolean {
     if (!this.interfaceMode.is('ship-repairs')) return false;
     const station = this.stateManager.currentStarbase;
-    if (this.stateManager.state !== 'starbase' || !station || station.capabilities?.shipyard === false) {
+    if (this.stateManager.state !== 'starbase' || !station) {
       this.interfaceMode.close('ship-repairs');
       this.forceFullRender = true;
       return true;
@@ -2130,17 +2365,18 @@ export class Game {
     const model = this.createShipRepairModel();
     const intent = this.shipRepairConsole.input(
       this.inputManager,
-      createRepairQuotes(this.player),
+      createRepairQuotes(this.player, station.capabilities.repairs === 'basic'),
       model.visibleRowCount
     );
     if (intent?.kind === 'close') {
       this.interfaceMode.close('ship-repairs');
       this.shipRepairConsole.reveal.complete();
       this.inputManager.clearState();
-      this.statusMessage = this.shipRepairConsole.notice || 'Returned to Shipyard.';
+      this.statusMessage =
+        this.shipRepairConsole.notice || `Returned to ${this.starbaseMode.getSectionLabel()}.`;
       this.starbaseMode.alert = this.statusMessage;
     } else if (intent?.kind === 'repair') {
-      const result = purchaseRepairs(this.player, intent.target);
+      const result = purchaseRepairs(this.player, intent.target, station.capabilities.repairs === 'basic');
       this.shipRepairConsole.notice = this.statusMessage = result.message;
       this.shipRepairConsole.noticeTone = result.ok ? 'green' : 'red';
       if (result.ok) {
@@ -3818,6 +4054,8 @@ export class Game {
       ...this.missionProgress.getObjectiveCounts(mission, specimens),
       completedObjectiveIds: this.missionProgress.getCompletedObjectiveIds(mission, specimens),
       objectiveShortfalls: this.missionProgress.getObjectiveShortfalls(mission, specimens),
+      haulStage:
+        mission.type === 'heavy-haul' ? this.heavyHaulService.createSnapshot().activeTow?.stage : undefined,
     }));
   }
 
@@ -3904,6 +4142,7 @@ export class Game {
     const model = this.createMissionJournalModel(entries);
     const intent = this.missionJournal.input(this.inputManager, entries, model);
     if (intent === 'close') this.closeMissionJournal();
+    else if (intent === 'haul') this.openHaulManifest(this.missionJournal.selected(entries)?.mission);
     else if (intent === 'landing')
       this.selectMissionLandingSite(this.missionJournal.selected(entries)?.mission);
     if (this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
@@ -3936,7 +4175,7 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
-    if (this.handleShipRepairInput()) {
+    if (this.handleHaulManifestInput() || this.handleShipRepairInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -4441,10 +4680,12 @@ export class Game {
         : quality.confidence >= 48
           ? `${objectKind === 'neutron-star' ? '' : starType ? `${starType.slice(0, 1)}-class ` : ''}${classLabel}`
           : quality.label;
+    const registeredFacility =
+      target.stations.length > 0 || this.infrastructureRegistry.at(systemAddress(target)).length > 0;
     const facilityTrace =
-      quality.confidence >= 72 && target.starbase
+      quality.confidence >= 72 && registeredFacility
         ? 'confirmed'
-        : quality.confidence >= 50 && target.starbase
+        : quality.confidence >= 50 && registeredFacility
           ? 'possible'
           : 'none';
     const lines = [
@@ -4767,6 +5008,11 @@ export class Game {
         this.forceFullRender = true;
       return;
     }
+    if (this.interfaceMode.is('haul-manifest')) {
+      if (this.haulManifest.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     if (this.interfaceMode.is('science-log')) {
       if (this.scienceLog.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
@@ -4979,7 +5225,14 @@ export class Game {
         this.player.position.worldY
       );
       if (peekedSystem) {
-        const starbaseText = peekedSystem.starbase ? ' (Starbase)' : '';
+        const deployed = this.infrastructureRegistry.at(systemAddress(peekedSystem));
+        const starbaseText = peekedSystem.stations.length
+          ? ' (Station)'
+          : deployed.some((asset) => asset.kind === 'automated-depot')
+            ? ' (Logistics Depot)'
+            : deployed.length
+              ? ' (Nav Buoy)'
+              : '';
         const objectLabel = peekedSystem.isStarless
           ? 'Free planetary mass'
           : peekedSystem.isCompactRemnant
@@ -5750,8 +6003,8 @@ export class Game {
   }
 
   /** Returns game date time label. */
-  private getGameDateTimeLabel(): string {
-    const date = new Date(Game.GAME_START_UTC_MS + Math.floor(this.gameClockElapsedSeconds) * 1000);
+  private getGameDateTimeLabel(elapsedSeconds = this.gameClockElapsedSeconds): string {
+    const date = new Date(Game.GAME_START_UTC_MS + Math.floor(elapsedSeconds) * 1000);
     const day = date.getUTCDate().toString().padStart(2, '0');
     const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][
       date.getUTCMonth()
@@ -6496,6 +6749,10 @@ export class Game {
   /** Activates ship menu selection. */
   private activateShipMenuSelection(row: TextTableRow | undefined): void {
     if (!row || row.disabled) return;
+    if (row.id === 'haul-manifest') {
+      this.openHaulManifest();
+      return;
+    }
     if (row.id === 'observatory') {
       this.openObservatory();
       return;
@@ -6831,6 +7088,17 @@ export class Game {
             cells: ['Mission Journal', `${this.missionProgress.getActiveCount()} accepted contracts`],
             detail: 'Review destinations, objectives, habitat coordinates and delivery requirements.',
             cellTones: ['cyan', 'green'],
+            detailTone: 'cyan',
+          },
+          {
+            id: 'haul-manifest',
+            cells: [
+              'Heavy-Haul Manifest',
+              this._heavyHaulService?.createSnapshot().activeTow?.stage.toUpperCase() ?? 'No external tow',
+            ],
+            detail:
+              'External package, voyage certification, coupling, hypersleep transfer and deployment escrow.',
+            cellTones: ['cyan', 'amber'],
             detailTone: 'cyan',
           },
           {
@@ -7491,9 +7759,15 @@ export class Game {
   /** Returns target class label. */
   private getTargetClassLabel(target: NavigationTarget): string {
     if (target instanceof Planet) return 'Planet';
-    if (target instanceof Starbase) return 'Starbase';
+    if (target instanceof Starbase) return target.kind === 'automated-depot' ? 'Logistics Depot' : 'Starbase';
     if (target instanceof NavigationMarker)
-      return target.kind === 'navigation-buoy' ? 'Nav Buoy' : 'Haul Site';
+      return target.kind === 'navigation-buoy'
+        ? 'Nav Buoy'
+        : target.kind === 'departure'
+          ? 'Departure'
+          : target.kind === 'pickup'
+            ? 'Haul Pickup'
+            : 'Deploy Site';
     return `${getStellarStageLabel(target.starType)} ${target.id}`;
   }
 
@@ -7515,6 +7789,16 @@ export class Game {
 
   /** Returns a readable habitation description for the selected navigation target. */
   private getTargetHabitationDetail(target: NavigationTarget): string {
+    if (target instanceof NavigationMarker)
+      return target.kind === 'navigation-buoy'
+        ? 'registered navigation transmitter'
+        : target.kind === 'departure'
+          ? 'fixed strategic departure waypoint'
+          : 'contracted orbital rendezvous';
+    if (target instanceof Starbase)
+      return target.kind === 'automated-depot'
+        ? 'uncrewed trade, fuel and basic repairs'
+        : 'staffed port services';
     if (!(target instanceof Planet) || !target.terraforming) return 'no registered terraforming';
     return target.terraforming.stage === 'complete'
       ? 'complete terraformed colony'
@@ -7780,7 +8064,7 @@ export class Game {
         // Instruments own the entire foreground; do not stage planet rasters underneath them.
         if (this.interfaceMode.is('observatory'))
           this.renderer.drawObservatory(this.createObservatoryModel());
-        else
+        else if (!this.interfaceMode.is('haul-manifest'))
           switch (currentState) {
             case 'hyperspace':
               this.renderer.drawScene(
@@ -7932,6 +8216,10 @@ export class Game {
           this.renderer.drawTextModalTable(this.createScienceLogModel());
         if (this.interfaceMode.is('ship-repairs'))
           this.renderer.drawTextModalTable(this.createShipRepairModel());
+        if (this.interfaceMode.is('haul-manifest'))
+          this.renderer.drawTextModalTable(
+            this.haulManifest.createModel(this.renderer.getGridCols(), this.renderer.getGridRows())
+          );
 
         if (this.quantitySelector) {
           this.renderer.drawTextModalTable(createQuantitySelectorModel(this.quantitySelector));
@@ -8013,6 +8301,7 @@ export class Game {
   /** Returns whether the active interface should hide foreground HUD elements. */
   private shouldSuppressHudForeground(): boolean {
     return (
+      this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('ship-repairs') ||
       this.interfaceMode.is('science-log') ||
@@ -8063,6 +8352,7 @@ export class Game {
   /** Returns whether game clock paused. */
   private isGameClockPaused(): boolean {
     return (
+      this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
@@ -8105,6 +8395,18 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.interfaceMode.is('haul-manifest'))
+      return [
+        'haul-manifest',
+        this.haulManifest.data?.mission?.id,
+        this.haulManifest.data?.stage,
+        this.haulManifest.viewOffset,
+        this.haulManifest.notice,
+        this.haulManifest.confirmation,
+        this.haulManifest.reveal.progress,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
     if (this.interfaceMode.is('observatory'))
       return [
         'observatory',
@@ -8644,6 +8946,7 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.interfaceMode.is('haul-manifest')) return this.haulManifest.createCommandBar();
     if (this.interfaceMode.is('observatory'))
       return {
         context: 'observatory',
@@ -8658,7 +8961,8 @@ export class Game {
           commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
         ],
       };
-    if (this.interfaceMode.is('ship-repairs')) return this.shipRepairConsole.createCommandBar();
+    if (this.interfaceMode.is('ship-repairs'))
+      return this.shipRepairConsole.createCommandBar(this.starbaseMode.getSectionLabel());
     if (this.shipMenuOpen)
       return {
         context: 'ship operations',
@@ -8702,6 +9006,14 @@ export class Game {
             : []),
           ...(this.getJournalLandingBody(selected?.mission)
             ? [commandButton('landing', 'Landing site', 'ENTER_SYSTEM', { key: 'Enter', tone: 'green' })]
+            : []),
+          ...(selected?.mission.type === 'heavy-haul'
+            ? [
+                commandButton('haul-manifest', 'Haul manifest', 'ENTER_SYSTEM', {
+                  key: 'Enter',
+                  tone: 'green',
+                }),
+              ]
             : []),
           commandButton('return', 'Return', 'QUIT', { key: 'Esc' }),
         ],
@@ -9321,6 +9633,10 @@ export class Game {
       this.starbaseMode.alert = this.statusMessage;
       return;
     }
+    if (this.starbaseMode.sectionId === 'services' && row.id === 'repair') {
+      this.openShipRepairConsole();
+      return;
+    }
     if (this.starbaseMode.sectionId === 'missions') {
       this.activateMissionSelection(starbase, row);
       return;
@@ -9471,6 +9787,11 @@ export class Game {
       return;
     }
 
+    if (mission.type === 'heavy-haul') {
+      this.openHaulManifest(mission);
+      return;
+    }
+
     const status = this.missionProgress.getStatus(mission, this.ownedSpecimens);
     if (status === 'COMPLETE') {
       this.starbaseMode.alert = formatMissionDetail(mission, status);
@@ -9547,6 +9868,16 @@ export class Game {
       this.xenobiology
     );
     const missions = generateStarbaseMissions(starbase, system);
+    const haul = this.heavyHaulService.createSnapshot();
+    missions.push(
+      ...this.haulOffers.list(
+        system,
+        starbase,
+        haul.retiredMissionIds,
+        this.missionProgress.getCompletedMissionIds(),
+        this.infrastructureRegistry
+      )
+    );
     for (const contract of contracts) missions.push(resolveMissionNavigation(contract, system, biospheres));
     this.missionProgress.resolveNavigation(system, biospheres);
     const combined = new Map(missions.map((mission) => [mission.id, mission]));
@@ -9709,6 +10040,12 @@ export class Game {
           };
         });
       case 'services':
+        const commissioningFuel = this.stateManager.currentSystem
+          ? (this.infrastructureRegistry
+              .at(systemAddress(this.stateManager.currentSystem))
+              .find((asset) => asset.assetId === starbase.id)?.commissioningFuelRemainingUnits ?? 0)
+          : 0;
+        const repairQuote = createRepairQuotes(this.player, starbase.capabilities.repairs === 'basic')[0];
         return [
           {
             id: 'rover-repair',
@@ -9724,20 +10061,24 @@ export class Game {
             id: 'refuel',
             cells: [
               'D/He3 reactor refuel',
-              `${(1 / CONFIG.FUEL_PER_CREDIT).toFixed(2)}/fuel`,
+              commissioningFuel > 0
+                ? 'Contractor allowance'
+                : `${(1 / CONFIG.FUEL_PER_CREDIT).toFixed(2)}/fuel`,
               'Available',
-              'Uses carried He3 + deuterium first, then station fuel stores.',
+              commissioningFuel > 0
+                ? `${commissioningFuel.toFixed(0)} units free / normal reactor tank only`
+                : 'Uses carried He3 + deuterium first, then station fuel stores.',
             ],
           },
           {
             id: 'repair',
             cells: [
-              `${starbase.capabilities.repairs === 'full' ? 'Full' : 'Basic'} hull inspection`,
-              'TBD',
-              'Standby',
+              `${starbase.capabilities.repairs === 'full' ? 'Full' : 'Basic'} repair control`,
+              `${repairQuote.cost.toLocaleString()} Cr`,
+              'Available',
               starbase.capabilities.repairs === 'full'
-                ? 'Crewed yard can support structural work.'
-                : 'Automated drones support emergency patching only.',
+                ? 'Inspect and restore hull, equipment and terrain vehicle.'
+                : 'Drone restoration of hull and rover / no equipment refits.',
             ],
           },
           {
@@ -9796,7 +10137,10 @@ export class Game {
                 `${mission.rewardCredits} Cr`,
                 mission.risk,
                 status === 'ACTIVE'
-                  ? `ACTIVE ${progress.completed}/${progress.total}`
+                  ? mission.type === 'heavy-haul' &&
+                    this.heavyHaulService.createSnapshot().activeTow?.stage === 'arrived'
+                    ? 'DEPLOY READY'
+                    : `ACTIVE ${progress.completed}/${progress.total}`
                   : getMissionStatusLabel(status),
                 mission.summary,
               ],
