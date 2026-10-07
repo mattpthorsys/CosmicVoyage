@@ -13,6 +13,7 @@ export interface StationCapabilities {
   readonly trade: boolean;
   readonly fuel: boolean;
   readonly medical: boolean;
+  readonly surveyExchange: boolean;
   readonly repairs: 'basic' | 'full';
   readonly missions: boolean;
   readonly crew: boolean;
@@ -24,6 +25,7 @@ const STARBASE_CAPABILITIES: StationCapabilities = Object.freeze({
   trade: true,
   fuel: true,
   medical: false,
+  surveyExchange: false,
   repairs: 'full',
   missions: true,
   crew: true,
@@ -35,6 +37,7 @@ const DEPOT_CAPABILITIES: StationCapabilities = Object.freeze({
   trade: true,
   fuel: true,
   medical: true,
+  surveyExchange: true,
   repairs: 'basic',
   missions: true,
   crew: false,
@@ -116,6 +119,7 @@ export class Starbase {
       this.capabilities.trade ? 'Trade' : null,
       this.capabilities.fuel ? 'Fuel' : null,
       this.capabilities.medical ? 'Robotic Medical' : null,
+      this.capabilities.surveyExchange ? 'Chart Exchange' : null,
       `${this.capabilities.repairs === 'full' ? 'Full' : 'Basic'} Repair`,
       this.capabilities.missions
         ? this.kind === 'automated-depot'

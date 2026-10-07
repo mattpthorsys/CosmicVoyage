@@ -1,13 +1,10 @@
 # Automated Depots
 
-Status: M0-M4 implemented; M3-M4 await Luna runtime/browser verification.
-Application/test type checking, ESLint and function-documentation checks pass.
-The M0-M2 baseline passed `npm run check` with all 1,179 tests. A headless Chrome
-smoke check rendered the medical bay at desktop and narrow sizes,
-confirmed both fonts and the No-default treatment quote, and reported no browser
-errors. The full scripted Playwright interaction flow was not run because this
-environment has no installed Playwright package. Chart exchange and broadcasts
-remain M5-M6 planning work.
+Status: M0-M4 verified with `npm run check` (1,220 tests) and the full depot
+Playwright flow, including services, robot contracts, resource reports and
+desktop/narrow rendering without browser errors or stale orbital pixels.
+M5 chart exchange is implemented and awaits the requested separate Luna runtime
+verification gate. M6 broadcasts are being implemented next.
 
 ## Playing
 
@@ -129,6 +126,39 @@ offers immediately or accumulate new funds. Resource report lists unreserved
 and committed funds and the next refresh epoch. Sponsor replenishment is outside
 this milestone.
 
+## Astrometric Exchange (M5)
+
+Depot Services / **Astrometric exchange** opens a paused scientific terminal.
+Up/Down selects records; PgUp/PgDn scrolls the readout; Enter reviews a measured
+upload; Y/N accepts or declines the No-default quote; Esc returns to Services.
+Tab switches between measured evidence and public charts. Charts download free
+with Enter; A marks a filed chart; R refreshes the 40-light-year public catalogue.
+The first reveal key only finishes writing the terminal.
+
+Actual observatory stellar spectra cross quality thresholds of 0.35, 0.65 and
+0.85. Local stellar scans, system surveys and orbital/terrain surveys supply
+distinct stable object records. Spectra do not count as local system or orbital
+surveys. Public charts only provide navigation references: downloading does not
+complete mission objectives, generate scan data or expose surface biology.
+
+Each verified depot receives a once-only 2,400 Cr scientific allowance, separate
+from its mission escrow and material inventory. The shared campaign ledger pays
+only the incremental value of a higher tier, across all depots. Unfunded evidence
+remains available; contract premiums can accompany one base scientific sale.
+Base cumulative tier values are 12/25/40 Cr for stellar evidence, 55/85/110 Cr
+for system surveys and 90/135/165 Cr for body surveys. A bounded frontier premium
+increases those values by at most two times. Routine local system scans supply
+the first system tier; surveyed/mapped/sampled bodies supply body tiers 1/2/3.
+
+Evidence is a compact 4,096-record index, not a duplicate of detailed observatory
+measurements. Paid evidence can be evicted, but the separate 16,384-entry payment
+ledger is never evicted. If unpaid evidence fills its cache, new records are
+refused until uploads make space. A full receipt ledger refuses new paid
+identities while allowing existing tier improvements. Public navigation charts
+are capped at 512; sponsors at 2,048. No astrometric data uses physical cargo.
+Uploads and chart downloads checkpoint detached outcomes before assignment;
+failed writes leave receipts, funding, charts and credits unchanged.
+
 ## Ownership And Persistence
 
 - `core/depot_types.ts`: typed operational records, work orders and validation.
@@ -138,6 +168,13 @@ this milestone.
 - `core/depot_contract_validation.ts`: restricted robot definitions and
   cross-owner mission/escrow validation at import.
 - `core/depot_rules.ts`: pure stock/cargo/credit-limited quotes and sealed recipes.
+- `core/survey_data_service.ts`, `survey_data_types.ts`: compact measured evidence,
+  public-chart provenance, finite sponsor funding and durable shared receipts.
+- `core/survey_observations.ts`: local discovery-to-evidence adapter.
+- `core/frontier_catalogue.ts`: bounded worker-backed public descriptors and verified
+  natural-depot summaries, without terrain preparation or new generation rolls.
+- `core/frontier_terminal.ts`, `survey_exchange_console.ts`: reusable thin-text
+  terminal selection/reveal and formatted scientific quotes.
 - `core/depot_service.ts`: once-only initialisation, supported targets and coordinated
   service commits, including a detached pre-commit checkpoint.
 - `core/depot_service_console.ts`: selection, reveal, paging, semantic text models
@@ -149,7 +186,9 @@ this milestone.
 - `Game`: prepares stations, wires modal input/drawing, persists outcomes and publishes
   resource effects only after a successful commit.
 
-Save schema 23 stores extraction profiles/carry and small sponsor/offer records
+Save schema 24 adds compact survey evidence, receipts, public charts and scientific
+sponsor accounts. Schema 23 migrates with empty science records rather than
+inventing historical observations or payments. Schema 23 stores extraction profiles/carry and small sponsor/offer records
 inside `depots`, keyed by stable station ID. Canonical accepted terms remain in
 the ordinary mission ledger. Schema 21 records migrate with extraction pending;
 schema 22 preserves extraction and starts with an uninitialised job board. Older
@@ -183,7 +222,8 @@ paused time, desktop/narrow terminal rendering and browser errors. Captures and
 the importable fixture are written to `/tmp/cosmic-depots` by default.
 It now also covers robot acceptance/decline, CLAIMABLE cargo, handoff/payment,
 save/reload, stable mission selection and resource reports. That extended flow
-has been written but not run yet.
+passed during the M3-M4 gate using the installed Playwright Core package at
+`/home/mpalmer/.cache/ms-playwright-go/1.57.0/package`.
 
 M3-M4 Luna gate:
 

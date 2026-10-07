@@ -86,6 +86,7 @@ async function main() {
         siteId: site.id,
         save: {
           version: SAVE_GAME_VERSION,
+          surveyData: { evidence: {}, paid: {}, charts: {}, buyers: {} },
           depots: {},
           generationVersion: CONFIG.GALAXY_MODEL_VERSION,
           savedAt: new Date().toISOString(),

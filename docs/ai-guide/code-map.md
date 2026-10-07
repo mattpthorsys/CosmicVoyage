@@ -1,5 +1,12 @@
 # Code Map
 
+Frontier science: `core/survey_data_service.ts` owns compact measured evidence and
+campaign-wide payment receipts; `survey_data_types.ts` validates provenance,
+funding and bounds. `survey_observations.ts` adapts local discovery updates.
+`frontier_catalogue.ts` queries lightweight public descriptors and verifies only
+natural-depot candidates. `frontier_terminal.ts` owns reusable information-terminal
+selection, scrolling and reveal; `survey_exchange_console.ts` formats quotes and charts.
+
 Use this file to find the likely owner of a change before searching globally.
 
 ## Entry And Configuration

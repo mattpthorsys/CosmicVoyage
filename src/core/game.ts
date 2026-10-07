@@ -27,6 +27,17 @@ import {
   createDepotResourceDialog,
 } from './depot_service_console';
 import type { DepotDialogIntent, DepotServiceKind, DepotServiceQuote } from './depot_types';
+import { SurveyDataService } from './survey_data_service';
+import { createSurveyDataSnapshot, parseSurveyAddress, type SurveyUploadQuote } from './survey_data_types';
+import { recordLocalSurvey } from './survey_observations';
+import { FrontierCatalogue } from './frontier_catalogue';
+import { FrontierTerminal, frontierLine, type FrontierTerminalEntry } from './frontier_terminal';
+import {
+  createSurveyUploadEntries,
+  createPublicChartEntries,
+  createSurveyUploadDialog,
+  type SurveyDialogIntent,
+} from './survey_exchange_console';
 import { materializeHaulSites } from './haul_sites';
 import {
   commitHaulChange,
@@ -335,7 +346,7 @@ interface FrameProfile {
   fps: number;
 }
 
-type GameDialogIntent = MissionDialogIntent | DepotDialogIntent;
+type GameDialogIntent = MissionDialogIntent | DepotDialogIntent | SurveyDialogIntent;
 
 interface HyperspaceNavigationContact {
   dx: number;
@@ -406,6 +417,10 @@ export class Game {
   private _depotService?: DepotService;
   private _depotContracts?: DepotContracts;
   private _depotConsole?: DepotServiceConsole;
+  private _surveyData?: SurveyDataService;
+  private _frontierCatalogue?: FrontierCatalogue;
+  private _frontierTerminal?: FrontierTerminal;
+  private frontierSearchSerial = 0;
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
   private _surfaceMode?: SurfaceModeController;
@@ -449,7 +464,9 @@ export class Game {
       this.gameSeedPRNG,
       undefined,
       this.infrastructureRegistry,
-      () => this.bulkAdvanceSeconds ?? 0
+      () => this.bulkAdvanceSeconds ?? 0,
+      (contact, observation) =>
+        this.surveyData.recordRemote(contact, observation, this.gameClockElapsedSeconds ?? 0)
     ));
   }
 
@@ -476,6 +493,21 @@ export class Game {
   /** Keeps robotic service selection/reveal separate from station tabs and gameplay inventory. */
   private get depotConsole(): DepotServiceConsole {
     return (this._depotConsole ??= new DepotServiceConsole());
+  }
+
+  /** Owns paid science separately from catalogue details that can be evicted. */
+  private get surveyData(): SurveyDataService {
+    return (this._surveyData ??= new SurveyDataService());
+  }
+
+  /** Shares bounded worker-backed physical catalogue queries between frontier instruments. */
+  private get frontierCatalogue(): FrontierCatalogue {
+    return (this._frontierCatalogue ??= new FrontierCatalogue(this.systemDataGenerator, this.gameSeedPRNG));
+  }
+
+  /** Keeps frontier terminal presentation out of science, station and navigation owners. */
+  private get frontierTerminal(): FrontierTerminal {
+    return (this._frontierTerminal ??= new FrontierTerminal());
   }
 
   /** Coordinates bounded robotic jobs through the existing stock, mission and operational owners. */
@@ -505,6 +537,7 @@ export class Game {
         system
       );
       this.depotContracts.refreshStation(station, system, this.gameClockElapsedSeconds ?? 0);
+      if (station.capabilities.surveyExchange) this.surveyData.ensureBuyer(station.id, address);
     }
   }
 
@@ -563,6 +596,7 @@ export class Game {
     else if (intent?.kind === 'begin-homebound') this.beginHomeboundVoyage(intent.assetId, intent.quote);
     else if (intent?.kind === 'depot-service') this.performDepotService(intent.quote);
     else if (intent?.kind === 'depot-contract') this.performDepotContract(intent.missionId, intent.action);
+    else if (intent?.kind === 'survey-upload') this.performSurveyUpload(intent.quote);
     this.forceFullRender = true;
     this._publishStatusUpdate();
   }
@@ -2113,6 +2147,7 @@ export class Game {
       observatory: this._observatoryService?.createSnapshot() ?? createObservatorySnapshot(),
       economy: this.starbaseCommerce.createSnapshot(),
       depots: this._depotService?.createSnapshot() ?? {},
+      surveyData: this._surveyData?.createSnapshot() ?? createSurveyDataSnapshot(),
       xenobiology: this.xenobiology.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
     };
@@ -2135,6 +2170,7 @@ export class Game {
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
     this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.depotService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.depots);
+    this.surveyData.restoreSnapshot(isLegacyGalaxyMigration ? createSurveyDataSnapshot() : save.surveyData);
     // Board refresh must see restored accepted jobs before station materialisation allocates new offer slots.
     this.missionProgress.restoreSnapshot({
       acceptedMissionIds: isLegacyGalaxyMigration ? [] : save.acceptedMissionIds,
@@ -2486,6 +2522,14 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
+    if (this.interfaceMode.is('survey-exchange')) {
+      this.inputManager.justPressedActions.add(data.action);
+      this.handleFrontierTerminalInput();
+      this.inputManager.justPressedActions.delete(data.action);
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('science-log')) {
       this.inputManager.justPressedActions.add(data.action);
       this.handleScienceLogInput();
@@ -2643,6 +2687,7 @@ export class Game {
     this.eventUnsubscribers.splice(0).forEach((unsubscribe) => unsubscribe());
     this.movementSystem.destroy();
     this.observatorySearchSerial++;
+    this.frontierSearchSerial++;
     this._observatoryService?.cancel();
     this.miningSystem.destroy();
     this.stateManager.destroy();
@@ -2822,6 +2867,185 @@ export class Game {
     this.terminalOverlay.clear();
     this.astrometricOverlay.clear();
     this.forceFullRender = true;
+  }
+
+  /** Opens the explicit scientific capability while retaining the current docked station as parent. */
+  private openSurveyExchange(): void {
+    const station = this.stateManager.currentStarbase;
+    const system = this.stateManager.currentSystem;
+    if (
+      this.interfaceMode.kind !== 'none' ||
+      this.stateManager.state !== 'starbase' ||
+      !system ||
+      !station?.capabilities.surveyExchange
+    )
+      return;
+    this.prepareSystemDepots(system);
+    this.frontierTerminal.open();
+    this.interfaceMode.open('survey-exchange');
+    this.inputManager.clearState();
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    this.forceFullRender = true;
+    void this.refreshPublicCharts();
+  }
+
+  /** Acquires navigation descriptors only; the downloaded chart path never triggers a scientific scan. */
+  private async refreshPublicCharts(): Promise<void> {
+    const serial = ++this.frontierSearchSerial;
+    this.frontierTerminal.coverage = 'Acquiring public navigation charts...';
+    try {
+      const contacts = await this.frontierCatalogue.search(
+        this.player.position.worldX,
+        this.player.position.worldY,
+        40,
+        () => serial === this.frontierSearchSerial && this.interfaceMode.is('survey-exchange')
+      );
+      if (!contacts || serial !== this.frontierSearchSerial) return;
+      this.frontierTerminal.contacts = contacts.slice(0, 64);
+      this.frontierTerminal.coverage = `${this.frontierTerminal.contacts.length} public contacts / 40 ly chart radius`;
+    } catch (error) {
+      if (serial !== this.frontierSearchSerial) return;
+      this.frontierTerminal.coverage = 'Public chart link unavailable; R retries acquisition.';
+      logger.warn('[Survey exchange] Catalogue acquisition failed.', error);
+    }
+    this.forceFullRender = true;
+  }
+
+  /** Prepares measured uploads or public charts from distinct provenance owners. */
+  private getFrontierTerminalEntries(): FrontierTerminalEntry[] {
+    return this.frontierTerminal.tab === 'charts'
+      ? createPublicChartEntries(this.surveyData, this.frontierTerminal.contacts)
+      : createSurveyUploadEntries(this.surveyData, this.stateManager.currentStarbase?.id ?? '');
+  }
+
+  /** Uses the established responsive terminal model and semantic fonts for scientific exchange. */
+  private createFrontierTerminalModel(): TextModalTableModel {
+    const station = this.stateManager.currentStarbase;
+    const storage = this.surveyData.storageStatus();
+    return this.frontierTerminal.createModel(
+      'ASTROMETRIC EXCHANGE',
+      [
+        frontierLine(station?.name ?? '', 'cyan', true),
+        frontierLine(
+          this.frontierTerminal.tab === 'uploads' ? 'MEASURED EVIDENCE' : 'PUBLIC NAVIGATION CHARTS',
+          'cyan',
+          true
+        ),
+        frontierLine(
+          `Scientific sponsor: ${this.surveyData.availableCredits(station?.id ?? '')} Cr remaining`,
+          'amber'
+        ),
+        frontierLine('Research payments / navigation references / no physical cargo volume', 'muted'),
+        ...(storage.evidence >= 4096
+          ? [
+              frontierLine(
+                'Evidence cache full; upload pending records to free measured-data storage.',
+                'amber'
+              ),
+            ]
+          : []),
+        ...(storage.receipts >= 16384
+          ? [
+              frontierLine(
+                'Payment ledger full; new object payments unavailable. Existing receipts retained.',
+                'amber'
+              ),
+            ]
+          : []),
+      ],
+      this.getFrontierTerminalEntries(),
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows()
+    );
+  }
+
+  /** Keeps every key inside the terminal, including reveal skipping and navigation-only chart actions. */
+  private handleFrontierTerminalInput(): boolean {
+    if (!this.interfaceMode.is('survey-exchange')) return false;
+    const station = this.stateManager.currentStarbase;
+    if (!station?.capabilities.surveyExchange || this.stateManager.state !== 'starbase') {
+      this.closeFrontierTerminal();
+      return true;
+    }
+    const model = this.createFrontierTerminalModel();
+    const entries = this.getFrontierTerminalEntries();
+    const action = this.frontierTerminal.input(this.inputManager, entries, model.visibleRowCount);
+    const selected = entries.find((entry) => entry.id === this.frontierTerminal.selectedId);
+    if (action === 'close') this.closeFrontierTerminal();
+    else if (action === 'tab') {
+      this.frontierTerminal.tab = this.frontierTerminal.tab === 'uploads' ? 'charts' : 'uploads';
+      this.frontierTerminal.selectedId = null;
+      this.frontierTerminal.viewOffset = 0;
+      this.frontierTerminal.notice = '';
+    } else if (action === 'refresh') void this.refreshPublicCharts();
+    else if (action === 'activate' && selected) {
+      if (this.frontierTerminal.tab === 'uploads') {
+        const quote = this.surveyData.quote(station.id, selected.id);
+        if (quote) this.showTerminalDialog(createSurveyUploadDialog(quote, selected.title));
+      } else {
+        const downloaded = this.surveyData.download(
+          parseSurveyAddress(selected.id),
+          selected.title,
+          this.gameClockElapsedSeconds,
+          (surveyData) => {
+            if (this.journeyCheckpointWriter)
+              this.journeyCheckpointWriter({ ...this.createSaveGame(), surveyData });
+          }
+        );
+        this.frontierTerminal.notice = downloaded
+          ? 'Public chart filed / navigation reference only.'
+          : 'Checkpoint failed. Chart was not filed.';
+      }
+    } else if (action === 'mark' && selected && this.frontierTerminal.tab === 'charts') {
+      if (this.surveyData.listCharts().some((entry) => entry.key === selected.id)) {
+        this.observatoryService.markSystemDestination(parseSurveyAddress(selected.id), selected.title);
+        this.frontierTerminal.notice = `Destination marked: ${selected.title}.`;
+      } else this.frontierTerminal.notice = 'Download this chart before marking its navigation reference.';
+    }
+    if (action || this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
+  }
+
+  /** Cancels outstanding frontier work and consumes held keys before restoring the parent interface. */
+  private closeFrontierTerminal(): void {
+    this.frontierSearchSerial++;
+    this.frontierTerminal.reveal.complete();
+    if (this.frontierTerminal.returnTo === 'ship-menu') this.interfaceMode.open('ship-menu');
+    else this.interfaceMode.close();
+    this.inputManager.clearState();
+    this.forceFullRender = true;
+  }
+
+  /** Checkpoints evidence, scientific funds and account credits as one outcome before publishing payment. */
+  private performSurveyUpload(quote: SurveyUploadQuote): void {
+    const station = this.stateManager.currentStarbase;
+    if (
+      !this.interfaceMode.is('survey-exchange') ||
+      !station?.capabilities.surveyExchange ||
+      station.id !== quote.stationId
+    )
+      return;
+    const result = this.surveyData.upload(quote, this.player, (outcome) => {
+      if (!this.journeyCheckpointWriter) return;
+      const save = this.createSaveGame();
+      this.journeyCheckpointWriter({
+        ...save,
+        surveyData: outcome.surveyData,
+        player: { ...save.player, resources: outcome.resources },
+      });
+    });
+    this.frontierTerminal.notice = this.statusMessage = this.starbaseMode.alert = result.message;
+    if (result.ok)
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: result.credits,
+      });
+    this.showTerminalDialog({
+      title: result.ok ? 'SURVEY EVIDENCE FILED' : 'UPLOAD REFUSED',
+      kind: 'message',
+      lines: [frontierLine(result.message, result.ok ? 'green' : 'amber')],
+    });
   }
 
   /** Prepares supply-aware work orders without asking presentation to decide how much can be repaired. */
@@ -4782,7 +5006,12 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
-    if (this.handleHaulManifestInput() || this.handleShipRepairInput() || this.handleDepotServiceInput()) {
+    if (
+      this.handleHaulManifestInput() ||
+      this.handleShipRepairInput() ||
+      this.handleDepotServiceInput() ||
+      this.handleFrontierTerminalInput()
+    ) {
       this._publishStatusUpdate();
       return;
     }
@@ -5477,6 +5706,15 @@ export class Game {
     target: Planet | SolarSystem | StellarBody,
     discoveryLevel: DiscoveryLevel
   ): void {
+    const localSystem = this.stateManager.currentSystem;
+    if (localSystem && this.stateManager.state !== 'hyperspace')
+      recordLocalSurvey(
+        this.surveyData,
+        target,
+        localSystem,
+        discoveryLevel,
+        this.gameClockElapsedSeconds ?? 0
+      );
     const systemName =
       target instanceof SolarSystem ? target.name : (this.stateManager.currentSystem?.name ?? null);
     const updates = this.missionProgress.recordDiscovery(
@@ -5619,6 +5857,11 @@ export class Game {
     this.hyperspaceSurveyService?.setInstrumentMultiplier?.(
       getObservatoryCapabilities(this.player.ship).stellarRangeMultiplier
     );
+    if (this.interfaceMode.is('survey-exchange')) {
+      if (this.frontierTerminal.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
     if (this.interfaceMode.is('observatory')) {
       if (this.observatoryController.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
@@ -8882,6 +9125,8 @@ export class Game {
           this.renderer.drawTextModalTable(this.createShipRepairModel());
         if (this.interfaceMode.is('depot-service'))
           this.renderer.drawTextModalTable(this.createDepotServiceModel());
+        if (this.interfaceMode.is('survey-exchange'))
+          this.renderer.drawTextModalTable(this.createFrontierTerminalModel());
         if (this.interfaceMode.is('haul-manifest'))
           this.renderer.drawTextModalTable(
             this.haulManifest.createModel(this.renderer.getGridCols(), this.renderer.getGridRows())
@@ -8979,6 +9224,7 @@ export class Game {
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('ship-repairs') ||
       this.interfaceMode.is('depot-service') ||
+      this.interfaceMode.is('survey-exchange') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -9032,6 +9278,7 @@ export class Game {
       this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('depot-service') ||
+      this.interfaceMode.is('survey-exchange') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -9078,6 +9325,19 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
+    if (this.interfaceMode.is('survey-exchange') && !this.terminalDialog.isOpen)
+      return [
+        'survey-exchange',
+        this.frontierTerminal.tab,
+        this.frontierTerminal.selectedId,
+        this.frontierTerminal.viewOffset,
+        this.frontierTerminal.notice,
+        this.frontierTerminal.coverage,
+        this.frontierTerminal.reveal.progress,
+        this.surveyData.revision,
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows(),
+      ].join('|');
     if (this.terminalDialog.isOpen)
       return [
         'terminal-dialog',
@@ -9637,6 +9897,8 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
+    if (this.interfaceMode.is('survey-exchange') && !this.terminalDialog.isOpen)
+      return this.frontierTerminal.createCommandBar('survey');
     if (this.screenTransition.isActive)
       return {
         context: this.sleepingHaulCrew ? 'crew hypersleep' : 'automatic transit',
@@ -10362,6 +10624,10 @@ export class Game {
     }
     if (this.starbaseMode.sectionId === 'services' && row.id === 'medical') {
       this.openDepotServiceConsole('medical');
+      return;
+    }
+    if (this.starbaseMode.sectionId === 'services' && row.id === 'chart-exchange') {
+      this.openSurveyExchange();
       return;
     }
     if (

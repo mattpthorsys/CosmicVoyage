@@ -122,6 +122,18 @@ export function createDepotServiceRows(
         'normal',
       ],
     },
+    {
+      id: 'chart-exchange',
+      cells: [
+        'Astrometric exchange',
+        'Quote / free charts',
+        'ONLINE',
+        'Measured surveys / public navigation charts.',
+      ],
+      detail:
+        'Review funded uploads or download navigation references; biological specimens are handled elsewhere.',
+      cellTones: ['cyan', 'amber', 'green', 'normal'],
+    },
     ...(medical
       ? [
           {

@@ -1,11 +1,9 @@
 # Automated Frontier Depots: Implementation Plan
 
-Status: M0-M2 implemented and verified (1,179 tests plus lint, typecheck and
-production build). A Chrome smoke check rendered the medical bay at desktop and
-narrow sizes. The scripted end-to-end Playwright flow remains available for an
-environment with Playwright installed. M3-M4 are implemented with runtime/browser
-verification pending; both pass static type, lint and function-doc checks.
-M5 onwards remain planned. See [the
+Status: M0-M4 implemented and verified with `npm run check` (1,220 tests) and the
+full depot Playwright flow at desktop/narrow widths. M5 astrometric exchange is
+implemented; its new tests and browser checks await the requested Luna gate.
+M6 broadcasts are the next implementation milestone. See [the
 current depot guide](../automated-depots.md) for controls, recipes, ownership
 and verification commands.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
@@ -425,6 +423,8 @@ cooldown, fixed accepted terms and unchanged biology/haul/survey contracts.
 Suggested commit: `Add funded supply and survey contracts to automated depots`.
 
 ### M5: Compact Astrometric Exchange
+
+Implemented in save schema 24; runtime verification is pending the separate Luna gate.
 
 Add the shared evidence/submission owner and feed it genuine improvements from
 stellar scans, system/orbital surveys and observatory observations. Implement

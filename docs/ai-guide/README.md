@@ -80,8 +80,8 @@ verification. The planning documents preserve its design rationale:
 - [Automated frontier-depot implementation plan](../plans/automated-depots-first-version.md):
   resource-limited robotic services, medical care, bounded extraction, supply/survey
   jobs, chart exchange, broadcasts, persistence and staged verification. M0-M2
-  are verified; M3 extraction and M4 robot contracts are implemented with runtime/browser verification pending.
-  M5 onwards remain planned.
+  through M4 are verified (1,220 tests and the full depot browser flow).
+  M5 chart exchange is implemented with new runtime verification pending; M6 broadcasts are next.
 - [Automated depot guide](../automated-depots.md): current finite-stock repairs,
   reactor loading, robotic treatment, service controls, save ownership and the
-  pending M3-M4 Luna verification checklist.
+  astrometric exchange and the pending M5-M6 Luna verification checklist.

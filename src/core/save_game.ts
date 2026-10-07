@@ -40,10 +40,17 @@ import { sameHaulAddress } from './heavy_haul_types';
 import type { SystemOrbitHistoryRecord } from './system_orbit_state';
 import { validateDepotSnapshot, type DepotSnapshot } from './depot_types';
 import { validateDepotContracts } from './depot_contract_validation';
+import {
+  createSurveyDataSnapshot,
+  validateSurveyDataSnapshot,
+  type SurveyDataSnapshot,
+} from './survey_data_types';
 
-export const SAVE_GAME_VERSION = 23;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v23';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v23';
+export const SAVE_GAME_VERSION = 24;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v24';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v24';
+const VERSION_TWENTY_THREE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v23';
+const VERSION_TWENTY_THREE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v23';
 const VERSION_TWENTY_TWO_SESSION_SAVE_KEY = 'cosmic-voyage.session.v22';
 const VERSION_TWENTY_TWO_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v22';
 const VERSION_TWENTY_ONE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v21';
@@ -289,7 +296,12 @@ export interface GameSaveV23 extends Omit<GameSaveV22, 'version'> {
   version: 23;
 }
 
-export type GameSave = GameSaveV23;
+export interface GameSaveV24 extends Omit<GameSaveV23, 'version'> {
+  version: 24;
+  surveyData: SurveyDataSnapshot;
+}
+
+export type GameSave = GameSaveV24;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -344,6 +356,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV21
     | GameSaveV22
     | GameSaveV23
+    | GameSaveV24
   >;
   if (
     record.version !== 1 &&
@@ -368,6 +381,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 20 &&
     record.version !== 21 &&
     record.version !== 22 &&
+    record.version !== 23 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -447,7 +461,12 @@ export function parseGameSave(value: string | unknown): GameSave {
       break;
     case 19:
     case 20:
-      save = { ...(candidate as unknown as GameSaveV20), version: SAVE_GAME_VERSION, depots: {} };
+      save = {
+        ...(candidate as unknown as GameSaveV20),
+        version: SAVE_GAME_VERSION,
+        depots: {},
+        surveyData: createSurveyDataSnapshot(),
+      };
       break;
     case 21: {
       const old = candidate as unknown as GameSaveV21;
@@ -455,6 +474,7 @@ export function parseGameSave(value: string | unknown): GameSave {
       save = {
         ...old,
         version: SAVE_GAME_VERSION,
+        surveyData: createSurveyDataSnapshot(),
         depots: Object.fromEntries(
           Object.entries(old.depots).map(([id, depot]) => [id, { ...depot, extraction: null, jobs: null }])
         ),
@@ -467,14 +487,22 @@ export function parseGameSave(value: string | unknown): GameSave {
       save = {
         ...old,
         version: SAVE_GAME_VERSION,
+        surveyData: createSurveyDataSnapshot(),
         depots: Object.fromEntries(
           Object.entries(old.depots).map(([id, depot]) => [id, { ...depot, jobs: null }])
         ),
       };
       break;
     }
+    case 23:
+      save = {
+        ...(candidate as unknown as GameSaveV23),
+        version: SAVE_GAME_VERSION,
+        surveyData: createSurveyDataSnapshot(),
+      };
+      break;
     default:
-      save = candidate as unknown as GameSaveV23;
+      save = candidate as unknown as GameSaveV24;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -618,6 +646,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   validateEconomy(save.economy);
   validateDepotSnapshot(save.depots, save.gameClockElapsedSeconds, save.economy);
   validateDepotContracts(save.depots, save, save.gameClockElapsedSeconds);
+  validateSurveyDataSnapshot(save.surveyData, save.gameClockElapsedSeconds, save.depots);
   return record.version !== SAVE_GAME_VERSION ? migrateMatReproduction(save) : save;
 }
 
@@ -943,6 +972,7 @@ function migrateV18Save(save: GameSaveV18): GameSave {
     ...save,
     version: SAVE_GAME_VERSION,
     depots: {},
+    surveyData: createSurveyDataSnapshot(),
     systemOrbitHistory:
       save.systemOrbit && save.location.kind !== 'hyperspace'
         ? [
@@ -1447,6 +1477,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_TWENTY_THREE_SESSION_SAVE_KEY,
       VERSION_TWENTY_TWO_SESSION_SAVE_KEY,
       VERSION_TWENTY_ONE_SESSION_SAVE_KEY,
       VERSION_TWENTY_SESSION_SAVE_KEY,
@@ -1481,6 +1512,7 @@ export class SaveGameStorage {
   clearSession(): void {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_TWO_SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_TWENTY_THREE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_ONE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_NINETEEN_SESSION_SAVE_KEY);
@@ -1509,6 +1541,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_TWENTY_THREE_MANUAL_SAVE_KEY,
       VERSION_TWENTY_TWO_MANUAL_SAVE_KEY,
       VERSION_TWENTY_ONE_MANUAL_SAVE_KEY,
       VERSION_TWENTY_MANUAL_SAVE_KEY,
@@ -1543,6 +1576,7 @@ export class SaveGameStorage {
   clearManual(): void {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_TWO_MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_TWENTY_THREE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_ONE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_NINETEEN_MANUAL_SAVE_KEY);

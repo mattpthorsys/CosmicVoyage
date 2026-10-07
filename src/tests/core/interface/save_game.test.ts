@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createSurveyDataSnapshot } from '../../../core/survey_data_types';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { DepotService } from '../../../core/depot_service';
@@ -81,6 +82,7 @@ function createSave(): GameSave {
   return {
     version: SAVE_GAME_VERSION,
     depots: {},
+    surveyData: createSurveyDataSnapshot(),
     xenobiology: createXenobiologySnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-06-20T00:00:00.000Z',

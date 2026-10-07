@@ -54,6 +54,7 @@ async function main() {
           .findIndex((row) => row.id === 'shipyard:observatory:1'),
         save: {
           version: SAVE_GAME_VERSION,
+          surveyData: { evidence: {}, paid: {}, charts: {}, buyers: {} },
           depots: {},
           generationVersion: CONFIG.GALAXY_MODEL_VERSION,
           savedAt: new Date().toISOString(),

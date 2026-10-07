@@ -42,7 +42,11 @@ export class ObservatoryService {
     private readonly seed: PRNG,
     provider: HyperspaceSurveyCellProvider | null = getHyperspaceSurveyCellProvider(),
     private readonly infrastructure?: InfrastructureRegistry,
-    private readonly bulkEpoch: () => number = () => 0
+    private readonly bulkEpoch: () => number = () => 0,
+    private readonly onMeasurement?: (
+      contact: ObservatoryContact,
+      observation: ObservatoryObservation
+    ) => void
   ) {
     this.provider = provider ?? new LocalHyperspaceSurveyCellProvider(generator);
   }
@@ -406,6 +410,7 @@ export class ObservatoryService {
       exposure
     );
     this.retain(contact, record);
+    this.onMeasurement?.(contact, record);
     return {
       record: this.snapshot.observations[contact.id] ?? record,
       seconds: deliberate && capabilities.equipmentClass > 0 && used < 3 ? 300 : 0,

@@ -1,4 +1,5 @@
 import { Player } from '../../core/player';
+import { createSurveyDataSnapshot } from '../../core/survey_data_types';
 import { CargoSystem } from '../../systems/cargo_systems';
 import { StarbaseCommerceService } from '../../core/starbase_commerce';
 import { DepotService } from '../../core/depot_service';
@@ -64,6 +65,7 @@ export function depotContractSave(fixture: ReturnType<typeof depotContractFixtur
     observatory: createObservatorySnapshot(),
     economy: commerce.createSnapshot(),
     depots: depots.createSnapshot(),
+    surveyData: createSurveyDataSnapshot(),
     xenobiology: createXenobiologySnapshot(),
     tutorialHintsShown: [],
   };

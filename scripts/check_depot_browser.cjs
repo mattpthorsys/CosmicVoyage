@@ -100,6 +100,7 @@ async function main() {
         economy[station.id].items[key].units = units;
       const save = parseGameSave({
         version: SAVE_GAME_VERSION,
+        surveyData: { evidence: {}, paid: {}, charts: {}, buyers: {} },
         generationVersion: CONFIG.GALAXY_MODEL_VERSION,
         seed,
         savedAt: new Date().toISOString(),
