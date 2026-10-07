@@ -1,8 +1,8 @@
 # Planetary Cities First Version Implementation Plan
 
-Status: M0 fixtures/baseline capture and M1 generation are implemented and
-verified. M2-M5 are not started. See [the foundations guide](../planetary-cities.md)
-for ownership and verification details. City visuals are not enabled yet.
+Status: M0-M2 are implemented and verified. M3-M5 are not started. See
+[the foundations guide](../planetary-cities.md) for
+ownership and verification details.
 
 Add decorative human settlements to inhabited planets, using one generated
 settlement layer across orbital view, the landing map and surface travel.
@@ -209,6 +209,11 @@ remain unchanged.
 Suggested commit: `Generate deterministic planetary settlement layers`.
 
 ### M2 Render cities from orbit
+
+Status: implemented, verification pending. Optional filtered urban/emission
+channels and cached outgoing atmospheric transmission are connected to the
+production globe. The diagnostic supports matching city-free references,
+rotation and pressure overrides. Request the Luna switch before running checks.
 
 Extend cached solid textures with urban coverage and a separate emission
 channel. Integrate the latter into radiance composition and add the narrow

@@ -115,6 +115,16 @@ the fixed half-cell display grid. Fractional liquid coverage should scale
 coastal lighting and reflection; do not turn it back into a per-pixel binary
 threshold.
 
+Colony orbital textures also prepare optional urban albedo, Float32 coverage
+and linear emission mip channels. Artificial light is added once after all
+stellar contributions and passes only through the cached ground-to-camera
+transmission; reflected-light transfer includes sunlight attenuation and must
+not be reused for it. Ground viewing transmission already includes covered
+limb area. Urban colour and emission share terrain projection and rotation.
+The landing-map terrain still uses the natural colour channel until M3 adds
+settlement marks. See [planetary city foundations](../planetary-cities.md) for
+the current implementation, art budgets and M2 verification results.
+
 Nearby orbital bodies are prepared during the existing predictive surface
 prefetch window and one body texture is built per browser idle callback.
 

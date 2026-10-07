@@ -162,6 +162,28 @@ export class OrbitAtmosphereSampler {
 
   /** Evaluates one star's transfer with the reference's full limb sampling and surface coverage. */
   samplePixel(x: number, y: number, size: number, sun: OrbitVector): OrbitAtmosphereTransfer {
+    const result: OrbitAtmosphereTransfer = {
+      scattering: { r: 0, g: 0, b: 0 },
+      surface: { r: 0, g: 0, b: 0 },
+    };
+    for (const ray of this.getPixelRays(x, y, size)) this.accumulateRay(ray, sun, result);
+    return result;
+  }
+
+  /** Returns outgoing-only ground transmission, including solid coverage exactly once at the limb. */
+  sampleGroundViewingTransmission(x: number, y: number, size: number): RgbColour {
+    const result = { r: 0, g: 0, b: 0 };
+    for (const ray of this.getPixelRays(x, y, size)) {
+      if (!ray.normal) continue;
+      result.r += ray.groundTransmission.r * ray.area;
+      result.g += ray.groundTransmission.g * ray.area;
+      result.b += ray.groundTransmission.b * ray.area;
+    }
+    return result;
+  }
+
+  /** Shares prepared camera rays between stellar transfer and surface emission without new integrations. */
+  private getPixelRays(x: number, y: number, size: number): readonly PreparedRay[] {
     if (this.pixelSize !== size) {
       this.pixels.clear();
       this.cachedRays = 0;
@@ -182,12 +204,7 @@ export class OrbitAtmosphereSampler {
         this.cachedRays += rays.length;
       }
     }
-    const result: OrbitAtmosphereTransfer = {
-      scattering: { r: 0, g: 0, b: 0 },
-      surface: { r: 0, g: 0, b: 0 },
-    };
-    for (const ray of rays) this.accumulateRay(ray, sun, result);
-    return result;
+    return rays;
   }
 
   /** Precomputes camera geometry and exponential view attenuation for all integration segments. */

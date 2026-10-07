@@ -134,11 +134,26 @@
       );
       if (!presets.length) throw new Error('Unknown body preset');
       const size = 96;
-      const rotation = 0.35;
+      const rotation = Number(query.get('rotation') ?? 0.35);
+      if (!Number.isFinite(rotation) || rotation < 0 || rotation >= 1)
+        throw new Error('rotation must be 0..<1');
+      const pressureOverride = query.has('pressure') ? Number(query.get('pressure')) : null;
+      if (pressureOverride !== null && (!Number.isFinite(pressureOverride) || pressureOverride < 0))
+        throw new Error('pressure must be nonnegative bar');
       const step = 1 / 2048;
       const manifest = {
         version: 1,
-        settings: { seed, suite, phaseName, phase, radius, starCount, rotation, rotationStep: step },
+        settings: {
+          seed,
+          suite,
+          phaseName,
+          phase,
+          radius,
+          starCount,
+          rotation,
+          rotationStep: step,
+          pressureOverride,
+        },
         fixtures: [],
       };
       document.querySelector('#settings').textContent =
@@ -267,16 +282,24 @@
         let total = 0;
         let maximum = 0;
         let count = 0;
+        let changedPixels = 0;
         for (let i = 0; i < mask.length; i++) {
           if (!mask[i]) continue;
+          let changed = false;
           for (let channel = 0; channel < 3; channel++) {
             const delta = Math.abs(before.data[i * 4 + channel] - after.data[i * 4 + channel]);
             total += delta;
             maximum = Math.max(maximum, delta);
             count++;
+            if (delta > 0) changed = true;
           }
+          if (changed) changedPixels++;
         }
-        return { meanChannelDelta: count ? total / count : null, maxChannelDelta: count ? maximum : null };
+        return {
+          changedPixels,
+          meanChannelDelta: count ? total / count : null,
+          maxChannelDelta: count ? maximum : null,
+        };
       }
 
       /** Generates one real terrain fixture and captures it through the production globe renderer. */
@@ -307,6 +330,21 @@
         const surface = planet.getSurfaceDataIfReady();
         if (!surface?.heightmap || !surface.heightLevelColors)
           throw new Error(`Missing terrain: ${preset.id}`);
+        // Optical interventions preserve exactly the generated geology and city
+        // footprint, allowing extinction comparisons on the same physical surface.
+        if (pressureOverride !== null) {
+          Object.defineProperty(planet, 'effectiveAtmosphere', {
+            value: { ...planet.effectiveAtmosphere, pressure: pressureOverride },
+          });
+        }
+        const noCities = Object.create(planet);
+        const naturalSurface = { ...surface, settlements: null };
+        Object.defineProperty(noCities, 'getSurfaceDataIfReady', {
+          /** Returns the same prepared terrain with only the decorative city layer disabled. */
+          value() {
+            return naturalSurface;
+          },
+        });
         // Removing air is a diagnostic intervention on this same terrain, not a
         // second generation with different erosion, liquids, or random numbers.
         const bare = Object.create(planet);
@@ -355,7 +393,7 @@
           generator
         );
         const prepareStart = performance.now();
-        renderer.prepareOrbitAssets([planet, bare]);
+        renderer.prepareOrbitAssets(suite === 'settlements' ? [planet, bare, noCities] : [planet, bare]);
         const prepareMs = performance.now() - prepareStart;
         const compose = renderer.composeOrbitRadiance;
 
@@ -456,6 +494,7 @@
         document.querySelector('main').append(section);
         const maps = sourceMaps(surface);
         const stages = {};
+        let cityEffect = null;
         stages.elevation = await recordStage(
           views,
           'elevation',
@@ -489,6 +528,19 @@
           mask
         );
         if (suite === 'settlements') {
+          const withoutCities = render(noCities);
+          stages.noCities = await recordStage(
+            views,
+            'noCities',
+            'Same terrain / cities disabled',
+            withoutCities,
+            mask
+          );
+          cityEffect = frameDifference(
+            withoutCities.getContext('2d').getImageData(0, 0, size, size),
+            atmospheric.getContext('2d').getImageData(0, 0, size, size),
+            mask
+          );
           const groundMask = new Uint8Array(size * size * 16).fill(1);
           stages.landingMap = await recordStage(
             views,
@@ -526,6 +578,7 @@
           hydrosphere: planet.effectiveHydrosphere,
           liquid: surface.liquidOverlay,
           settlements: surface.settlements ?? null,
+          cityEffect,
           sources,
           timings: { generationMs, prepareMs, firstFrameMs },
           frames,

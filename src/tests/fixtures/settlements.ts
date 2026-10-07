@@ -1,5 +1,10 @@
 import type { TerraformingProfile } from '../../entities/habitability';
 import type { SurfaceLiquidOverlay } from '../../entities/planet/surface_liquid';
+import type {
+  SettlementArchetype,
+  SurfaceSettlementCell,
+  SurfaceSettlementLayer,
+} from '../../entities/planet/surface_settlements';
 
 export type SettlementTerrainFixture = 'coast' | 'island' | 'seam' | 'dry' | 'flooded' | 'rough';
 
@@ -11,6 +16,31 @@ export const SETTLEMENT_VISUAL_PRESETS = [
   { id: 'uninhabited', type: 'Rock', distanceAu: 1, stage: null },
   { id: 'depot-only', type: 'Rock', distanceAu: 1, stage: null },
 ] as const;
+
+/** Supplies prepared coverage for optical tests independently of procedural placement. */
+export function settlementLayerFixture(
+  cells: readonly SurfaceSettlementCell[],
+  size = 65,
+  archetype: SettlementArchetype = 'urban'
+): SurfaceSettlementLayer {
+  return {
+    version: 1,
+    sourceWidth: size,
+    sourceHeight: size,
+    longitudePeriod: size - 1,
+    sites: [
+      {
+        id: 'fixture-city',
+        x: (cells[0]?.x ?? 0) + 0.5,
+        y: (cells[0]?.y ?? 0) + 0.5,
+        archetype,
+        layoutSeed: 'fixture-city',
+        patches: [],
+      },
+    ],
+    cells: [...cells].sort((a, b) => a.y - b.y || a.x - b.x),
+  };
+}
 
 /** Supplies a controlled colony environment without changing natural geology or generation seeds. */
 export function settlementTerraformingFixture(stage: 'partial' | 'complete'): TerraformingProfile {

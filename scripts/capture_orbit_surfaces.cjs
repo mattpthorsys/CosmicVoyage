@@ -17,10 +17,12 @@ async function main() {
       seed: { type: 'string', default: 'orbit-surface-baseline-v1' },
       suite: { type: 'string', default: 'surfaces' },
       body: { type: 'string' },
+      rotation: { type: 'string' },
+      pressure: { type: 'string' },
     },
   });
   const url = new URL(values.url);
-  for (const key of ['phase', 'stars', 'radius', 'seed', 'suite', 'body']) {
+  for (const key of ['phase', 'stars', 'radius', 'seed', 'suite', 'body', 'rotation', 'pressure']) {
     if (values[key] !== undefined) url.searchParams.set(key, values[key]);
   }
   const output = path.resolve(values.out);
@@ -108,6 +110,7 @@ async function main() {
           albedo: fixture.stages.albedo.statistics,
           bare: fixture.stages.bare.statistics,
           atmosphere: fixture.stages.atmosphere.statistics,
+          cityEffect: fixture.cityEffect,
           captureMeanMs:
             fixture.frames.reduce((sum, frame) => sum + frame.milliseconds, 0) / fixture.frames.length,
         })),

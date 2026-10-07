@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   createOrbitAtmosphere,
+  forEachOrbitAtmospherePixelRay,
+  integrateOrbitDensityColumn,
   orbitSolarDensityColumn,
   sampleOrbitAtmospherePixelTransfer,
   type OrbitAtmosphereTransfer,
+  type OrbitAtmosphere,
 } from '../../rendering/scenes/orbit_atmosphere';
 import {
   OrbitAtmosphereSampler,
@@ -12,7 +15,11 @@ import {
 } from '../../rendering/scenes/orbit_atmosphere_sampler';
 import { toneMapOrbitRadiance } from '../../rendering/scenes/orbit_tone_map';
 import { getOrbitStellarIrradiance, getOrbitViewExposure } from '../../rendering/scenes/orbit_stellar_light';
-import { orbitSunDirection } from '../../rendering/scenes/orbit_lighting';
+import {
+  ORBIT_CAMERA_DISTANCE,
+  orbitSunDirection,
+  orbitSurfaceNormal,
+} from '../../rendering/scenes/orbit_lighting';
 import type { OrbitStellarSource } from '../../core/orbit_ui';
 import type { RgbColour } from '../../rendering/colour';
 
@@ -80,7 +87,65 @@ function addRadiance(result: RgbColour, transfer: OrbitAtmosphereTransfer, irrad
   }
 }
 
+/** Integrates outgoing rays from the ground toward the camera, independently of stellar transfer. */
+function referenceViewingTransmission(x: number, y: number, size: number, air: OrbitAtmosphere): RgbColour {
+  const result = { r: 0, g: 0, b: 0 };
+  forEachOrbitAtmospherePixelRay(x, y, size, air, (rayX, rayY, area) => {
+    const normal = orbitSurfaceNormal(rayX, rayY);
+    if (!normal) return;
+    const distance = Math.hypot(normal.x, normal.y, ORBIT_CAMERA_DISTANCE - normal.z);
+    const along = (normal.z * ORBIT_CAMERA_DISTANCE - 1) / distance;
+    const impact2 = Math.max(0, 1 - along * along);
+    const end = Math.sqrt(Math.max(0, air.outerRadius ** 2 - impact2));
+    const column = integrateOrbitDensityColumn(impact2, along, end, air);
+    for (const channel of channels) result[channel] += Math.exp(-air.extinction[channel] * column) * area;
+  });
+  return result;
+}
+
 describe('prepared orbital atmospheric transfer', () => {
+  it.each(fixtures)('matches ground-to-camera extinction and covered limb area for $name', (fixture) => {
+    const air = createOrbitAtmosphere(
+      fixture.pressure,
+      fixture.temperature,
+      fixture.gravity,
+      fixture.diameter,
+      fixture.gases
+    )!;
+    const sampler = new OrbitAtmosphereSampler(air);
+    for (const size of [1 / 24, 1 / 48]) {
+      for (const [x, y] of [
+        [0, 0],
+        [0.6, 0.2],
+        [0.98, 0],
+        [1, 0],
+        [1.1, 0],
+      ]) {
+        const reference = referenceViewingTransmission(x, y, size, air);
+        const actual = sampler.sampleGroundViewingTransmission(x, y, size);
+        for (const channel of channels) {
+          expect(actual[channel]).toBeGreaterThanOrEqual(0);
+          expect(actual[channel]).toBeLessThanOrEqual(1);
+          expect(actual[channel]).toBeCloseTo(reference[channel], 7);
+        }
+      }
+    }
+  });
+
+  it('keeps night-side viewing transmission independent of sunlight and reuses existing rays', () => {
+    const sampler = new OrbitAtmosphereSampler(createOrbitAtmosphere(1, 288, 1, 12742)!);
+    const viewing = sampler.sampleGroundViewingTransmission(0, 0, 1 / 24);
+    expect(viewing.r).toBeGreaterThan(viewing.g);
+    expect(viewing.g).toBeGreaterThan(viewing.b);
+    expect(viewing.b).toBeGreaterThan(0);
+    const stats = sampler.getCacheStats();
+    const night = sampler.samplePixel(0, 0, 1 / 24, { x: 0, y: 0, z: -1 });
+    expect(night.surface).toEqual({ r: 0, g: 0, b: 0 });
+    sampler.samplePixel(0, 0, 1 / 24, { x: 0, y: 0, z: 1 });
+    expect(sampler.sampleGroundViewingTransmission(0, 0, 1 / 24)).toEqual(viewing);
+    expect(sampler.getCacheStats()).toEqual(stats);
+    expect(sampler.sampleGroundViewingTransmission(1.1, 0, 1 / 48)).toEqual({ r: 0, g: 0, b: 0 });
+  });
   it('bounds transmission interpolation error and preserves monotonic extinction', () => {
     let previous = 1;
     let maximumIncrease = 0;

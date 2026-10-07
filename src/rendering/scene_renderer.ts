@@ -7,6 +7,7 @@ import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { SurfaceLiquidOverlay } from '../entities/planet/surface_liquid';
 import { getSurfaceDisplayColour, SurfaceMaterialMap } from '../entities/planet/surface_material';
 import { SurfaceData } from '../entities/planet/surface_generator';
+import type { SurfaceSettlementLayer } from '../entities/planet/surface_settlements';
 import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
 import { AU_IN_METERS } from '../constants/physics';
@@ -40,6 +41,7 @@ import {
   sampleOrbitStellarDisc,
 } from './scenes/orbit_stellar_light';
 import { toneMapOrbitRadiance } from './scenes/orbit_tone_map';
+import { getOrbitSettlementNightFactor } from './scenes/orbit_settlement_light';
 import {
   getDashboardVisibleRows,
   TextDashboardLine,
@@ -122,6 +124,7 @@ interface OrbitSurfaceSample {
   albedo: RgbColour;
   liquidCoverage: number;
   reflectiveColour: RgbColour | null;
+  emission?: RgbColour | null;
 }
 
 interface OrbitLandingMapCache {
@@ -223,7 +226,8 @@ export class SceneRenderer {
         surface.heightmap,
         surface.heightLevelColors,
         surface.liquidOverlay,
-        surface.materialMap ?? null
+        surface.materialMap ?? null,
+        surface.settlements ?? null
       );
     }
   }
@@ -1781,7 +1785,8 @@ export class SceneRenderer {
         cell.sampleDx,
         cell.sampleDy,
         detailRadius,
-        cachedSurface?.materialMap ?? null
+        cachedSurface?.materialMap ?? null,
+        cachedSurface?.settlements ?? null
       );
       if (!surface && !atmosphere) continue;
       // Atmospheric transfer includes the surface's subpixel coverage already.
@@ -1879,7 +1884,8 @@ export class SceneRenderer {
     dx: number,
     dy: number,
     detailRadius: number,
-    materials: SurfaceMaterialMap | null = null
+    materials: SurfaceMaterialMap | null = null,
+    settlements: SurfaceSettlementLayer | null = null
   ): OrbitSurfaceSample | null {
     const normal = orbitSurfaceNormal(dx / detailRadius, -dy / detailRadius);
     if (!normal) return null;
@@ -1901,7 +1907,8 @@ export class SceneRenderer {
             textureY,
             detailRadius * 2,
             z,
-            materials
+            materials,
+            settlements
           )
         : null;
     const fallbackColour = solidSample
@@ -1921,6 +1928,7 @@ export class SceneRenderer {
       albedo: solidSample?.colour ?? this.hexToRgbFallback(fallbackColour ?? '#88BBBB'),
       liquidCoverage: solidSample?.liquidCoverage ?? 0,
       reflectiveColour: solidSample?.reflectiveColour ?? null,
+      emission: solidSample?.emission ?? null,
     };
   }
 
@@ -1934,10 +1942,18 @@ export class SceneRenderer {
     exposure: number
   ): RgbColour {
     const radiance = { r: 0, g: 0, b: 0 };
+    const emission = surface?.emission;
+    let incidentVisibleFlux = 0;
     // Diffuse scattering uses the small-source approximation. Only the direct
     // stellar marker needs disc integration at this raster's angular resolution.
     for (const light of lights) {
       if (light.irradiance.r + light.irradiance.g + light.irradiance.b <= 0) continue;
+      if (emission && surface) {
+        const incidence = Math.max(0, orbitSolarIncidence(surface.normal, light.direction));
+        incidentVisibleFlux +=
+          incidence *
+          (light.irradiance.r * 0.2126 + light.irradiance.g * 0.7152 + light.irradiance.b * 0.0722);
+      }
       const reflectance = this.getOrbitSurfaceReflectance(surface, light.direction);
       if (sampler) {
         const value = sampler.samplePixel(cell.dx / radius, -cell.dy / radius, 1 / radius, light.direction);
@@ -1951,6 +1967,20 @@ export class SceneRenderer {
         radiance.g += reflectance.g * diffuse * light.irradiance.g;
         radiance.b += reflectance.b * diffuse * light.irradiance.b;
       }
+    }
+    if (emission && (emission.r > 0 || emission.g > 0 || emission.b > 0)) {
+      // Artificial light is independent of stellar colour and is added once.
+      // Only the ground-to-camera path attenuates it; reflected-light transfer
+      // also contains the incoming sunlight path and cannot be used here.
+      const night = getOrbitSettlementNightFactor(incidentVisibleFlux);
+      const transmission = sampler?.sampleGroundViewingTransmission(
+        cell.dx / radius,
+        -cell.dy / radius,
+        1 / radius
+      );
+      radiance.r += emission.r * night * (transmission?.r ?? 1);
+      radiance.g += emission.g * night * (transmission?.g ?? 1);
+      radiance.b += emission.b * night * (transmission?.b ?? 1);
     }
     // One exposure follows combined stellar irradiance and retains colour ratios.
     return toneMapOrbitRadiance(radiance, exposure);
@@ -2135,13 +2165,16 @@ export class SceneRenderer {
     v: number,
     projectedDiameter: number,
     viewNormalZ: number,
-    materials: SurfaceMaterialMap | null = null
+    materials: SurfaceMaterialMap | null = null,
+    settlements: SurfaceSettlementLayer | null = null
   ): SolidOrbitTextureSample {
     if (!heightmap || !heightColours || heightmap.length === 0) {
       return {
         colour: { r: 136, g: 187, b: 187 },
         liquidCoverage: 0,
         reflectiveColour: null,
+        settlementCoverage: 0,
+        emission: null,
       };
     }
     return this.solidPlanetOrbitTextureRenderer.sample(
@@ -2153,7 +2186,8 @@ export class SceneRenderer {
       v,
       projectedDiameter,
       viewNormalZ,
-      materials
+      materials,
+      settlements
     );
   }
 
@@ -2315,7 +2349,8 @@ export class SceneRenderer {
       palette,
       detailWidth,
       detailHeight,
-      cachedSurface?.materialMap ?? null
+      cachedSurface?.materialMap ?? null,
+      cachedSurface?.settlements ?? null
     );
     for (let row = 0; row < detailHeight; row++) {
       for (let col = 0; col < detailWidth; col++) {
@@ -2364,7 +2399,8 @@ export class SceneRenderer {
     palette: string[],
     width: number,
     height: number,
-    materials: SurfaceMaterialMap | null = null
+    materials: SurfaceMaterialMap | null = null,
+    settlements: SurfaceSettlementLayer | null = null
   ): string[] {
     const cached = this.orbitLandingMapCache.get(planet);
     if (
@@ -2397,7 +2433,8 @@ export class SceneRenderer {
             v,
             width,
             height,
-            materials
+            materials,
+            settlements
           );
           colour = rgbToHex(sample.colour.r, sample.colour.g, sample.colour.b);
         }

@@ -88,7 +88,7 @@ verification. The planning documents preserve its design rationale:
   reproducible M7 route-balance/verification commands.
 - [Planetary cities first-version implementation plan](../plans/planetary-cities-first-version.md):
   decorative colony settlements, shared orbital/map/surface locations,
-  restrained night lights and staged visual verification. M0-M1 foundations are
-  verified; city rendering remains planned.
+  restrained night lights and staged visual verification. M0-M2 are verified;
+  M3 map/surface presentation remains planned.
 - [Planetary city foundations](../planetary-cities.md): current generation ownership,
   placement/art budgets, baseline fixtures and verification commands.

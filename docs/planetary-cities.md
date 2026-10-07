@@ -1,7 +1,6 @@
 # Planetary City Foundations
 
-Status: M0 and M1 are implemented and verified. City rendering is not enabled.
-Orbital lights are M2, and map/surface presentation is M3 in the
+Status: M0, M1 and M2 are implemented and verified. Map/surface presentation is M3 in the
 [implementation plan](plans/planetary-cities-first-version.md).
 
 ## Visual Budgets
@@ -70,6 +69,62 @@ The settlement diagnostic generated 10 sites for the real starting colony,
 Uninhabited and depot-only fixtures have no settlement layer. Retain these
 captures as the city-free visual baseline while implementing M2/M3.
 
+## Orbital Rendering (M2)
+
+`SolidPlanetOrbitTextureRenderer` optionally caches urban albedo, fractional
+coverage and linear RGB emission alongside its existing natural terrain mip
+chain. Colours are decoded during preparation; city layout is never generated
+in a frame loop. Float32 coverage/emission preserve small settlements while
+area filtering conserves their average brightness. City-free bodies allocate
+none of these optional channels. The nominal added numeric storage is about
+0.8 MiB per prepared colony texture, before JavaScript object overhead.
+
+The shared camera, body transform, tilt and Mercator sampling place urban tint
+and lights on exactly the same terrain. `sampleMap` continues to sample natural
+colours for M3, using the same cache without discarding the orbital channels.
+Texture matching includes settlement-layer identity and generation version.
+
+`orbit_settlement_light.ts` owns the art budgets: a 35% urban tint at full
+coverage and a 0.35 solar-relative linear emission scale. These are display
+parameters for unresolved settlements, not calibrated lighting measurements.
+Emission already contains fractional coverage and is not multiplied by it again.
+Lights switch on smoothly with decreasing combined direct visible stellar
+irradiance, including the actual relative strengths of companion stars; the
+twilight knee is 0.002 times the visible Earth/Sun reference. A weak star above
+the horizon does not automatically count as daylight.
+
+`SceneRenderer` adds this emission once after summing stellar reflection and
+scattering, before the existing exposure/tone map. Its colour is independent
+of the host star. `OrbitAtmosphereSampler.sampleGroundViewingTransmission`
+reuses cached camera rays to apply outgoing-only extinction and solid limb
+coverage. It adds no per-frame optical integrations and excludes rays which
+miss the ground. Thick molecular atmospheres obscure ground lights according
+to the existing optical model; no separate glow or cloud simulation is added.
+
+The settlement capture suite now includes a `noCities` reference with identical
+terrain and atmosphere and a `cityEffect` pixel-difference summary. It also
+accepts `--rotation` (0..<1) and `--pressure` (nonnegative bar) to compare
+rotation and viewing extinction without changing generated land or city sites.
+Keep the M0/M1 baseline directories intact and use separate M2 output paths:
+
+```bash
+node scripts/capture_orbit_surfaces.cjs --suite settlements --phase night --body starting-colony --out /tmp/cosmic-cities-m2-night
+node scripts/capture_orbit_surfaces.cjs --suite settlements --phase full --out /tmp/cosmic-cities-m2-full
+node scripts/capture_orbit_surfaces.cjs --suite settlements --phase quarter --stars 2 --out /tmp/cosmic-cities-m2-quarter
+node scripts/capture_orbit_surfaces.cjs --suite settlements --phase crescent --stars 3 --out /tmp/cosmic-cities-m2-crescent
+node scripts/capture_orbit_surfaces.cjs --suite settlements --phase night --body starting-colony --rotation 0.6 --out /tmp/cosmic-cities-m2-rotated
+node scripts/capture_orbit_surfaces.cjs --suite settlements --phase night --body starting-colony --pressure 10 --out /tmp/cosmic-cities-m2-thick
+```
+
+The M2 captures are in `/tmp/cosmic-cities-m2-{night,full,quarter,crescent,rotated,thick}`
+and `/tmp/cosmic-cities-m2-three-night`. The real starting colony shows
+restrained warm lights on the night-facing surface; changing body rotation moves
+the lights with the terrain. Three-source illumination does not duplicate the
+emission, and the 10-bar diagnostic attenuates it. At the diagnostic's maximum
+52-pixel globe size, daylight and crescent urban-albedo changes remain below
+pixel quantisation; night lighting is the long-range settlement cue. M3's map
+and regional views will provide the closer-scale city presentation.
+
 ## Generated Data Ownership
 
 `src/entities/planet/surface_settlements.ts` owns the typed colony profile,
@@ -110,6 +165,12 @@ npm run test:surface
 npm run check
 ```
 
-The checks above are complete for M0/M1. M1 leaves the existing rendered globe,
-landing map and terrain unchanged; city-bearing visuals are intentionally not
-drawn yet. Keep these checks and baseline captures as regression gates for M2.
+The checks above are complete for M0-M2. M2 adds focused texture tests for
+fractional brightness, mip conservation, seam wrapping, daylight tint and cache
+reuse. Optical checks compare outgoing transmission with a ground-to-camera
+reference. Actual globe tests cover combined stellar illumination, spectrum,
+night-side emission, extinction, rotation, occultation and silhouette coverage.
+The M2 rendering suite passed (266 tests across 30 files). `npm run check`
+passed with 1,309 tests across 174 files, documentation checks, formatting,
+lint, both TypeScript projects and the production build. The build retains the
+existing large-bundle advisory. Keep the M0/M1 baseline captures for comparison.

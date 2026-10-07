@@ -1,14 +1,33 @@
 import { Planet } from '../../entities/planet';
 import { getCoastalVegetationColour, SurfaceLiquidOverlay } from '../../entities/planet/surface_liquid';
 import { getSurfaceMaterialIndex, SurfaceMaterialMap } from '../../entities/planet/surface_material';
+import {
+  SETTLEMENT_APPEARANCES,
+  type SurfaceSettlementLayer,
+} from '../../entities/planet/surface_settlements';
 import { hexToRgb, interpolateColour, RgbColour } from '../colour';
 import { ORBIT_CAMERA_DISTANCE, ORBIT_FOCAL_FACTOR } from './orbit_lighting';
+import { ORBIT_SETTLEMENT_ALBEDO_STRENGTH, ORBIT_SETTLEMENT_RADIANCE } from './orbit_settlement_light';
+
+interface SettlementTextureChannels {
+  colours: Uint8ClampedArray;
+  coverage: Float32Array;
+  /** Linear emission already includes fractional settlement coverage. */
+  emission: Float32Array;
+}
+
+interface PreparedSettlementCell {
+  coverage: number;
+  tint: RgbColour;
+  emission: RgbColour;
+}
 
 interface SolidOrbitTextureLevel {
   width: number;
   height: number;
   colours: Uint8ClampedArray;
   liquidCoverage: Uint8ClampedArray;
+  settlements: SettlementTextureChannels | null;
 }
 
 interface SolidOrbitTexture {
@@ -16,6 +35,8 @@ interface SolidOrbitTexture {
   sourceHeightColours: string[];
   sourceLiquid: SurfaceLiquidOverlay | null;
   sourceMaterials: SurfaceMaterialMap | null;
+  sourceSettlements: SurfaceSettlementLayer | null;
+  sourceSettlementVersion: number | null;
   reflectiveColour: RgbColour | null;
   levels: SolidOrbitTextureLevel[];
 }
@@ -31,12 +52,16 @@ interface FilteredLevelSample {
   g: number;
   b: number;
   liquidCoverage: number;
+  settlementCoverage: number;
+  emission: RgbColour | null;
 }
 
 export interface SolidOrbitTextureSample {
   colour: RgbColour;
   liquidCoverage: number;
   reflectiveColour: RgbColour | null;
+  settlementCoverage: number;
+  emission: RgbColour | null;
 }
 
 // Keep enough source detail for the largest 52-pixel globe and its changing
@@ -56,9 +81,10 @@ export class SolidPlanetOrbitTextureRenderer {
     heightmap: number[][],
     heightColours: string[],
     liquid: SurfaceLiquidOverlay | null,
-    materials: SurfaceMaterialMap | null = null
+    materials: SurfaceMaterialMap | null = null,
+    settlements: SurfaceSettlementLayer | null = null
   ): void {
-    this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials);
+    this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials, settlements);
   }
 
   /** Samples filtered albedo and liquid coverage without smoothing the final display pixel. */
@@ -71,9 +97,10 @@ export class SolidPlanetOrbitTextureRenderer {
     v: number,
     projectedDiameter: number,
     viewNormalZ: number,
-    materials: SurfaceMaterialMap | null = null
+    materials: SurfaceMaterialMap | null = null,
+    settlements: SurfaceSettlementLayer | null = null
   ): SolidOrbitTextureSample {
-    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials);
+    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials, settlements);
     const lod = this.calculateLod(texture.levels, v, projectedDiameter, viewNormalZ);
     return this.sampleTexture(texture, u, v, lod);
   }
@@ -88,13 +115,16 @@ export class SolidPlanetOrbitTextureRenderer {
     v: number,
     width: number,
     height: number,
-    materials: SurfaceMaterialMap | null = null
+    materials: SurfaceMaterialMap | null = null,
+    settlements: SurfaceSettlementLayer | null = null
   ): SolidOrbitTextureSample {
-    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials);
+    const texture = this.getOrCreateTexture(planet, heightmap, heightColours, liquid, materials, settlements);
     const base = texture.levels[0];
     const footprint = Math.max(base.width / Math.max(1, width), base.height / Math.max(1, height));
     const lod = Math.min(texture.levels.length - 1, Math.log2(Math.max(1, footprint)));
-    return this.sampleTexture(texture, u, v, lod);
+    // M3 will add navigation-scale settlement marks. Keep this terrain raster
+    // natural without rebuilding the orbital texture when both views are open.
+    return this.sampleTexture(texture, u, v, lod, false);
   }
 
   /** Trilinearly filters a prepared surface without rebuilding or decoding source colours. */
@@ -102,22 +132,25 @@ export class SolidPlanetOrbitTextureRenderer {
     texture: SolidOrbitTexture,
     u: number,
     v: number,
-    lod: number
+    lod: number,
+    includeSettlements = true
   ): SolidOrbitTextureSample {
     const lowIndex = Math.floor(lod);
     const highIndex = Math.min(texture.levels.length - 1, lowIndex + 1);
     const mix = lod - lowIndex;
-    const low = this.sampleLevel(texture.levels[lowIndex], u, v);
+    const low = this.sampleLevel(texture.levels[lowIndex], u, v, includeSettlements);
 
     if (mix <= 0 || lowIndex === highIndex) {
       return {
         colour: { r: low.r, g: low.g, b: low.b },
         liquidCoverage: low.liquidCoverage,
         reflectiveColour: texture.reflectiveColour,
+        settlementCoverage: low.settlementCoverage,
+        emission: low.emission,
       };
     }
 
-    const high = this.sampleLevel(texture.levels[highIndex], u, v);
+    const high = this.sampleLevel(texture.levels[highIndex], u, v, includeSettlements);
     return {
       colour: {
         r: low.r + (high.r - low.r) * mix,
@@ -126,6 +159,15 @@ export class SolidPlanetOrbitTextureRenderer {
       },
       liquidCoverage: low.liquidCoverage + (high.liquidCoverage - low.liquidCoverage) * mix,
       reflectiveColour: texture.reflectiveColour,
+      settlementCoverage: low.settlementCoverage + (high.settlementCoverage - low.settlementCoverage) * mix,
+      emission:
+        low.emission || high.emission
+          ? {
+              r: (low.emission?.r ?? 0) * (1 - mix) + (high.emission?.r ?? 0) * mix,
+              g: (low.emission?.g ?? 0) * (1 - mix) + (high.emission?.g ?? 0) * mix,
+              b: (low.emission?.b ?? 0) * (1 - mix) + (high.emission?.b ?? 0) * mix,
+            }
+          : null,
     };
   }
 
@@ -135,7 +177,8 @@ export class SolidPlanetOrbitTextureRenderer {
     heightmap: number[][],
     heightColours: string[],
     liquid: SurfaceLiquidOverlay | null,
-    materials: SurfaceMaterialMap | null
+    materials: SurfaceMaterialMap | null,
+    settlements: SurfaceSettlementLayer | null
   ): SolidOrbitTexture {
     const cached = this.textureCache.get(planet);
     if (
@@ -143,17 +186,21 @@ export class SolidPlanetOrbitTextureRenderer {
       cached.sourceHeightmap === heightmap &&
       cached.sourceHeightColours === heightColours &&
       cached.sourceLiquid === liquid &&
-      cached.sourceMaterials === materials
+      cached.sourceMaterials === materials &&
+      cached.sourceSettlements === settlements &&
+      cached.sourceSettlementVersion === (settlements?.version ?? null)
     ) {
       return cached;
     }
 
-    const base = this.buildBaseLevel(heightmap, heightColours, liquid, materials);
+    const base = this.buildBaseLevel(heightmap, heightColours, liquid, materials, settlements);
     const texture: SolidOrbitTexture = {
       sourceHeightmap: heightmap,
       sourceHeightColours: heightColours,
       sourceLiquid: liquid,
       sourceMaterials: materials,
+      sourceSettlements: settlements,
+      sourceSettlementVersion: settlements?.version ?? null,
       reflectiveColour: liquid ? hexToRgb(liquid.reflectiveColour) : null,
       levels: this.buildMipChain(base),
     };
@@ -166,7 +213,8 @@ export class SolidPlanetOrbitTextureRenderer {
     heightmap: number[][],
     heightColours: string[],
     liquid: SurfaceLiquidOverlay | null,
-    materials: SurfaceMaterialMap | null
+    materials: SurfaceMaterialMap | null,
+    settlementLayer: SurfaceSettlementLayer | null
   ): SolidOrbitTextureLevel {
     const sourceHeight = Math.max(1, heightmap.length);
     const sourceWidth = Math.max(1, heightmap[0]?.length ?? 0);
@@ -179,6 +227,10 @@ export class SolidPlanetOrbitTextureRenderer {
         : null;
     const colours = new Uint8ClampedArray(BASE_TEXTURE_WIDTH * BASE_TEXTURE_HEIGHT * 3);
     const liquidCoverage = new Uint8ClampedArray(BASE_TEXTURE_WIDTH * BASE_TEXTURE_HEIGHT);
+    const settlementCells = this.prepareSettlementCells(settlementLayer, sourceWidth, sourceHeight);
+    const settlements = settlementCells.size
+      ? this.createSettlementChannels(BASE_TEXTURE_WIDTH, BASE_TEXTURE_HEIGHT)
+      : null;
 
     for (let targetY = 0; targetY < BASE_TEXTURE_HEIGHT; targetY++) {
       const sourceTop = (targetY * sourceHeight) / BASE_TEXTURE_HEIGHT;
@@ -196,6 +248,13 @@ export class SolidPlanetOrbitTextureRenderer {
         let blue = 0;
         let water = 0;
         let totalWeight = 0;
+        let urbanRed = 0;
+        let urbanGreen = 0;
+        let urbanBlue = 0;
+        let urbanCoverage = 0;
+        let emissionRed = 0;
+        let emissionGreen = 0;
+        let emissionBlue = 0;
 
         // Exact box-overlap weights make downsampling independent of whether the
         // generated map dimensions divide evenly into the orbital texture.
@@ -224,6 +283,20 @@ export class SolidPlanetOrbitTextureRenderer {
             blue += colour.b * weight;
             water += palette.liquid[heightIndex] * weight;
             totalWeight += weight;
+            const built =
+              settlements && !palette.liquid[heightIndex]
+                ? settlementCells.get(sourceY * sourceWidth + sourceX)
+                : null;
+            if (built) {
+              const tintWeight = built.coverage * ORBIT_SETTLEMENT_ALBEDO_STRENGTH * weight;
+              urbanRed += (built.tint.r - colour.r) * tintWeight;
+              urbanGreen += (built.tint.g - colour.g) * tintWeight;
+              urbanBlue += (built.tint.b - colour.b) * tintWeight;
+              urbanCoverage += built.coverage * weight;
+              emissionRed += built.emission.r * weight;
+              emissionGreen += built.emission.g * weight;
+              emissionBlue += built.emission.b * weight;
+            }
           }
         }
 
@@ -234,6 +307,15 @@ export class SolidPlanetOrbitTextureRenderer {
         colours[colourIndex + 1] = green / divisor;
         colours[colourIndex + 2] = blue / divisor;
         liquidCoverage[pixelIndex] = (water / divisor) * 255;
+        if (settlements) {
+          settlements.colours[colourIndex] = (red + urbanRed) / divisor;
+          settlements.colours[colourIndex + 1] = (green + urbanGreen) / divisor;
+          settlements.colours[colourIndex + 2] = (blue + urbanBlue) / divisor;
+          settlements.coverage[pixelIndex] = urbanCoverage / divisor;
+          settlements.emission[colourIndex] = emissionRed / divisor;
+          settlements.emission[colourIndex + 1] = emissionGreen / divisor;
+          settlements.emission[colourIndex + 2] = emissionBlue / divisor;
+        }
       }
     }
 
@@ -242,6 +324,61 @@ export class SolidPlanetOrbitTextureRenderer {
       height: BASE_TEXTURE_HEIGHT,
       colours,
       liquidCoverage,
+      settlements,
+    };
+  }
+
+  /** Decodes sparse city colours once, aliasing the generated map's duplicate longitude endpoint. */
+  private prepareSettlementCells(
+    layer: SurfaceSettlementLayer | null,
+    width: number,
+    height: number
+  ): Map<number, PreparedSettlementCell> {
+    const cells = new Map<number, PreparedSettlementCell>();
+    if (
+      !layer ||
+      layer.sourceWidth !== width ||
+      layer.sourceHeight !== height ||
+      layer.longitudePeriod !== width - 1
+    )
+      return cells;
+    const appearances = layer.sites.map((site) => {
+      const appearance = SETTLEMENT_APPEARANCES[site.archetype];
+      const light = hexToRgb(appearance.lightColour);
+      return {
+        tint: hexToRgb(appearance.albedoColour),
+        emission: {
+          r: (light.r / 255) ** 2.2 * ORBIT_SETTLEMENT_RADIANCE,
+          g: (light.g / 255) ** 2.2 * ORBIT_SETTLEMENT_RADIANCE,
+          b: (light.b / 255) ** 2.2 * ORBIT_SETTLEMENT_RADIANCE,
+        },
+      };
+    });
+    for (const cell of layer.cells) {
+      const appearance = appearances[cell.siteIndex];
+      if (!appearance || cell.x < 0 || cell.x >= layer.longitudePeriod || cell.y < 0 || cell.y >= height)
+        continue;
+      const prepared = {
+        coverage: cell.coverage,
+        tint: appearance.tint,
+        emission: {
+          r: appearance.emission.r * cell.emission,
+          g: appearance.emission.g * cell.emission,
+          b: appearance.emission.b * cell.emission,
+        },
+      };
+      cells.set(cell.y * width + cell.x, prepared);
+      if (cell.x === 0) cells.set(cell.y * width + width - 1, prepared);
+    }
+    return cells;
+  }
+
+  /** Allocates optional channels in floating point so small city footprints survive every mip level. */
+  private createSettlementChannels(width: number, height: number): SettlementTextureChannels {
+    return {
+      colours: new Uint8ClampedArray(width * height * 3),
+      coverage: new Float32Array(width * height),
+      emission: new Float32Array(width * height * 3),
     };
   }
 
@@ -285,6 +422,7 @@ export class SolidPlanetOrbitTextureRenderer {
     const height = Math.max(MIN_TEXTURE_HEIGHT, Math.floor(source.height / 2));
     const colours = new Uint8ClampedArray(width * height * 3);
     const liquidCoverage = new Uint8ClampedArray(width * height);
+    const settlements = source.settlements ? this.createSettlementChannels(width, height) : null;
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -293,6 +431,13 @@ export class SolidPlanetOrbitTextureRenderer {
         let green = 0;
         let blue = 0;
         let water = 0;
+        let urbanRed = 0;
+        let urbanGreen = 0;
+        let urbanBlue = 0;
+        let coverage = 0;
+        let emissionRed = 0;
+        let emissionGreen = 0;
+        let emissionBlue = 0;
         for (let offsetY = 0; offsetY < 2; offsetY++) {
           const sourceY = Math.min(source.height - 1, y * 2 + offsetY);
           for (let offsetX = 0; offsetX < 2; offsetX++) {
@@ -303,6 +448,15 @@ export class SolidPlanetOrbitTextureRenderer {
             green += source.colours[colourIndex + 1];
             blue += source.colours[colourIndex + 2];
             water += source.liquidCoverage[sourceIndex];
+            if (source.settlements) {
+              urbanRed += source.settlements.colours[colourIndex];
+              urbanGreen += source.settlements.colours[colourIndex + 1];
+              urbanBlue += source.settlements.colours[colourIndex + 2];
+              coverage += source.settlements.coverage[sourceIndex];
+              emissionRed += source.settlements.emission[colourIndex];
+              emissionGreen += source.settlements.emission[colourIndex + 1];
+              emissionBlue += source.settlements.emission[colourIndex + 2];
+            }
           }
         }
         const targetColourIndex = targetIndex * 3;
@@ -310,10 +464,19 @@ export class SolidPlanetOrbitTextureRenderer {
         colours[targetColourIndex + 1] = green / 4;
         colours[targetColourIndex + 2] = blue / 4;
         liquidCoverage[targetIndex] = water / 4;
+        if (settlements) {
+          settlements.colours[targetColourIndex] = urbanRed / 4;
+          settlements.colours[targetColourIndex + 1] = urbanGreen / 4;
+          settlements.colours[targetColourIndex + 2] = urbanBlue / 4;
+          settlements.coverage[targetIndex] = coverage / 4;
+          settlements.emission[targetColourIndex] = emissionRed / 4;
+          settlements.emission[targetColourIndex + 1] = emissionGreen / 4;
+          settlements.emission[targetColourIndex + 2] = emissionBlue / 4;
+        }
       }
     }
 
-    return { width, height, colours, liquidCoverage };
+    return { width, height, colours, liquidCoverage, settlements };
   }
 
   /** Estimates the source-texel footprint of one projected globe pixel. */
@@ -337,7 +500,12 @@ export class SolidPlanetOrbitTextureRenderer {
   }
 
   /** Bilinearly samples one body-fixed texture level with wrapped longitude. */
-  private sampleLevel(level: SolidOrbitTextureLevel, u: number, v: number): FilteredLevelSample {
+  private sampleLevel(
+    level: SolidOrbitTextureLevel,
+    u: number,
+    v: number,
+    includeSettlements: boolean
+  ): FilteredLevelSample {
     const wrappedX = this.wrapUnit(u) * level.width;
     const clampedY = Math.max(0, Math.min(1, v)) * (level.height - 1);
     const x0 = Math.floor(wrappedX) % level.width;
@@ -350,19 +518,16 @@ export class SolidPlanetOrbitTextureRenderer {
     const index10 = y0 * level.width + x1;
     const index01 = y1 * level.width + x0;
     const index11 = y1 * level.width + x1;
+    const settlements = includeSettlements ? level.settlements : null;
+    const colours = settlements?.colours ?? level.colours;
+    const settlementCoverage = settlements
+      ? this.sampleBilinearChannel(settlements.coverage, index00, index10, index01, index11, tx, ty)
+      : 0;
 
     return {
-      r: this.sampleBilinearChannel(
-        level.colours,
-        index00 * 3,
-        index10 * 3,
-        index01 * 3,
-        index11 * 3,
-        tx,
-        ty
-      ),
+      r: this.sampleBilinearChannel(colours, index00 * 3, index10 * 3, index01 * 3, index11 * 3, tx, ty),
       g: this.sampleBilinearChannel(
-        level.colours,
+        colours,
         index00 * 3 + 1,
         index10 * 3 + 1,
         index01 * 3 + 1,
@@ -371,7 +536,7 @@ export class SolidPlanetOrbitTextureRenderer {
         ty
       ),
       b: this.sampleBilinearChannel(
-        level.colours,
+        colours,
         index00 * 3 + 2,
         index10 * 3 + 2,
         index01 * 3 + 2,
@@ -381,6 +546,39 @@ export class SolidPlanetOrbitTextureRenderer {
       ),
       liquidCoverage:
         this.sampleBilinearChannel(level.liquidCoverage, index00, index10, index01, index11, tx, ty) / 255,
+      settlementCoverage,
+      emission:
+        settlements && settlementCoverage > 0
+          ? {
+              r: this.sampleBilinearChannel(
+                settlements.emission,
+                index00 * 3,
+                index10 * 3,
+                index01 * 3,
+                index11 * 3,
+                tx,
+                ty
+              ),
+              g: this.sampleBilinearChannel(
+                settlements.emission,
+                index00 * 3 + 1,
+                index10 * 3 + 1,
+                index01 * 3 + 1,
+                index11 * 3 + 1,
+                tx,
+                ty
+              ),
+              b: this.sampleBilinearChannel(
+                settlements.emission,
+                index00 * 3 + 2,
+                index10 * 3 + 2,
+                index01 * 3 + 2,
+                index11 * 3 + 2,
+                tx,
+                ty
+              ),
+            }
+          : null,
     };
   }
 
