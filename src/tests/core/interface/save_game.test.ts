@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSurveyDataSnapshot } from '../../../core/survey_data_types';
+import { createCommunicationsSnapshot } from '../../../core/communications_types';
 import { Game } from '../../../core/game';
 import { Player } from '../../../core/player';
 import { DepotService } from '../../../core/depot_service';
@@ -83,6 +84,7 @@ function createSave(): GameSave {
     version: SAVE_GAME_VERSION,
     depots: {},
     surveyData: createSurveyDataSnapshot(),
+    communications: createCommunicationsSnapshot(),
     xenobiology: createXenobiologySnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-06-20T00:00:00.000Z',
@@ -253,6 +255,32 @@ describe('versioned robotic depot state', () => {
     save.player.crew = structuredClone(player.crew);
     save.player.crew[0].hitPoints = save.player.crew[0].maxHitPoints + 1;
     expect(() => parseGameSave(save)).toThrow();
+  });
+});
+
+describe('communications save migration', () => {
+  it.each(['session', 'manual'])('prefers v24 over v23 %s storage and retires both legacy keys', (kind) => {
+    const current = createSave();
+    current.surveyData.charts['3,-2,0'] = { name: 'Filed chart', at: 0 };
+    const { communications: _inbox, ...legacy } = current;
+    const session = new MemoryStorage();
+    const manual = new MemoryStorage();
+    const store = kind === 'session' ? session : manual;
+    const oldKey = `cosmic-voyage.${kind}.v24`;
+    const olderKey = `cosmic-voyage.${kind}.v23`;
+    store.setItem(olderKey, JSON.stringify({ ...legacy, version: 23 }));
+    store.setItem(oldKey, JSON.stringify({ ...legacy, version: 24 }));
+    const storage = new SaveGameStorage(session, manual);
+    const restored = kind === 'session' ? storage.loadSession() : storage.loadManual();
+    expect(restored?.surveyData).toEqual(current.surveyData);
+    expect(restored?.communications).toEqual(createCommunicationsSnapshot());
+    expect(store.getItem(oldKey)).toBeNull();
+    expect(store.getItem(olderKey)).toBeNull();
+    expect(store.getItem(kind === 'session' ? SESSION_SAVE_KEY : MANUAL_SAVE_KEY)).not.toBeNull();
+    store.setItem(oldKey, JSON.stringify({ ...legacy, version: 24 }));
+    storage.clearSession();
+    storage.clearManual();
+    expect(session.length + manual.length).toBe(0);
   });
 });
 

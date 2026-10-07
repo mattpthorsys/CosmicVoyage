@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createSurveyDataSnapshot } from '../../core/survey_data_types';
+import { createCommunicationsSnapshot } from '../../core/communications_types';
 import { Game } from '../../core/game';
 import { Player } from '../../core/player';
 import { generateBiosphere } from '../../entities/biology/biosphere_generator';
@@ -145,6 +146,7 @@ function saveFixture(player: Player, service: XenobiologyService): GameSave {
     version: SAVE_GAME_VERSION,
     depots: {},
     surveyData: createSurveyDataSnapshot(),
+    communications: createCommunicationsSnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     savedAt: '2026-10-03T00:00:00Z',
     seed: 'biology-fixture',

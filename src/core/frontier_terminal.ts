@@ -148,10 +148,15 @@ export class FrontierTerminal {
           'frontier-use',
           kind === 'communications' ? 'Mark destination' : charts ? 'Download chart' : 'Review upload',
           'ENTER_SYSTEM',
-          { key: 'Enter', tone: 'green' }
+          { key: 'Enter', tone: 'green', enabled: this.selectedId !== null }
         ),
         ...(charts
-          ? [commandButton('frontier-mark', 'Mark filed chart', 'APPROACH_TARGET', { key: 'A' })]
+          ? [
+              commandButton('frontier-mark', 'Mark filed chart', 'APPROACH_TARGET', {
+                key: 'A',
+                enabled: this.selectedId !== null,
+              }),
+            ]
           : []),
         ...(charts || kind === 'communications'
           ? [commandButton('frontier-refresh', 'Refresh link', 'REFUEL', { key: 'R' })]

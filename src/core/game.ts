@@ -38,6 +38,9 @@ import {
   createSurveyUploadDialog,
   type SurveyDialogIntent,
 } from './survey_exchange_console';
+import { DepotCommunications } from './depot_communications';
+import { createCommunicationsSnapshot } from './communications_types';
+import { createCommunicationsEntries } from './communications_console';
 import { materializeHaulSites } from './haul_sites';
 import {
   commitHaulChange,
@@ -420,6 +423,7 @@ export class Game {
   private _surveyData?: SurveyDataService;
   private _frontierCatalogue?: FrontierCatalogue;
   private _frontierTerminal?: FrontierTerminal;
+  private _communications?: DepotCommunications;
   private frontierSearchSerial = 0;
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
@@ -508,6 +512,17 @@ export class Game {
   /** Keeps frontier terminal presentation out of science, station and navigation owners. */
   private get frontierTerminal(): FrontierTerminal {
     return (this._frontierTerminal ??= new FrontierTerminal());
+  }
+
+  /** Shares verified carrier acquisition and readonly station telemetry with the bounded inbox. */
+  private get communications(): DepotCommunications {
+    return (this._communications ??= new DepotCommunications(
+      this.frontierCatalogue,
+      this.infrastructureRegistry,
+      this.depotService,
+      this.starbaseCommerce,
+      this.missionProgress
+    ));
   }
 
   /** Coordinates bounded robotic jobs through the existing stock, mission and operational owners. */
@@ -2148,6 +2163,7 @@ export class Game {
       economy: this.starbaseCommerce.createSnapshot(),
       depots: this._depotService?.createSnapshot() ?? {},
       surveyData: this._surveyData?.createSnapshot() ?? createSurveyDataSnapshot(),
+      communications: this._communications?.createSnapshot() ?? createCommunicationsSnapshot(),
       xenobiology: this.xenobiology.createSnapshot(),
       tutorialHintsShown: [...this.tutorialHintsShown],
     };
@@ -2171,6 +2187,9 @@ export class Game {
     this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.depotService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.depots);
     this.surveyData.restoreSnapshot(isLegacyGalaxyMigration ? createSurveyDataSnapshot() : save.surveyData);
+    this.communications.restoreSnapshot(
+      isLegacyGalaxyMigration ? createCommunicationsSnapshot() : save.communications
+    );
     // Board refresh must see restored accepted jobs before station materialisation allocates new offer slots.
     this.missionProgress.restoreSnapshot({
       acceptedMissionIds: isLegacyGalaxyMigration ? [] : save.acceptedMissionIds,
@@ -2375,6 +2394,8 @@ export class Game {
   // --- Event Handlers ---
   /** Handles game state change. */
   private _handleGameStateChange({ previousState, state: newState }: GameStateChangedEvent): void {
+    this._communications?.cancel();
+    this.frontierSearchSerial++;
     this._terminalDialog?.close();
     this.forceFullRender = true; // Always force redraw on state change
     this.orbitModeState.invalidateScreen();
@@ -2522,10 +2543,13 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
-    if (this.interfaceMode.is('survey-exchange')) {
-      this.inputManager.justPressedActions.add(data.action);
-      this.handleFrontierTerminalInput();
-      this.inputManager.justPressedActions.delete(data.action);
+    if (this.interfaceMode.is('survey-exchange') || this.interfaceMode.is('communications')) {
+      if (this.frontierTerminal.reveal.isActive) this.frontierTerminal.reveal.complete();
+      else {
+        this.inputManager.justPressedActions.add(data.action);
+        this.handleFrontierTerminalInput();
+        this.inputManager.justPressedActions.delete(data.action);
+      }
       this.forceFullRender = true;
       this._publishStatusUpdate();
       return;
@@ -2688,6 +2712,7 @@ export class Game {
     this.movementSystem.destroy();
     this.observatorySearchSerial++;
     this.frontierSearchSerial++;
+    this._communications?.cancel();
     this._observatoryService?.cancel();
     this.miningSystem.destroy();
     this.stateManager.destroy();
@@ -2890,6 +2915,58 @@ export class Game {
     void this.refreshPublicCharts();
   }
 
+  /** Opens received frontier reports from travel or Operations, preserving the parent's selection. */
+  private openCommunications(): void {
+    const parent = this.interfaceMode.kind;
+    if (
+      !['none', 'ship-menu'].includes(parent) ||
+      this.popupState !== 'inactive' ||
+      (this.stateManager.state === 'orbit' && this.orbitModeState.dossier.isOpen)
+    )
+      return;
+    if (this.activeEncounter && parent !== 'ship-menu') return;
+    this.frontierTerminal.open(parent === 'ship-menu' ? 'ship-menu' : 'none');
+    this.interfaceMode.open('communications');
+    this.travelMode.commandMoving = false;
+    this.player.terrainVehicle.moving = false;
+    this.inputManager.clearState();
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    const first = this.getFrontierTerminalEntries()[0];
+    if (first) {
+      this.frontierTerminal.selectedId = first.id;
+      this.communications.markRead(first.id);
+    }
+    this.forceFullRender = true;
+    void this.refreshCommunications();
+  }
+
+  /** Refreshes a timestamped informational link without remotely creating jobs or performing services. */
+  private async refreshCommunications(): Promise<void> {
+    const serial = ++this.frontierSearchSerial;
+    this.frontierTerminal.coverage = 'Acquiring frontier carriers...';
+    try {
+      const count = await this.communications.refresh(
+        this.player.position.worldX,
+        this.player.position.worldY,
+        this.gameClockElapsedSeconds
+      );
+      if (serial !== this.frontierSearchSerial || !this.interfaceMode.is('communications') || count === null)
+        return;
+      this.frontierTerminal.coverage = `${this.communications.list(this.gameClockElapsedSeconds).length} retained reports / ${CONFIG.DEPOT_COMMUNICATIONS_RADIUS_LY} ly receiver radius`;
+      const entries = this.getFrontierTerminalEntries();
+      if (!entries.some((entry) => entry.id === this.frontierTerminal.selectedId))
+        this.frontierTerminal.selectedId = entries[0]?.id ?? null;
+      if (this.frontierTerminal.selectedId) this.communications.markRead(this.frontierTerminal.selectedId);
+    } catch (error) {
+      if (serial !== this.frontierSearchSerial) return;
+      this.frontierTerminal.coverage =
+        'Frontier link unavailable / retained reports remain accessible / R retries.';
+      logger.warn('[Communications] Carrier acquisition failed.', error);
+    }
+    this.forceFullRender = true;
+  }
+
   /** Acquires navigation descriptors only; the downloaded chart path never triggers a scientific scan. */
   private async refreshPublicCharts(): Promise<void> {
     const serial = ++this.frontierSearchSerial;
@@ -2914,6 +2991,13 @@ export class Game {
 
   /** Prepares measured uploads or public charts from distinct provenance owners. */
   private getFrontierTerminalEntries(): FrontierTerminalEntry[] {
+    if (this.interfaceMode.is('communications'))
+      return createCommunicationsEntries(
+        this.communications.list(this.gameClockElapsedSeconds),
+        this.player.position.worldX,
+        this.player.position.worldY,
+        this.gameClockElapsedSeconds
+      );
     return this.frontierTerminal.tab === 'charts'
       ? createPublicChartEntries(this.surveyData, this.frontierTerminal.contacts)
       : createSurveyUploadEntries(this.surveyData, this.stateManager.currentStarbase?.id ?? '');
@@ -2921,6 +3005,24 @@ export class Game {
 
   /** Uses the established responsive terminal model and semantic fonts for scientific exchange. */
   private createFrontierTerminalModel(): TextModalTableModel {
+    if (this.interfaceMode.is('communications'))
+      return this.frontierTerminal.createModel(
+        'COMMUNICATIONS',
+        [
+          frontierLine('FRONTIER RELAY INBOX', 'cyan', true),
+          frontierLine(
+            `Receiver: X ${this.player.position.worldX} / Y ${this.player.position.worldY}`,
+            'amber'
+          ),
+          frontierLine(
+            `${CONFIG.DEPOT_COMMUNICATIONS_RADIUS_LY} ly acquisition radius / retained reports may be stale`,
+            'muted'
+          ),
+        ],
+        this.getFrontierTerminalEntries(),
+        this.renderer.getGridCols(),
+        this.renderer.getGridRows()
+      );
     const station = this.stateManager.currentStarbase;
     const storage = this.surveyData.storageStatus();
     return this.frontierTerminal.createModel(
@@ -2962,9 +3064,10 @@ export class Game {
 
   /** Keeps every key inside the terminal, including reveal skipping and navigation-only chart actions. */
   private handleFrontierTerminalInput(): boolean {
-    if (!this.interfaceMode.is('survey-exchange')) return false;
+    const inbox = this.interfaceMode.is('communications');
+    if (!inbox && !this.interfaceMode.is('survey-exchange')) return false;
     const station = this.stateManager.currentStarbase;
-    if (!station?.capabilities.surveyExchange || this.stateManager.state !== 'starbase') {
+    if (!inbox && (!station?.capabilities.surveyExchange || this.stateManager.state !== 'starbase')) {
       this.closeFrontierTerminal();
       return true;
     }
@@ -2972,6 +3075,22 @@ export class Game {
     const entries = this.getFrontierTerminalEntries();
     const action = this.frontierTerminal.input(this.inputManager, entries, model.visibleRowCount);
     const selected = entries.find((entry) => entry.id === this.frontierTerminal.selectedId);
+    if (inbox) {
+      if (this.frontierTerminal.selectedId) this.communications.markRead(this.frontierTerminal.selectedId);
+      if (action === 'close') this.closeFrontierTerminal();
+      else if (action === 'refresh') void this.refreshCommunications();
+      else if ((action === 'activate' || action === 'mark') && selected) {
+        const notice = this.communications
+          .list(this.gameClockElapsedSeconds)
+          .find((entry) => entry.sourceId === selected.id);
+        if (notice) {
+          this.observatoryService.markSystemDestination(notice.address, notice.name);
+          this.frontierTerminal.notice = `Destination marked: ${notice.name}.`;
+        }
+      }
+      if (action || this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+      return true;
+    }
     if (action === 'close') this.closeFrontierTerminal();
     else if (action === 'tab') {
       this.frontierTerminal.tab = this.frontierTerminal.tab === 'uploads' ? 'charts' : 'uploads';
@@ -2981,7 +3100,7 @@ export class Game {
     } else if (action === 'refresh') void this.refreshPublicCharts();
     else if (action === 'activate' && selected) {
       if (this.frontierTerminal.tab === 'uploads') {
-        const quote = this.surveyData.quote(station.id, selected.id);
+        const quote = this.surveyData.quote(station!.id, selected.id);
         if (quote) this.showTerminalDialog(createSurveyUploadDialog(quote, selected.title));
       } else {
         const downloaded = this.surveyData.download(
@@ -3010,6 +3129,7 @@ export class Game {
   /** Cancels outstanding frontier work and consumes held keys before restoring the parent interface. */
   private closeFrontierTerminal(): void {
     this.frontierSearchSerial++;
+    this._communications?.cancel();
     this.frontierTerminal.reveal.complete();
     if (this.frontierTerminal.returnTo === 'ship-menu') this.interfaceMode.open('ship-menu');
     else this.interfaceMode.close();
@@ -4114,6 +4234,9 @@ export class Game {
       case 'OBSERVATORY':
         this.openObservatory();
         return;
+      case 'COMMUNICATIONS':
+        this.openCommunications();
+        return;
       case 'ORBIT_DOSSIER':
         if (this.stateManager.state === 'orbit' && !this.orbitModeState.dossier.isOpen) {
           this.orbitModeState.dossier.open();
@@ -5037,6 +5160,13 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
+    if (this.inputManager.wasActionJustPressed('COMMUNICATIONS')) {
+      this.openCommunications();
+      if (this.interfaceMode.is('communications')) {
+        this._publishStatusUpdate();
+        return;
+      }
+    }
     if (this.interfaceMode.is('observatory') || this.inputManager.wasActionJustPressed('OBSERVATORY')) {
       if (this.handleObservatoryInput()) {
         this._publishStatusUpdate();
@@ -5857,7 +5987,7 @@ export class Game {
     this.hyperspaceSurveyService?.setInstrumentMultiplier?.(
       getObservatoryCapabilities(this.player.ship).stellarRangeMultiplier
     );
-    if (this.interfaceMode.is('survey-exchange')) {
+    if (this.interfaceMode.is('survey-exchange') || this.interfaceMode.is('communications')) {
       if (this.frontierTerminal.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
       return;
@@ -6030,6 +6160,22 @@ export class Game {
   // --- State-specific update methods ---
   /** Updates hyperspace. */
   private _updateHyperspace(_deltaTime: number): string {
+    const x = this.player.position.worldX,
+      y = this.player.position.worldY;
+    void this.communications
+      .poll(x, y, this.gameClockElapsedSeconds, performance.now())
+      .then((message) => {
+        if (
+          !message ||
+          this.isDestroyed ||
+          this.stateManager.state !== 'hyperspace' ||
+          this.interfaceMode.kind !== 'none'
+        )
+          return;
+        this.terminalOverlay.addMessage(`<h>COMMUNICATIONS</h> ${message}`);
+        this.forceFullRender = true;
+      })
+      .catch((error) => logger.warn('[Communications] Passive acquisition failed.', error));
     const viewportSignature = [
       this.player.position.worldX,
       this.player.position.worldY,
@@ -7643,6 +7789,10 @@ export class Game {
       this.openObservatory();
       return;
     }
+    if (row.id === 'communications') {
+      this.openCommunications();
+      return;
+    }
     if (row.id === 'science') {
       this.openScienceLog();
       return;
@@ -7976,6 +8126,17 @@ export class Game {
             id: 'missions',
             cells: ['Mission Journal', `${this.missionProgress.getActiveCount()} accepted contracts`],
             detail: 'Review destinations, objectives, habitat coordinates and delivery requirements.',
+            cellTones: ['cyan', 'green'],
+            detailTone: 'cyan',
+          },
+          {
+            id: 'communications',
+            cells: [
+              'Communications',
+              `${this._communications?.list(this.gameClockElapsedSeconds).filter((notice) => !notice.read).length ?? 0} unread depot reports`,
+            ],
+            detail:
+              'Nearby frontier carriers, saved supply telemetry, robot work and navigation coordinates.',
             cellTones: ['cyan', 'green'],
             detailTone: 'cyan',
           },
@@ -9125,7 +9286,7 @@ export class Game {
           this.renderer.drawTextModalTable(this.createShipRepairModel());
         if (this.interfaceMode.is('depot-service'))
           this.renderer.drawTextModalTable(this.createDepotServiceModel());
-        if (this.interfaceMode.is('survey-exchange'))
+        if (this.interfaceMode.is('survey-exchange') || this.interfaceMode.is('communications'))
           this.renderer.drawTextModalTable(this.createFrontierTerminalModel());
         if (this.interfaceMode.is('haul-manifest'))
           this.renderer.drawTextModalTable(
@@ -9225,6 +9386,7 @@ export class Game {
       this.interfaceMode.is('ship-repairs') ||
       this.interfaceMode.is('depot-service') ||
       this.interfaceMode.is('survey-exchange') ||
+      this.interfaceMode.is('communications') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -9279,6 +9441,7 @@ export class Game {
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('depot-service') ||
       this.interfaceMode.is('survey-exchange') ||
+      this.interfaceMode.is('communications') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -9325,9 +9488,14 @@ export class Game {
 
   /** Returns main render signature. */
   private getMainRenderSignature(now: number = performance.now()): string {
-    if (this.interfaceMode.is('survey-exchange') && !this.terminalDialog.isOpen)
+    if (
+      (this.interfaceMode.is('survey-exchange') || this.interfaceMode.is('communications')) &&
+      !this.terminalDialog.isOpen
+    )
       return [
         'survey-exchange',
+        this.interfaceMode.kind,
+        this._communications?.revision,
         this.frontierTerminal.tab,
         this.frontierTerminal.selectedId,
         this.frontierTerminal.viewOffset,
@@ -9897,8 +10065,13 @@ export class Game {
 
   /** Creates command bar model. */
   private createCommandBarModel(actions: AvailableAction[]): CommandBarModel {
-    if (this.interfaceMode.is('survey-exchange') && !this.terminalDialog.isOpen)
-      return this.frontierTerminal.createCommandBar('survey');
+    if (
+      (this.interfaceMode.is('survey-exchange') || this.interfaceMode.is('communications')) &&
+      !this.terminalDialog.isOpen
+    )
+      return this.frontierTerminal.createCommandBar(
+        this.interfaceMode.is('communications') ? 'communications' : 'survey'
+      );
     if (this.screenTransition.isActive)
       return {
         context: this.sleepingHaulCrew ? 'crew hypersleep' : 'automatic transit',
@@ -10086,6 +10259,9 @@ export class Game {
           detail: 'Open ship operations.',
         }),
         commandButton('observatory', 'Observatory', 'OBSERVATORY', { key: CONFIG.KEY_BINDINGS.OBSERVATORY }),
+        commandButton('communications', 'Comms', 'COMMUNICATIONS', {
+          key: CONFIG.KEY_BINDINGS.COMMUNICATIONS,
+        }),
         commandButton('observe', 'Observe', 'OBSERVE_HYPERSPACE', {
           detail: 'Open a reticle for long-range contact observation.',
         }),
@@ -10151,6 +10327,9 @@ export class Game {
         commandButton('target-menu', 'Targets', 'TARGET_MENU', {
           key: CONFIG.KEY_BINDINGS.TARGET_MENU,
           detail: 'Open local navigation target list.',
+        }),
+        commandButton('communications', 'Comms', 'COMMUNICATIONS', {
+          key: CONFIG.KEY_BINDINGS.COMMUNICATIONS,
         }),
         commandButton('missions', 'Missions', 'MISSION_JOURNAL', {
           key: 'J',
@@ -10219,6 +10398,9 @@ export class Game {
             key: CONFIG.KEY_BINDINGS.SCAN,
             detail: 'Begin a local surface scan.',
           }),
+          commandButton('communications', 'Comms', 'COMMUNICATIONS', {
+            key: CONFIG.KEY_BINDINGS.COMMUNICATIONS,
+          }),
         ],
         rightButtons: [
           commandButton('red-reserved', 'Alert', 'RED_RESERVED', {
@@ -10269,6 +10451,9 @@ export class Game {
           detail: 'Move the surface scan cursor.',
         }),
         commandButton('icon', 'Icon', 'ROVER_ICON', { detail: 'Open the surface icon legend.' }),
+        commandButton('communications', 'Comms', 'COMMUNICATIONS', {
+          key: CONFIG.KEY_BINDINGS.COMMUNICATIONS,
+        }),
         commandButton('life', 'Life', 'ROVER_LIFE', {
           key: 'B',
           detail: 'Investigate the biological habitat at this regional position.',

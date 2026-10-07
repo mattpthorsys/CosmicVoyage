@@ -6,16 +6,16 @@ documents relevant to the task.
 
 ## Required Reading By Task
 
-| Task | Read |
-| --- | --- |
-| Any code change | [project-overview.md](project-overview.md), [code-style.md](code-style.md), [change-workflow.md](change-workflow.md) |
-| Core gameplay or state | [architecture.md](architecture.md), [gameplay-and-state.md](gameplay-and-state.md) |
-| Procedural generation | [determinism-and-generation.md](determinism-and-generation.md), [galaxy-generation.md](galaxy-generation.md), [testing.md](testing.md) |
-| Galaxy, stars, settlements, or terraforming | [galaxy-generation.md](galaxy-generation.md), [game-design.md](game-design.md) |
-| Rendering or UI | [rendering-and-ui.md](rendering-and-ui.md), [visual-style.md](visual-style.md) |
-| Game design or content | [game-design.md](game-design.md), [visual-style.md](visual-style.md) |
-| Tests or regression fixes | [testing.md](testing.md), [change-workflow.md](change-workflow.md) |
-| Finding code ownership | [code-map.md](code-map.md) |
+| Task                                        | Read                                                                                                                                   |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Any code change                             | [project-overview.md](project-overview.md), [code-style.md](code-style.md), [change-workflow.md](change-workflow.md)                   |
+| Core gameplay or state                      | [architecture.md](architecture.md), [gameplay-and-state.md](gameplay-and-state.md)                                                     |
+| Procedural generation                       | [determinism-and-generation.md](determinism-and-generation.md), [galaxy-generation.md](galaxy-generation.md), [testing.md](testing.md) |
+| Galaxy, stars, settlements, or terraforming | [galaxy-generation.md](galaxy-generation.md), [game-design.md](game-design.md)                                                         |
+| Rendering or UI                             | [rendering-and-ui.md](rendering-and-ui.md), [visual-style.md](visual-style.md)                                                         |
+| Game design or content                      | [game-design.md](game-design.md), [visual-style.md](visual-style.md)                                                                   |
+| Tests or regression fixes                   | [testing.md](testing.md), [change-workflow.md](change-workflow.md)                                                                     |
+| Finding code ownership                      | [code-map.md](code-map.md)                                                                                                             |
 
 ## Non-Negotiable Rules
 
@@ -81,7 +81,7 @@ verification. The planning documents preserve its design rationale:
   resource-limited robotic services, medical care, bounded extraction, supply/survey
   jobs, chart exchange, broadcasts, persistence and staged verification. M0-M2
   through M4 are verified (1,220 tests and the full depot browser flow).
-  M5 chart exchange is implemented with new runtime verification pending; M6 broadcasts are next.
+  M5 chart exchange and M6 broadcasts are implemented with their Luna runtime/browser gate pending.
 - [Automated depot guide](../automated-depots.md): current finite-stock repairs,
   reactor loading, robotic treatment, service controls, save ownership and the
-  astrometric exchange and the pending M5-M6 Luna verification checklist.
+  astrometric exchange, H/Operations communications and the pending M5-M6 Luna verification checklist.

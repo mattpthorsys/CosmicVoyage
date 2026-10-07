@@ -3,8 +3,8 @@
 Status: M0-M4 verified with `npm run check` (1,220 tests) and the full depot
 Playwright flow, including services, robot contracts, resource reports and
 desktop/narrow rendering without browser errors or stale orbital pixels.
-M5 chart exchange is implemented and awaits the requested separate Luna runtime
-verification gate. M6 broadcasts are being implemented next.
+M5 chart exchange and M6 broadcasts are implemented. Static checks pass; their
+new runtime suites and expanded browser flow await the requested Luna gate.
 
 ## Playing
 
@@ -16,15 +16,15 @@ their notices no longer imply that basic services require arriving staff.
 The terminal writes out quickly. Its first keypress during that animation reveals
 the text without also authorising work. Afterwards:
 
-| Control | Action |
-| --- | --- |
-| Up/Down | Select a work order or individual patient |
-| PgUp/PgDn | Scroll the readout independently of selection |
-| Tab | Enable/disable supplementing depot shortages from ship cargo |
-| Enter | Review the selected quote |
-| A | Review all supported repairs or eligible crew treatment |
-| Y / N | Authorise or reject the confirmation |
-| Esc | Close a confirmation or return from the bay to Services |
+| Control   | Action                                                       |
+| --------- | ------------------------------------------------------------ |
+| Up/Down   | Select a work order or individual patient                    |
+| PgUp/PgDn | Scroll the readout independently of selection                |
+| Tab       | Enable/disable supplementing depot shortages from ship cargo |
+| Enter     | Review the selected quote                                    |
+| A         | Review all supported repairs or eligible crew treatment      |
+| Y / N     | Authorise or reject the confirmation                         |
+| Esc       | Close a confirmation or return from the bay to Services      |
 
 The clickable bottom menu exposes the same controls. Cargo supplementation starts
 off whenever a bay opens. Confirmations default to **No**, list actual materials
@@ -38,12 +38,12 @@ unit, cubic metres. Buying them reduces the supply available for services;
 selling them to the depot replenishes that same stock. Workshop Spares and
 Medical Supplies can also be bought at staffed ports.
 
-| Service | One sealed service batch | Maximum work per batch | Labour |
-| --- | --- | --- | --- |
-| Hull | 1 m^3 Titanium Trusses + 1 m^3 Workshop Spares | 10 integrity points | 12 Cr / point |
-| Secured rover | Same materials as hull | 20 integrity points | 5 Cr / point |
-| Reactor | 1 m^3 Helium-3 + 1 m^3 Deuterium Pellets | 40 reactor units | Existing fuel-loading rate |
-| Medical | 1 m^3 Medical Supplies per patient | 20 HP | 4 Cr / HP |
+| Service       | One sealed service batch                       | Maximum work per batch | Labour                     |
+| ------------- | ---------------------------------------------- | ---------------------- | -------------------------- |
+| Hull          | 1 m^3 Titanium Trusses + 1 m^3 Workshop Spares | 10 integrity points    | 12 Cr / point              |
+| Secured rover | Same materials as hull                         | 20 integrity points    | 5 Cr / point               |
+| Reactor       | 1 m^3 Helium-3 + 1 m^3 Deuterium Pellets       | 40 reactor units       | Existing fuel-loading rate |
+| Medical       | 1 m^3 Medical Supplies per patient             | 20 HP                  | 4 Cr / HP                  |
 
 Labour and issued depot materials are charged separately in one total quote.
 Carried materials are not charged again as a purchase. Partly used sealed batches
@@ -159,6 +159,37 @@ are capped at 512; sponsors at 2,048. No astrometric data uses physical cargo.
 Uploads and chart downloads checkpoint detached outcomes before assignment;
 failed writes leave receipts, funding, charts and credits unchanged.
 
+## Communications (M6)
+
+Press **H**, select **Comms** in a travel menu, or choose **Communications** under
+**O Operations**. The paused thin-text inbox retains nearby depot reports; Up/Down
+selects a carrier, PgUp/PgDn scrolls its dossier, Enter marks the system in
+navigation, R reacquires contacts and Esc restores the previous interface.
+The first keyboard press or menu click during writing only completes the reveal.
+
+Background hyperspace reception uses a fixed **60 ly** circular radius, independent
+of screen dimensions and observatory equipment. Batches yield between worker
+requests. At most eight natural candidates are verified against canonical station
+generation per sweep, then merged with real delivered depots; phantom candidate
+flags and navigation buoys cannot advertise depot services. Up to 32 closest real
+carriers are retained per sweep. Searches can finish during movement, but results
+are filtered at the latest ship coordinates. Leaving the travel context cancels
+pending work.
+
+Reception is throttled to two real seconds in motion, fifteen when stationary.
+New or meaningfully changed content generates at most one aggregate HUD notice
+per fifteen real seconds. Repeated reception and minor stock fluctuations do not
+re-alert; real shortage categories or available-job changes do. The inbox contains
+at most 128 reports, with a 512-source deduplication index. Reports expire after
+30 simulated days, while content fingerprints prevent repeated carrier spam.
+
+An unvisited, verified depot reports its services and coordinates, not invented
+stocks or job offers. Previously visited depots also show stored shared-inventory
+shortages and up to three actual unaccepted robot offers, with their report age.
+Those reports can be stale: docking is required to refresh stock, accept work,
+transact or receive payment. Broadcast reception never creates service stocks,
+reserves sponsor money, advances scans or completes missions. Read states persist.
+
 ## Ownership And Persistence
 
 - `core/depot_types.ts`: typed operational records, work orders and validation.
@@ -175,6 +206,10 @@ failed writes leave receipts, funding, charts and credits unchanged.
   natural-depot summaries, without terrain preparation or new generation rolls.
 - `core/frontier_terminal.ts`, `survey_exchange_console.ts`: reusable thin-text
   terminal selection/reveal and formatted scientific quotes.
+- `core/depot_communications.ts`, `communications_types.ts`: bounded acquisition,
+  content deduplication, expiry and saved read-state validation.
+- `core/communications_console.ts`: informational, age-labelled carrier dossiers;
+  no remote transactions or procedural-world changes.
 - `core/depot_service.ts`: once-only initialisation, supported targets and coordinated
   service commits, including a detached pre-commit checkpoint.
 - `core/depot_service_console.ts`: selection, reveal, paging, semantic text models
@@ -186,6 +221,8 @@ failed writes leave receipts, funding, charts and credits unchanged.
 - `Game`: prepares stations, wires modal input/drawing, persists outcomes and publishes
   resource effects only after a successful commit.
 
+Save schema 25 adds bounded communications reports, content revisions and read
+state. Version 24 migrates with an empty inbox while preserving survey receipts.
 Save schema 24 adds compact survey evidence, receipts, public charts and scientific
 sponsor accounts. Schema 23 migrates with empty science records rather than
 inventing historical observations or payments. Schema 23 stores extraction profiles/carry and small sponsor/offer records
@@ -224,6 +261,10 @@ It now also covers robot acceptance/decline, CLAIMABLE cargo, handoff/payment,
 save/reload, stable mission selection and resource reports. That extended flow
 passed during the M3-M4 gate using the installed Playwright Core package at
 `/home/mpalmer/.cache/ms-playwright-go/1.57.0/package`.
+The prepared M5-M6 extension additionally checks upload decline/payment/duplicate
+refusal, navigation-only charts, receipt persistence, real delivered-carrier
+reception, read state, destination marking, Operations return and narrow terminals.
+That extension has not yet been run.
 
 M3-M4 Luna gate:
 
@@ -239,7 +280,25 @@ alternative; do not describe prepared checks as passed. Source/clock, saturation
 fractional carry, funding, cancellation, wrong-address, sold-cargo, full-store,
 duplicate-payment and storage-failure cases are covered by the new focused suites.
 
+M5-M6 Luna gate (pending):
+
+```bash
+npm run test:run -- src/tests/core/survey_data_service.test.ts src/tests/core/frontier_catalogue.test.ts src/tests/core/depot_communications.test.ts src/tests/core/interface/frontier_terminal.test.ts src/tests/core/interface/survey_exchange_integration.test.ts src/tests/core/interface/communications_integration.test.ts src/tests/core/interface/save_game.test.ts
+npm run check
+COSMIC_URL=http://127.0.0.1:5173/ PLAYWRIGHT_MODULE=/home/mpalmer/.cache/ms-playwright-go/1.57.0/package node scripts/check_depot_browser.cjs
+```
+
+Inspect the new desktop/narrow screenshots, not just their pixel counters. Check
+unaffected travel, surface and orbit regression suites as part of `npm run check`.
+No galaxy-generation version or population tuning is changed by M5-M6.
+
 Personally check a depot with damage, low fuel and an injured crew member.
 Compare service supply readouts with Buy/Sell stocks, perform partial work,
 supplement from cargo, leave/revisit, and save/reload. Confirm ordinary staffed
 starports and deferred heavy-haul homebound travel still behave as before.
+For the new features, scan/observe a star or survey a planet, dock and upload it
+in Astrometric exchange. Try again, then at another depot: the funded tier pays
+only once. Download a public chart and confirm it supplies navigation, not scan
+credit. In hyperspace, approach a depot region, open H and mark a destination.
+Reopen through Operations and confirm Esc restores its selection. Reload and
+check receipt/read-state persistence; compare narrow and desktop wrapping.

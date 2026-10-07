@@ -11,7 +11,7 @@ import { sameHaulAddress, type InfrastructureRecord, type HaulOrbitSpecification
 import type { MissionSystemAddress } from './mission_board';
 import { systemAddress } from './system_orbit_state';
 import { findHaulHomeboundRoute } from './haul_navigation';
-import type { ObservatoryDestination } from './observatory_types';
+import { observatoryDistanceLy, type ObservatoryDestination } from './observatory_types';
 
 /** Resolves stable Kepler motion using the actual host mass, including inner pairs in triples. */
 export function advanceInstallationAngle(
@@ -117,6 +117,24 @@ export class InfrastructureRegistry {
   /** Returns registered assets at a full address for navigation and technology evidence. */
   at(address: MissionSystemAddress): readonly InfrastructureRecord[] {
     return this.records.filter((asset) => sameHaulAddress(asset.systemAddress, address));
+  }
+
+  /** Returns bounded-radius delivered carriers without constructing systems or copying orbital histories. */
+  getDepotContacts(
+    x: number,
+    y: number,
+    radiusLy: number
+  ): Array<{ stationId: string; name: string; address: MissionSystemAddress }> {
+    return this.records
+      .filter(
+        (asset) =>
+          asset.kind === 'automated-depot' && observatoryDistanceLy(x, y, asset.systemAddress) <= radiusLy
+      )
+      .map((asset) => ({
+        stationId: asset.assetId,
+        name: `${asset.systemName} Logistics Depot ${asset.sourceMissionId.slice(-6)}`,
+        address: { ...asset.systemAddress },
+      }));
   }
 
   /** Adds deployment overlays after natural orbital catch-up; pre-commissioning time is never applied. */

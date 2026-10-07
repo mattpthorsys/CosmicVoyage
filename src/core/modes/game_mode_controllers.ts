@@ -91,6 +91,7 @@ export type ActiveInterface<Quantity, Extraction, Confirmation> =
   | { readonly kind: 'ship-repairs' }
   | { readonly kind: 'depot-service' }
   | { readonly kind: 'survey-exchange' }
+  | { readonly kind: 'communications' }
   | { readonly kind: 'haul-manifest' }
   | { readonly kind: 'rover-cargo' }
   | { readonly kind: 'surface-legend' }

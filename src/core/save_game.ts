@@ -45,10 +45,17 @@ import {
   validateSurveyDataSnapshot,
   type SurveyDataSnapshot,
 } from './survey_data_types';
+import {
+  createCommunicationsSnapshot,
+  validateCommunicationsSnapshot,
+  type CommunicationsSnapshot,
+} from './communications_types';
 
-export const SAVE_GAME_VERSION = 24;
-export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v24';
-export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v24';
+export const SAVE_GAME_VERSION = 25;
+export const SESSION_SAVE_KEY = 'cosmic-voyage.session.v25';
+export const MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v25';
+const VERSION_TWENTY_FOUR_SESSION_SAVE_KEY = 'cosmic-voyage.session.v24';
+const VERSION_TWENTY_FOUR_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v24';
 const VERSION_TWENTY_THREE_SESSION_SAVE_KEY = 'cosmic-voyage.session.v23';
 const VERSION_TWENTY_THREE_MANUAL_SAVE_KEY = 'cosmic-voyage.manual.v23';
 const VERSION_TWENTY_TWO_SESSION_SAVE_KEY = 'cosmic-voyage.session.v22';
@@ -301,7 +308,12 @@ export interface GameSaveV24 extends Omit<GameSaveV23, 'version'> {
   surveyData: SurveyDataSnapshot;
 }
 
-export type GameSave = GameSaveV24;
+export interface GameSaveV25 extends Omit<GameSaveV24, 'version'> {
+  version: 25;
+  communications: CommunicationsSnapshot;
+}
+
+export type GameSave = GameSaveV25;
 
 /** Returns stable index-based paths for every generated planet and moon in a system. */
 export function getSystemPlanetPaths(system: SolarSystem): Array<{ path: string; planet: Planet }> {
@@ -357,6 +369,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     | GameSaveV22
     | GameSaveV23
     | GameSaveV24
+    | GameSaveV25
   >;
   if (
     record.version !== 1 &&
@@ -382,6 +395,7 @@ export function parseGameSave(value: string | unknown): GameSave {
     record.version !== 21 &&
     record.version !== 22 &&
     record.version !== 23 &&
+    record.version !== 24 &&
     record.version !== SAVE_GAME_VERSION
   ) {
     throw new Error(`Unsupported save version: ${String(record.version)}.`);
@@ -466,6 +480,7 @@ export function parseGameSave(value: string | unknown): GameSave {
         version: SAVE_GAME_VERSION,
         depots: {},
         surveyData: createSurveyDataSnapshot(),
+        communications: createCommunicationsSnapshot(),
       };
       break;
     case 21: {
@@ -475,6 +490,7 @@ export function parseGameSave(value: string | unknown): GameSave {
         ...old,
         version: SAVE_GAME_VERSION,
         surveyData: createSurveyDataSnapshot(),
+        communications: createCommunicationsSnapshot(),
         depots: Object.fromEntries(
           Object.entries(old.depots).map(([id, depot]) => [id, { ...depot, extraction: null, jobs: null }])
         ),
@@ -488,6 +504,7 @@ export function parseGameSave(value: string | unknown): GameSave {
         ...old,
         version: SAVE_GAME_VERSION,
         surveyData: createSurveyDataSnapshot(),
+        communications: createCommunicationsSnapshot(),
         depots: Object.fromEntries(
           Object.entries(old.depots).map(([id, depot]) => [id, { ...depot, jobs: null }])
         ),
@@ -499,10 +516,18 @@ export function parseGameSave(value: string | unknown): GameSave {
         ...(candidate as unknown as GameSaveV23),
         version: SAVE_GAME_VERSION,
         surveyData: createSurveyDataSnapshot(),
+        communications: createCommunicationsSnapshot(),
+      };
+      break;
+    case 24:
+      save = {
+        ...(candidate as unknown as GameSaveV24),
+        version: SAVE_GAME_VERSION,
+        communications: createCommunicationsSnapshot(),
       };
       break;
     default:
-      save = candidate as unknown as GameSaveV24;
+      save = candidate as unknown as GameSaveV25;
   }
   // The schema is unchanged, but corrected stellar hierarchies regenerate local world identities.
   if (save.generationVersion === 6) {
@@ -647,6 +672,7 @@ export function parseGameSave(value: string | unknown): GameSave {
   validateDepotSnapshot(save.depots, save.gameClockElapsedSeconds, save.economy);
   validateDepotContracts(save.depots, save, save.gameClockElapsedSeconds);
   validateSurveyDataSnapshot(save.surveyData, save.gameClockElapsedSeconds, save.depots);
+  validateCommunicationsSnapshot(save.communications, save.gameClockElapsedSeconds);
   return record.version !== SAVE_GAME_VERSION ? migrateMatReproduction(save) : save;
 }
 
@@ -973,6 +999,7 @@ function migrateV18Save(save: GameSaveV18): GameSave {
     version: SAVE_GAME_VERSION,
     depots: {},
     surveyData: createSurveyDataSnapshot(),
+    communications: createCommunicationsSnapshot(),
     systemOrbitHistory:
       save.systemOrbit && save.location.kind !== 'hyperspace'
         ? [
@@ -1477,6 +1504,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.sessionStore,
       SESSION_SAVE_KEY,
+      VERSION_TWENTY_FOUR_SESSION_SAVE_KEY,
       VERSION_TWENTY_THREE_SESSION_SAVE_KEY,
       VERSION_TWENTY_TWO_SESSION_SAVE_KEY,
       VERSION_TWENTY_ONE_SESSION_SAVE_KEY,
@@ -1513,6 +1541,7 @@ export class SaveGameStorage {
     this.sessionStore.removeItem(SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_TWO_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_THREE_SESSION_SAVE_KEY);
+    this.sessionStore.removeItem(VERSION_TWENTY_FOUR_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_ONE_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_TWENTY_SESSION_SAVE_KEY);
     this.sessionStore.removeItem(VERSION_NINETEEN_SESSION_SAVE_KEY);
@@ -1541,6 +1570,7 @@ export class SaveGameStorage {
     return this.readCurrentOrLegacy(
       this.persistentStore,
       MANUAL_SAVE_KEY,
+      VERSION_TWENTY_FOUR_MANUAL_SAVE_KEY,
       VERSION_TWENTY_THREE_MANUAL_SAVE_KEY,
       VERSION_TWENTY_TWO_MANUAL_SAVE_KEY,
       VERSION_TWENTY_ONE_MANUAL_SAVE_KEY,
@@ -1577,6 +1607,7 @@ export class SaveGameStorage {
     this.persistentStore.removeItem(MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_TWO_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_THREE_MANUAL_SAVE_KEY);
+    this.persistentStore.removeItem(VERSION_TWENTY_FOUR_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_ONE_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_TWENTY_MANUAL_SAVE_KEY);
     this.persistentStore.removeItem(VERSION_NINETEEN_MANUAL_SAVE_KEY);

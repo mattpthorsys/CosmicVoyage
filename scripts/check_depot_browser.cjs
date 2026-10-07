@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
-/** Exercises finite robotic services through normal save import, keyboard input and durable checkpoints. */
+/** Exercises finite services, contracts, science and communications through normal input and checkpoints. */
 async function main() {
   const output = process.env.DEPOT_CAPTURE_DIR || '/tmp/cosmic-depots';
   fs.mkdirSync(output, { recursive: true });
@@ -33,6 +33,7 @@ async function main() {
       const { StarbaseCommerceService } = await import('/src/core/starbase_commerce.ts');
       const { DepotService } = await import('/src/core/depot_service.ts');
       const { createDepotServiceRows } = await import('/src/core/depot_service_console.ts');
+      const { SurveyDataService } = await import('/src/core/survey_data_service.ts');
       const { createHeavyHaulSnapshot } = await import('/src/core/heavy_haul_types.ts');
       const { createObservatorySnapshot } = await import('/src/core/observatory_types.ts');
       const { createXenobiologySnapshot } = await import('/src/entities/biology/biology_types.ts');
@@ -98,9 +99,14 @@ async function main() {
         DEUTERIUM_PELLETS: 2,
       }))
         economy[station.id].items[key].units = units;
+      // Preset genuine measured provenance for repeat-payment tests; public charts use a separate path below.
+      const science = new SurveyDataService();
+      science.ensureBuyer(station.id, address);
+      science.record(address, 'stars', system.name, 3, 'local-scan', 100);
       const save = parseGameSave({
         version: SAVE_GAME_VERSION,
-        surveyData: { evidence: {}, paid: {}, charts: {}, buyers: {} },
+        surveyData: science.createSnapshot(),
+        communications: { notices: [], heard: {} },
         generationVersion: CONFIG.GALAXY_MODEL_VERSION,
         seed,
         savedAt: new Date().toISOString(),
@@ -351,6 +357,95 @@ async function main() {
     assert.deepEqual(reloaded.depots, delivered.depots);
     assert.deepEqual(reloaded.player, delivered.player);
     assert(reloaded.completedMissionIds.includes(supply.id));
+
+    // Science uses No-default confirmation and durable campaign receipts, never physical cargo.
+    await load(fixture.save);
+    for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');
+    for (let index = 0; index < fixture.serviceRows.indexOf('chart-exchange'); index++)
+      await press('ArrowDown');
+    await press('Enter');
+    await page.locator('[data-command-id="frontier-use"]').waitFor();
+    await press('PageDown'); // Skip writing only; no upload or scroll action is issued by this key.
+    metrics.science = await capture('desktop-astrometric-exchange');
+    const scienceBefore = await checkpoint();
+    await page.locator('[data-command-id="frontier-use"]').click();
+    await page.locator('[data-command-id="dialog-yes"]').waitFor();
+    await press('n');
+    assert.deepEqual((await checkpoint()).surveyData, scienceBefore.surveyData);
+    await page.locator('[data-command-id="frontier-use"]').click();
+    await press('y');
+    const scientificSale = await checkpoint();
+    assert.equal(scientificSale.player.resources.credits, scienceBefore.player.resources.credits + 40);
+    assert.equal(Object.values(scientificSale.surveyData.paid)[0], 3);
+    assert.deepEqual(scientificSale.player.cargoHold, scienceBefore.player.cargoHold);
+    assert.equal(scientificSale.gameClockElapsedSeconds, scienceBefore.gameClockElapsedSeconds);
+    await press('Enter'); // Dismiss the completion receipt before attempting the same observation again.
+    await page.locator('[data-command-id="frontier-use"]').click();
+    await page.locator('[data-command-id="dialog-continue"]').waitFor();
+    const repeatSale = await checkpoint();
+    assert.equal(repeatSale.player.resources.credits, scientificSale.player.resources.credits);
+    assert.deepEqual(repeatSale.surveyData.paid, scientificSale.surveyData.paid);
+    await press('Enter');
+    await press('Tab');
+    await page.locator('[data-command-id="frontier-use"]:not([disabled])').waitFor();
+    await page.locator('[data-command-id="frontier-use"]').click();
+    const publicChart = await checkpoint();
+    assert(
+      Object.keys(publicChart.surveyData.charts).length > 0,
+      'Public catalogue did not file a navigation chart.'
+    );
+    assert.deepEqual(publicChart.surveyData.evidence, repeatSale.surveyData.evidence);
+    assert.deepEqual(publicChart.surveyData.paid, repeatSale.surveyData.paid);
+    assert.deepEqual(publicChart.observatory.observations, repeatSale.observatory.observations);
+    assert.deepEqual(publicChart.missionObjectiveProgress, repeatSale.missionObjectiveProgress);
+    await capture('desktop-public-charts');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await press('PageDown');
+    await capture('narrow-public-charts');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload();
+    await page.locator('#continueSessionButton').click();
+    await page.waitForFunction(() => document.querySelector('#splashScreen').hidden);
+    assert.deepEqual((await checkpoint()).surveyData, publicChart.surveyData);
+
+    // A real delivered carrier is found without remote trade or automatically accepting its advertised work.
+    await press('h');
+    await page.locator('[data-command-id="frontier-refresh"]').waitFor();
+    await press('PageDown');
+    await page.locator('[data-command-id="frontier-use"]:not([disabled])').waitFor();
+    await page.locator('[data-command-id="frontier-use"]').click();
+    const inbox = await checkpoint();
+    assert(inbox.communications.notices.some((notice) => notice.sourceId === fixture.stationId));
+    const read = inbox.communications.notices.find((notice) => notice.read);
+    assert(read, 'Displayed report was not marked read.');
+    const { worldX, worldY, systemSlot } = inbox.observatory.destination;
+    assert.deepEqual({ worldX, worldY, systemSlot }, read.address);
+    assert.deepEqual(
+      inbox.economy,
+      publicChart.economy,
+      'Communications performed a remote stock transaction.'
+    );
+    assert.deepEqual(
+      inbox.activeMissions,
+      publicChart.activeMissions,
+      'A broadcast accepted advertised work.'
+    );
+    metrics.communications = await capture('desktop-communications');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await press('PageDown');
+    await capture('narrow-communications');
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload();
+    await page.locator('#continueSessionButton').click();
+    await page.waitForFunction(() => document.querySelector('#splashScreen').hidden);
+    assert.deepEqual((await checkpoint()).communications, inbox.communications);
+    await press('o');
+    await press('h');
+    await page.locator('[data-command-id="frontier-refresh"]').waitFor();
+    await press('PageDown');
+    await press('Escape');
+    await page.locator('[data-command-id="use"]').waitFor();
+    await capture('desktop-communications-return-to-operations');
 
     await load(fixture.save);
     for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');

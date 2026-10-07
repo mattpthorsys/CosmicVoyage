@@ -1,5 +1,6 @@
 import { CONFIG } from '../../config';
 import { createSurveyDataSnapshot } from '../../core/survey_data_types';
+import { createCommunicationsSnapshot } from '../../core/communications_types';
 import { Player } from '../../core/player';
 import { MissionProgressService } from '../../core/mission_progress';
 import { HeavyHaulService } from '../../core/heavy_haul_service';
@@ -74,6 +75,7 @@ export function haulJourneyFixture(kind: 'local' | 'medium' | 'heavy' = 'heavy')
     version: SAVE_GAME_VERSION,
     depots: {},
     surveyData: createSurveyDataSnapshot(),
+    communications: createCommunicationsSnapshot(),
     generationVersion: CONFIG.GALAXY_MODEL_VERSION,
     seed: 'haul-journey-fixture',
     savedAt: '2026-10-05T00:00:00Z',

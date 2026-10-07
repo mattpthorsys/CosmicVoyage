@@ -1,9 +1,10 @@
 # Automated Frontier Depots: Implementation Plan
 
 Status: M0-M4 implemented and verified with `npm run check` (1,220 tests) and the
-full depot Playwright flow at desktop/narrow widths. M5 astrometric exchange is
-implemented; its new tests and browser checks await the requested Luna gate.
-M6 broadcasts are the next implementation milestone. See [the
+full depot Playwright flow at desktop/narrow widths. M5 astrometric exchange and
+M6 broadcasts are implemented; static checks pass, while their new runtime tests
+and expanded browser checks await the requested Luna gate. M7 whole-loop balance
+and verification is next. See [the
 current depot guide](../automated-depots.md) for controls, recipes, ownership
 and verification commands.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
@@ -327,7 +328,7 @@ save lifecycle, without introducing async saves inside a partially applied actio
 Each milestone is a coherent commit after its verification gate. Add the focused
 tests during implementation, then tell the user before running tests/browser
 checks so they can switch to Luna. Do not describe written tests as verified.
-For the M0-M2 and M3-M4 batches, implementation commits precede the requested separate Luna
+For the M0-M2, M3-M4 and M5-M6 batches, implementation commits precede the requested separate Luna
 verification stage; corrective commits follow if that stage identifies problems.
 
 ### M0: Persistent Operations And Inventory Boundaries
@@ -442,6 +443,12 @@ address/body identity, limits, migrations and serialized size fixtures.
 Suggested commit: `Add bounded chart exchange and campaign-wide survey payments`.
 
 ### M6: Nearby Broadcasts And Communications Access
+
+Implemented in save schema 25: H/Operations/travel access, physical-radius
+acquisition independent of viewport, verified natural and delivered carriers,
+bounded deduplication/expiry/read state and timestamped informational reports.
+Unvisited carriers do not invent stock or jobs; stored telemetry is labelled
+potentially stale. Runtime and browser verification awaits Luna.
 
 Implement bounded contact acquisition for natural/deployed depots, content
 revision deduplication and the Communications inbox. Expose it through Operations

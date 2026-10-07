@@ -28,6 +28,19 @@ function input(action: string) {
 }
 
 describe('frontier terminal presentation', () => {
+  it('keeps acquisition actions disabled until a real entry can be selected', () => {
+    const terminal = new FrontierTerminal();
+    terminal.open();
+    expect(
+      terminal.createCommandBar('communications').buttons.find((button) => button.id === 'frontier-use')
+        ?.enabled
+    ).toBe(false);
+    terminal.createModel('COMMUNICATIONS', [], entries(), 80, 30);
+    expect(
+      terminal.createCommandBar('communications').buttons.find((button) => button.id === 'frontier-use')
+        ?.enabled
+    ).toBe(true);
+  });
   it('consumes the first key solely to complete reveal, including an action or Escape', () => {
     const terminal = new FrontierTerminal();
     terminal.open();

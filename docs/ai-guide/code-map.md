@@ -6,6 +6,10 @@ funding and bounds. `survey_observations.ts` adapts local discovery updates.
 `frontier_catalogue.ts` queries lightweight public descriptors and verifies only
 natural-depot candidates. `frontier_terminal.ts` owns reusable information-terminal
 selection, scrolling and reveal; `survey_exchange_console.ts` formats quotes and charts.
+`depot_communications.ts` owns physical-radius reception, verified real contacts,
+quiet content revisions and expiry; `communications_types.ts` validates the bounded
+saved inbox. `communications_console.ts` formats age-labelled informational
+reports. Communications never performs remote service, contract or science transactions.
 
 Use this file to find the likely owner of a change before searching globally.
 

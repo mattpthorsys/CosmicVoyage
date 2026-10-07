@@ -18,6 +18,7 @@ export function createHelpReferenceLines(state: GameState, actions: AvailableAct
     `${formatKey(CONFIG.KEY_BINDINGS.MISSION_JOURNAL)}  Mission journal, objectives and destination coordinates`,
     `${formatKey(CONFIG.KEY_BINDINGS.SCIENCE_LOG)}  Science log, acquired dossiers and recorded habitats`,
     `${formatKey(CONFIG.KEY_BINDINGS.OBSERVATORY)}  Observatory: nearby contacts, spectra and destinations`,
+    `${formatKey(CONFIG.KEY_BINDINGS.COMMUNICATIONS)}  Communications: depot broadcasts, service reports and destinations`,
     '',
     'HYPERSPACE',
     `${formatKey(CONFIG.KEY_BINDINGS.ENTER_SYSTEM)}  Enter a star system when on a contact`,
