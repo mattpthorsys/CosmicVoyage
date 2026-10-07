@@ -206,7 +206,7 @@ export class SceneRenderer {
     logger.debug('[SceneRenderer] Instance created.');
   }
 
-  /** Clears caches. */
+  /** Drops view-dependent caches while retaining body-fixed textures validated against their source data. */
   clearCaches(): void {
     this.hyperspaceTileProvider.clearCache();
     this.hyperspaceFrameCache = null;

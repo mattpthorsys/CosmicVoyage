@@ -12,6 +12,9 @@ import { MineralRichness } from '../../../constants/resources';
 import { SolarSystem } from '../../../entities/solar_system';
 import { SystemDataGenerator } from '../../../generation/system_data_generator';
 import { CONFIG } from '../../../config';
+import { Player } from '../../../core/player';
+import { GameStateManager } from '../../../core/game_state_manager';
+import { findSystemPlanetPath, type LocationSaveData } from '../../../core/save_game';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -63,6 +66,55 @@ describe('settlement surface preparation', () => {
     expect(layer?.sites.length).toBeGreaterThan(0);
     expect(layer?.sourceWidth).toBe(colony.heightmap?.[0].length);
     expect(system.settlementStage).toBe('complete');
+  });
+
+  it('regenerates identical colony decoration after cache eviction and saved-location restoration', () => {
+    // A gentle coastline keeps this persistence check small without flooding
+    // every cell when the colony's managed hydrosphere is applied.
+    vi.spyOn(heightmaps, 'generateHeightmap').mockImplementation(() =>
+      Array.from({ length: 65 }, (_, y) =>
+        Array.from({ length: 65 }, (_, x) => 60 + (x % 64) * 2 + Math.floor(y * 0.4))
+      )
+    );
+    const root = new PRNG(CONFIG.SEED);
+    const generator = new SystemDataGenerator(root);
+    const x = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X;
+    const y = CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y;
+    const system = new SolarSystem(generator.getSystemProperties(x, y), x, y, root);
+    const colony = system.colonyWorld!;
+    colony.ensureSurfaceReady();
+    const original = colony.getSurfaceDataIfReady()?.settlements;
+    expect(original?.sites.length).toBeGreaterThan(0);
+    const path = findSystemPlanetPath(system, colony)!;
+    const location: LocationSaveData = {
+      kind: 'planet',
+      worldX: x,
+      worldY: y,
+      systemSlot: 0,
+      bodyPath: path,
+      orbitReferencePath: path,
+    };
+    const serialized = JSON.stringify(location);
+    generator.clearCache();
+    const regenerated = new SolarSystem(generator.getSystemProperties(x, y), x, y, root).colonyWorld!;
+    regenerated.ensureSurfaceReady();
+    expect(regenerated).not.toBe(colony);
+    expect(regenerated.getSurfaceDataIfReady()?.settlements).toEqual(original);
+    const freshRoot = new PRNG(CONFIG.SEED);
+    const manager = new GameStateManager(new Player(), freshRoot, new SystemDataGenerator(freshRoot));
+    try {
+      manager.restoreLocation(JSON.parse(serialized) as LocationSaveData);
+      const restored = manager.currentPlanet!;
+      expect(restored).not.toBe(colony);
+      expect(restored.mapSeed).toBe(colony.mapSeed);
+      expect(restored.terraforming).toEqual(colony.terraforming);
+      expect(restored.getSurfaceDataIfReady()).toBeNull();
+      restored.ensureSurfaceReady();
+      expect(restored.getSurfaceDataIfReady()?.settlements).toEqual(original);
+      expect(serialized).not.toContain('settlements');
+    } finally {
+      manager.destroy();
+    }
   });
 
   it('preserves every natural surface field when optional city generation is enabled', () => {

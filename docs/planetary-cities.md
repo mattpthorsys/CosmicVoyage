@@ -1,7 +1,7 @@
 # Planetary City Foundations
 
-Status: M0-M3 are implemented and verified. M4 cache-transition hardening and
-M5 final visual/performance tuning remain. See the
+Status: M0-M4 are implemented and verified. M5 final visual/performance tuning
+remains planned. See the
 [implementation plan](plans/planetary-cities-first-version.md).
 
 ## Visual Budgets
@@ -189,8 +189,75 @@ partial colony changed 416 and 192 respectively. Uninhabited and depot-only
 captures had zero changes. Capture directories are `/tmp/cosmic-cities-m3-desktop`,
 `/tmp/cosmic-cities-m3-narrow`, `/tmp/cosmic-cities-m3-sealed`,
 `/tmp/cosmic-cities-m3-uninhabited` and `/tmp/cosmic-cities-m3-depot`.
-M4 retains the broader loading, body-switching, modal, save/reload and lifecycle
-transition audit; M5 retains final visual and performance tuning.
+M4 adds the broader loading, body-switching, modal, save/reload and lifecycle
+transition audit below; M5 retains final visual and performance tuning.
+
+## Preparation And Transitions (M4)
+
+Implementation and verification are complete. The existing source checks and
+the final M4 regression results are summarized below.
+
+`Planet.getSurfaceGenerationRevision()` exposes only the existing preparation
+revision. `SurfacePrefetchService` records attempts per revision rather than
+per body lifetime. New terraforming inputs can therefore receive predictive
+preparation again, while a failed unchanged revision does not retry endlessly.
+Queued work records the revision when preparation starts. Existing worker
+publication guards still reject obsolete results.
+
+`RendererFacade` retains cancellable idle/timeout handles for texture warming.
+Discontinuous arrival releases the old queue; destruction cancels pending work
+and refuses future preparation. View-cache invalidation retains the source-
+validated body-fixed texture and landing-map WeakMaps: resizing need not rebuild
+unchanged terrain or city art. Generated data and source identity, not a display
+name, determine texture reuse.
+
+Generic animated popups now mask their current visible bounds through
+`ScreenBuffer.occludeScaledGlyphs`, as dossier and terminal-dialog renderers
+already do. The underlying city raster is redrawn when the popup closes.
+Replacing the terminal grid discards both staged raster glyphs and old-grid
+foreground masks, even if resize interrupts an unflushed frame.
+
+New tests use the real `ScreenBuffer` raster bitmap, not just mocked draw calls.
+They cover popup phases and exact restoration, loading, city-free body changes,
+resize, interrupted staging, return to system travel and texture reuse. Additional
+checks cover idle/timeout cancellation, prefetch revisions and the actual saved-
+location restoration boundary with regenerated settlement data. Existing tests
+retain seam, stale worker publication and natural-world regression coverage.
+
+The optional `--transitions` diagnostic reuses the same production renderer,
+buffer and canvases across transitions. PNGs and `transitionEffect` record
+popup masking, exact display restoration, comparisons against fresh resized
+and city-free renderers, and empty raster layers during loading/system travel.
+These controls isolate stale pixels from intended decorative differences.
+
+Commands used for M4 verification, preserving earlier captures:
+
+```bash
+npm run test:run -- src/tests/core/surface_prefetch.test.ts src/tests/rendering/renderer_facade.assets.test.ts src/tests/rendering/settlement_transitions.test.ts src/tests/entities/planetary/surface_settlement_generation.test.ts
+npm run check
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body starting-colony --transitions --out /tmp/cosmic-cities-m4-desktop
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body starting-colony --transitions --cols 40 --rows 45 --out /tmp/cosmic-cities-m4-narrow
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body colony-partial --transitions --out /tmp/cosmic-cities-m4-sealed
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body uninhabited --transitions --out /tmp/cosmic-cities-m4-uninhabited
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body depot-only --transitions --out /tmp/cosmic-cities-m4-depot
+```
+
+Inspect the popup and resized PNGs as well as the metrics. For city-bearing
+fixtures, popup `coveredBefore` must be positive and `coveredAfter` zero;
+restoration and fresh-render comparisons must have zero changed pixels.
+Loading, city-free and system-travel raster counts must be zero. The launch
+capture uses the real starting hub; standalone planet fixtures omit that stage.
+All five browser captures completed. The starting colony's popup mask removed
+176 raster pixels (192 on the sealed colony) in each phase; closing restored the
+display with zero changed RGB pixels. Desktop and narrow resize references also
+had zero changed pixels. Loading, city-free, and system-travel raster layers
+were empty. Uninhabited and depot-only controls had zero city changes. Captures
+are in `/tmp/cosmic-cities-m4-{desktop,narrow,sealed,uninhabited,depot}`.
+
+The focused suites passed 26 tests across six files. `npm run check` passed
+documentation checks, formatting, lint, both TypeScript projects, all 1,342
+tests across 178 files, and the production build. The build reports the existing
+large JavaScript chunk advisory; it completed successfully.
 
 ## Generated Data Ownership
 
@@ -232,7 +299,7 @@ npm run test:surface
 npm run check
 ```
 
-The M0-M3 checks above are complete. M2 adds focused texture tests for
+The M0-M4 checks above are complete. M2 adds focused texture tests for
 fractional brightness, mip conservation, seam wrapping, daylight tint and cache
 reuse. Optical checks compare outgoing transmission with a ground-to-camera
 reference. Actual globe tests cover combined stellar illumination, spectrum,

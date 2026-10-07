@@ -317,6 +317,11 @@ export class Planet {
     return this._surfaceGenerationPromise !== null;
   }
 
+  /** Identifies the current surface inputs so predictive work can retry after terraforming invalidates them. */
+  getSurfaceGenerationRevision(): number {
+    return this._surfaceGenerationRevision;
+  }
+
   /** Returns whether submerged surface. */
   isSubmergedSurface(x: number, y: number): boolean {
     const map = this.heightmap;

@@ -9,6 +9,7 @@ describe('popup typography', () => {
       screenBuffer: {
         getCols: () => 80,
         getRows: () => 30,
+        occludeScaledGlyphs: vi.fn(),
         drawChar: (char: string, _x: number, _y: number, _fg: string, _bg: string, font: CellFont) => {
           drawn.push({ char, font });
         },

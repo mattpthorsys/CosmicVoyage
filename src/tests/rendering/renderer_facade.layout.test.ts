@@ -37,6 +37,8 @@ function reusedCanvas() {
     sceneRenderer: { clearCaches: vi.fn() },
     galaxyMapRenderer: { clearCache: vi.fn() },
     layoutInvalidated: false,
+    orbitAssetQueue: new Set(),
+    orbitAssetPreparationHandle: null,
   }) as RendererFacade;
   return { facade, buffer, canvas, ctx, cols, rows };
 }

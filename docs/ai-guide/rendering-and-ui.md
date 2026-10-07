@@ -128,11 +128,19 @@ four-colour regional motifs outside drawing loops; these half-cell pixels stay
 inside their native terrain cells and the travel viewport. Reserve mineral,
 vehicle, ship, scan, HUD and narrow-screen legend cells using
 `ScreenBuffer.occludeScaledGlyphs`: call order alone does not put terminal text
-above the raster layer. See [planetary city foundations](../planetary-cities.md)
+above the raster layer. Generic animated popups reserve their current visible
+bounds too; closing them relies on a complete new scene frame, not retained
+raster pixels. Grid replacement discards staged glyphs and foreground masks
+from the previous dimensions. See [planetary city foundations](../planetary-cities.md)
 for ownership, art budgets and verification status.
 
 Nearby orbital bodies are prepared during the existing predictive surface
 prefetch window and one body texture is built per browser idle callback.
+Predictive attempts are bounded per surface revision so terraforming can
+invalidate and reprepare a body. The facade cancels deferred warming on
+discontinuous arrival and destruction. View-cache invalidation does not discard
+the source-validated body-fixed WeakMap caches; resizing an unchanged planet
+should not rebuild its textures.
 
 The globe projection cache contains screen-space samples and antialiased limb
 coverage for each supported radius. The landing-map raster is also cached per

@@ -90,6 +90,7 @@
       import { getSurfaceDisplayColour } from '../src/entities/planet/surface_material.ts';
       import { ScreenBuffer } from '../src/rendering/screen_buffer.ts';
       import { SceneRenderer } from '../src/rendering/scene_renderer.ts';
+      import { RendererFacade } from '../src/rendering/renderer_facade.ts';
       import { DrawingContext } from '../src/rendering/drawing_context.ts';
       import { NebulaRenderer } from '../src/rendering/nebula_renderer.ts';
       import { SystemDataGenerator } from '../src/generation/system_data_generator.ts';
@@ -123,6 +124,7 @@
       const siteIndex = Number(query.get('site') ?? 0);
       const groundCols = Number(query.get('cols') ?? 120);
       const groundRows = Number(query.get('rows') ?? 64);
+      const transitions = query.get('transitions') === '1';
       if (!Number.isInteger(siteIndex) || siteIndex < 0) throw new Error('site must be a nonnegative index');
       if (!Number.isInteger(groundCols) || groundCols < 24 || groundCols > 180)
         throw new Error('cols must be 24..180');
@@ -164,6 +166,7 @@
           siteIndex,
           groundCols,
           groundRows,
+          transitions,
         },
         fixtures: [],
       };
@@ -317,6 +320,7 @@
       async function collectFixture(preset) {
         const start = performance.now();
         let planet;
+        let parentSystem = null;
         if (preset.id === 'starting-colony') {
           const root = new PRNG(seed);
           const systems = new SystemDataGenerator(root);
@@ -325,6 +329,7 @@
           const hub = new SolarSystem(systems.getSystemProperties(x, y), x, y, root);
           if (!hub.colonyWorld) throw new Error('Starting hub has no colony');
           planet = hub.colonyWorld;
+          parentSystem = hub;
         } else {
           planet = new Planet(
             preset.id,
@@ -437,10 +442,10 @@
           return result;
         }
 
-        /** Captures the production landing map or regional travel path at fixed terrain coordinates. */
-        function renderGround(view, body = planet) {
-          const groundWidth = groundCols * 8;
-          const groundHeight = groundRows * 8;
+        /** Creates one reusable terminal/raster pair for independent or lifecycle captures. */
+        function groundSession(cols = groundCols, rows = groundRows) {
+          const groundWidth = cols * 8;
+          const groundHeight = rows * 8;
           const groundMain = canvasAt(groundWidth, groundHeight);
           const groundRaster = canvasAt(groundWidth, groundHeight);
           const groundBuffer = new ScreenBuffer(
@@ -450,13 +455,43 @@
             groundRaster,
             groundRaster.getContext('2d')
           );
-          groundBuffer.updateDimensions(groundCols, groundRows, 8, 8);
-          const groundRenderer = new SceneRenderer(
-            groundBuffer,
-            new DrawingContext(groundBuffer),
-            new NebulaRenderer(),
-            generator
-          );
+          groundBuffer.updateDimensions(cols, rows, 8, 8);
+          const context = new DrawingContext(groundBuffer);
+          const groundRenderer = new SceneRenderer(groundBuffer, context, new NebulaRenderer(), generator);
+          // Only popup drawing is used: keep its real production implementation
+          // without the facade constructor's live window layout and listeners.
+          const facade = Object.assign(Object.create(RendererFacade.prototype), {
+            screenBuffer: groundBuffer,
+            drawingContext: context,
+          });
+          return {
+            cols,
+            rows,
+            initialized: false,
+            main: groundMain,
+            raster: groundRaster,
+            buffer: groundBuffer,
+            renderer: groundRenderer,
+            facade,
+          };
+        }
+
+        /** Flushes a shared display and captures its composited terminal and raster pixels. */
+        function captureGround(session, full = false) {
+          if (full || !session.initialized) session.buffer.renderFull();
+          else session.buffer.renderDiff();
+          session.initialized = true;
+          const result = canvasAt(session.main.width, session.main.height);
+          result.getContext('2d').drawImage(session.main, 0, 0);
+          result.getContext('2d').drawImage(session.raster, 0, 0);
+          return result;
+        }
+
+        /** Captures the production landing map or regional travel path at fixed terrain coordinates. */
+        function renderGround(view, body = planet, sharedSession = null, flush = true) {
+          const session = sharedSession ?? groundSession();
+          const { buffer: groundBuffer, renderer: groundRenderer, cols, rows } = session;
+          groundBuffer.clear(false);
           if (view === 'map') {
             groundRenderer.drawOrbitLandingMap(
               {
@@ -468,8 +503,8 @@
               },
               2,
               2,
-              groundCols - 4,
-              groundRows - 8
+              cols - 4,
+              rows - 8
             );
           } else {
             groundRenderer.drawPlanetSurface(
@@ -514,11 +549,161 @@
               }
             );
           }
-          groundBuffer.renderFull();
-          const result = canvasAt(groundWidth, groundHeight);
-          result.getContext('2d').drawImage(groundMain, 0, 0);
-          result.getContext('2d').drawImage(groundRaster, 0, 0);
-          return result;
+          return flush ? captureGround(session, !sharedSession) : null;
+        }
+
+        /** Counts actual visible raster pixels, optionally inside terminal-cell popup bounds. */
+        function rasterPixels(session, bounds = null) {
+          const { width, height } = session.raster;
+          const pixels = session.raster.getContext('2d').getImageData(0, 0, width, height).data;
+          let count = 0;
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              if (
+                bounds &&
+                (x < bounds.x * 8 ||
+                  x >= (bounds.x + bounds.width) * 8 ||
+                  y < bounds.y * 8 ||
+                  y >= (bounds.y + bounds.height) * 8)
+              )
+                continue;
+              if (pixels[(y * width + x) * 4 + 3]) count++;
+            }
+          }
+          return count;
+        }
+
+        /** Compares full composited displays, including glyphs and transparent-layer clearing. */
+        function displayDifference(before, after) {
+          if (before.width !== after.width || before.height !== after.height)
+            throw new Error('Transition comparison requires matching display dimensions');
+          return frameDifference(
+            before.getContext('2d').getImageData(0, 0, before.width, before.height),
+            after.getContext('2d').getImageData(0, 0, after.width, after.height),
+            new Uint8Array(before.width * before.height).fill(1)
+          );
+        }
+
+        /** Exercises production drawing repeatedly on the same canvases to expose stale city pixels. */
+        async function captureTransitions(views, stages) {
+          const session = groundSession();
+          const results = { popups: [] };
+          /** Records a transition at its own physical display dimensions. */
+          async function record(name, caption, image) {
+            stages[name] = await recordStage(
+              views,
+              name,
+              caption,
+              image,
+              new Uint8Array(image.width * image.height).fill(1)
+            );
+          }
+          /** Matches the facade's physical resize before replacing the logical grid. */
+          function resize(cols, rows) {
+            session.cols = cols;
+            session.rows = rows;
+            session.main.width = session.raster.width = cols * 8;
+            session.main.height = session.raster.height = rows * 8;
+            session.initialized = false;
+            session.buffer.updateDimensions(cols, rows, 8, 8);
+            session.renderer.clearCaches();
+          }
+          const initial = renderGround('surface', planet, session);
+          results.initialRasterPixels = rasterPixels(session);
+          await record('transitionCity', 'Shared display / colony', initial);
+          const occlude = session.buffer.occludeScaledGlyphs.bind(session.buffer);
+          let popupBounds = null;
+          /** Captures the real popup's mask without replacing pixel masking itself. */
+          session.buffer.occludeScaledGlyphs = (x, y, width, height) => {
+            popupBounds = { x, y, width, height };
+            occlude(x, y, width, height);
+          };
+          try {
+            for (const [state, progress] of [
+              ['opening', 0.65],
+              ['active', 1],
+              ['closing', 0.65],
+            ]) {
+              renderGround('surface', planet, session);
+              // Flushing consumes staged glyphs. Redraw without flushing so the
+              // popup is composed over a complete new frame, as it is in Game.
+              renderGround('surface', planet, session, false);
+              session.facade.drawPopup(
+                [
+                  'SETTLEMENT SURVEY',
+                  ...Array(14).fill('Prepared structures remain beneath this foreground terminal window.'),
+                ],
+                state,
+                progress,
+                2000
+              );
+              const coveredBefore = rasterPixels(session, popupBounds);
+              const image = captureGround(session);
+              results.popups.push({
+                state,
+                bounds: popupBounds,
+                coveredBefore,
+                coveredAfter: rasterPixels(session, popupBounds),
+              });
+              await record(`transitionPopup${state}`, `Shared display / popup ${state}`, image);
+            }
+          } finally {
+            session.buffer.occludeScaledGlyphs = occlude;
+          }
+          const closed = renderGround('surface', planet, session);
+          results.popupRestoration = displayDifference(initial, closed);
+          await record('transitionPopupRestored', 'Shared display / popup closed', closed);
+          const otherCols = groundCols > 60 ? 40 : 120;
+          resize(otherCols, groundRows);
+          const resized = renderGround('surface', planet, session);
+          results.resizeReference = displayDifference(
+            resized,
+            renderGround('surface', planet, groundSession(otherCols, groundRows))
+          );
+          await record('transitionResize', 'Shared display / resized', resized);
+          const natural = renderGround('surface', noCities, session);
+          results.cityFreeRasterPixels = rasterPixels(session);
+          results.cityFreeReference = displayDifference(
+            natural,
+            renderGround('surface', noCities, groundSession(otherCols, groundRows))
+          );
+          await record('transitionCityFree', 'Shared display / city-free body', natural);
+          renderGround('surface', planet, session);
+          session.renderer.drawSurfaceLoading(planet.name);
+          const loading = captureGround(session);
+          results.loadingRasterPixels = rasterPixels(session);
+          await record('transitionLoading', 'Shared display / loading', loading);
+          if (parentSystem) {
+            renderGround('surface', planet, session);
+            session.renderer.drawSolarSystem(
+              {
+                position: {
+                  worldX: parentSystem.starX,
+                  worldY: parentSystem.starY,
+                  systemX: 0,
+                  systemY: 0,
+                  surfaceX: playerX,
+                  surfaceY: siteY,
+                },
+                render: { char: '@', fgColor: '#00A0A0' },
+                resources: { credits: 5000, fuel: 500, maxFuel: 500 },
+                /** Uses the same immutable snapshot contract as regional captures. */
+                distanceSqToSystemCoords(x, y) {
+                  return x * x + y * y;
+                },
+              },
+              parentSystem,
+              AU_IN_METERS / 10
+            );
+            const launch = captureGround(session);
+            results.launchRasterPixels = rasterPixels(session);
+            await record('transitionLaunch', 'Shared display / system travel', launch);
+          }
+          resize(groundCols, groundRows);
+          const restored = renderGround('surface', planet, session);
+          results.sceneRestoration = displayDifference(initial, restored);
+          await record('transitionRestored', 'Shared display / colony restored', restored);
+          return results;
         }
 
         const section = document.createElement('section');
@@ -536,6 +721,7 @@
         const stages = {};
         let cityEffect = null;
         let groundEffect = null;
+        let transitionEffect = null;
         stages.elevation = await recordStage(
           views,
           'elevation',
@@ -621,6 +807,7 @@
             landingMap: groundDifference(naturalMap, landingMap),
             surfaceTravel: groundDifference(naturalRegional, regional),
           };
+          if (transitions) transitionEffect = await captureTransitions(views, stages);
         }
         const frames = [];
         let previous = atmospheric.getContext('2d').getImageData(0, 0, size, size);
@@ -646,6 +833,7 @@
           cityEffect,
           groundFocus: { siteId: focusSite?.id ?? null, siteX, siteY, playerX, playerY: siteY },
           groundEffect,
+          transitionEffect,
           sources,
           timings: { generationMs, prepareMs, firstFrameMs },
           frames,

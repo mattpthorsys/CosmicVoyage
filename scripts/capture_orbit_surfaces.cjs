@@ -22,6 +22,7 @@ async function main() {
       site: { type: 'string' },
       cols: { type: 'string' },
       rows: { type: 'string' },
+      transitions: { type: 'boolean', default: false },
     },
   });
   const url = new URL(values.url);
@@ -40,6 +41,7 @@ async function main() {
   ]) {
     if (values[key] !== undefined) url.searchParams.set(key, values[key]);
   }
+  if (values.transitions) url.searchParams.set('transitions', '1');
   const output = path.resolve(values.out);
   fs.mkdirSync(output, { recursive: true });
   const browserProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'cosmic-surface-browser-'));
@@ -128,6 +130,7 @@ async function main() {
           cityEffect: fixture.cityEffect,
           groundFocus: fixture.groundFocus,
           groundEffect: fixture.groundEffect,
+          transitionEffect: fixture.transitionEffect,
           captureMeanMs:
             fixture.frames.reduce((sum, frame) => sum + frame.milliseconds, 0) / fixture.frames.length,
         })),

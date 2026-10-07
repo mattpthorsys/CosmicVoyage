@@ -141,6 +141,10 @@ export class ScreenBuffer {
   initBuffers(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
+    // Coordinates and foreground masks belong to the old grid. Discard them
+    // even if a resize interrupts a staged frame before it is flushed.
+    this.scaledGlyphs.length = 0;
+    this.scaledOcclusionRects.length = 0;
     const size = this.cols * this.rows;
 
     if (size <= 0 || !Number.isFinite(size)) {

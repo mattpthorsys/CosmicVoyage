@@ -5,18 +5,18 @@ export type SurfacePrefetchListener = (planet: Planet) => void;
 /** Serializes predictive surface generation so the single worker queue is not superseded. */
 export class SurfacePrefetchService {
   private readonly queued = new Set<Planet>();
-  private readonly attempted = new WeakSet<Planet>();
+  private readonly attempted = new WeakMap<Planet, number>();
   private queue: Array<{ planet: Planet; onPrepared?: SurfacePrefetchListener }> = [];
   private active = false;
 
-  /** Adds unprepared planets to the predictive generation queue in priority order. */
+  /** Queues each surface revision once, allowing new colony inputs to be prepared after invalidation. */
   enqueue(planets: Planet[], onPrepared?: SurfacePrefetchListener): void {
     for (const planet of planets) {
       if (
         planet.isSurfaceReady() ||
         planet.isSurfacePreparing() ||
         this.queued.has(planet) ||
-        this.attempted.has(planet)
+        (this.attempted.has(planet) && this.attempted.get(planet) === planet.getSurfaceGenerationRevision())
       ) {
         continue;
       }
@@ -34,7 +34,7 @@ export class SurfacePrefetchService {
       while (this.queue.length > 0) {
         const { planet, onPrepared } = this.queue.shift()!;
         this.queued.delete(planet);
-        this.attempted.add(planet);
+        this.attempted.set(planet, planet.getSurfaceGenerationRevision());
         try {
           await planet.prepareSurfaceReady();
           onPrepared?.(planet);

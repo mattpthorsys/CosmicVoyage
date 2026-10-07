@@ -1,6 +1,7 @@
 # Planetary Cities First Version Implementation Plan
 
-Status: M0-M3 are implemented and verified. M4-M5 are not started. See
+Status: M0-M4 are implemented and verified. M5 final visual/performance tuning
+remains planned. See
 [the foundations guide](../planetary-cities.md) for
 ownership and verification details.
 
@@ -257,6 +258,17 @@ scan controls remain readable at desktop and narrow widths.
 Suggested commit: `Show consistent settlements on landing maps and terrain`.
 
 ### M4 Harden preparation and graphics transitions
+
+Status: verified. Existing
+source-identity/version checks are retained. Predictive preparation now retries
+after a surface revision changes; pending texture work is cancelled on renderer
+disposal and discontinuous arrival. Generic animated popups reserve their current
+raster bounds, and grid replacement discards old staged glyphs and masks.
+
+Focused coverage adds raster-pixel transition checks, revision-aware prefetch,
+idle/timeout cancellation and regenerated cities after saved-location restoration.
+The diagnostic's optional `--transitions` captures popup phases, resize, loading,
+body changes and system travel repeatedly on the same display.
 
 Include settlement-layer identity/version in orbital-texture and landing-map
 cache matching. Rebuild only when source data or dimensions change. Keep lazy

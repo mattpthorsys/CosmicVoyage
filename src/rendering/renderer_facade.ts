@@ -55,7 +55,8 @@ export class RendererFacade {
   private commandStripUpdater: CommandStripUpdater | null = null;
   private readonly eventUnsubscribers: Unsubscribe[];
   private readonly orbitAssetQueue = new Set<Planet>();
-  private isOrbitAssetPreparationScheduled = false;
+  private orbitAssetPreparationHandle: { kind: 'idle' | 'timeout'; id: number } | null = null;
+  private destroyed = false;
   private hudResizeFrame: number | null = null;
   private layoutInvalidated = false;
 
@@ -198,6 +199,7 @@ export class RendererFacade {
 
   /** Discards projected/orbital caches after a discontinuous journey without altering natural galaxy data. */
   invalidateWorldScene(): void {
+    this.cancelOrbitAssetPreparation();
     this.sceneRenderer.clearCaches();
     this.layoutInvalidated = true;
   }
@@ -340,29 +342,41 @@ export class RendererFacade {
 
   /** Schedules body-fixed orbital textures during browser idle time. */
   prepareOrbitAssets(planets: readonly Planet[]): void {
+    if (this.destroyed) return;
     for (const planet of planets) this.orbitAssetQueue.add(planet);
     this.scheduleOrbitAssetPreparation();
   }
 
   /** Processes one queued orbital texture per idle callback to avoid a visible frame spike. */
   private scheduleOrbitAssetPreparation(): void {
-    if (this.isOrbitAssetPreparationScheduled || this.orbitAssetQueue.size === 0) return;
-    this.isOrbitAssetPreparationScheduled = true;
+    if (this.destroyed || this.orbitAssetPreparationHandle || this.orbitAssetQueue.size === 0) return;
     /** Prepares one body and yields before processing another. */
     const prepareNext = (): void => {
-      this.isOrbitAssetPreparationScheduled = false;
+      this.orbitAssetPreparationHandle = null;
+      if (this.destroyed) return;
       const planet = this.orbitAssetQueue.values().next().value as Planet | undefined;
       if (!planet) return;
       this.orbitAssetQueue.delete(planet);
       this.sceneRenderer.prepareOrbitAssets([planet]);
       this.scheduleOrbitAssetPreparation();
     };
-    const requestIdle = window.requestIdleCallback;
-    if (typeof requestIdle === 'function') {
-      requestIdle(prepareNext, { timeout: 750 });
+    if (typeof window.requestIdleCallback === 'function') {
+      this.orbitAssetPreparationHandle = {
+        kind: 'idle',
+        id: window.requestIdleCallback(prepareNext, { timeout: 750 }),
+      };
     } else {
-      globalThis.setTimeout(prepareNext, 0);
+      this.orbitAssetPreparationHandle = { kind: 'timeout', id: window.setTimeout(prepareNext, 0) };
     }
+  }
+
+  /** Cancels deferred warming and releases queued bodies when their scene or renderer is discarded. */
+  private cancelOrbitAssetPreparation(): void {
+    const pending = this.orbitAssetPreparationHandle;
+    if (pending?.kind === 'idle') window.cancelIdleCallback(pending.id);
+    else if (pending?.kind === 'timeout') window.clearTimeout(pending.id);
+    this.orbitAssetPreparationHandle = null;
+    this.orbitAssetQueue.clear();
   }
 
   /** Updates the text content of the status bar element. (This method is now primarily called internally via event) */
@@ -477,7 +491,7 @@ export class RendererFacade {
     drawObservatory(this.screenBuffer, model);
   }
   // --- Popup Drawing Method ---
-  /** Draws a popup window with animations and typing text effect. */
+  /** Draws an animated terminal popup above scene raster pixels within its current visible bounds. */
   drawPopup(
     lines: string[] | null,
     state: 'inactive' | 'opening' | 'active' | 'closing',
@@ -528,6 +542,7 @@ export class RendererFacade {
 
     // Draw the Box
     if (currentWidth > 0 && currentHeight > 0) {
+      this.screenBuffer.occludeScaledGlyphs(startX, startY, currentWidth, currentHeight);
       this.drawingContext.drawBox(
         startX,
         startY,
@@ -602,9 +617,11 @@ export class RendererFacade {
   }
 
   // Optional: Method to clean up listeners if the facade is ever destroyed
-  /** Releases resources owned by. */
+  /** Releases event listeners and pending layout/texture work when this renderer is replaced. */
   destroy(): void {
     logger.info('[RendererFacade] Destroying instance and cleaning up listeners...');
+    this.destroyed = true;
+    this.cancelOrbitAssetPreparation();
     if (this.hudResizeFrame !== null) {
       cancelAnimationFrame(this.hudResizeFrame);
       this.hudResizeFrame = null;
