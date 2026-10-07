@@ -15,6 +15,7 @@ import { GameStateManager, GameState } from './game_state_manager';
 import { ActionProcessor, ActionProcessResult } from './action_processor';
 import { Planet } from '../entities/planet';
 import { readReadySurfaceData } from '../entities/planet/surface_data';
+import { getSurfaceSettlementIdentity } from '../entities/planet/settlement_identity';
 import { Starbase } from '../entities/starbase';
 import { NavigationMarker } from '../entities/navigation_marker';
 import { InfrastructureRegistry } from './infrastructure_registry';
@@ -4244,6 +4245,20 @@ export class Game {
           this.forceFullRender = true;
         }
         return;
+      case 'ORBIT_SETTLEMENTS': {
+        const parent = this.stateManager.currentOrbitReferencePlanet;
+        if (this.stateManager.state === 'orbit' && parent) {
+          this.orbitModeState.openSettlementDirectory({
+            parentPlanet: parent,
+            isActive: () =>
+              this.stateManager.state === 'orbit' && this.stateManager.currentOrbitReferencePlanet === parent,
+            invalidate: () => {
+              this.forceFullRender = true;
+            },
+          });
+        }
+        return;
+      }
       case 'TARGET_MENU':
         this.openTargetMenu();
         return;
@@ -7016,6 +7031,13 @@ export class Game {
       shipDistance: this.getParkedShipRangeAndBearing(),
       atShip: this.isAtParkedShip(),
       altitudeBand: this.getCurrentSurfaceAltitudeBand(),
+      settlement: this.stateManager.currentPlanet
+        ? getSurfaceSettlementIdentity(
+            readReadySurfaceData(this.stateManager.currentPlanet)?.settlements,
+            this.player.position.surfaceX,
+            this.player.position.surfaceY
+          )?.name
+        : undefined,
     };
   }
 

@@ -5,6 +5,7 @@ import { formatDistanceAu, formatLightTimeFromMeters } from '../utils/space_scal
 import { formatDiscoveryLevel, hasDiscoveryLevel } from './discovery';
 import { getOrbitReferenceLabel, type OrbitStellarSource } from './orbit_ui';
 import { TerminalTextReveal } from './terminal_text_reveal';
+import { getPlanetSettlementCatalog, OrbitSettlements } from './orbit_settlements';
 import {
   getDashboardVisibleRows,
   type TextDashboardLine,
@@ -21,9 +22,14 @@ export class OrbitDossier {
   isOpen = false;
   viewOffset = 0;
   readonly reveal = new TerminalTextReveal();
+  readonly settlements = new OrbitSettlements();
+  view: 'planet' | 'settlement-directory' | 'settlement-dossier' = 'planet';
+  session = 0;
 
   /** Opens at the first line for the currently selected body. */
   open(): void {
+    this.session++;
+    this.view = 'planet';
     this.isOpen = true;
     this.viewOffset = 0;
     this.reveal.start();
@@ -31,14 +37,33 @@ export class OrbitDossier {
 
   /** Restores normal orbital controls. */
   close(): void {
+    this.session++;
     this.isOpen = false;
     this.viewOffset = 0;
     this.reveal.complete();
   }
 
+  /** Reuses the dossier's pause and raster occlusion for the settlement atlas. */
+  openSettlements(): void {
+    this.session++;
+    this.view = 'settlement-directory';
+    this.isOpen = true;
+    this.viewOffset = 0;
+    this.settlements.reset();
+    this.reveal.complete();
+  }
+
+  /** Switches directory/detail without resetting the selected site. */
+  showSettlementDetail(detail: boolean): void {
+    this.view = detail ? 'settlement-dossier' : 'settlement-directory';
+    this.viewOffset = 0;
+    if (detail) this.reveal.start();
+    else this.reveal.complete();
+  }
+
   /** Moves by lines or one viewport, without allowing an empty final page. */
-  scroll(delta: number, lineCount: number, viewportRows: number): void {
-    const visible = getDashboardVisibleRows(lineCount, viewportRows, FOOTER.length);
+  scroll(delta: number, lineCount: number, viewportRows: number, footerRows = FOOTER.length): void {
+    const visible = getDashboardVisibleRows(lineCount, viewportRows, footerRows);
     this.viewOffset = Math.max(0, Math.min(this.viewOffset + delta, Math.max(0, lineCount - visible)));
   }
 
@@ -50,6 +75,18 @@ export class OrbitDossier {
     viewportCols: number,
     viewportRows: number
   ): TextModalTableModel {
+    if (this.view !== 'planet') {
+      const model = this.settlements.createModel(
+        body,
+        this.view === 'settlement-dossier',
+        viewportCols,
+        viewportRows,
+        this.viewOffset,
+        this.reveal.progress
+      );
+      if (this.view === 'settlement-dossier') this.viewOffset = model.viewOffset;
+      return model;
+    }
     const width = Math.max(16, Math.min(88, viewportCols - 12));
     const dashboard = buildOrbitDossierLines(body, parent, sources, width);
     if (this.biologyLines.length)
@@ -214,6 +251,13 @@ export function buildOrbitDossierLines(
       );
     }
     field('Support', body.terraforming.engineeringSupport.join(', '));
+    field(
+      'Settlements',
+      body.isSurfaceReady()
+        ? `${getPlanetSettlementCatalog(body).length} mapped / U directory`
+        : 'Atlas pending / U prepare directory',
+      'green'
+    );
   }
   return lines;
 }

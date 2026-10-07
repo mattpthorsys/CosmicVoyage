@@ -2298,9 +2298,9 @@ export class SceneRenderer {
       /~?\d[\d,]*(?:\.\d+)?(?:-\d[\d,]*(?:\.\d+)?)?\s?(?:g\/cm3|m\^3|AU|bar|deg|hours?|mins?|minutes?|secs?|seconds?|km|Cr|K|g|s|%)/g;
     let cursorX = x;
     let lastIndex = 0;
-    /** The dossier prompt is the only summary line with a keyboard shortcut. */
+    /** Directory and dossier prompts use the same thick shortcut labels. */
     const drawPlain = (text: string, atX: number): void => {
-      if (line.startsWith('[D]'))
+      if (line.startsWith('[D]') || line.startsWith('[U]'))
         drawShortcutText(this.screenBuffer, text, atX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR);
       else this.screenBuffer.drawString(text, atX, y, baseColour, CONFIG.DEFAULT_BG_COLOUR, 'thin');
     };

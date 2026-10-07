@@ -71,6 +71,11 @@ describe('available actions', () => {
       action: 'ORBIT_DOSSIER',
       enabled: true,
     });
+    expect(actions.find((item) => item.id === 'orbit-settlements')).toMatchObject({
+      key: CONFIG.KEY_BINDINGS.ORBIT_SETTLEMENTS,
+      action: 'ORBIT_SETTLEMENTS',
+      enabled: true,
+    });
   });
 
   it('offers mining only after a rich scanned planet has an unmined tile', () => {

@@ -6,6 +6,7 @@ import { OrbitModeController, OrbitInteractionContext } from '../../../core/mode
 import { Planet } from '../../../entities/planet';
 import { PRNG } from '../../../utils/prng';
 import type { StellarBody } from '../../../entities/stellar_body';
+import { settlementLayerFixture, settlementTerraformingFixture } from '../../fixtures/settlements';
 
 const TIME_SCALE = (365.25 * 24 * 60 * 60) / (4 * 60 * 60);
 
@@ -44,6 +45,69 @@ function input(pressed: string[] = [], held: string[] = []) {
 }
 
 describe('orbital interaction controller', () => {
+  it('opens a settlement dossier, returns to its directory and selects an exact site before a separate landing confirmation', () => {
+    const parent = createBody('Named landing');
+    const layer = settlementLayerFixture([{ x: 4, y: 9, coverage: 0.1, emission: 0.01, siteIndex: 0 }]);
+    Object.defineProperties(parent, {
+      heightmap: { value: Array.from({ length: 65 }, () => Array(65).fill(108)) },
+      settlements: { value: layer },
+    });
+    const orbit = new OrbitModeController();
+    const { context } = createContext(parent);
+    orbit.handleInput(input(['ORBIT_SETTLEMENTS']), context);
+    expect(orbit.dossier.isOpen).toBe(true);
+    expect(orbit.dossier.view).toBe('settlement-directory');
+    const start = [orbit.landingX, orbit.landingY];
+    orbit.handleInput(input(['ORBIT_DOSSIER']), context);
+    expect(orbit.dossier.view).toBe('settlement-dossier');
+    orbit.handleInput(input(['QUIT']), context);
+    expect(orbit.dossier.view).toBe('settlement-dossier');
+    orbit.handleInput(input(['QUIT']), context);
+    expect(orbit.dossier.view).toBe('settlement-directory');
+    expect([orbit.landingX, orbit.landingY]).toEqual(start);
+    orbit.handleInput(input(['ENTER_SYSTEM']), context);
+    expect(orbit.mode).toBe('landing');
+    expect(orbit.dossier.isOpen).toBe(false);
+    expect([orbit.landingX, orbit.landingY]).toEqual([4, 9]);
+    expect(context.land).not.toHaveBeenCalled();
+    orbit.handleInput(input(['ENTER_SYSTEM']), context);
+    expect(context.land).toHaveBeenCalledWith(parent, 4, 9);
+    expect(context.leave).not.toHaveBeenCalled();
+  });
+
+  it.each(['ready', 'closed', 'departed', 'reopened', 'error'] as const)(
+    'handles delayed settlement atlas preparation when %s',
+    async (outcome) => {
+      const parent = createBody('Pending atlas');
+      parent.terraforming = settlementTerraformingFixture('complete');
+      vi.mocked(parent.isSurfaceReady).mockReturnValue(false);
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      vi.spyOn(parent, 'prepareSurfaceReady').mockReturnValue(
+        new Promise<void>((done, failed) => {
+          resolve = done;
+          reject = failed;
+        })
+      );
+      const orbit = new OrbitModeController();
+      const { context, location } = createContext(parent);
+      orbit.openSettlementDirectory(context);
+      if (outcome === 'closed') orbit.dossier.close();
+      if (outcome === 'departed') location.active = false;
+      if (outcome === 'reopened') orbit.dossier.open();
+      context.invalidate.mockClear();
+      if (outcome === 'error') reject(new Error('worker unavailable'));
+      else resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(orbit.mode).toBe('overview');
+      expect(context.land).not.toHaveBeenCalled();
+      if (outcome === 'ready' || outcome === 'error') expect(context.invalidate).toHaveBeenCalledOnce();
+      else expect(context.invalidate).not.toHaveBeenCalled();
+      if (outcome === 'error') expect(orbit.dossier.settlements.error).toContain('worker unavailable');
+    }
+  );
+
   it('selects an exact mission habitat on a moon without landing until a separate confirmation', () => {
     const parent = createBody('Mission parent');
     const moon = createBody('Mission moon');
@@ -208,30 +272,34 @@ describe('orbital interaction controller', () => {
     }
   );
 
-  it('gives the dossier priority over other global instrument shortcuts', () => {
-    const parent = createBody('Modal priority');
-    const orbit = new OrbitModeController();
-    orbit.dossier.open();
-    const galaxy = vi.fn(() => true);
-    const game = Object.assign(Object.create(Game.prototype), {
-      stateManager: { state: 'orbit', currentPlanet: parent, currentOrbitReferencePlanet: parent },
-      _orbitModeState: orbit,
-      inputManager: input(['GALAXY_MAP']),
-      renderer: { getGridCols: () => 110, getGridRows: () => 40 },
-      _handleJettisonConfirmationInput: () => false,
-      _handleSurfaceExtractionSelectorInput: () => false,
-      _handleQuantitySelectorInput: () => false,
-      _handlePopupInput: () => false,
-      _handleGalaxyMapInput: galaxy,
-      _publishStatusUpdate: vi.fn(),
-      forceFullRender: false,
-    }) as { _processInput: () => void; forceFullRender: boolean };
-    game._processInput();
-    expect(orbit.dossier.reveal.progress).toBe(1);
-    expect(orbit.dossier.isOpen).toBe(true);
-    expect(galaxy).not.toHaveBeenCalled();
-    expect(game.forceFullRender).toBe(true);
-  });
+  it.each(['planet', 'settlements'])(
+    'gives the %s dossier priority over other global instrument shortcuts',
+    (kind) => {
+      const parent = createBody('Modal priority');
+      const orbit = new OrbitModeController();
+      if (kind === 'settlements') orbit.dossier.openSettlements();
+      else orbit.dossier.open();
+      const galaxy = vi.fn(() => true);
+      const game = Object.assign(Object.create(Game.prototype), {
+        stateManager: { state: 'orbit', currentPlanet: parent, currentOrbitReferencePlanet: parent },
+        _orbitModeState: orbit,
+        inputManager: input(['GALAXY_MAP']),
+        renderer: { getGridCols: () => 110, getGridRows: () => 40 },
+        _handleJettisonConfirmationInput: () => false,
+        _handleSurfaceExtractionSelectorInput: () => false,
+        _handleQuantitySelectorInput: () => false,
+        _handlePopupInput: () => false,
+        _handleGalaxyMapInput: galaxy,
+        _publishStatusUpdate: vi.fn(),
+        forceFullRender: false,
+      }) as { _processInput: () => void; forceFullRender: boolean };
+      game._processInput();
+      expect(orbit.dossier.reveal.progress).toBe(1);
+      expect(orbit.dossier.isOpen).toBe(true);
+      expect(galaxy).not.toHaveBeenCalled();
+      expect(game.forceFullRender).toBe(true);
+    }
+  );
 
   it('cancels landing before leaving orbit and refuses giant surface landings', () => {
     const orbit = new OrbitModeController();

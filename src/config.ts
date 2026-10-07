@@ -82,6 +82,7 @@ export const CONFIG = {
     OBSERVATORY: 'f',
     COMMUNICATIONS: 'h',
     ORBIT_DOSSIER: 'd',
+    ORBIT_SETTLEMENTS: 'u',
     BIOLOGY_SITE: 'b',
     BIOLOGY_COLLECT: 'c',
     BIOLOGY_SHOOT: 'k',

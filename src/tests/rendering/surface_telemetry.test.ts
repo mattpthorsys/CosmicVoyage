@@ -55,6 +55,7 @@ function readings(): SurfaceVehicleOverlayModel {
       { name: 'Maya Singh', hitPoints: 0, maxHitPoints: 100 },
     ],
     shipDistance: { distanceKm: 12.8, direction: 'NW' },
+    settlement: 'Meridian Habitat 01',
   };
 }
 
@@ -84,6 +85,7 @@ describe('responsive surface telemetry', () => {
     expect(rendered).toContain('DEAD');
     expect(rendered).toContain('25%');
     expect(rendered).toContain('5.0/20 m^3');
+    expect(rendered).toContain('SECTOR');
     expect(layout.controlsY).toBeLessThan(rows);
   });
 

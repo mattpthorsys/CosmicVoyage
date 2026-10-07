@@ -100,14 +100,15 @@ export function createOrbitScreenModel(args: {
       selected.scanned ? 'Orbital survey complete' : 'Orbital survey pending',
       '',
       '[D] PLANETARY DOSSIER',
+      '[U] SETTLEMENT DIRECTORY',
     ],
     footer:
       args.mode === 'landing'
         ? [
-            'Arrows site  Enter land  D dossier  Esc back',
+            'Arrows site  Enter land  D dossier  U sites  Esc back',
             `Site X ${Math.floor(args.landingCursorX)}  Y ${Math.floor(args.landingCursorY)}  Map ${mapSize}x${mapSize}`,
           ]
-        : ['Left/Right body  D dossier  Enter land  Esc leave'],
+        : ['Left/Right body  D dossier  U sites  Enter land  Esc leave'],
     alert: args.alert,
   };
 }

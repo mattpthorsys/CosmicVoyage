@@ -8,6 +8,8 @@ import { Player } from '../../core/player';
 import type { OrbitStellarSource } from '../../core/orbit_ui';
 import type { TextModalTableModel } from '../../core/text_ui';
 import { MissionJournal } from '../../core/mission_journal';
+import { OrbitSettlements } from '../../core/orbit_settlements';
+import { settlementLayerFixture } from '../fixtures/settlements';
 import { ShipRepairConsole } from '../../core/ship_repair_console';
 import { StarbaseController } from '../../core/starbase_controller';
 import { SurfaceEncounterController } from '../../core/modes/surface_encounter_controller';
@@ -1229,6 +1231,36 @@ describe('SceneRenderer visual regressions', () => {
     expect(fontsForText(drawCalls, 'FIELD ETHOLOGY')).toEqual(Array(14).fill('thick'));
     expect(drawCalls.some((call) => call.font === 'thin' && call.fg === TEXT_PALETTE.green)).toBe(true);
     expect(service.createSnapshot()).toEqual(before);
+  });
+
+  it.each([
+    [120, 45],
+    [40, 24],
+    [24, 24],
+  ])('renders a settlement directory above staged orbital graphics at %sx%s', (cols, rows) => {
+    const layer = settlementLayerFixture([{ x: 2, y: 3, coverage: 0.1, emission: 0.01, siteIndex: 0 }]);
+    const body = Object.assign(Object.create(Planet.prototype), {
+      name: 'Colony I',
+      type: 'Rock',
+      settlements: layer,
+      isSurfaceReady: () => true,
+    }) as Planet;
+    Object.defineProperty(body, 'heightmap', {
+      value: Array.from({ length: 65 }, () => Array(65).fill(108)),
+    });
+    const atlas = new OrbitSettlements();
+    const model = atlas.createModel(body, false, cols, rows, 0, 1);
+    const { buffer, drawCalls } = createMockScreenBuffer(cols, rows);
+    createSceneRenderer(buffer).drawTextModalTable(model);
+    const text = renderTextRows(drawCalls).join('\n');
+    expect(text).toContain('X 2 / Y 3');
+    expect(text).toContain('D dossier');
+    expect(buffer.clear).toHaveBeenCalledWith(false);
+    expect(buffer.occludeScaledGlyphs).toHaveBeenCalledOnce();
+    expect(drawCalls.every((call) => call.x >= 0 && call.x < cols && call.y >= 0 && call.y < rows)).toBe(
+      true
+    );
+    expect(drawCalls.some((call) => call.font === 'thin' && call.fg === TEXT_PALETTE.green)).toBe(true);
   });
 
   it('shows only the scrolled dossier page and a scroll indicator', () => {

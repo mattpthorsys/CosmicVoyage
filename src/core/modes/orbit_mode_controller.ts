@@ -15,6 +15,8 @@ import {
 import { clampIndex } from '../text_ui';
 import type { TextModalTableModel } from '../text_ui';
 
+type OrbitInput = Pick<InputManager, 'wasActionJustPressed' | 'isActionActive' | 'wasAnyKeyJustPressed'>;
+
 export interface OrbitInteractionContext {
   parentPlanet: Planet;
   stars: readonly StellarBody[];
@@ -105,6 +107,34 @@ export class OrbitModeController {
     return true;
   }
 
+  /** Opens the local atlas and safely requests missing colony data without entering landing mode. */
+  openSettlementDirectory(
+    context: Pick<OrbitInteractionContext, 'parentPlanet' | 'isActive' | 'invalidate'>
+  ): void {
+    const body = this.getSelectedBody(context.parentPlanet);
+    this.dossier.openSettlements();
+    context.invalidate();
+    if (body.isSurfaceReady() || !body.terraforming || ['GasGiant', 'IceGiant'].includes(body.type)) return;
+    const session = this.dossier.session;
+    /** Rejects asynchronous results after closing, reopening or leaving this body's atlas. */
+    const stillOpen = (): boolean =>
+      context.isActive() &&
+      this.dossier.isOpen &&
+      this.dossier.session === session &&
+      this.getSelectedBody(context.parentPlanet) === body;
+    void body
+      .prepareSurfaceReady()
+      .then(() => {
+        if (stillOpen()) context.invalidate();
+      })
+      .catch((error: unknown) => {
+        if (stillOpen()) {
+          this.dossier.settlements.error = `Atlas unavailable: ${error instanceof Error ? error.message : String(error)}`;
+          context.invalidate();
+        }
+      });
+  }
+
   /** Returns the selected body and nearby candidates for surface prefetch. */
   getPrefetchWindow(parent: Planet): Planet[] {
     const bodies = this.getBodies(parent);
@@ -115,10 +145,7 @@ export class OrbitModeController {
   }
 
   /** Handles orbital selection and landing keys, returning whether input was consumed. */
-  handleInput(
-    input: Pick<InputManager, 'wasActionJustPressed' | 'isActionActive' | 'wasAnyKeyJustPressed'>,
-    context: OrbitInteractionContext
-  ): boolean {
+  handleInput(input: OrbitInput, context: OrbitInteractionContext): boolean {
     const { parentPlanet } = context;
     const bodies = this.getBodies(parentPlanet);
     const selectedBody = this.getSelectedBody(parentPlanet);
@@ -127,6 +154,14 @@ export class OrbitModeController {
       if (this.dossier.reveal.isActive && input.wasAnyKeyJustPressed()) {
         this.dossier.reveal.complete();
         context.invalidate();
+        return true;
+      }
+      if (this.dossier.view !== 'planet') {
+        this.handleSettlementInput(input, context);
+        return true;
+      }
+      if (input.wasActionJustPressed('ORBIT_SETTLEMENTS')) {
+        this.openSettlementDirectory(context);
         return true;
       }
       if (input.wasActionJustPressed('QUIT') || input.wasActionJustPressed('ORBIT_DOSSIER')) {
@@ -155,6 +190,10 @@ export class OrbitModeController {
           context.invalidate();
         }
       }
+      return true;
+    }
+    if (input.wasActionJustPressed('ORBIT_SETTLEMENTS')) {
+      this.openSettlementDirectory(context);
       return true;
     }
     if (input.wasActionJustPressed('ORBIT_DOSSIER')) {
@@ -236,6 +275,56 @@ export class OrbitModeController {
     return false;
   }
 
+  /** Keeps paused atlas selection and dossier scrolling separate from ordinary orbital movement. */
+  private handleSettlementInput(input: OrbitInput, context: OrbitInteractionContext): void {
+    const selectedBody = this.getSelectedBody(context.parentPlanet);
+    const detail = this.dossier.view === 'settlement-dossier';
+    if (input.wasActionJustPressed('ORBIT_SETTLEMENTS')) this.dossier.close();
+    else if (input.wasActionJustPressed('QUIT') || input.wasActionJustPressed('ORBIT_DOSSIER')) {
+      if (detail) this.dossier.showSettlementDetail(false);
+      else if (input.wasActionJustPressed('QUIT')) this.dossier.close();
+      else if (this.dossier.settlements.selected(selectedBody)) this.dossier.showSettlementDetail(true);
+    } else if (
+      input.wasActionJustPressed('ENTER_SYSTEM') ||
+      input.wasActionJustPressed('PRIMARY_ACTION') ||
+      input.wasActionJustPressed('ACTIVATE_LAND_LIFTOFF')
+    ) {
+      const site = this.dossier.settlements.selected(selectedBody);
+      if (site && !this.selectLandingSite(context.parentPlanet, selectedBody, site.x, site.y, site.name)) {
+        this.dossier.settlements.error = 'Landing data changed; reopen the atlas.';
+      }
+    } else {
+      const direction =
+        input.wasActionJustPressed('MOVE_UP') || input.wasActionJustPressed('PAGE_UP')
+          ? -1
+          : input.wasActionJustPressed('MOVE_DOWN') || input.wasActionJustPressed('PAGE_DOWN')
+            ? 1
+            : 0;
+      if (direction) {
+        const model = this.createDossier(
+          context.parentPlanet,
+          context.stars,
+          context.viewportCols,
+          context.viewportRows
+        );
+        const page = input.wasActionJustPressed('PAGE_UP') || input.wasActionJustPressed('PAGE_DOWN');
+        if (detail)
+          this.dossier.scroll(
+            direction * (page ? model.visibleRowCount : 1),
+            model.dashboard!.length,
+            context.viewportRows,
+            model.footer?.length
+          );
+        else
+          this.dossier.settlements.move(
+            selectedBody,
+            direction * (page ? Math.max(1, Math.floor(model.visibleRowCount / 4)) : 1)
+          );
+      }
+    }
+    context.invalidate();
+  }
+
   /** Builds the frozen statistics modal for the selected primary or moon. */
   createDossier(
     parent: Planet,
@@ -264,7 +353,8 @@ export class OrbitModeController {
         if (
           context.isActive() &&
           this.getSelectedBody(context.parentPlanet) === planet &&
-          this.mode === 'overview'
+          this.mode === 'overview' &&
+          !this.dossier.isOpen
         ) {
           this.resetLandingCursor(context.parentPlanet);
           this.mode = 'landing';

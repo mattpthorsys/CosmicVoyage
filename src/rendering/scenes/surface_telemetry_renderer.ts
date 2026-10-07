@@ -63,6 +63,14 @@ export class SurfaceTelemetryRenderer {
       );
     }
 
+    if (model.settlement)
+      this.dashboard(
+        [{ segments: [{ text: `SECTOR ${model.settlement}`, tone: 'cyan' }] }],
+        viewport.x,
+        layout.settlementY,
+        viewport.width,
+        layout.settlementRows
+      );
     if (layout.sidebar) this.drawSidebar(model, layout);
     else {
       this.line(model.dateTime, viewport.x, layout.dateY!, viewport.width, TEXT_PALETTE.textMuted);

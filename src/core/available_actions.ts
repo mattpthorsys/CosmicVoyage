@@ -250,6 +250,17 @@ export function createAvailableActions(context: AvailableActionContext): Availab
       );
       actions.push(
         action(
+          'orbit-settlements',
+          'Settlements',
+          CONFIG.KEY_BINDINGS.ORBIT_SETTLEMENTS,
+          'ORBIT_SETTLEMENTS',
+          'utility',
+          9,
+          true
+        )
+      );
+      actions.push(
+        action(
           'landing-site',
           'Landing Site',
           CONFIG.KEY_BINDINGS.ENTER_SYSTEM,

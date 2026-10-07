@@ -143,6 +143,17 @@ terrain height; the scan cursor uses those same limits. `SurfaceTelemetryRendere
 draws thin readings, wrapped notices and a command window that follows the
 selected action. Small displays move crew health beneath the terrain. The Icon
 command retains the detailed legend without painting labels over travel.
+The optional settlement sector label also has reserved rows, so entering or
+leaving a mapped footprint never shifts the viewport or scanner bounds.
+
+`OrbitDossier` is the shared paused modal owner for planetary statistics and
+the **U** settlement directory/detail screens. `OrbitSettlements` prepares
+responsive coloured content, while `OrbitModeController` owns selection and
+landing effects. Directory Enter chooses a native coordinate; a separate Enter
+lands. Async atlas requests must match the live body and modal session before
+publishing. Names come from `settlement_identity.ts` and an independent stable
+site seed, never from renderer randomness. Directories do not imply surface
+services, population estimates or street-level maps.
 
 For reproducible city captures, run `scripts/capture_orbit_surfaces.cjs` with
 `--suite settlements --real-colonies 3`; this includes nearby generated

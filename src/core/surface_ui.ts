@@ -33,6 +33,7 @@ export interface SurfaceVehicleOverlayModel {
   shipDistance?: { distanceKm: number; direction: string };
   atShip?: boolean;
   altitudeBand?: { low: string; high: string; current: string };
+  settlement?: string;
   crew: SurfaceCrewReading[];
 }
 
@@ -48,6 +49,8 @@ export interface SurfaceScreenLayout {
   sidebar: SurfaceRect | null;
   resourcesY: number;
   resourceRows: number;
+  settlementY: number;
+  settlementRows: number;
   dateY: number | null;
   shipY: number | null;
   crewY: number | null;
@@ -93,8 +96,9 @@ export function createSurfaceScreenLayout(
   const width = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, cols - sidebarWidth - 5));
   const x = Math.max(1, Math.floor((cols - sidebarWidth - width) / 2));
   const resourceRows = width >= 68 ? 1 : width >= 32 ? 2 : 3;
+  const settlementRows = width < 32 ? 2 : 1;
   const crewRows = sidebarWidth ? 0 : Math.max(2, Math.min(6, createSurfaceCrewLines(crew, width).length));
-  const footerRows = resourceRows + (sidebarWidth ? 0 : 2 + crewRows) + 6;
+  const footerRows = resourceRows + settlementRows + (sidebarWidth ? 0 : 2 + crewRows) + 6;
   const headerRows = width < 32 ? 5 : 4;
   const viewport = {
     x,
@@ -103,10 +107,11 @@ export function createSurfaceScreenLayout(
     height: Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, rows - headerRows - 1 - footerRows)),
   };
   const resourcesY = viewport.y + viewport.height + 1;
-  const dateY = sidebarWidth ? null : resourcesY + resourceRows;
+  const settlementY = resourcesY + resourceRows;
+  const dateY = sidebarWidth ? null : settlementY + settlementRows;
   const shipY = dateY === null ? null : dateY + 1;
   const crewY = shipY === null ? null : shipY + 1;
-  const notificationsY = resourcesY + resourceRows + (sidebarWidth ? 0 : 2 + crewRows);
+  const notificationsY = settlementY + settlementRows + (sidebarWidth ? 0 : 2 + crewRows);
   return {
     viewport,
     sidebar: sidebarWidth
@@ -114,6 +119,8 @@ export function createSurfaceScreenLayout(
       : null,
     resourcesY,
     resourceRows,
+    settlementY,
+    settlementRows,
     dateY,
     shipY,
     crewY,

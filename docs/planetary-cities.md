@@ -341,6 +341,42 @@ actual Mercator projection and longitude respects its duplicated seam.
 Implementation has passed static checks; the new buffer-bound and command
 visibility cases, runtime tests and desktop/narrow captures await Luna.
 
+## Settlement Identity And Navigation Follow-Up
+
+Orbital operations now provides **U settlements**, both as a direct key and a
+bottom-menu command. This opens a paused terminal directory for the selected
+planet or moon. Up/down select a named site, page keys move through the list,
+**D** opens its coloured dossier, and Escape returns to the list or orbit.
+Detailed dossiers use the existing fast terminal reveal; a key first finishes
+an active reveal. Enter selects the site's native coordinates, closes the
+directory and enters landing selection. A separate Enter confirms the landing.
+Opening or dismissing the directory alone never changes the landing cursor.
+
+Names and concise urban/sealed/industrial descriptions derive from an
+independent `settlement-identity-v1` branch of existing site IDs. Prepared
+catalogs are weakly cached by settlement layer, not by mutable planet names.
+Restored layers derive the same names without new save data. Replacement
+terraforming layers cannot inherit an obsolete cached catalog. This does not
+change placements, geology or the surface generator's random stream.
+
+The dossier reports native and Mercator coordinates, district patch counts and
+physical semi-axes. It does not invent population counts or shops; settlements
+remain visual map references rather than operational surface ports. A stable
+surface footer row identifies mapped settlement sectors; narrow terminals wrap
+the name across two reserved rows. This denotes fractional regional coverage,
+not a building-sized tile or guaranteed facilities at the vehicle's position.
+
+Uninhabited and depot-only bodies show an empty directory. Missing colony
+surface data is requested outside rendering, with a modal-session and live-body
+guard against stale asynchronous completion. Existing dossier pause and raster
+occlusion rules apply to both directory and detail views.
+
+Focused identity, wrapping, selection, landing-confirmation, worker-lifecycle,
+overlay and buffer-bound tests have been written. Formatting, lint, both type
+checks and function-documentation checks pass; runtime tests have not been run
+for these three follow-ups. Luna must run the
+new tests, desktop/narrow captures and three-star performance measurements.
+
 ## Generated Data Ownership
 
 `src/entities/planet/surface_settlements.ts` owns the typed colony profile,
