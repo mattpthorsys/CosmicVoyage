@@ -139,11 +139,10 @@ per visited planet.
 
 ### Performance and verification
 
-The prepared row/mapping coordinates and transfer-buffer reuse were added after
-the M5 city review exposed a 22-25 ms three-star baseline. Their focused optical
-checks, raster comparisons and whole-frame remeasurement are pending Luna
-verification. The measurements below describe the preceding implementation;
-they do not demonstrate the speed of the new path.
+The prepared row/mapping coordinates and transfer-buffer reuse followed the M5
+city review, which measured a 22-25 ms three-star browser baseline. The focused
+optical checks and full regression suite now pass. The updated measurements
+below cover both the optics harness and the complete orbital browser renderer.
 
 The initial CPU profile identified atmospheric transfer and its nested density
 integrals as the dominant work. Its reference dense-CO2 fixture at a 48-sample
@@ -165,6 +164,35 @@ The new shared table adds 160 KiB; the largest case retained 53.9 MB (about
 51.4 MiB) of numeric storage, with additional JavaScript object overhead. There
 is one active sampler, and changing bodies replaces rather than accumulates
 these caches.
+
+With the updated sampler, three-frame optics-only comparisons against the
+pre-change sampler (`eb4b4d4`) improved warm means for the three-star cases by
+about 36-46% across Earth-like and dense-CO2 atmospheres at globe radii 24 and
+48. For example, Earth-like radius-48 fell from 54.48 to 34.64 ms; dense-CO2
+radius-48 fell from 61.45 to 39.65 ms. The dense-CO2 radius-48 case used
+68.7 MB (65.5 MiB) of numeric storage, up from 53.9 MB; JavaScript object
+overhead is additional. These are synthetic CPU results, not display frame
+times.
+
+Whole-frame Chrome 143 profiles on an AMD Ryzen 5 9600X used a 120x64 terminal,
+eight warm-up frames, and 40 measured frames per body. Across the starting
+colony and three generated colony worlds, one-star city-frame p95 was 4.0-4.1
+ms; three-star p95 was 10.2-10.6 ms. Matching city-free p95 values were 3.4-3.8
+and 10.1-10.7 ms, respectively. Both warmed cases meet the 16.7 ms target.
+Occasional measured maxima reached 24.5-26.2 ms in the three-star runs, so this
+does not guarantee every frame stays within budget. The reports are
+`/tmp/cosmic-luna-profile-one.json` and
+`/tmp/cosmic-luna-profile-three.json`.
+
+The production browser capture also rendered the three-star colony at 120x64
+and 40x45; the narrow capture kept the terrain, regional city view, and status
+rows inside the terminal. Those captures are in
+`/tmp/cosmic-luna-settlement-wide` and
+`/tmp/cosmic-luna-settlement-narrow`.
+
+`npm run check` passes: 181 test files and 1,372 tests, function comments,
+formatting, lint, both TypeScript projects, and production build. Vite retains
+its existing non-fatal large-bundle advisory.
 
 Run the repeatable optics harness in both modes under the same conditions:
 

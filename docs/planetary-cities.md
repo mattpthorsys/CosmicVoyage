@@ -338,8 +338,13 @@ percentage. The terrain legend is available through the existing Icon command
 rather than floating over narrow travel views. Latitude labels now use the
 actual Mercator projection and longitude respects its duplicated seam.
 
-Implementation has passed static checks; the new buffer-bound and command
-visibility cases, runtime tests and desktop/narrow captures await Luna.
+The complete check passes after the layout change: 181 test files and 1,372
+tests, plus formatting, lint, type checks, documentation checks and production
+build. The existing non-fatal large-bundle advisory remains. Chrome captures of
+the starting colony completed at 120x64 and 40x45 with three stellar sources;
+both reports are under `/tmp/cosmic-luna-settlement-wide` and
+`/tmp/cosmic-luna-settlement-narrow`. Multi-star browser timings are recorded
+under [orbital atmosphere performance](orbit-atmosphere.md).
 
 ## Settlement Identity And Navigation Follow-Up
 
