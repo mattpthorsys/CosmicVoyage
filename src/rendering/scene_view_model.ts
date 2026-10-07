@@ -4,7 +4,7 @@ import type { StarbaseScreenModel } from '../core/starbase_ui';
 import type { Planet } from '../entities/planet';
 import type { SolarSystem } from '../entities/solar_system';
 import type { Starbase } from '../entities/starbase';
-import type { SurfaceVehicleOverlayModel } from './scene_renderer';
+import type { SurfaceVehicleOverlayModel } from '../core/surface_ui';
 import type { EncounterViewModel } from '../core/xenobiology_ui';
 
 export interface PlayerViewSnapshot {

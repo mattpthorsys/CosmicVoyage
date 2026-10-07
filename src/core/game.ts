@@ -84,6 +84,7 @@ import {
 } from './quantity_selector';
 import { createHelpReferenceLines } from './help_reference';
 import { getPlanetMapSize, OrbitScreenModel } from './orbit_ui';
+import { createSurfaceScreenLayout, getSurfaceActionKey } from './surface_ui';
 import { OrbitModeController } from './modes/orbit_mode_controller';
 import {
   formatMissionDetail,
@@ -6991,6 +6992,7 @@ export class Game {
         id: item.id,
         label: item.label,
         status: item.status,
+        key: getSurfaceActionKey(item.id),
         tone: item.id === 'embark' ? ('green' as const) : ('normal' as const),
       })),
       mapExpanded: this.surfaceMode.mapExpanded,
@@ -7388,12 +7390,17 @@ export class Game {
     this.forceFullRender = true;
   }
 
-  /** Returns surface scan cursor bounds. */
+  /** Bounds the scan cursor to the actual responsive terrain viewport, including reserved telemetry rows. */
   private getSurfaceScanCursorBounds(): { x: number; y: number } {
     const scale = Math.max(1, CONFIG.PLANET_SURFACE_CELL_VIEW_SCALE);
+    const { viewport } = createSurfaceScreenLayout(
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows(),
+      this.player.crew
+    );
     return {
-      x: Math.max(1, Math.floor(Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, 92) / (2 * scale)) - 1),
-      y: Math.max(1, Math.floor(CONFIG.PLANET_SURFACE_VIEW_HEIGHT / (2 * scale)) - 1),
+      x: Math.max(0, Math.floor((viewport.width - 1) / (2 * scale))),
+      y: Math.max(0, Math.floor((viewport.height - 1) / (2 * scale))),
     };
   }
 

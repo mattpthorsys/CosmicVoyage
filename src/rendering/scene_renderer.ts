@@ -7,6 +7,9 @@ import { readReadySurfaceData } from '../entities/planet/surface_data';
 import { SurfaceLiquidOverlay } from '../entities/planet/surface_liquid';
 import { getSurfaceDisplayColour, SurfaceMaterialMap } from '../entities/planet/surface_material';
 import { SurfaceData } from '../entities/planet/surface_generator';
+import { surfaceMapDegrees } from '../utils/surface_coordinates';
+import { createSurfaceScreenLayout, type SurfaceVehicleOverlayModel } from '../core/surface_ui';
+export type { SurfaceVehicleOverlayModel } from '../core/surface_ui';
 import type { SurfaceSettlementLayer } from '../entities/planet/surface_settlements';
 import { Starbase } from '../entities/starbase';
 import { CONFIG } from '../config';
@@ -44,6 +47,7 @@ import {
 import { toneMapOrbitRadiance } from './scenes/orbit_tone_map';
 import { getOrbitSettlementNightFactor } from './scenes/orbit_settlement_light';
 import { SettlementSurfaceRenderer } from './scenes/settlement_surface_renderer';
+import { SurfaceTelemetryRenderer } from './scenes/surface_telemetry_renderer';
 import {
   getDashboardVisibleRows,
   TextDashboardLine,
@@ -141,35 +145,13 @@ interface OrbitLandingMapCache {
   colours: string[];
 }
 
-export interface SurfaceVehicleOverlayModel {
-  dateTime: string;
-  notifications: string[];
-  deployed: boolean;
-  moving: boolean;
-  available: boolean;
-  onFoot: boolean;
-  fuel: number;
-  maxFuel: number;
-  cargo: number;
-  cargoCapacity: number;
-  selectedIndex: number;
-  items: Array<{ id?: string; label: string; status: string; tone?: 'normal' | 'green' | 'red' | 'muted' }>;
-  mapExpanded?: boolean;
-  surfaceCellScale?: number;
-  scanCursor?: { dx: number; dy: number };
-  ship?: { x: number; y: number };
-  shipDistance?: { distanceKm: number; direction: string };
-  atShip?: boolean;
-  altitudeBand?: { low: string; high: string; current: string };
-  crew: Array<{ name: string; hitPoints: number; maxHitPoints: number }>;
-}
-
 /** Contains methods for rendering specific game scenes/states. */
 export class SceneRenderer {
   private screenBuffer: ScreenBuffer; // Main buffer for primary content
   private readonly giantAtmosphereRenderer = new GiantAtmosphereRenderer();
   private readonly solidPlanetOrbitTextureRenderer = new SolidPlanetOrbitTextureRenderer();
   private readonly settlementSurfaceRenderer = new SettlementSurfaceRenderer();
+  private readonly surfaceTelemetryRenderer: SurfaceTelemetryRenderer;
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private systemDataGenerator: SystemDataGenerator;
@@ -204,6 +186,7 @@ export class SceneRenderer {
   ) {
     this.screenBuffer = screenBuffer;
     this.drawingContext = drawingContext;
+    this.surfaceTelemetryRenderer = new SurfaceTelemetryRenderer(screenBuffer, drawingContext);
     this.nebulaRenderer = nebulaRenderer;
     this.systemDataGenerator = systemDataGenerator;
     this.hyperspaceSurveyService = hyperspaceSurveyService;
@@ -1061,7 +1044,7 @@ export class SceneRenderer {
     }
     const cols = this.screenBuffer.getCols();
     const rows = this.screenBuffer.getRows();
-    const viewport = this.getSurfaceViewport(cols, rows);
+    const viewport = this.getSurfaceViewport(cols, rows, surfaceOverlay);
     this.drawingContext.drawBox(
       viewport.x - 1,
       viewport.y - 1,
@@ -1139,27 +1122,16 @@ export class SceneRenderer {
     );
     if (surfaceOverlay?.scanCursor) this.drawSurfaceScanCursor(surfaceOverlay.scanCursor, viewport);
     this.drawSurfaceHud(player, planet, viewport);
-    if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
-    if (this.screenBuffer.getCols() < 96) this.drawSurfaceColourLegend(planet);
+    if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay);
   }
 
   /** Returns surface viewport. */
   private getSurfaceViewport(
     cols: number,
-    rows: number
+    rows: number,
+    overlay?: SurfaceVehicleOverlayModel
   ): { x: number; y: number; width: number; height: number } {
-    const sidebarWidth = cols >= 96 ? 24 : 0;
-    const width = Math.max(
-      1,
-      Math.min(CONFIG.PLANET_SURFACE_VIEW_WIDTH, Math.max(1, cols - sidebarWidth - 5))
-    );
-    const height = Math.max(1, Math.min(CONFIG.PLANET_SURFACE_VIEW_HEIGHT, Math.max(1, rows - 11)));
-    return {
-      x: Math.max(1, Math.floor((cols - sidebarWidth - width) / 2)),
-      y: 2,
-      width,
-      height,
-    };
+    return createSurfaceScreenLayout(cols, rows, overlay?.crew).viewport;
   }
 
   /** Returns planet liquid overlay. */
@@ -1212,7 +1184,7 @@ export class SceneRenderer {
     }
     const rows = this.screenBuffer.getRows();
     const cols = this.screenBuffer.getCols();
-    const viewport = this.getSurfaceViewport(cols, rows);
+    const viewport = this.getSurfaceViewport(cols, rows, surfaceOverlay);
     this.drawingContext.drawBox(
       viewport.x - 1,
       viewport.y - 1,
@@ -1244,7 +1216,7 @@ export class SceneRenderer {
     );
     if (surfaceOverlay?.scanCursor) this.drawSurfaceScanCursor(surfaceOverlay.scanCursor, viewport);
     this.drawSurfaceHud(player, planet, viewport);
-    if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay, viewport);
+    if (surfaceOverlay) this.drawSurfaceVehicleOverlay(surfaceOverlay);
   }
 
   /** Samples the giant-atmosphere renderer for one projected cell. */
@@ -2806,27 +2778,34 @@ export class SceneRenderer {
       1,
       readReadySurfaceData(planet)?.heightmap?.length ?? CONFIG.PLANET_MAP_BASE_SIZE
     );
-    const lat =
-      90 - (Math.max(0, Math.min(mapSize - 1, player.position.surfaceY)) / Math.max(1, mapSize - 1)) * 180;
-    const lon = (player.position.surfaceX / mapSize) * 360 - 180;
-    const label = ` ${planet.name}  ${this.formatSurfaceCoordinate(lat, 'NS')} x ${this.formatSurfaceCoordinate(lon, 'EW')}  GRID ${Math.floor(player.position.surfaceX)},${Math.floor(player.position.surfaceY)} `;
-    const clippedLabel = label.slice(0, Math.max(0, viewport.width - 2));
-    this.screenBuffer.drawString(
-      clippedLabel,
-      viewport.x + 1,
-      viewport.y - 1,
-      TEXT_PALETTE.text,
-      CONFIG.DEFAULT_BG_COLOUR
+    const { latitude, longitude } = surfaceMapDegrees(
+      player.position.surfaceX,
+      player.position.surfaceY,
+      mapSize
     );
-
-    const footer = '  N ^   S v   W <   E >  ';
-    const footerX = viewport.x + Math.max(1, viewport.width - footer.length - 1);
-    this.screenBuffer.drawString(
-      footer,
-      footerX,
-      viewport.y + viewport.height,
-      TEXT_PALETTE.cyan,
-      CONFIG.DEFAULT_BG_COLOUR
+    const coordinateRows = viewport.width < 32 ? 2 : 1;
+    const nameLines = wrapDashboardLines([{ segments: [{ text: planet.name }] }], viewport.width).slice(0, 2);
+    nameLines.forEach((line, index) => {
+      this.screenBuffer.drawString(
+        line.segments.map((segment) => segment.text).join(''),
+        viewport.x,
+        viewport.y - coordinateRows - 1 - (nameLines.length - 1) + index,
+        TEXT_PALETTE.cyan,
+        CONFIG.DEFAULT_BG_COLOUR
+      );
+    });
+    const degrees = `${this.formatSurfaceCoordinate(latitude, 'NS')} ${this.formatSurfaceCoordinate(longitude, 'EW')}`;
+    const grid = `X${Math.floor(player.position.surfaceX)} Y${Math.floor(player.position.surfaceY)}`;
+    const labels = coordinateRows === 1 ? [`${degrees}  ${grid}`] : [degrees, grid];
+    labels.forEach((label, index) =>
+      this.screenBuffer.drawString(
+        label,
+        viewport.x,
+        viewport.y - coordinateRows + index,
+        TEXT_PALETTE.text,
+        CONFIG.DEFAULT_BG_COLOUR,
+        'thin'
+      )
     );
 
     const crossX = viewport.x + Math.floor(viewport.width / 2);
@@ -2844,103 +2823,12 @@ export class SceneRenderer {
     return `${Math.abs(value).toFixed(1)}${direction}`;
   }
 
-  /** Draws surface vehicle overlay. */
-  private drawSurfaceVehicleOverlay(
-    model: SurfaceVehicleOverlayModel,
-    viewport: { x: number; y: number; width: number; height: number }
-  ): void {
-    const panelX = viewport.x;
-    const panelY = viewport.y + viewport.height + 2;
-    const panelWidth = viewport.width;
-    if (panelY >= this.screenBuffer.getRows() - 1) return;
-    const notifications = model.notifications.length > 0 ? model.notifications : ['Surface systems nominal.'];
-    this.drawingContext.drawBox(
-      panelX - 1,
-      panelY - 1,
-      panelWidth + 2,
-      6,
-      TEXT_PALETTE.cyanDeep,
-      CONFIG.DEFAULT_BG_COLOUR,
-      ' '
+  /** Draws telemetry in the same reserved geometry used for terrain and scan limits. */
+  private drawSurfaceVehicleOverlay(model: SurfaceVehicleOverlayModel): void {
+    this.surfaceTelemetryRenderer.draw(
+      model,
+      createSurfaceScreenLayout(this.screenBuffer.getCols(), this.screenBuffer.getRows(), model.crew)
     );
-    this.screenBuffer.drawString(
-      'NOTIFICATIONS',
-      panelX + 2,
-      panelY - 1,
-      TEXT_PALETTE.cyan,
-      CONFIG.DEFAULT_BG_COLOUR
-    );
-    for (let index = 0; index < 4; index++) {
-      const line = (notifications[index] ?? '').slice(0, panelWidth - 4);
-      this.screenBuffer.drawString(
-        line,
-        panelX + 2,
-        panelY + index,
-        index === 0 ? TEXT_PALETTE.amber : TEXT_PALETTE.textSoft,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-    }
-
-    if (!model.deployed) {
-      const line = model.onFoot
-        ? 'On foot. Return to the parked ship to embark.'
-        : model.available
-          ? 'Terrain vehicle embarked. Open ship operations to disembark.'
-          : 'Terrain vehicle lost. Replacement required at a starport shipyard.';
-      this.screenBuffer.drawString(
-        line.slice(0, panelWidth - 4),
-        panelX + 2,
-        panelY + 5,
-        TEXT_PALETTE.cyan,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-      this.drawSurfaceCrewSidebar(model, viewport);
-      return;
-    }
-
-    const menuY = panelY + 6;
-    if (menuY >= this.screenBuffer.getRows()) return;
-    const fuelPct = model.maxFuel > 0 ? Math.round((Math.max(0, model.fuel) / model.maxFuel) * 100) : 0;
-    const fuel = `FUEL ${model.fuel.toFixed(1)}/${model.maxFuel} ${fuelPct}%`;
-    const cargo = `CARGO ${formatCargoAmount(model.cargo)}/${Math.round(model.cargoCapacity)} m^3`;
-    const mode = model.mapExpanded ? 'MAP' : model.moving ? 'MOVING' : 'STOPPED';
-    this.screenBuffer.drawString(
-      `${mode}  ${fuel}  ${cargo}`.slice(0, panelWidth),
-      panelX + 1,
-      menuY,
-      model.moving ? TEXT_PALETTE.text : TEXT_PALETTE.cyan,
-      CONFIG.DEFAULT_BG_COLOUR
-    );
-
-    let cursorX = panelX + 1;
-    const rowY = menuY + 1;
-    for (let index = 0; index < model.items.length; index++) {
-      const item = model.items[index];
-      const selected = index === model.selectedIndex && !model.moving;
-      const label = ` ${item.label.toUpperCase()} `;
-      const baseFg = item.tone === 'green' ? TEXT_PALETTE.greenSoft : TEXT_PALETTE.text;
-      const selectedBg = item.tone === 'green' ? TEXT_PALETTE.greenAction : TEXT_PALETTE.text;
-      const fg = selected ? TEXT_PALETTE.inverseText : baseFg;
-      const bg = selected ? selectedBg : CONFIG.DEFAULT_BG_COLOUR;
-      if (cursorX + label.length >= panelX + panelWidth) break;
-      this.screenBuffer.drawString(label, cursorX, rowY, fg, bg);
-      cursorX += label.length + 1;
-    }
-    const selected = model.items[model.selectedIndex];
-    if (selected && rowY + 1 < this.screenBuffer.getRows()) {
-      const hint =
-        model.atShip && selected.label.toLowerCase() !== 'embark'
-          ? `${selected.label}: ${selected.status} | At ship: select EMBARK to board.`
-          : `${selected.label}: ${selected.status}`;
-      this.screenBuffer.drawString(
-        hint.slice(0, panelWidth),
-        panelX + 1,
-        rowY + 1,
-        TEXT_PALETTE.textSoft,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-    }
-    this.drawSurfaceCrewSidebar(model, viewport);
   }
 
   /** Draws the scan arrows above both terminal terrain and settlement raster pixels. */
@@ -2997,126 +2885,6 @@ export class SceneRenderer {
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, colour, null);
   }
 
-  /** Draws surface crew sidebar. */
-  private drawSurfaceCrewSidebar(
-    model: SurfaceVehicleOverlayModel,
-    viewport: { x: number; y: number; width: number; height: number }
-  ): void {
-    const x = viewport.x + viewport.width + 3;
-    const rows = this.screenBuffer.getRows();
-    const width = Math.max(0, this.screenBuffer.getCols() - x - 2);
-    if (width < 16) return;
-    const height = Math.min(rows - 4, viewport.height + 8);
-    this.drawingContext.drawBox(
-      x - 1,
-      viewport.y - 1,
-      width + 2,
-      height,
-      TEXT_PALETTE.cyanDeep,
-      CONFIG.DEFAULT_BG_COLOUR,
-      ' '
-    );
-    this.screenBuffer.drawString(
-      'SURFACE TELEMETRY',
-      x + 1,
-      viewport.y - 1,
-      TEXT_PALETTE.textBright,
-      CONFIG.DEFAULT_BG_COLOUR
-    );
-    let row = viewport.y + 1;
-    this.screenBuffer.drawString(
-      model.dateTime.slice(0, width),
-      x,
-      row++,
-      TEXT_PALETTE.cyan,
-      CONFIG.DEFAULT_BG_COLOUR
-    );
-    row++;
-    if (model.shipDistance) {
-      const km =
-        model.shipDistance.distanceKm >= 100
-          ? model.shipDistance.distanceKm.toFixed(0)
-          : model.shipDistance.distanceKm.toFixed(1);
-      this.screenBuffer.drawString(
-        `SHIP ${km} km`.slice(0, width),
-        x,
-        row++,
-        TEXT_PALETTE.amber,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-      this.screenBuffer.drawString(
-        `BRG  ${model.shipDistance.direction}`.slice(0, width),
-        x,
-        row++,
-        TEXT_PALETTE.textSoft,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-    }
-    if (model.altitudeBand) {
-      this.screenBuffer.drawString(
-        `RELIEF ${model.altitudeBand.current}`.slice(0, width),
-        x,
-        row++,
-        TEXT_PALETTE.text,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-      this.screenBuffer.drawString(
-        `${model.altitudeBand.low} / ${model.altitudeBand.high}`.slice(0, width),
-        x,
-        row++,
-        TEXT_PALETTE.cyan,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-    }
-    row++;
-    model.crew.slice(0, Math.max(0, viewport.y + height - row - 1)).forEach((member, index) => {
-      const dead = member.hitPoints <= 0;
-      const hp = dead ? 'DEAD' : `${member.hitPoints}/${member.maxHitPoints}`;
-      const fg = dead
-        ? TEXT_PALETTE.red
-        : member.hitPoints < member.maxHitPoints * 0.4
-          ? TEXT_PALETTE.amber
-          : TEXT_PALETTE.text;
-      const nameWidth = Math.max(5, width - hp.length - 3);
-      this.screenBuffer.drawString(
-        `${member.name.slice(0, nameWidth).padEnd(nameWidth)} ${hp}`.slice(0, width),
-        x,
-        row + index,
-        fg,
-        CONFIG.DEFAULT_BG_COLOUR
-      );
-    });
-  }
-
-  /** Shows material/elevation colours, keeping narrow-view labels above settlement raster pixels. */
-  private drawSurfaceColourLegend(planet: Planet): void {
-    const surface = readReadySurfaceData(planet);
-    const materialPalette = surface?.materialMap?.palette;
-    const heightColors = materialPalette ?? surface?.heightLevelColors ?? null;
-    if (!heightColors || heightColors.length === 0) return;
-    const rows = this.screenBuffer.getRows();
-    const cols = this.screenBuffer.getCols();
-    const legendWidth = 1;
-    const legendHeight = Math.min(rows - 4, 20);
-    const startX = cols - legendWidth - 2;
-    const startY = Math.floor((rows - legendHeight) / 2);
-    const numColors = heightColors.length;
-    for (let i = 0; i < legendHeight; i++) {
-      const colourIndex = Math.floor((i / (legendHeight - 1)) * (numColors - 1));
-      const colour = heightColors[Math.max(0, Math.min(numColors - 1, colourIndex))] || '#FF00FF';
-      for (let w = 0; w < legendWidth; ++w) {
-        this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour);
-      }
-    }
-    const lowLabel = materialPalette ? 'Dark' : 'Low';
-    const highLabel = materialPalette ? 'Light' : 'High';
-    const highLabelX = startX - (materialPalette ? 5 : 3);
-    this.screenBuffer.occludeScaledGlyphs(startX - 4, startY, lowLabel.length, 1);
-    this.screenBuffer.occludeScaledGlyphs(highLabelX, startY + legendHeight - 1, highLabel.length, 1);
-    this.screenBuffer.drawString(lowLabel, startX - 4, startY, TEXT_PALETTE.text, null);
-    this.screenBuffer.drawString(highLabel, highLabelX, startY + legendHeight - 1, TEXT_PALETTE.text, null);
-  }
-
   /** Helper to draw an error message centered on the screen */
   private _drawError(message: string): void {
     const cols = this.screenBuffer.getCols();
@@ -3127,8 +2895,3 @@ export class SceneRenderer {
     this.screenBuffer.drawString(message, x, y, TEXT_PALETTE.red, TEXT_PALETTE.background);
   }
 } // End SceneRenderer class
-
-/** Formats cargo amount. */
-function formatCargoAmount(value: number): string {
-  return (Math.round(value * 10) / 10).toFixed(1);
-}

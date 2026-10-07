@@ -129,13 +129,20 @@ symbols composed only when its raster cache rebuilds. Cache matching includes
 settlement-layer identity and version. `SettlementSurfaceRenderer` prepares
 four-colour regional motifs outside drawing loops; these half-cell pixels stay
 inside their native terrain cells and the travel viewport. Reserve mineral,
-vehicle, ship, scan, HUD and narrow-screen legend cells using
+vehicle, ship, scan and HUD cells using
 `ScreenBuffer.occludeScaledGlyphs`: call order alone does not put terminal text
 above the raster layer. Generic animated popups reserve their current visible
 bounds too; closing them relies on a complete new scene frame, not retained
 raster pixels. Grid replacement discards staged glyphs and foreground masks
 from the previous dimensions. See [planetary city foundations](../planetary-cities.md)
 for ownership, art budgets and verification status.
+
+`core/surface_ui.ts` owns the surface overlay contract and shared responsive
+terrain/footer geometry. Reserve telemetry and command rows before calculating
+terrain height; the scan cursor uses those same limits. `SurfaceTelemetryRenderer`
+draws thin readings, wrapped notices and a command window that follows the
+selected action. Small displays move crew health beneath the terrain. The Icon
+command retains the detailed legend without painting labels over travel.
 
 For reproducible city captures, run `scripts/capture_orbit_surfaces.cjs` with
 `--suite settlements --real-colonies 3`; this includes nearby generated

@@ -321,6 +321,26 @@ checks passed (95 tests). `npm run check` passed documentation comments,
 formatting, lint, both type checks, all 1,342 tests across 178 files and the
 production build. Its existing large-chunk advisory remains non-fatal.
 
+## Responsive Surface Follow-Up
+
+`core/surface_ui.ts` now owns the shared terrain/footer geometry and the
+vehicle-overlay contract. Terrain height reserves the complete resource,
+notification, selected-action and control rows before drawing. This fixes the
+previous action strip being placed below the terminal's last row. Surface scan
+limits use the same dimensions. `SurfaceTelemetryRenderer` draws the reserved
+regions with thin readings and thick key labels. The selected horizontal action
+window follows selection, including commands near the end of the list.
+
+Wide views retain a crew sidebar; narrow views show date, return-to-ship range
+and health below the terrain. Large rosters show the most injured first and
+link to Operations for the full crew. Cargo includes both cubic metres and
+percentage. The terrain legend is available through the existing Icon command
+rather than floating over narrow travel views. Latitude labels now use the
+actual Mercator projection and longitude respects its duplicated seam.
+
+Implementation has passed static checks; the new buffer-bound and command
+visibility cases, runtime tests and desktop/narrow captures await Luna.
+
 ## Generated Data Ownership
 
 `src/entities/planet/surface_settlements.ts` owns the typed colony profile,
