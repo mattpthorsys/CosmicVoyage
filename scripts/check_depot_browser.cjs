@@ -439,12 +439,23 @@ async function main() {
     await page.locator('#continueSessionButton').click();
     await page.waitForFunction(() => document.querySelector('#splashScreen').hidden);
     assert.deepEqual((await checkpoint()).communications, inbox.communications);
+
+    // Ship Operations is a travel interface; return-to-parent is verified in its supported space context.
+    const spaceSave = structuredClone(inbox);
+    spaceSave.location = {
+      kind: 'hyperspace',
+      worldX: fixture.save.location.worldX,
+      worldY: fixture.save.location.worldY,
+      systemSlot: 0,
+    };
+    await load(spaceSave);
     await press('o');
+    await page.locator('[data-command-id="use"]').waitFor();
     await press('h');
     await page.locator('[data-command-id="frontier-refresh"]').waitFor();
     await press('PageDown');
     await press('Escape');
-    await page.locator('[data-command-id="use"]').waitFor();
+    await page.locator('[data-command-id="use"]').waitFor(); // Esc restored Operations instead of closing the terminal.
     await capture('desktop-communications-return-to-operations');
 
     await load(fixture.save);

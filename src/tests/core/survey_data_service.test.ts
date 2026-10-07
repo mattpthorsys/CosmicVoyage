@@ -153,7 +153,7 @@ describe('astrometric evidence and settlement', () => {
     const state = service.createSnapshot();
     for (let index = 0; index < SURVEY_RECEIPT_LIMIT; index++) {
       const key = surveyObjectKey({ ...address, worldX: index }, 'stars');
-      state.paid[key] = 1;
+      state.paid[key] = index < SURVEY_EVIDENCE_LIMIT ? 3 : 1;
       if (index < SURVEY_EVIDENCE_LIMIT)
         state.evidence[key] = { tier: 3, label: `Reference ${index}`, method: 'local-scan', at: 0 };
     }
