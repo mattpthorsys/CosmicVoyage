@@ -126,7 +126,7 @@ describe('production haul vertical slice', () => {
       trade: true,
       fuel: true,
       repairs: 'basic',
-      missions: false,
+      missions: true,
       crew: false,
     });
     expect(fresh.getObjectNear(depot.systemX, depot.systemY)).toBe(depot);
