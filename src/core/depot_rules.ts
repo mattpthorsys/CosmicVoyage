@@ -77,7 +77,11 @@ export function quoteDepotWork(inputs: DepotQuoteInputs): DepotServiceQuote {
       }
       cost += allocation.cost;
       completedUnits += units;
-      work.push({ id: target.id, from: target.current, to: target.current + units });
+      work.push({
+        id: target.id,
+        from: target.current,
+        to: Math.min(target.maximum, target.current + units),
+      });
     }
     if (units < requested) {
       const missing = target.supplies.filter((key) => {
@@ -95,7 +99,12 @@ export function quoteDepotWork(inputs: DepotQuoteInputs): DepotServiceQuote {
       );
     }
   }
-  if (!selected.length) shortfalls.push('This target is not supported by the robotic workshop.');
+  if (!selected.length)
+    shortfalls.push(
+      inputs.kind === 'medical'
+        ? 'No eligible living crew are available for treatment.'
+        : 'This target is not supported by the robotic workshop.'
+    );
   if (selected.length && !requestedUnits)
     shortfalls.push('No service required; all selected targets are nominal.');
   return {
@@ -104,11 +113,25 @@ export function quoteDepotWork(inputs: DepotQuoteInputs): DepotServiceQuote {
     kind: inputs.kind,
     targetId: inputs.targetId,
     label:
-      inputs.targetId === 'all' ? 'Hull / rover restoration' : (selected[0]?.label ?? 'Unsupported service'),
+      inputs.targetId === 'all'
+        ? inputs.kind === 'medical'
+          ? 'Treat eligible crew'
+          : 'Hull / rover restoration'
+        : (selected[0]?.label ?? 'Unsupported service'),
     useCargo: inputs.useCargo,
+    condition: selected
+      .map(
+        (target) => `${target.label}: ${target.current.toLocaleString()} / ${target.maximum.toLocaleString()}`
+      )
+      .join(' | '),
     requestedUnits,
     completedUnits,
-    unitLabel: inputs.kind === 'fuel' ? 'reactor units' : 'integrity points',
+    unitLabel:
+      inputs.kind === 'fuel'
+        ? 'reactor units'
+        : inputs.kind === 'medical'
+          ? 'health points'
+          : 'integrity points',
     cost,
     stationSupplies,
     cargoSupplies,

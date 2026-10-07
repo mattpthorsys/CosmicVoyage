@@ -236,3 +236,125 @@ describe('finite robotic repairs and reactor loading', () => {
     expect(player.resources.credits).toBe(9760);
   });
 });
+
+describe('robotic medical treatment', () => {
+  it('treats an injured patient without altering healthy crew or other resources', () => {
+    const { player, service, station, commerce } = depotFixture();
+    player.resources.credits = 10_000;
+    const patient = player.crew[0];
+    patient.hitPoints = patient.maxHitPoints - 15;
+    const healthy = player.crew[1];
+    const healthyHP = healthy.hitPoints;
+    const before = commerce.getStock(station.id, 'MEDICAL_SUPPLIES');
+    const quote = service.quote(station.id, 'medical', `crew:${patient.id}`);
+    expect(quote.unitLabel).toBe('health points');
+    expect(quote.completedUnits).toBe(15);
+    expect(quote.stationSupplies).toEqual({ MEDICAL_SUPPLIES: 1 });
+    expect(service.purchase(quote).ok).toBe(true);
+    expect(player.crew.find((member) => member.id === patient.id)?.hitPoints).toBe(patient.maxHitPoints);
+    expect(player.crew.find((member) => member.id === healthy.id)?.hitPoints).toBe(healthyHP);
+    expect(commerce.getStock(station.id, 'MEDICAL_SUPPLIES')).toBe(before - 1);
+  });
+
+  it('triages the most injured first and shares finite supplies across all patients', () => {
+    const { player, service, station, commerce } = depotFixture();
+    player.resources.credits = 10_000;
+    const [first, second] = player.crew;
+    first.hitPoints = first.maxHitPoints - 5;
+    second.hitPoints = 1;
+    commerce.consumeStock(station.id, {
+      MEDICAL_SUPPLIES: commerce.getStock(station.id, 'MEDICAL_SUPPLIES') - 1,
+    });
+    const quote = service.quote(station.id, 'medical', 'all');
+    expect(quote.work[0].id).toBe(`crew:${second.id}`);
+    expect(quote.completedUnits).toBe(20);
+    expect(service.purchase(quote).ok).toBe(true);
+    expect(player.crew.find((member) => member.id === second.id)?.hitPoints).toBe(21);
+    expect(player.crew.find((member) => member.id === first.id)?.hitPoints).toBe(first.hitPoints);
+    expect(commerce.getStock(station.id, 'MEDICAL_SUPPLIES')).toBe(0);
+  });
+
+  it('never charges healthy crew or resurrects zero-HP crew', () => {
+    const { player, service, station, commerce } = depotFixture();
+    player.resources.credits = 10_000;
+    player.crew[0].hitPoints = 0;
+    const credits = player.resources.credits;
+    const before = commerce.createSnapshot();
+    expect(service.quote(station.id, 'medical', `crew:${player.crew[0].id}`).completedUnits).toBe(0);
+    expect(service.purchase(service.quote(station.id, 'medical', 'all')).ok).toBe(false);
+    expect(player.crew[0].hitPoints).toBe(0);
+    expect(player.resources.credits).toBe(credits);
+    expect(commerce.createSnapshot()).toEqual(before);
+  });
+
+  it('rejects changed or removed patients without consuming medicines', () => {
+    const { player, service, station, commerce } = depotFixture();
+    player.resources.credits = 10_000;
+    const patient = player.crew[0];
+    patient.hitPoints -= 10;
+    const quote = service.quote(station.id, 'medical', `crew:${patient.id}`);
+    player.crew = player.crew.filter((member) => member.id !== patient.id);
+    const before = commerce.createSnapshot();
+    expect(service.purchase(quote).ok).toBe(false);
+    expect(commerce.createSnapshot()).toEqual(before);
+  });
+
+  it('requires a fresh clinical quote after injury changes and refuses repeated treatment', () => {
+    const { player, service, station, commerce } = depotFixture();
+    player.resources.credits = 10_000;
+    const patient = player.crew[0];
+    patient.hitPoints -= 10;
+    const stale = service.quote(station.id, 'medical', `crew:${patient.id}`);
+    patient.hitPoints -= 5;
+    const stock = commerce.createSnapshot();
+    const credits = player.resources.credits;
+    expect(service.purchase(stale).ok).toBe(false);
+    expect(commerce.createSnapshot()).toEqual(stock);
+    expect(player.resources.credits).toBe(credits);
+    const fresh = service.quote(station.id, 'medical', `crew:${patient.id}`);
+    expect(service.purchase(fresh).ok).toBe(true);
+    const paidStock = commerce.createSnapshot();
+    const paidCredits = player.resources.credits;
+    expect(service.purchase(fresh).ok).toBe(false);
+    expect(commerce.createSnapshot()).toEqual(paidStock);
+    expect(player.resources.credits).toBe(paidCredits);
+  });
+
+  it('can supplement a depleted med bay from explicitly authorised ship supplies', () => {
+    const { player, service, station, commerce, cargo } = depotFixture();
+    player.resources.credits = 10_000;
+    const patient = player.crew[0];
+    patient.hitPoints -= 10;
+    commerce.consumeStock(station.id, {
+      MEDICAL_SUPPLIES: commerce.getStock(station.id, 'MEDICAL_SUPPLIES'),
+    });
+    cargo.addItem(player.cargoHold, 'MEDICAL_SUPPLIES', 1);
+    expect(service.quote(station.id, 'medical', 'all').completedUnits).toBe(0);
+    const quote = service.quote(station.id, 'medical', 'all', true);
+    expect(quote.cargoSupplies).toEqual({ MEDICAL_SUPPLIES: 1 });
+    expect(service.purchase(quote).ok).toBe(true);
+    expect(player.cargoHold.items.MEDICAL_SUPPLIES).toBeUndefined();
+    expect(player.crew.find((member) => member.id === patient.id)?.hitPoints).toBe(patient.maxHitPoints);
+  });
+
+  it('provides a complete detached checkpoint containing the healed patient and depleted inventory', () => {
+    const { player, service, station, commerce } = depotFixture();
+    player.resources.credits = 10_000;
+    player.crew[0].hitPoints -= 10;
+    const beforeHP = player.crew[0].hitPoints;
+    const beforeStock = commerce.getStock(station.id, 'MEDICAL_SUPPLIES');
+    const quote = service.quote(station.id, 'medical', `crew:${player.crew[0].id}`);
+    let checkpoints = 0;
+    expect(
+      service.purchase(quote, (next) => {
+        checkpoints++;
+        expect(player.crew[0].hitPoints).toBe(beforeHP);
+        expect(commerce.getStock(station.id, 'MEDICAL_SUPPLIES')).toBe(beforeStock);
+        expect(next.player.crew[0].hitPoints).toBe(next.player.crew[0].maxHitPoints);
+        expect(next.economy[station.id].items.MEDICAL_SUPPLIES.units).toBe(beforeStock - 1);
+        expect(next.depots[station.id].revision).toBe(1);
+      }).ok
+    ).toBe(true);
+    expect(checkpoints).toBe(1);
+  });
+});

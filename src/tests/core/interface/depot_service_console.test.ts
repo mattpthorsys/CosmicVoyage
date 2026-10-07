@@ -11,6 +11,7 @@ function quoteFixture(targetId = 'all'): DepotServiceQuote {
     targetId,
     label: targetId === 'all' ? 'Hull / rover restoration' : 'Hull structural repair',
     useCargo: false,
+    condition: 'Hull 60 / 100',
     requestedUnits: 40,
     completedUnits: 20,
     unitLabel: 'integrity points',
@@ -137,5 +138,31 @@ describe('robotic service terminal', () => {
     );
     expect(paged.viewOffset).toBeGreaterThan(0);
     expect(console.selectedId).toBe('all');
+  });
+
+  it('shows colour-coded clinical vitals, including unavailable treatment for nonliving crew', () => {
+    const console = new DepotServiceConsole();
+    console.open('medical');
+    const quote = { ...quoteFixture(), kind: 'medical' as const, unitLabel: 'health points' };
+    const model = console.createModel(
+      'Robotic Clinic',
+      [quote],
+      [{ name: 'Medical Supplies', units: 1 }],
+      1000,
+      80,
+      40,
+      [
+        { name: 'Injured crew', hitPoints: 30, maxHitPoints: 100 },
+        { name: 'Lost crew', hitPoints: 0, maxHitPoints: 100 },
+      ]
+    );
+    const segments = model.dashboard?.flatMap((entry) => entry.segments) ?? [];
+    const text = segments.map((segment) => segment.text).join('\n');
+    expect(model.title).toBe('MEDICAL BAY');
+    expect(text).toContain('CREW VITALS');
+    expect(text).toContain('30/100 HP');
+    expect(text).toContain('No lifesigns');
+    expect(segments.some((segment) => segment.tone === 'red')).toBe(true);
+    expect(segments.some((segment) => segment.tone === 'amber')).toBe(true);
   });
 });

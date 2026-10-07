@@ -336,7 +336,7 @@ export function createHaulResultDialog(
             line('Tow released. Contractor support tank stays with the installation.'),
             line(
               objective.package.installationKind === 'automated-depot'
-                ? 'Depot open for trade, fuel and basic repairs.'
+                ? 'Depot open for trade, finite fuel, basic repairs and robotic medical care.'
                 : 'Navigation buoy is now available as a permanent target.',
               'green'
             ),

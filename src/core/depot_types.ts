@@ -17,7 +17,7 @@ export interface DepotRecord {
 
 export type DepotSnapshot = Record<string, DepotRecord>;
 
-export type DepotServiceKind = 'repair' | 'fuel';
+export type DepotServiceKind = 'repair' | 'fuel' | 'medical';
 
 export interface DepotWorkTarget {
   readonly id: string;
@@ -36,6 +36,7 @@ export interface DepotServiceQuote {
   readonly targetId: string;
   readonly label: string;
   readonly useCargo: boolean;
+  readonly condition: string;
   readonly requestedUnits: number;
   readonly completedUnits: number;
   readonly unitLabel: string;
@@ -88,6 +89,8 @@ export function validateDepotSnapshot(
       record.profileVersion !== DEPOT_PROFILE_VERSION ||
       record.profile !== 'robotic-basic' ||
       !address ||
+      typeof address !== 'object' ||
+      Array.isArray(address) ||
       !Number.isSafeInteger(address.worldX) ||
       !Number.isSafeInteger(address.worldY) ||
       !Number.isInteger(address.systemSlot) ||

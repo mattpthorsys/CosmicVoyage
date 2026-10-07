@@ -79,5 +79,8 @@ verification. The planning documents preserve its design rationale:
   boundaries, equipment/quote calibration, persistence work, and pending checks.
 - [Automated frontier-depot implementation plan](../plans/automated-depots-first-version.md):
   resource-limited robotic services, medical care, bounded extraction, supply/survey
-  jobs, chart exchange, broadcasts, persistence and staged verification. Planned,
-  not implemented.
+  jobs, chart exchange, broadcasts, persistence and staged verification. M0-M2
+  are implemented; M3 onwards remain planned.
+- [Automated depot guide](../automated-depots.md): current finite-stock repairs,
+  reactor loading, robotic treatment, service controls, save ownership and the
+  pending Luna verification checklist.

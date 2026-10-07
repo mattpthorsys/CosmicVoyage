@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Game } from '../../../core/game';
+import { Player } from '../../../core/player';
+import { DepotService } from '../../../core/depot_service';
+import { StarbaseCommerceService } from '../../../core/starbase_commerce';
+import { CargoSystem } from '../../../systems/cargo_systems';
+import { Starbase } from '../../../entities/starbase';
+import { PRNG } from '../../../utils/prng';
 import {
   GameSave,
   MANUAL_SAVE_KEY,
@@ -169,6 +175,62 @@ function createLegacyLocation() {
     atStarbase: false,
   };
 }
+
+describe('versioned robotic depot state', () => {
+  it('migrates schema 20 without inventing inventories or changing contractor allowances', () => {
+    const current = createSave();
+    const { depots: _depots, ...previous } = current;
+    const old = { ...previous, version: 20 };
+    const migrated = parseGameSave(old);
+    expect(migrated.depots).toEqual({});
+    expect(migrated.economy).toEqual(current.economy);
+    expect(migrated.infrastructure).toEqual(current.infrastructure);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
+  });
+
+  it('validates and round-trips a healed patient together with canonical supply depletion', () => {
+    const save = createSave();
+    const player = new Player(3, -2, '@', save.seed);
+    player.resources.credits = 10_000;
+    player.crew[0].hitPoints -= 10;
+    const commerce = new StarbaseCommerceService(player, new CargoSystem(), 12345);
+    const service = new DepotService(commerce, save.seed, player, new CargoSystem());
+    const station = new Starbase('save-depot', new PRNG(save.seed), 'Remote', 'automated-depot');
+    service.ensureStation(station, { worldX: 3, worldY: -2, systemSlot: 0 }, 42);
+    const checkpoints: GameSave[] = [];
+    const result = service.purchase(service.quote(station.id, 'medical', 'all'), (next) => {
+      checkpoints.push(
+        parseGameSave(
+          JSON.stringify({
+            ...save,
+            player: { ...save.player, ...next.player },
+            economy: next.economy,
+            depots: next.depots,
+          })
+        )
+      );
+    });
+    expect(result.ok).toBe(true);
+    expect(checkpoints).toHaveLength(1);
+    const saved = checkpoints[0];
+    expect(saved.player.crew[0].hitPoints).toBe(saved.player.crew[0].maxHitPoints);
+    expect(saved.economy).toEqual(commerce.createSnapshot());
+    expect(saved.depots[station.id].revision).toBe(1);
+    saved.depots[station.id].lastUpdatedSeconds = 43;
+    expect(() => parseGameSave(saved)).toThrow();
+  });
+
+  it('rejects duplicate crew identities and invalid clinical health bounds', () => {
+    const save = createSave();
+    const player = new Player(3, -2, '@', save.seed);
+    save.player.crew = structuredClone(player.crew);
+    save.player.crew[1].id = save.player.crew[0].id;
+    expect(() => parseGameSave(save)).toThrow();
+    save.player.crew = structuredClone(player.crew);
+    save.player.crew[0].hitPoints = save.player.crew[0].maxHitPoints + 1;
+    expect(() => parseGameSave(save)).toThrow();
+  });
+});
 
 /** Builds each reachable domain stage with the matching complete save checkpoint. */
 function createHaulSave(stage: 'waiting' | 'attached' | 'arrived' | 'deployed') {

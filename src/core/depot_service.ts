@@ -92,8 +92,24 @@ export class DepotService {
     return record ? structuredClone(record) : null;
   }
 
-  /** Builds only tasks supported by a basic robotic bay; damaged ship equipment is never included. */
+  /** Builds supported robotic tasks, excluding advanced ship equipment and nonliving medical patients. */
   private getTargets(kind: DepotServiceKind): DepotWorkTarget[] {
+    if (kind === 'medical')
+      return (
+        this.player.crew
+          .filter((member) => member.hitPoints > 0)
+          .map((member) => ({
+            id: `crew:${member.id}`,
+            label: member.name,
+            current: member.hitPoints,
+            maximum: member.maxHitPoints,
+            unitsPerBatch: 20,
+            labourPerUnit: 4,
+            supplies: ['MEDICAL_SUPPLIES'],
+          }))
+          // All-crew treatment prioritises the most injured; individual selection can override triage.
+          .sort((a, b) => a.current / a.maximum - b.current / b.maximum || a.id.localeCompare(b.id))
+      );
     if (kind === 'fuel')
       return [
         {
@@ -157,7 +173,7 @@ export class DepotService {
   /** Quotes selection rows through the same rules used for purchase; all-work orders share one supply budget. */
   getQuotes(stationId: string, kind: DepotServiceKind, useCargo = false): DepotServiceQuote[] {
     const ids = this.getTargets(kind).map((target) => target.id);
-    if (kind === 'repair') ids.unshift('all');
+    if (kind !== 'fuel') ids.unshift('all');
     return ids.map((id) => this.quote(stationId, kind, id, useCargo));
   }
 
@@ -202,6 +218,10 @@ export class DepotService {
       if (work.id === 'hull') next.ship.damage.hullIntegrity = work.to;
       else if (work.id === 'rover') next.terrainVehicle.integrity = work.to;
       else if (work.id === 'fuel') next.resources.fuel = work.to;
+      else if (work.id.startsWith('crew:')) {
+        const member = next.crew.find((candidate) => candidate.id === work.id.slice(5));
+        if (member) member.hitPoints = work.to;
+      }
     }
     next.resources.credits -= quote.cost;
     const depots = this.createSnapshot();

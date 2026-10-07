@@ -2787,7 +2787,9 @@ export class Game {
     const system = this.stateManager.currentSystem;
     if (this.stateManager.state !== 'starbase' || station?.kind !== 'automated-depot' || !system) return;
     if (this.interfaceMode.kind !== 'none') return;
+    if (kind === 'medical' && !station.capabilities.medical) return;
     this.prepareSystemDepots(system);
+    this.starbaseMode.openSection('services');
     this.depotConsole.open(kind, selectedId);
     this.interfaceMode.open('depot-service');
     this.inputManager.clearState();
@@ -2807,7 +2809,9 @@ export class Game {
     const keys =
       this.depotConsole.kind === 'fuel'
         ? ['HELIUM_3', 'DEUTERIUM_PELLETS']
-        : ['TITANIUM_TRUSS', 'REPAIR_SPARES'];
+        : this.depotConsole.kind === 'medical'
+          ? ['MEDICAL_SUPPLIES']
+          : ['TITANIUM_TRUSS', 'REPAIR_SPARES'];
     return this.depotConsole.createModel(
       station.name,
       quotes,
@@ -2817,7 +2821,12 @@ export class Game {
       })),
       this.player.resources.credits,
       this.renderer.getGridCols(),
-      this.renderer.getGridRows()
+      this.renderer.getGridRows(),
+      this.player.crew.map((member) => ({
+        name: member.name,
+        hitPoints: member.hitPoints,
+        maxHitPoints: member.maxHitPoints,
+      }))
     );
   }
 
@@ -10294,6 +10303,10 @@ export class Game {
       this.openShipRepairConsole();
       return;
     }
+    if (this.starbaseMode.sectionId === 'services' && row.id === 'medical') {
+      this.openDepotServiceConsole('medical');
+      return;
+    }
     if (this.starbaseMode.sectionId === 'missions') {
       this.activateMissionSelection(starbase, row);
       return;
@@ -10748,7 +10761,8 @@ export class Game {
           return createDepotServiceRows(
             this.depotService.quote(starbase.id, 'repair', 'all'),
             this.depotService.quote(starbase.id, 'fuel', 'fuel'),
-            commissioningFuel
+            commissioningFuel,
+            starbase.capabilities.medical ? this.depotService.quote(starbase.id, 'medical', 'all') : undefined
           );
         return [
           {
@@ -11158,7 +11172,7 @@ export class Game {
       buy: 'Buy station commodities.',
       sell: 'Sell commodity lots and sealed specimens; biological awards follow scientific demand.',
       research: 'Submit xenobiological data and sealed specimens.',
-      services: 'Refuel and future station services.',
+      services: 'Repair and refuel; robotic medical care at automated depots.',
       notices: 'Read local port bulletins.',
       missions: 'Accept local scan and charting contracts.',
       shipyard: 'Drive refits, tow couplers, crew hypersleep, cargo pods, and defensive fittings.',

@@ -148,7 +148,13 @@ Keep these effects bounded and visible in the relevant instrument or menu.
 Major starbases and automated depots share the landable station entity but not
 their capabilities. A major starbase always references a completed terraformed
 world. Automated depots are uncrewed, stock fewer goods, provide only basic
-repair, and expose no missions, crew, or shipyard panels.
+repair, and expose no missions, recruitment, or shipyard panels. Their Services
+section opens paused repair, reactor-loading and robotic medical terminals.
+`DepotService` quotes and checkpoints supported work; `StarbaseCommerceService`
+remains the sole stock owner. Ship cargo supplements shortages only when the
+player explicitly enables it. Depleted supplies persist without automatic
+production in M0-M2. See [automated-depots.md](../automated-depots.md) for recipes,
+controls and verification. Staffed-port service behaviour is unchanged.
 
 ## Galaxy Map
 

@@ -1,7 +1,8 @@
 # Automated Frontier Depots: Implementation Plan
 
-Status: M0-M1 implemented; automated verification pending the requested Luna stage.
-M2 onwards remain planned.
+Status: M0-M2 implemented; automated verification pending the requested Luna stage.
+M3 onwards remain planned. See [the current depot guide](../automated-depots.md)
+for implemented controls, recipes, ownership and verification commands.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
 module boundaries before implementation; do not overwrite intervening changes.
 
@@ -323,6 +324,8 @@ save lifecycle, without introducing async saves inside a partially applied actio
 Each milestone is a coherent commit after its verification gate. Add the focused
 tests during implementation, then tell the user before running tests/browser
 checks so they can switch to Luna. Do not describe written tests as verified.
+For this M0-M2 batch, implementation commits precede the requested separate Luna
+verification stage; corrective commits follow if that stage identifies problems.
 
 ### M0: Persistent Operations And Inventory Boundaries
 

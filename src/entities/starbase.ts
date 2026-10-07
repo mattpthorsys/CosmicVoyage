@@ -12,6 +12,7 @@ export const DEPLOYED_DEPOT_NOTICE = 'Uncrewed robotic services online / supplie
 export interface StationCapabilities {
   readonly trade: boolean;
   readonly fuel: boolean;
+  readonly medical: boolean;
   readonly repairs: 'basic' | 'full';
   readonly missions: boolean;
   readonly crew: boolean;
@@ -22,6 +23,7 @@ export interface StationCapabilities {
 const STARBASE_CAPABILITIES: StationCapabilities = Object.freeze({
   trade: true,
   fuel: true,
+  medical: false,
   repairs: 'full',
   missions: true,
   crew: true,
@@ -32,6 +34,7 @@ const STARBASE_CAPABILITIES: StationCapabilities = Object.freeze({
 const DEPOT_CAPABILITIES: StationCapabilities = Object.freeze({
   trade: true,
   fuel: true,
+  medical: true,
   repairs: 'basic',
   missions: false,
   crew: false,
@@ -112,6 +115,7 @@ export class Starbase {
     const services = [
       this.capabilities.trade ? 'Trade' : null,
       this.capabilities.fuel ? 'Fuel' : null,
+      this.capabilities.medical ? 'Robotic Medical' : null,
       `${this.capabilities.repairs === 'full' ? 'Full' : 'Basic'} Repair`,
       this.capabilities.missions ? 'Mission Office' : null,
       this.capabilities.shipyard ? 'Shipyard' : null,

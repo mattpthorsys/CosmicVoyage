@@ -33,7 +33,7 @@ describe('Starbase', () => {
     expect(scanInfo).toContain('Mineral Scan: <hl>N/A</hl>');
   });
 
-  it('explains delivered depot staffing while preserving its usable automated services', () => {
+  it('advertises permanent robotic services without requiring staff arrival', () => {
     const station = new Starbase(
       'delivered',
       new PRNG('system-seed'),
@@ -53,6 +53,7 @@ describe('Starbase', () => {
       trade: true,
       fuel: true,
       repairs: 'basic',
+      medical: true,
       crew: false,
       shipyard: false,
     });

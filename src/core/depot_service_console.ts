@@ -13,6 +13,7 @@ import {
 import type { DepotDialogIntent, DepotServiceKind, DepotServiceQuote } from './depot_types';
 import type { TerminalDialogSpec } from './terminal_dialog';
 import { getTradeItemInfo } from './starbase_commerce';
+import type { CrewMember } from './crew';
 
 export type DepotConsoleIntent =
   | { readonly kind: 'close' }
@@ -27,7 +28,8 @@ function line(text: string, tone: TextTone = 'normal', heading = false): TextDas
 export function createDepotServiceRows(
   repair: DepotServiceQuote,
   fuel: DepotServiceQuote,
-  commissioningFuel: number
+  commissioningFuel: number,
+  medical?: DepotServiceQuote
 ): TextTableRow[] {
   return [
     {
@@ -62,6 +64,26 @@ export function createDepotServiceRows(
         'normal',
       ],
     },
+    ...(medical
+      ? [
+          {
+            id: 'medical',
+            cells: [
+              'Robotic medical bay',
+              `${medical.cost.toLocaleString()} Cr`,
+              medical.completedUnits > 0 ? 'READY' : medical.requestedUnits ? 'LIMITED' : 'NOMINAL',
+              'Trauma care / finite sterile supplies.',
+            ],
+            detail: `${medical.completedUnits} / ${medical.requestedUnits} health points available. ${medical.shortfalls.join(' ')}`,
+            cellTones: [
+              'cyan',
+              'amber',
+              medical.completedUnits > 0 ? 'green' : 'amber',
+              'normal',
+            ] as TextTone[],
+          },
+        ]
+      : []),
   ];
 }
 
@@ -75,6 +97,7 @@ export function createDepotServiceDialog(quote: DepotServiceQuote): TerminalDial
     defaultYes: false,
     lines: [
       line(quote.label, 'cyan', true),
+      line(quote.condition, 'muted'),
       line(
         `${quote.completedUnits.toLocaleString()} / ${quote.requestedUnits.toLocaleString()} ${quote.unitLabel}`,
         possible ? 'green' : 'amber'
@@ -199,7 +222,8 @@ export class DepotServiceConsole {
     supplies: readonly { readonly name: string; readonly units: number }[],
     credits: number,
     cols: number,
-    rows: number
+    rows: number,
+    patients: readonly Pick<CrewMember, 'name' | 'hitPoints' | 'maxHitPoints'>[] = []
   ): TextModalTableModel {
     const fullWidth = cols < 90;
     const width = Math.max(1, Math.min(78, cols - (fullWidth ? 8 : 12)));
@@ -209,7 +233,13 @@ export class DepotServiceConsole {
       lines.push(...wrapDashboardLines([line(text, tone, heading)], width));
     };
     add(stationName, 'cyan', true);
-    add(this.kind === 'fuel' ? 'D/He3 loader / finite feedstock' : 'Robotic bay / hull & secured rover');
+    add(
+      this.kind === 'fuel'
+        ? 'D/He3 loader / finite feedstock'
+        : this.kind === 'medical'
+          ? 'Human trauma protocol / autonomous care'
+          : 'Robotic bay / hull & secured rover'
+    );
     add(`Account ${credits.toLocaleString()} Cr`, 'amber');
     add(
       `${this.useCargo ? '[X]' : '[ ]'} Supplement shortages from ship cargo`,
@@ -221,6 +251,21 @@ export class DepotServiceConsole {
     for (const supply of supplies)
       add(`${supply.name} / ${supply.units.toLocaleString()} m^3`, supply.units > 0 ? 'green' : 'amber');
     add('');
+    if (this.kind === 'medical') {
+      add('CREW VITALS', 'cyan', true);
+      for (const member of patients) {
+        const fraction = Math.max(0, Math.min(1, member.hitPoints / member.maxHitPoints));
+        const filled = Math.round(fraction * 10);
+        add(member.name, 'cyan');
+        add(
+          `[${'='.repeat(filled)}${'.'.repeat(10 - filled)}] ${member.hitPoints}/${member.maxHitPoints} HP`,
+          member.hitPoints <= 0 ? 'red' : fraction < 1 ? 'amber' : 'green'
+        );
+        if (member.hitPoints <= 0) add('No lifesigns / treatment unavailable', 'red');
+      }
+      if (!patients.length) add('No crew manifest', 'muted');
+      add('');
+    }
     add('WORK ORDERS', 'cyan', true);
     if (!quotes.some((quote) => quote.targetId === this.selectedId))
       this.selectedId = quotes[0]?.targetId ?? 'all';
@@ -242,6 +287,7 @@ export class DepotServiceConsole {
           width
         )
       );
+      add(quote.condition, 'muted');
       add(
         `${quote.completedUnits.toLocaleString()} / ${quote.requestedUnits.toLocaleString()} ${quote.unitLabel}`,
         quote.completedUnits > 0 ? 'green' : 'muted'
@@ -270,7 +316,7 @@ export class DepotServiceConsole {
       this.followSelection = false;
     }
     return {
-      title: this.kind === 'fuel' ? 'FUEL BAY' : 'REPAIR BAY',
+      title: this.kind === 'fuel' ? 'FUEL BAY' : this.kind === 'medical' ? 'MEDICAL BAY' : 'REPAIR BAY',
       subtitle: 'ROBOTIC SERVICE',
       columns: [],
       widths: [],

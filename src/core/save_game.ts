@@ -1024,11 +1024,20 @@ function validatePlayer(player: PlayerSaveData): void {
   validateCargo(player.cargoHold, 'ship cargo');
   validateCargo(player.terrainVehicle.cargoHold, 'terrain vehicle cargo');
   if (!Array.isArray(player.crew)) throw new Error('Save crew data is invalid.');
+  const crewIds = new Set<string>();
   for (const member of player.crew) {
     assertNonEmptyString(member.id, 'crew id');
     assertNonEmptyString(member.name, 'crew name');
     assertFiniteNumber(member.hitPoints, 'crew hit points');
     assertFiniteNumber(member.maxHitPoints, 'crew maximum hit points');
+    if (
+      crewIds.has(member.id) ||
+      member.hitPoints < 0 ||
+      member.maxHitPoints <= 0 ||
+      member.hitPoints > member.maxHitPoints
+    )
+      throw new Error('Save crew identity or health bounds are invalid.');
+    crewIds.add(member.id);
     if (!isRecord(member.skills) || !isRecord(member.skillCaps)) {
       throw new Error('Save crew skill data is invalid.');
     }
