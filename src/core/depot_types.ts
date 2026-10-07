@@ -17,6 +17,52 @@ export interface DepotRecord {
 
 export type DepotSnapshot = Record<string, DepotRecord>;
 
+export type DepotServiceKind = 'repair' | 'fuel';
+
+export interface DepotWorkTarget {
+  readonly id: string;
+  readonly label: string;
+  readonly current: number;
+  readonly maximum: number;
+  readonly unitsPerBatch: number;
+  readonly labourPerUnit: number;
+  readonly supplies: readonly string[];
+}
+
+export interface DepotServiceQuote {
+  readonly stationId: string;
+  readonly revision: number;
+  readonly kind: DepotServiceKind;
+  readonly targetId: string;
+  readonly label: string;
+  readonly useCargo: boolean;
+  readonly requestedUnits: number;
+  readonly completedUnits: number;
+  readonly unitLabel: string;
+  readonly cost: number;
+  readonly stationSupplies: Readonly<Record<string, number>>;
+  readonly cargoSupplies: Readonly<Record<string, number>>;
+  readonly work: readonly { readonly id: string; readonly from: number; readonly to: number }[];
+  readonly shortfalls: readonly string[];
+  /** Captures the account and selected targets so a changed quote cannot silently consume new resources. */
+  readonly inputSignature: string;
+}
+
+export interface DepotQuoteInputs {
+  readonly stationId: string;
+  readonly revision: number;
+  readonly kind: DepotServiceKind;
+  readonly targetId: string;
+  readonly useCargo: boolean;
+  readonly credits: number;
+  readonly targets: readonly DepotWorkTarget[];
+  readonly stock: Readonly<Record<string, number>>;
+  readonly cargo: Readonly<Record<string, number>>;
+  readonly prices: Readonly<Record<string, number>>;
+}
+
+export type DepotDialogIntent = { readonly kind: 'depot-service'; readonly quote: DepotServiceQuote };
+
 /** Validates operational epochs and shared market identity before restoring imported depot state. */
 export function validateDepotSnapshot(
   value: unknown,

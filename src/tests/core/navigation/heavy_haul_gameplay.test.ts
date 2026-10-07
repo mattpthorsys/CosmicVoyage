@@ -130,7 +130,7 @@ describe('production haul vertical slice', () => {
       crew: false,
     });
     expect(fresh.getObjectNear(depot.systemX, depot.systemY)).toBe(depot);
-    expect(depot.getScanInfo().join(' ')).toContain('awaiting staff and resource arrival');
+    expect(depot.getScanInfo().join(' ')).toContain('supplies are finite');
     const restored = parseGameSave(JSON.stringify(commissioned.save));
     if (restored.observatory) restored.observatory.destination = null;
     expect(findHaulHomeboundRoute(restored.infrastructure)).toEqual({

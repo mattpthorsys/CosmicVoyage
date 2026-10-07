@@ -158,7 +158,7 @@ describe('ship menu', () => {
     );
     game.stateManager.currentStarbase = station;
     const rows = game.getStarbaseRows(station, 'overview');
-    expect(rows[0].detail).toContain('awaiting staff and resource arrival');
+    expect(rows[0].detail).toContain('supplies are finite');
     expect(rows[0].cellTones).toContain('amber');
     expect(rows.map((row: any) => row.id)).toEqual(expect.arrayContaining(['buy', 'sell', 'services']));
     expect(rows.map((row: any) => row.id)).not.toContain('crew');

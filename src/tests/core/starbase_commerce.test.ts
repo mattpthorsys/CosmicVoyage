@@ -26,15 +26,30 @@ describe('StarbaseCommerceService', () => {
     const market = createCommerce().commerce.getManifest('station:2:automated-depot:1200:-50:0');
 
     expect(market.map((item) => item.itemKey)).toEqual(
-      expect.arrayContaining(['WATER_ICE', 'FUSION_FUEL_MIX'])
+      expect.arrayContaining(['WATER_ICE', 'HELIUM_3', 'DEUTERIUM_PELLETS'])
     );
     expect(
       market.every((item) =>
-        ['WATER_ICE', 'HELIUM_3', 'DEUTERIUM_PELLETS', 'FUSION_FUEL_MIX', 'NAV_BEACONS'].includes(
-          item.itemKey
-        )
+        ['WATER_ICE', 'HELIUM_3', 'DEUTERIUM_PELLETS', 'NAV_BEACONS'].includes(item.itemKey)
       )
     ).toBe(true);
+  });
+
+  it('converts legacy depot blend stock to physical components exactly once', () => {
+    const { commerce } = createCommerce();
+    const legacy = commerce.createSnapshot();
+    const items = Object.fromEntries(commerce.getManifest('Fuel Dock').map((item) => [item.itemKey, item]));
+    legacy['legacy-depot'] = { items };
+    const helium = items.HELIUM_3.units;
+    const pairs = Math.floor(items.FUSION_FUEL_MIX.units / 2);
+    commerce.restoreSnapshot(legacy);
+    commerce.registerStation('legacy-depot', 'automated-depot');
+    expect(commerce.getStock('legacy-depot', 'HELIUM_3')).toBe(helium + pairs);
+    expect(commerce.getManifest('legacy-depot').some((item) => item.itemKey === 'FUSION_FUEL_MIX')).toBe(
+      false
+    );
+    commerce.registerStation('legacy-depot', 'automated-depot');
+    expect(commerce.getStock('legacy-depot', 'HELIUM_3')).toBe(helium + pairs);
   });
 
   it('buys fusion mix as equal helium-3 and deuterium cargo', () => {

@@ -1,7 +1,7 @@
 # Automated Frontier Depots: Implementation Plan
 
-Status: M0 implemented; automated verification pending the requested Luna stage.
-M1 onwards remain planned.
+Status: M0-M1 implemented; automated verification pending the requested Luna stage.
+M2 onwards remain planned.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
 module boundaries before implementation; do not overwrite intervening changes.
 

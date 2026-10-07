@@ -82,7 +82,7 @@ describe('mission and haul notices', () => {
     });
     expect(messageText(delivery)).toContain('5,800 Cr credited');
     expect(messageText(delivery)).toContain('Depot open for trade');
-    expect(messageText(delivery)).toContain('awaiting staff and resource arrival');
+    expect(messageText(delivery)).toContain('supplies are finite');
     expect(messageText(delivery)).toContain('Homebound Travel');
     const local = createHaulResultDialog(readout('local').mission, 'deploy', {
       ok: true,

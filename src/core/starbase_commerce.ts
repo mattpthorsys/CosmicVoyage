@@ -86,6 +86,23 @@ export class StarbaseCommerceService {
   /** Registers materialised service profiles; restored market identity never depends on a display name. */
   registerStation(id: string, kind: StationKind): void {
     this.stationKinds.set(id, kind);
+    if (kind === 'automated-depot') {
+      const station = this.stations.get(id);
+      if (station) this.normaliseDepotFuel(id, station);
+    }
+  }
+
+  /** Converts the old independently stocked blend once; robotic depots now hold physical components only. */
+  private normaliseDepotFuel(stationId: string, station: StationEconomyState): void {
+    const blend = station.items.FUSION_FUEL_MIX;
+    if (!blend) return;
+    const pairs = Math.floor(blend.units / 2);
+    for (const key of ['HELIUM_3', 'DEUTERIUM_PELLETS']) {
+      const item = station.items[key] ?? this.createLocalItem(stationId, key, 0);
+      if (item) station.items[key] = { ...item, units: item.units + pairs };
+    }
+    // Odd blend units were never purchasable; deleting the listing prevents reapplying its conversion on revisit.
+    delete station.items.FUSION_FUEL_MIX;
   }
 
   /** Seeds only a missing listing; an explicitly empty legacy or depleted store stays empty. */
@@ -105,15 +122,29 @@ export class StarbaseCommerceService {
 
   /** Consumes a whole validated work order atomically, never partly debiting an unavailable recipe. */
   consumeStock(stationId: string, requirements: Readonly<Record<string, number>>): boolean {
+    const snapshot = this.prepareStockConsumption(stationId, requirements);
+    if (!snapshot) return false;
+    this.restoreSnapshot(snapshot);
+    return true;
+  }
+
+  /** Prepares a detached stock debit for transactions that must checkpoint before mutating live owners. */
+  prepareStockConsumption(
+    stationId: string,
+    requirements: Readonly<Record<string, number>>
+  ): EconomySnapshot | null {
     const entries = Object.entries(requirements);
     if (
       entries.some(
         ([key, units]) => !Number.isSafeInteger(units) || units < 0 || this.getStock(stationId, key) < units
       )
     )
-      return false;
-    for (const [key, units] of entries) this.adjustStock(stationId, key, -units);
-    return true;
+      return null;
+    const snapshot = this.createSnapshot();
+    for (const [key, units] of entries) {
+      if (units > 0) snapshot[stationId].items[key].units -= units;
+    }
+    return snapshot;
   }
 
   /** Returns manifest. */
@@ -144,13 +175,7 @@ export class StarbaseCommerceService {
     const isAutomatedDepot = knownKind
       ? knownKind === 'automated-depot'
       : starbaseName.includes(':automated-depot:') || starbaseName.endsWith('Automated Depot');
-    const automatedStock = new Set([
-      'WATER_ICE',
-      'HELIUM_3',
-      'DEUTERIUM_PELLETS',
-      'FUSION_FUEL_MIX',
-      'NAV_BEACONS',
-    ]);
+    const automatedStock = new Set(['WATER_ICE', 'HELIUM_3', 'DEUTERIUM_PELLETS', 'NAV_BEACONS']);
     const depotKeys = DEPOT_KEYS.filter(
       (key) => TRADE_COMMODITIES[key] && (!isAutomatedDepot || automatedStock.has(key))
     );

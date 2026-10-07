@@ -19,6 +19,12 @@ import { Starbase } from '../entities/starbase';
 import { NavigationMarker } from '../entities/navigation_marker';
 import { InfrastructureRegistry } from './infrastructure_registry';
 import { DepotService } from './depot_service';
+import {
+  DepotServiceConsole,
+  createDepotServiceDialog,
+  createDepotServiceRows,
+} from './depot_service_console';
+import type { DepotDialogIntent, DepotServiceKind, DepotServiceQuote } from './depot_types';
 import { materializeHaulSites } from './haul_sites';
 import {
   commitHaulChange,
@@ -327,6 +333,8 @@ interface FrameProfile {
   fps: number;
 }
 
+type GameDialogIntent = MissionDialogIntent | DepotDialogIntent;
+
 interface HyperspaceNavigationContact {
   dx: number;
   dy: number;
@@ -380,7 +388,7 @@ export class Game {
   private _heavyHaulService?: HeavyHaulService;
   private _haulOffers?: HeavyHaulOffers;
   private _haulManifest?: HaulManifest;
-  private _terminalDialog?: TerminalDialog<MissionDialogIntent>;
+  private _terminalDialog?: TerminalDialog<GameDialogIntent>;
   private _screenTransition?: ScreenTransition<VoyageTransitionIntent>;
   private pendingHomeboundArrival: PreparedHomeboundJourney | null = null;
   private sleepingHaulCrew = 0;
@@ -394,6 +402,7 @@ export class Game {
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
   private _depotService?: DepotService;
+  private _depotConsole?: DepotServiceConsole;
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
   private _surfaceMode?: SurfaceModeController;
@@ -455,8 +464,15 @@ export class Game {
   private get depotService(): DepotService {
     return (this._depotService ??= new DepotService(
       this.starbaseCommerce,
-      this.gameSeedPRNG.getInitialSeed()
+      this.gameSeedPRNG.getInitialSeed(),
+      this.player,
+      this.cargoSystem
     ));
+  }
+
+  /** Keeps robotic service selection/reveal separate from station tabs and gameplay inventory. */
+  private get depotConsole(): DepotServiceConsole {
+    return (this._depotConsole ??= new DepotServiceConsole());
   }
 
   /** Initialises real service inventories on materialisation, never inside station rendering. */
@@ -484,7 +500,7 @@ export class Game {
   }
 
   /** Owns foreground confirmations independently of the station, journal or manifest underneath. */
-  private get terminalDialog(): TerminalDialog<MissionDialogIntent> {
+  private get terminalDialog(): TerminalDialog<GameDialogIntent> {
     return (this._terminalDialog ??= new TerminalDialog());
   }
 
@@ -494,7 +510,7 @@ export class Game {
   }
 
   /** Clears held keys and transient HUD when a terminal choice takes foreground ownership. */
-  private showTerminalDialog(spec: TerminalDialogSpec<MissionDialogIntent>): void {
+  private showTerminalDialog(spec: TerminalDialogSpec<GameDialogIntent>): void {
     this.terminalDialog.open(spec);
     this.inputManager.clearState();
     this.terminalOverlay.clear();
@@ -514,7 +530,7 @@ export class Game {
   }
 
   /** Applies only an explicit choice, then prevents its key from acting on the restored parent. */
-  private finishTerminalDialog(result: TerminalDialogResult<MissionDialogIntent>): void {
+  private finishTerminalDialog(result: TerminalDialogResult<GameDialogIntent>): void {
     this.inputManager.clearState();
     const intent = result.intent;
     if (intent?.kind === 'accept-mission') this.confirmMissionAcceptance(intent.mission, intent.stationId);
@@ -523,6 +539,7 @@ export class Game {
     else if (intent?.kind === 'homebound-route') this.navigateHomeboundRoute(intent.route);
     else if (intent?.kind === 'offer-homebound') this.openHomeboundVoyage(intent.assetId);
     else if (intent?.kind === 'begin-homebound') this.beginHomeboundVoyage(intent.assetId, intent.quote);
+    else if (intent?.kind === 'depot-service') this.performDepotService(intent.quote);
     this.forceFullRender = true;
     this._publishStatusUpdate();
   }
@@ -1526,6 +1543,13 @@ export class Game {
 
   /** Restores rover armour with an explicit affordable field/port service. */
   private repairRover(): void {
+    if (
+      this.stateManager.state === 'starbase' &&
+      this.stateManager.currentStarbase?.kind === 'automated-depot'
+    ) {
+      this.openDepotServiceConsole('repair', 'rover');
+      return;
+    }
     const cost = Math.ceil(
       (100 - (this.player.terrainVehicle.integrity ?? 100)) * ROVER_REPAIR_COST_PER_POINT
     );
@@ -2425,6 +2449,17 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
+    if (this.interfaceMode.is('depot-service')) {
+      if (this.depotConsole.reveal.isActive) this.depotConsole.reveal.complete();
+      else {
+        this.inputManager.justPressedActions.add(data.action);
+        this.handleDepotServiceInput();
+        this.inputManager.justPressedActions.delete(data.action);
+      }
+      this.forceFullRender = true;
+      this._publishStatusUpdate();
+      return;
+    }
     if (this.interfaceMode.is('science-log')) {
       this.inputManager.justPressedActions.add(data.action);
       this.handleScienceLogInput();
@@ -2736,10 +2771,112 @@ export class Game {
     const station = this.stateManager.currentStarbase;
     if (this.stateManager.state !== 'starbase' || !station) return;
     if (this.interfaceMode.kind !== 'none') return;
+    if (station.kind === 'automated-depot') {
+      this.openDepotServiceConsole('repair');
+      return;
+    }
     this.shipRepairConsole.open();
     this.interfaceMode.open('ship-repairs');
     this.statusMessage = 'Shipyard diagnostic link established.';
     this.forceFullRender = true;
+  }
+
+  /** Opens only a real docked robotic facility, preserving the Services tab as its parent. */
+  private openDepotServiceConsole(kind: DepotServiceKind, selectedId?: string): void {
+    const station = this.stateManager.currentStarbase;
+    const system = this.stateManager.currentSystem;
+    if (this.stateManager.state !== 'starbase' || station?.kind !== 'automated-depot' || !system) return;
+    if (this.interfaceMode.kind !== 'none') return;
+    this.prepareSystemDepots(system);
+    this.depotConsole.open(kind, selectedId);
+    this.interfaceMode.open('depot-service');
+    this.inputManager.clearState();
+    this.terminalOverlay.clear();
+    this.astrometricOverlay.clear();
+    this.forceFullRender = true;
+  }
+
+  /** Prepares supply-aware work orders without asking presentation to decide how much can be repaired. */
+  private createDepotServiceModel(): TextModalTableModel {
+    const station = this.stateManager.currentStarbase!;
+    const quotes = this.depotService.getQuotes(
+      station.id,
+      this.depotConsole.kind,
+      this.depotConsole.useCargo
+    );
+    const keys =
+      this.depotConsole.kind === 'fuel'
+        ? ['HELIUM_3', 'DEUTERIUM_PELLETS']
+        : ['TITANIUM_TRUSS', 'REPAIR_SPARES'];
+    return this.depotConsole.createModel(
+      station.name,
+      quotes,
+      keys.map((key) => ({
+        name: getTradeItemInfo(key)?.name ?? key,
+        units: this.starbaseCommerce.getStock(station.id, key),
+      })),
+      this.player.resources.credits,
+      this.renderer.getGridCols(),
+      this.renderer.getGridRows()
+    );
+  }
+
+  /** Consumes all robotic terminal input; reviewing work always goes through an explicit confirmation. */
+  private handleDepotServiceInput(): boolean {
+    if (!this.interfaceMode.is('depot-service')) return false;
+    const station = this.stateManager.currentStarbase;
+    if (this.stateManager.state !== 'starbase' || station?.kind !== 'automated-depot') {
+      this.interfaceMode.close('depot-service');
+      this.depotConsole.reveal.complete();
+      this.forceFullRender = true;
+      return true;
+    }
+    const model = this.createDepotServiceModel();
+    const intent = this.depotConsole.input(
+      this.inputManager,
+      this.depotService.getQuotes(station.id, this.depotConsole.kind, this.depotConsole.useCargo),
+      model.visibleRowCount
+    );
+    if (intent?.kind === 'close') {
+      this.interfaceMode.close('depot-service');
+      this.depotConsole.reveal.complete();
+      this.inputManager.clearState();
+      this.statusMessage = this.starbaseMode.alert = this.depotConsole.notice || 'Returned to Services.';
+    } else if (intent?.kind === 'review') this.showTerminalDialog(createDepotServiceDialog(intent.quote));
+    if (intent || this.inputManager.wasAnyKeyJustPressed()) this.forceFullRender = true;
+    return true;
+  }
+
+  /** Persists a prospective work order before applying it, then publishes only its successful resource effects. */
+  private performDepotService(quote: DepotServiceQuote): void {
+    const station = this.stateManager.currentStarbase;
+    if (
+      this.stateManager.state !== 'starbase' ||
+      station?.kind !== 'automated-depot' ||
+      station.id !== quote.stationId
+    )
+      return;
+    const result = this.depotService.purchase(quote, (outcome) => {
+      if (!this.journeyCheckpointWriter) return;
+      const save = this.createSaveGame();
+      this.journeyCheckpointWriter({
+        ...save,
+        player: { ...save.player, ...outcome.player },
+        economy: outcome.economy,
+        depots: outcome.depots,
+      });
+    });
+    this.depotConsole.notice = this.statusMessage = this.starbaseMode.alert = result.message;
+    this.depotConsole.noticeTone = result.ok ? 'green' : 'red';
+    this.publishCommerceEffects(result.effects);
+    for (const [elementKey, amountRemoved] of Object.entries(result.cargoConsumed))
+      eventManager.publish(GameEvents.PLAYER_CARGO_REMOVED, { elementKey, amountRemoved });
+    this.showTerminalDialog({
+      title: result.ok ? 'ROBOTIC SERVICE COMPLETE' : 'WORK ORDER REFUSED',
+      kind: 'message',
+      caution: !result.ok,
+      lines: [{ segments: [{ text: result.message, font: 'thin', tone: result.ok ? 'green' : 'red' }] }],
+    });
   }
 
   /** Builds work orders from live ship damage rather than retaining potentially stale prices. */
@@ -4591,7 +4728,7 @@ export class Game {
       this._publishStatusUpdate();
       return;
     }
-    if (this.handleHaulManifestInput() || this.handleShipRepairInput()) {
+    if (this.handleHaulManifestInput() || this.handleShipRepairInput() || this.handleDepotServiceInput()) {
       this._publishStatusUpdate();
       return;
     }
@@ -5430,6 +5567,11 @@ export class Game {
     }
     if (this.interfaceMode.is('ship-repairs')) {
       if (this.shipRepairConsole.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
+        this.forceFullRender = true;
+      return;
+    }
+    if (this.interfaceMode.is('depot-service')) {
+      if (this.depotConsole.reveal.update(this.currentVisualDeltaSeconds || deltaTime))
         this.forceFullRender = true;
       return;
     }
@@ -8679,6 +8821,8 @@ export class Game {
           this.renderer.drawTextModalTable(this.createScienceLogModel());
         if (this.interfaceMode.is('ship-repairs'))
           this.renderer.drawTextModalTable(this.createShipRepairModel());
+        if (this.interfaceMode.is('depot-service'))
+          this.renderer.drawTextModalTable(this.createDepotServiceModel());
         if (this.interfaceMode.is('haul-manifest'))
           this.renderer.drawTextModalTable(
             this.haulManifest.createModel(this.renderer.getGridCols(), this.renderer.getGridRows())
@@ -8775,6 +8919,7 @@ export class Game {
       this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
       this.interfaceMode.is('ship-repairs') ||
+      this.interfaceMode.is('depot-service') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -8827,6 +8972,7 @@ export class Game {
       this.screenTransition.isActive ||
       this.interfaceMode.is('haul-manifest') ||
       this.interfaceMode.is('observatory') ||
+      this.interfaceMode.is('depot-service') ||
       this.interfaceMode.is('science-log') ||
       this.interfaceMode.is('mission-journal') ||
       Boolean(this.activeEncounter) ||
@@ -8849,6 +8995,7 @@ export class Game {
     if (
       this.forceFullRender ||
       this.interfaceMode.is('ship-repairs') ||
+      this.interfaceMode.is('depot-service') ||
       this.popupState !== 'inactive' ||
       this.shipMenuOpen ||
       this.roverCargoOpen ||
@@ -9454,6 +9601,7 @@ export class Game {
       };
     if (this.interfaceMode.is('ship-repairs'))
       return this.shipRepairConsole.createCommandBar(this.starbaseMode.getSectionLabel());
+    if (this.interfaceMode.is('depot-service')) return this.depotConsole.createCommandBar();
     if (this.shipMenuOpen)
       return {
         context: 'ship operations',
@@ -10097,6 +10245,10 @@ export class Game {
       this.starbaseMode.alert = 'No item selected.';
       return;
     }
+    if (row.disabled) {
+      this.starbaseMode.alert = row.detail || 'This station service is unavailable.';
+      return;
+    }
     const market = this.getTradeDepotManifest(starbase);
     if (this.starbaseMode.sectionId === 'overview') {
       this.starbaseMode.sectionId = (row.id as StarbaseSectionId) || 'buy';
@@ -10476,8 +10628,8 @@ export class Game {
           ? [
               {
                 id: 'commissioning-status',
-                cells: ['Full starport services', 'Awaiting staff / resources'],
-                detail: `${starbase.serviceNotice} Automated trade, fuel and basic repairs are online.`,
+                cells: ['Robotic services', 'Finite supplies / no staff required'],
+                detail: starbase.serviceNotice,
                 cellTones: ['cyan', 'amber'],
                 detailTone: 'amber',
                 disabled: true,
@@ -10592,6 +10744,12 @@ export class Game {
               .find((asset) => asset.assetId === starbase.id)?.commissioningFuelRemainingUnits ?? 0)
           : 0;
         const repairQuote = createRepairQuotes(this.player, starbase.capabilities.repairs === 'basic')[0];
+        if (starbase.kind === 'automated-depot')
+          return createDepotServiceRows(
+            this.depotService.quote(starbase.id, 'repair', 'all'),
+            this.depotService.quote(starbase.id, 'fuel', 'fuel'),
+            commissioningFuel
+          );
         return [
           {
             id: 'rover-repair',
@@ -11263,6 +11421,12 @@ export class Game {
         (save) => this.applyHaulChange(save)
       );
       this.statusMessage = this.starbaseMode.alert = result.message;
+      this._publishStatusUpdate();
+      return;
+    }
+    if (station.kind === 'automated-depot') {
+      this.openDepotServiceConsole('fuel');
+      this.statusMessage = 'Robotic fuel loading: review feedstock and authorise the quote.';
       this._publishStatusUpdate();
       return;
     }
