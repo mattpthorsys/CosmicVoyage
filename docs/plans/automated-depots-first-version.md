@@ -1,12 +1,12 @@
 # Automated Frontier Depots: Implementation Plan
 
-Status: M0-M4 implemented and verified with `npm run check` (1,220 tests) and the
-full depot Playwright flow at desktop/narrow widths. M5 astrometric exchange and
-M6 broadcasts are implemented; static checks pass, while their new runtime tests
-and expanded browser checks await the requested Luna gate. M7 whole-loop balance
-and verification is next. See [the
-current depot guide](../automated-depots.md) for controls, recipes, ownership
-and verification commands.
+Status: M0-M6 implemented and verified with `npm run check` (1,267 tests across
+168 files) and the depot Playwright flow at desktop/narrow widths. M7 is verified:
+six connected-loop and route-balance tests, `npm run check` (1,273 tests across
+170 files) and the expanded actual-survey/cross-depot browser flow pass. Sample
+routes return 320-323 Cr from a 1,000 Cr start after quoted work and fuel costs.
+See [the current depot guide](../automated-depots.md) for controls, recipes,
+ownership, measured status and verification commands.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
 module boundaries before implementation; do not overwrite intervening changes.
 
@@ -328,8 +328,10 @@ save lifecycle, without introducing async saves inside a partially applied actio
 Each milestone is a coherent commit after its verification gate. Add the focused
 tests during implementation, then tell the user before running tests/browser
 checks so they can switch to Luna. Do not describe written tests as verified.
-For the M0-M2, M3-M4 and M5-M6 batches, implementation commits precede the requested separate Luna
-verification stage; corrective commits follow if that stage identifies problems.
+For the M0-M2, M3-M4 and M5-M6 batches, implementation commits preceded the
+requested separate Luna verification stage; corrective commits followed when
+that stage identified problems. M7 is complete only after the connected runtime
+checks, explicit balance measurements and browser inspection are finished.
 
 ### M0: Persistent Operations And Inventory Boundaries
 
@@ -383,7 +385,7 @@ Suggested commit: `Add supply-limited robotic medical treatment at depots`.
 
 Implemented: catalogue-only iron/ice sources, slow capped analytic catch-up,
 fractional carry, overflow discard, supply-dependent profiles, resource report
-and schema-22 migration. Runtime tests await Luna.
+and schema-22 migration. Runtime and browser verification passed.
 
 Determine real suitable source descriptors, derive conservative depot extraction
 profiles and implement analytic catch-up. Supply-dependent depots stay useful
@@ -405,7 +407,7 @@ Suggested commit: `Add capped elapsed-time resource extraction to frontier depot
 Implemented: two supply/one survey slots, finite sponsor escrow, 90-day offer
 refresh, explicit ship-hold deliveries, address/body-path-aware scan progression,
 claimable readouts, atomic checkpointed settlement, cancellation confirmations,
-stable selected rows and schema-23 migration. Runtime/browser tests await Luna.
+stable selected rows and schema-23 migration. Runtime and browser verification passed.
 
 Add the explicit delivery objective and update all objective-union consumers:
 mission progress, shortfalls, journal, navigation, formatting, confirmations,
@@ -425,7 +427,7 @@ Suggested commit: `Add funded supply and survey contracts to automated depots`.
 
 ### M5: Compact Astrometric Exchange
 
-Implemented in save schema 24; runtime verification is pending the separate Luna gate.
+Implemented in save schema 24; the Luna runtime and browser gate passed.
 
 Add the shared evidence/submission owner and feed it genuine improvements from
 stellar scans, system/orbital surveys and observatory observations. Implement
@@ -448,7 +450,7 @@ Implemented in save schema 25: H/Operations/travel access, physical-radius
 acquisition independent of viewport, verified natural and delivered carriers,
 bounded deduplication/expiry/read state and timestamped informational reports.
 Unvisited carriers do not invent stock or jobs; stored telemetry is labelled
-potentially stale. Runtime and browser verification awaits Luna.
+potentially stale. The Luna runtime and browser gate passed.
 
 Implement bounded contact acquisition for natural/deployed depots, content
 revision deduplication and the Communications inbox. Expose it through Operations
@@ -466,6 +468,16 @@ input/reveal behaviour and save/reload of read states.
 Suggested commit: `Add quiet frontier-depot broadcasts and a communications inbox`.
 
 ### M7: Whole-Loop Verification, Balance And Documentation
+
+Prepared: a two-depot/shared-owner playthrough covering actual market purchases,
+services, orbital survey plus base scientific payment, durable cross-depot
+receipts, a real prepared hypersleep journey and bounded revisit/catch-up.
+Three deterministic route benchmarks exercise production movement and quotes
+with the intended 1,000 Cr balance. The browser extension selects the requested
+orbital body through normal controls and refuses its repeat sale at another
+delivered depot. Documentation includes the playthrough, limits and verification
+commands. The route benchmarks passed without requiring a rate change; full
+runtime and browser verification passed.
 
 Run the focused new suites and existing commerce, repair, crew, mission,
 observatory, infrastructure and save suites, followed by `npm run check`.

@@ -1,10 +1,10 @@
 # Automated Depots
 
-Status: M0-M4 verified with `npm run check` (1,220 tests) and the full depot
-Playwright flow, including services, robot contracts, resource reports and
-desktop/narrow rendering without browser errors or stale orbital pixels.
-M5 chart exchange and M6 broadcasts are implemented. Static checks pass; their
-new runtime suites and expanded browser flow await the requested Luna gate.
+Status: M0-M7 verified with `npm run check` (1,273 tests across 170 files) and
+the depot Playwright flow at 1400x900 and 390x844. M7 includes actual orbital
+survey completion/claim, science upload, a cross-depot duplicate refusal and
+hypersleep depot catch-up. Both font assets loaded; there were no browser errors
+or stale orbital pixels.
 
 ## Playing
 
@@ -225,8 +225,9 @@ Save schema 25 adds bounded communications reports, content revisions and read
 state. Version 24 migrates with an empty inbox while preserving survey receipts.
 Save schema 24 adds compact survey evidence, receipts, public charts and scientific
 sponsor accounts. Schema 23 migrates with empty science records rather than
-inventing historical observations or payments. Schema 23 stores extraction profiles/carry and small sponsor/offer records
-inside `depots`, keyed by stable station ID. Canonical accepted terms remain in
+inventing historical observations or payments. Schema 22 introduced extraction
+profiles/carry; schema 23 adds small sponsor/offer records inside `depots`, keyed
+by stable station ID. Canonical accepted terms remain in
 the ordinary mission ledger. Schema 21 records migrate with extraction pending;
 schema 22 preserves extraction and starts with an uninitialised job board. Older
 saves migrate with an empty depot ledger. Existing stock is preserved;
@@ -241,64 +242,125 @@ Changed or repeated confirmations are refused. Failed checkpoint writes leave
 crew, damage, fuel, cargo, credits and station supplies untouched. Crew IDs and
 health bounds are validated at the save boundary.
 
-## Verification Handoff
+## Route Balance (M7)
 
-To repeat automated verification:
+`src/tests/core/depot_route_balance.test.ts` measures three reproducible journeys:
+25 ly out and back with a class-1 drive, 120 ly out and back with class 1, and the
+same 120 ly route with class 3. The supplier is a controlled staffed market;
+these are cost benchmarks, not promises that real ports exist at those coordinates.
+
+Each route starts with the intended **1,000 Cr** balance, ignoring the temporary
+5,000 Cr observatory playtest allowance. It accepts a Workshop Spares delivery
+and one local orbital survey, physically buys the promised lot, uses real
+hyperspace movement, settles both jobs and sells the actual star/system/body
+observations. It pays the full robotic quotes for 10 hull points, 20 rover points,
+10 crew HP and replacing the journey's fuel. Cargo consent is off for those quotes.
+
+The emitted report separates gross supply/survey/science earnings, acquisition,
+repairs/treatment, fuel units and sealed-batch refuelling charges. This matters:
+even a short trip uses a whole isotope pair, not a fractional market purchase.
+Uninterrupted drift time is reported separately; manoeuvring, surveying and
+planetary work take additional time. No system-entry charge is invented for a
+configuration value that the travel implementation does not currently debit.
+
+Economic guardrails require a positive net return after that wear and a net gain
+below one 650 Cr cargo pod, well below a 3,600 Cr entry observatory. A star/system/
+single-body local evidence bundle yields **185 Cr**; the job premium is additional.
+Mission and science budgets remain finite and separate. Public charts and repeat
+uploads earn nothing. Distance cannot multiply scientific value without bound.
+
+Measured results, nominal route / actual grid round trip:
+
+| Drive | Route        | Fuel used | Fuel charge | Other costs | Total rewards | Net from 1,000 Cr |
+| ----- | ------------ | --------: | ----------: | ----------: | ------------: | ----------------: |
+| 1     | 25 / 52.16 ly  |      6.67 |       36 Cr |      614 Cr |       973 Cr |           +323 Cr |
+| 1     | 120 / 240.91 ly|     32.03 |       39 Cr |      614 Cr |       973 Cr |           +320 Cr |
+| 3     | 120 / 240.91 ly|     22.88 |       38 Cr |      614 Cr |       973 Cr |           +321 Cr |
+
+Other costs comprise the 198 Cr resupply lot and 416 Cr in quoted hull/rover
+repair and medical work. Total rewards comprise 368 Cr supply delivery, 420 Cr
+survey contract and 185 Cr new local science. The movement simulation advances
+about 0.06–0.27 game days in uninterrupted transit; actual interactions add time.
+Fuel replacement is quantized by the real sealed-material service recipe, so it
+does not scale smoothly with the exact number of units burned. These three
+controlled runs meet the M7 net-profit guardrail. No reward or production rates
+were changed. They do not establish profitability under severe damage, depleted
+stores, market price variation, or a longer route with no funded local work.
+
+## Verification
+
+The completed M5-M6 gate passed 168 focused assertions, the full 1,267-test check
+and the expanded depot browser flow. It exercised No-default authorisation,
+partial/cargo-assisted work, paused clocks, handoffs, upload decline/payment,
+duplicate refusal, public-chart provenance, carrier reception, read-state reload,
+destination marking and Communications returning to Operations. A payment-ledger
+test and a travel-context browser fixture were corrected; no production gameplay
+change was required at that gate.
+
+Prepared M7 coverage:
+
+- `fixtures/depot_exploration.ts`: one supply-dependent depot, one assessed miner,
+  a staffed supplier and shared real owners; full save parsing/restoration.
+- `core/depot_exploration.test.ts`: connected supply/services/medical/survey/science
+  playthrough, cross-depot incremental payments, real hypersleep time passage,
+  finite funding/depleted isotopes, mining caps and failed-checkpoint invariants.
+- `core/depot_route_balance.test.ts`: production route/market/work-order costs
+  against modest exploration rewards and equipment prices; optional JSON reports.
+- `scripts/check_depot_browser.cjs`: actual parent/body selection and orbital scan,
+  CLAIMABLE survey handoff, selling that measurement, and repeat refusal at a
+  second real delivered depot. Existing desktop/narrow checks remain in the flow.
+
+M7 passed: all 6 new connected-loop and economic benchmark tests, the complete
+`npm run check` (170 files / 1,273 tests / production build), and the expanded
+desktop/narrow browser flow. The survey was targeted and orbited through normal
+navigation, then claimed and uploaded; another depot refused the same paid tier.
+The browser reported no errors. Inspected captures include claimable and settled
+mission rows, payment receipt and second-depot refusal. Measured route totals are
+in the balance table above; no payout or extraction tuning was needed.
+
+To repeat the M7 Luna gate:
 
 ```bash
-npm run test:run -- src/tests/core/depot_service.test.ts src/tests/core/interface/depot_service_console.test.ts src/tests/core/interface/depot_service_integration.test.ts src/tests/core/interface/save_game.test.ts src/tests/core/starbase_commerce.test.ts src/tests/entities/stellar/starbase.test.ts src/tests/core/ship/ship_repair_console.test.ts src/tests/core/navigation/heavy_haul_gameplay.test.ts src/tests/core/navigation/heavy_haul_commissioning.test.ts src/tests/core/interface/mission_dialogs.test.ts src/tests/core/ship/ship_menu.test.ts
-npm run check
-COSMIC_URL=http://127.0.0.1:5176 node scripts/check_depot_browser.cjs
-```
-
-The browser script requires Playwright (or `PLAYWRIGHT_MODULE` pointing to an
-installed copy), Chrome and a running Vite dev server. It imports a controlled
-delivered-depot fixture through the normal save importer, checks confirmation,
-partial repairs/fuel/treatment, cargo consent, depleted-stock persistence,
-paused time, desktop/narrow terminal rendering and browser errors. Captures and
-the importable fixture are written to `/tmp/cosmic-depots` by default.
-It now also covers robot acceptance/decline, CLAIMABLE cargo, handoff/payment,
-save/reload, stable mission selection and resource reports. That extended flow
-passed during the M3-M4 gate using the installed Playwright Core package at
-`/home/mpalmer/.cache/ms-playwright-go/1.57.0/package`.
-The prepared M5-M6 extension additionally checks upload decline/payment/duplicate
-refusal, navigation-only charts, receipt persistence, real delivered-carrier
-reception, read state, destination marking, Operations return and narrow terminals.
-That extension has not yet been run.
-
-M3-M4 Luna gate:
-
-```bash
-npm run test:run -- src/tests/core/depot_extraction.test.ts src/tests/core/depot_contracts.test.ts src/tests/core/depot_service.test.ts src/tests/core/mission_progress.test.ts src/tests/core/interface/depot_contract_integration.test.ts src/tests/core/interface/depot_service_integration.test.ts src/tests/core/interface/save_game.test.ts
-npm run check
-COSMIC_URL=http://127.0.0.1:5173/ node scripts/check_depot_browser.cjs
-```
-
-Also run staffed-port, mission journal, biological delivery and heavy-haul
-regressions. Browser verification needs Playwright or an explicitly documented
-alternative; do not describe prepared checks as passed. Source/clock, saturation,
-fractional carry, funding, cancellation, wrong-address, sold-cargo, full-store,
-duplicate-payment and storage-failure cases are covered by the new focused suites.
-
-M5-M6 Luna gate (pending):
-
-```bash
-npm run test:run -- src/tests/core/survey_data_service.test.ts src/tests/core/frontier_catalogue.test.ts src/tests/core/depot_communications.test.ts src/tests/core/interface/frontier_terminal.test.ts src/tests/core/interface/survey_exchange_integration.test.ts src/tests/core/interface/communications_integration.test.ts src/tests/core/interface/save_game.test.ts
+DEPOT_ROUTE_REPORT=1 npm run test:run -- src/tests/core/depot_exploration.test.ts src/tests/core/depot_route_balance.test.ts
 npm run check
 COSMIC_URL=http://127.0.0.1:5173/ PLAYWRIGHT_MODULE=/home/mpalmer/.cache/ms-playwright-go/1.57.0/package node scripts/check_depot_browser.cjs
 ```
 
-Inspect the new desktop/narrow screenshots, not just their pixel counters. Check
-unaffected travel, surface and orbit regression suites as part of `npm run check`.
-No galaxy-generation version or population tuning is changed by M5-M6.
+The browser script requires a running Vite server, Chrome, and Playwright or a
+`PLAYWRIGHT_MODULE` path to an installed copy. `CHROME_PATH`, `COSMIC_URL` and
+`DEPOT_CAPTURE_DIR` can override the defaults. Captures and importable setup saves
+go to `/tmp/cosmic-depots`. Inspect desktop/narrow captures alongside the pixel
+checks; do not report prepared checks as passed. `npm run check` also covers
+ordinary commerce, crew, observatory, save migrations, surface/orbit rendering,
+travel and deferred heavy-haul homebound regressions.
 
-Personally check a depot with damage, low fuel and an injured crew member.
-Compare service supply readouts with Buy/Sell stocks, perform partial work,
-supplement from cargo, leave/revisit, and save/reload. Confirm ordinary staffed
-starports and deferred heavy-haul homebound travel still behave as before.
-For the new features, scan/observe a star or survey a planet, dock and upload it
-in Astrometric exchange. Try again, then at another depot: the funded tier pays
-only once. Download a public chart and confirm it supplies navigation, not scan
-credit. In hyperspace, approach a depot region, open H and mark a destination.
-Reopen through Operations and confirm Esc restores its selection. Reload and
-check receipt/read-state persistence; compare narrow and desktop wrapping.
+## Personal Playthrough
+
+1. In hyperspace, press **H**, read a nearby depot report and **Enter** to mark it.
+   **O / Communications** is the equivalent menu route. No stock changes remotely.
+2. Dock and use **Services / Resource report** to compare reserves with Buy/Sell.
+   Request repair, fuel and medical care; review partial work before pressing Y.
+   Use Tab only when you intend to contribute carried materials.
+3. Under Missions, accept a supply request and a survey with Y. **J** shows the
+   exact lot, body and coordinates. Buy the lot elsewhere into the ship hold.
+4. Return and select the **CLAIMABLE** supply mission. Its receipt should remain
+   visible; credits rise once, cargo leaves the hold and depot stocks increase.
+5. Use **N Targets** to select/approach the survey's parent planet, then Orbit.
+   Select a requested moon with Left/Right if needed. Returning to the issuing
+   depot should make the survey claimable. Claim its separate contract reward.
+6. Open **Astrometric exchange**, review that measured body and accept the upload.
+   Trying again, including at another depot, should refuse the paid tier. A real
+   later mapping/sample improvement can still earn only the incremental value.
+7. Tab to public charts, download one free and mark it with A. It supplies a
+   navigation reference, not orbital measurements or mission completion.
+8. Save/reload after services and payments. Health, supplies, funds, read states
+   and receipts should persist. If a depot has a verified extraction source,
+   revisit after travel/hypersleep: only its raw outputs grow, up to the caps.
+   Neither manufactured supplies nor sponsor money replenish by waiting.
+9. Check narrow-window paging and menu selection. Ordinary staffed starports and
+   an already deferred heavy-haul return should still be available as before.
+
+The browser's `depot-fixture.json` offers controlled damage/shortages for personal
+service testing; `depot-survey-approach.json` stages an accepted survey at its
+parent planet. Importing either replaces the current session, so export a personal
+voyage first. These saves do not change production starting stocks or galaxy density.

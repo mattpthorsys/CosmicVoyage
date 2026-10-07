@@ -358,6 +358,235 @@ async function main() {
     assert.deepEqual(reloaded.player, delivered.player);
     assert(reloaded.completedMissionIds.includes(supply.id));
 
+    // M7 measures the actual requested body through normal target/orbit input, not preset mission progress.
+    await load(fixture.save);
+    const surveyBoard = await checkpoint();
+    const surveyOffers = surveyBoard.depots[fixture.stationId].jobs.offers;
+    const surveyIndex = surveyOffers.findIndex((offer) => offer.type === 'survey');
+    assert(surveyIndex >= 0, 'No unmeasured body was offered for the orbital playthrough.');
+    const survey = surveyOffers[surveyIndex];
+    for (let index = 0; index < fixture.missionsIndex; index++) await press('ArrowRight');
+    for (let index = 0; index <= surveyIndex; index++) await press('ArrowDown');
+    await press('Enter');
+    await press('y');
+    await press('Enter'); // Acknowledge the accepted, still-incomplete survey.
+    const surveyAccepted = await checkpoint();
+    assert(surveyAccepted.activeMissions[survey.id]);
+    assert(!surveyAccepted.readyMissionIds.includes(survey.id));
+    const approach = await page.evaluate(async (saved) => {
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { InfrastructureRegistry } = await import('/src/core/infrastructure_registry.ts');
+      const { getSystemPlanetPaths, parseGameSave } = await import('/src/core/save_game.ts');
+      const { captureSystemOrbit, capturePlanetMutations, restorePlanetProgress, restoreSystemOrbits } =
+        await import('/src/core/system_orbit_state.ts');
+      const prng = new PRNG(saved.seed);
+      const address = saved.location;
+      const system = new SolarSystem(
+        new SystemDataGenerator(prng).getSystemProperties(address.worldX, address.worldY, address.systemSlot),
+        address.worldX,
+        address.worldY,
+        prng
+      );
+      const registry = new InfrastructureRegistry();
+      registry.restore(saved.infrastructure);
+      registry.materialize(system, saved.bulkAdvanceSeconds);
+      restorePlanetProgress(system, saved.planetMutations);
+      restoreSystemOrbits(
+        system,
+        saved.systemOrbit ?? undefined,
+        saved.planetMutations,
+        saved.bulkAdvanceSeconds
+      );
+      const mission = Object.values(saved.activeMissions).find((entry) => entry.type === 'survey');
+      const bodyPath = mission.objectives[0].location.bodyPath;
+      const target = getSystemPlanetPaths(system).find((entry) => entry.path === bodyPath);
+      const parent = system.planets[Number(bodyPath.split('/')[0].slice('planet:'.length))];
+      if (!target || !parent) throw new Error('Requested catalogue body is missing.');
+      const orbit = captureSystemOrbit(system);
+      const save = parseGameSave({
+        ...saved,
+        location: {
+          kind: 'system',
+          worldX: address.worldX,
+          worldY: address.worldY,
+          systemSlot: address.systemSlot,
+        },
+        player: {
+          ...saved.player,
+          position: { ...saved.player.position, systemX: parent.systemX, systemY: parent.systemY },
+        },
+        systemOrbit: orbit,
+        systemOrbitHistory: [
+          { worldX: address.worldX, worldY: address.worldY, systemSlot: address.systemSlot, orbit },
+        ],
+        planetMutations: capturePlanetMutations(system),
+      });
+      return {
+        save,
+        bodyPath,
+        parentMenuIndex: system.stars.length + system.planets.filter(Boolean).indexOf(parent),
+        menuLength: system.stars.length + system.planets.filter(Boolean).length + system.stations.length,
+        orbitBodyIndex: target.planet === parent ? 0 : parent.moons.indexOf(target.planet) + 1,
+      };
+    }, surveyAccepted);
+    fs.writeFileSync(path.join(output, 'depot-survey-approach.json'), JSON.stringify(approach.save, null, 2));
+    await load(approach.save);
+    await press('n'); // Explicit parent selection prevents a nearby moon/depot replacing the contract target.
+    for (let index = 0; index < Math.ceil(approach.menuLength / 12); index++) await press('PageUp');
+    for (let index = 0; index < approach.parentMenuIndex; index++) await press('ArrowDown');
+    await press('Enter');
+    await page.locator('[data-command-id="land-dock"]:not([disabled])').waitFor();
+    await page.locator('[data-command-id="land-dock"]').click();
+    for (let index = 0; index < approach.orbitBodyIndex; index++) await press('ArrowRight');
+    const surveyed = await checkpoint();
+    assert.equal(surveyed.location.kind, 'orbit');
+    assert.equal(surveyed.location.bodyPath, approach.bodyPath);
+    assert(
+      surveyed.readyMissionIds.includes(survey.id),
+      'Actual orbital survey did not complete its contract.'
+    );
+    const address = approach.save.location;
+    const measuredKey = `${address.worldX},${address.worldY},${address.systemSlot}|${approach.bodyPath}`;
+    assert.equal(surveyed.surveyData.evidence[measuredKey]?.method, 'orbital-survey');
+    assert.equal(surveyed.surveyData.evidence[measuredKey]?.tier, 1);
+
+    const returned = structuredClone(surveyed);
+    returned.location = { ...fixture.save.location };
+    await load(returned);
+    for (let index = 0; index < fixture.missionsIndex; index++) await press('ArrowRight');
+    await press('ArrowDown'); // Skip the journal; accepted offers retain their original board slots.
+    for (let index = 0; index < surveyIndex; index++) await press('ArrowDown');
+    await capture('desktop-robot-survey-claimable');
+    await press('Enter');
+    const surveyPaid = await checkpoint();
+    assert(surveyPaid.completedMissionIds.includes(survey.id));
+    assert.equal(surveyPaid.player.resources.credits, returned.player.resources.credits + 420);
+    await capture('desktop-robot-survey-receipt');
+
+    /** Finds the persisted measurement in the production upload model, including reordered filed rows. */
+    const uploadRow = async (saved, stationId, key) =>
+      page.evaluate(
+        async ({ saved, stationId, key }) => {
+          const { SurveyDataService } = await import('/src/core/survey_data_service.ts');
+          const { createSurveyUploadEntries } = await import('/src/core/survey_exchange_console.ts');
+          const service = new SurveyDataService();
+          service.restoreSnapshot(saved.surveyData);
+          return createSurveyUploadEntries(service, stationId).findIndex((entry) => entry.id === key);
+        },
+        { saved, stationId, key }
+      );
+    await load(surveyPaid);
+    for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');
+    for (let index = 0; index < fixture.serviceRows.indexOf('chart-exchange'); index++)
+      await press('ArrowDown');
+    await press('Enter');
+    await press('PageDown');
+    const measuredRow = await uploadRow(surveyPaid, fixture.stationId, measuredKey);
+    assert(measuredRow >= 0);
+    for (let index = 0; index < measuredRow; index++) await press('ArrowDown');
+    await page.locator('[data-command-id="frontier-use"]').click();
+    await press('y');
+    const measuredPaid = await checkpoint();
+    assert.equal(measuredPaid.surveyData.paid[measuredKey], 1);
+    assert.equal(measuredPaid.player.resources.credits, surveyPaid.player.resources.credits + 90);
+
+    // A second real delivered station must respect the campaign receipt after import/materialisation.
+    const peer = await page.evaluate(async (saved) => {
+      const { PRNG } = await import('/src/utils/prng.ts');
+      const { SolarSystem } = await import('/src/entities/solar_system.ts');
+      const { SystemDataGenerator } = await import('/src/generation/system_data_generator.ts');
+      const { InfrastructureRegistry, reserveInstallationOrbit } =
+        await import('/src/core/infrastructure_registry.ts');
+      const { parseGameSave } = await import('/src/core/save_game.ts');
+      const { SurveyDataService } = await import('/src/core/survey_data_service.ts');
+      const { Player } = await import('/src/core/player.ts');
+      const { CargoSystem } = await import('/src/systems/cargo_systems.ts');
+      const { StarbaseCommerceService } = await import('/src/core/starbase_commerce.ts');
+      const { DepotService } = await import('/src/core/depot_service.ts');
+      const prng = new PRNG(saved.seed);
+      const address = saved.location;
+      const system = new SolarSystem(
+        new SystemDataGenerator(prng).getSystemProperties(address.worldX, address.worldY, address.systemSlot),
+        address.worldX,
+        address.worldY,
+        prng
+      );
+      const registry = new InfrastructureRegistry();
+      registry.restore(saved.infrastructure);
+      registry.materialize(system, saved.bulkAdvanceSeconds);
+      const orbit = reserveInstallationOrbit(system, system.edgeRadius * 0.75, Math.PI);
+      if (!orbit) throw new Error('No legal peer-depot orbit for cross-station verification.');
+      const missionId = 'depot-browser-peer-fixture';
+      const asset = {
+        ...saved.infrastructure[0],
+        assetId: `haul-installation:${missionId}`,
+        sourceMissionId: missionId,
+        orbit,
+        commissionedAtSeconds: saved.gameClockElapsedSeconds,
+        lastAppliedBulkSeconds: saved.bulkAdvanceSeconds,
+      };
+      const infrastructure = [...saved.infrastructure, asset];
+      registry.restore(infrastructure);
+      registry.materialize(system, saved.bulkAdvanceSeconds);
+      const station = system.stations.find((entry) => entry.id === asset.assetId);
+      if (!station) throw new Error('Peer depot did not materialise.');
+      const player = new Player(address.worldX, address.worldY, '@', saved.seed);
+      Object.assign(player, structuredClone(saved.player));
+      const cargo = new CargoSystem();
+      const commerce = new StarbaseCommerceService(player, cargo, prng.seed);
+      commerce.restoreSnapshot(saved.economy);
+      const depots = new DepotService(commerce, saved.seed, player, cargo);
+      depots.restoreSnapshot(saved.depots);
+      depots.ensureStation(
+        station,
+        { worldX: address.worldX, worldY: address.worldY, systemSlot: address.systemSlot },
+        saved.gameClockElapsedSeconds,
+        saved.gameClockElapsedSeconds,
+        system
+      );
+      const science = new SurveyDataService();
+      science.restoreSnapshot(saved.surveyData);
+      science.ensureBuyer(station.id, {
+        worldX: address.worldX,
+        worldY: address.worldY,
+        systemSlot: address.systemSlot,
+      });
+      return {
+        stationId: station.id,
+        save: parseGameSave({
+          ...saved,
+          infrastructure,
+          completedMissionIds: [...saved.completedMissionIds, missionId],
+          depots: depots.createSnapshot(),
+          economy: commerce.createSnapshot(),
+          surveyData: science.createSnapshot(),
+          location: { ...address, stationId: station.id, starbaseName: station.name },
+          player: {
+            ...saved.player,
+            position: { ...saved.player.position, systemX: station.systemX, systemY: station.systemY },
+          },
+        }),
+      };
+    }, measuredPaid);
+    await load(peer.save);
+    for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');
+    for (let index = 0; index < fixture.serviceRows.indexOf('chart-exchange'); index++)
+      await press('ArrowDown');
+    await press('Enter');
+    await press('PageDown');
+    const filedRow = await uploadRow(peer.save, peer.stationId, measuredKey);
+    assert(filedRow >= 0);
+    for (let index = 0; index < filedRow; index++) await press('ArrowDown');
+    await page.locator('[data-command-id="frontier-use"]').click();
+    await page.locator('[data-command-id="dialog-continue"]').waitFor();
+    await capture('desktop-peer-depot-repeat-refused');
+    const peerRefused = await checkpoint();
+    assert.equal(peerRefused.player.resources.credits, peer.save.player.resources.credits);
+    assert.deepEqual(peerRefused.surveyData.paid, peer.save.surveyData.paid);
+    assert.equal(peerRefused.surveyData.buyers[peer.stationId].credits, 2400);
+
     // Science uses No-default confirmation and durable campaign receipts, never physical cargo.
     await load(fixture.save);
     for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');

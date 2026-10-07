@@ -72,16 +72,17 @@ verification. The planning documents preserve its design rationale:
 - [Xenobiology expansion roadmap](../plans/xenobiology-expansion-roadmap.md):
   exploratory extensions and prerequisites beyond the first playable version.
 - [Heavy-haul first-version implementation plan](../plans/heavy-haul-first-version.md):
-  proposed towing contracts, crew hypersleep, contractor support fuel, persistent
-  buoy/depot deployment, and staged programming/verification milestones. This
-  feature is not yet implemented.
+  towing contracts, crew hypersleep, contractor support fuel, persistent
+  buoy/depot deployment and staged programming/verification milestones.
+  These systems are implemented and are dependencies of the depot playthrough.
 - [Heavy-haul foundations](../heavy-haul-foundations.md): current M0-M2 module
   boundaries, equipment/quote calibration, persistence work, and pending checks.
 - [Automated frontier-depot implementation plan](../plans/automated-depots-first-version.md):
   resource-limited robotic services, medical care, bounded extraction, supply/survey
-  jobs, chart exchange, broadcasts, persistence and staged verification. M0-M2
-  through M4 are verified (1,220 tests and the full depot browser flow).
-  M5 chart exchange and M6 broadcasts are implemented with their Luna runtime/browser gate pending.
+  jobs, chart exchange, broadcasts, persistence and staged verification. M0-M7
+  are verified (1,273 tests and desktop/narrow browser checks), including the
+  connected loop, measured route economics and actual orbital-survey browser flow.
 - [Automated depot guide](../automated-depots.md): current finite-stock repairs,
   reactor loading, robotic treatment, service controls, save ownership and the
-  astrometric exchange, H/Operations communications and the pending M5-M6 Luna verification checklist.
+  astrometric exchange, H/Operations communications, personal playthrough and
+  reproducible M7 route-balance/verification commands.

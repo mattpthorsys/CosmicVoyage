@@ -11,6 +11,14 @@ quiet content revisions and expiry; `communications_types.ts` validates the boun
 saved inbox. `communications_console.ts` formats age-labelled informational
 reports. Communications never performs remote service, contract or science transactions.
 
+Depot verification: `tests/fixtures/depot_exploration.ts` shares real transaction
+owners across a supply-dependent depot, an assessed miner and a staffed supplier.
+`tests/core/depot_exploration.test.ts` exercises the connected loop and hypersleep
+catch-up; `tests/core/depot_route_balance.test.ts` benchmarks actual movement,
+market purchases and field-work charges. `DEPOT_ROUTE_REPORT=1` emits its economic
+reports. `scripts/check_depot_browser.cjs` drives production UI/import/checkpoint
+flows, including real orbital measurements and cross-depot repeat-sale refusal.
+
 Use this file to find the likely owner of a change before searching globally.
 
 ## Entry And Configuration
