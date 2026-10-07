@@ -122,8 +122,8 @@ export class SolidPlanetOrbitTextureRenderer {
     const base = texture.levels[0];
     const footprint = Math.max(base.width / Math.max(1, width), base.height / Math.max(1, height));
     const lod = Math.min(texture.levels.length - 1, Math.log2(Math.max(1, footprint)));
-    // M3 will add navigation-scale settlement marks. Keep this terrain raster
-    // natural without rebuilding the orbital texture when both views are open.
+    // Navigation symbols are composed separately over natural terrain. Keep
+    // the orbital channels cached when both views are open.
     return this.sampleTexture(texture, u, v, lod, false);
   }
 

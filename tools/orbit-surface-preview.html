@@ -43,7 +43,7 @@
       canvas {
         display: block;
         width: 100%;
-        aspect-ratio: 1;
+        height: auto;
         background: #000;
         image-rendering: pixelated;
       }
@@ -120,6 +120,14 @@
       const seed = query.get('seed') ?? 'orbit-surface-baseline-v1';
       const suite = query.get('suite') ?? 'surfaces';
       if (!['surfaces', 'settlements'].includes(suite)) throw new Error('Unknown diagnostic suite');
+      const siteIndex = Number(query.get('site') ?? 0);
+      const groundCols = Number(query.get('cols') ?? 120);
+      const groundRows = Number(query.get('rows') ?? 64);
+      if (!Number.isInteger(siteIndex) || siteIndex < 0) throw new Error('site must be a nonnegative index');
+      if (!Number.isInteger(groundCols) || groundCols < 24 || groundCols > 180)
+        throw new Error('cols must be 24..180');
+      if (!Number.isInteger(groundRows) || groundRows < 32 || groundRows > 96)
+        throw new Error('rows must be 32..96');
       const surfacePresets = [
         { id: 'lunar', type: 'Lunar', distanceAu: 1 },
         { id: 'rock', type: 'Rock', distanceAu: 1 },
@@ -153,6 +161,9 @@
           rotation,
           rotationStep: step,
           pressureOverride,
+          siteIndex,
+          groundCols,
+          groundRows,
         },
         fixtures: [],
       };
@@ -330,6 +341,13 @@
         const surface = planet.getSurfaceDataIfReady();
         if (!surface?.heightmap || !surface.heightLevelColors)
           throw new Error(`Missing terrain: ${preset.id}`);
+        const focusSite = surface.settlements?.sites[siteIndex] ?? null;
+        if (surface.settlements?.sites.length && !focusSite)
+          throw new Error(`Missing settlement ${siteIndex}: ${preset.id}`);
+        const siteX = Math.floor(focusSite?.x ?? surface.heightmap[0].length / 2);
+        const siteY = Math.floor(focusSite?.y ?? surface.heightmap.length / 2);
+        // Keep the site beside, rather than underneath, the vehicle reticle.
+        const playerX = (siteX - 3 + surface.heightmap[0].length) % surface.heightmap[0].length;
         // Optical interventions preserve exactly the generated geology and city
         // footprint, allowing extinction comparisons on the same physical surface.
         if (pressureOverride !== null) {
@@ -420,10 +438,11 @@
         }
 
         /** Captures the production landing map or regional travel path at fixed terrain coordinates. */
-        function renderGround(view) {
-          const groundSize = size * 4;
-          const groundMain = canvasAt(groundSize);
-          const groundRaster = canvasAt(groundSize);
+        function renderGround(view, body = planet) {
+          const groundWidth = groundCols * 8;
+          const groundHeight = groundRows * 8;
+          const groundMain = canvasAt(groundWidth, groundHeight);
+          const groundRaster = canvasAt(groundWidth, groundHeight);
           const groundBuffer = new ScreenBuffer(
             groundMain,
             groundMain.getContext('2d'),
@@ -431,27 +450,26 @@
             groundRaster,
             groundRaster.getContext('2d')
           );
-          groundBuffer.updateDimensions(size / 2, size / 2, 8, 8);
+          groundBuffer.updateDimensions(groundCols, groundRows, 8, 8);
           const groundRenderer = new SceneRenderer(
             groundBuffer,
             new DrawingContext(groundBuffer),
             new NebulaRenderer(),
             generator
           );
-          const centre = Math.floor(surface.heightmap.length / 2);
           if (view === 'map') {
             groundRenderer.drawOrbitLandingMap(
               {
-                selectedBody: planet,
+                selectedBody: body,
                 mapSize: surface.heightmap.length,
-                landingCursorX: centre,
-                landingCursorY: centre,
+                landingCursorX: siteX,
+                landingCursorY: siteY,
                 mode: 'landing',
               },
               2,
               2,
-              44,
-              36
+              groundCols - 4,
+              groundRows - 8
             );
           } else {
             groundRenderer.drawPlanetSurface(
@@ -461,8 +479,8 @@
                   worldY: 0,
                   systemX: 0,
                   systemY: 0,
-                  surfaceX: centre,
-                  surfaceY: centre,
+                  surfaceX: playerX,
+                  surfaceY: siteY,
                 },
                 render: { char: '@', fgColor: '#00A0A0' },
                 resources: { credits: 5000, fuel: 500, maxFuel: 500 },
@@ -471,11 +489,33 @@
                   return x * x + y * y;
                 },
               },
-              planet
+              body,
+              {
+                dateTime: '2200-01-01',
+                notifications: [],
+                deployed: true,
+                moving: false,
+                available: true,
+                onFoot: false,
+                fuel: 100,
+                maxFuel: 100,
+                cargo: 0,
+                cargoCapacity: 20,
+                selectedIndex: 0,
+                items: [
+                  { label: 'Move', status: 'Terrain travel' },
+                  { label: 'Cargo', status: 'Vehicle hold' },
+                  { label: 'Scan', status: 'Local survey' },
+                ],
+                crew: [
+                  { name: 'Alex Chen', hitPoints: 100, maxHitPoints: 100 },
+                  { name: 'Maya Singh', hitPoints: 90, maxHitPoints: 100 },
+                ],
+              }
             );
           }
           groundBuffer.renderFull();
-          const result = canvasAt(groundSize);
+          const result = canvasAt(groundWidth, groundHeight);
           result.getContext('2d').drawImage(groundMain, 0, 0);
           result.getContext('2d').drawImage(groundRaster, 0, 0);
           return result;
@@ -495,6 +535,7 @@
         const maps = sourceMaps(surface);
         const stages = {};
         let cityEffect = null;
+        let groundEffect = null;
         stages.elevation = await recordStage(
           views,
           'elevation',
@@ -541,21 +582,45 @@
             atmospheric.getContext('2d').getImageData(0, 0, size, size),
             mask
           );
-          const groundMask = new Uint8Array(size * size * 16).fill(1);
-          stages.landingMap = await recordStage(
-            views,
-            'landingMap',
-            'Landing map',
-            renderGround('map'),
-            groundMask
-          );
+          const groundMask = new Uint8Array(groundCols * groundRows * 64).fill(1);
+          const landingMap = renderGround('map');
+          const regional = renderGround('surface');
+          const naturalMap = renderGround('map', noCities);
+          const naturalRegional = renderGround('surface', noCities);
+          stages.landingMap = await recordStage(views, 'landingMap', 'Landing map', landingMap, groundMask);
           stages.surfaceTravel = await recordStage(
             views,
             'surfaceTravel',
             'Regional travel',
-            renderGround('surface'),
+            regional,
             groundMask
           );
+          stages.landingMapNoCities = await recordStage(
+            views,
+            'landingMapNoCities',
+            'Same landing map / cities disabled',
+            naturalMap,
+            groundMask
+          );
+          stages.surfaceTravelNoCities = await recordStage(
+            views,
+            'surfaceTravelNoCities',
+            'Same regional travel / cities disabled',
+            naturalRegional,
+            groundMask
+          );
+          /** Measures only the decorative difference over identical terrain, controls and coordinates. */
+          function groundDifference(before, after) {
+            return frameDifference(
+              before.getContext('2d').getImageData(0, 0, before.width, before.height),
+              after.getContext('2d').getImageData(0, 0, after.width, after.height),
+              groundMask
+            );
+          }
+          groundEffect = {
+            landingMap: groundDifference(naturalMap, landingMap),
+            surfaceTravel: groundDifference(naturalRegional, regional),
+          };
         }
         const frames = [];
         let previous = atmospheric.getContext('2d').getImageData(0, 0, size, size);
@@ -579,6 +644,8 @@
           liquid: surface.liquidOverlay,
           settlements: surface.settlements ?? null,
           cityEffect,
+          groundFocus: { siteId: focusSite?.id ?? null, siteX, siteY, playerX, playerY: siteY },
+          groundEffect,
           sources,
           timings: { generationMs, prepareMs, firstFrameMs },
           frames,

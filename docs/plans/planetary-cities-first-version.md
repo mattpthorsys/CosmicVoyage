@@ -1,6 +1,6 @@
 # Planetary Cities First Version Implementation Plan
 
-Status: M0-M2 are implemented and verified. M3-M5 are not started. See
+Status: M0-M3 are implemented and verified. M4-M5 are not started. See
 [the foundations guide](../planetary-cities.md) for
 ownership and verification details.
 
@@ -210,10 +210,10 @@ Suggested commit: `Generate deterministic planetary settlement layers`.
 
 ### M2 Render cities from orbit
 
-Status: implemented, verification pending. Optional filtered urban/emission
-channels and cached outgoing atmospheric transmission are connected to the
-production globe. The diagnostic supports matching city-free references,
-rotation and pressure overrides. Request the Luna switch before running checks.
+Status: verified. Optional filtered urban/emission channels and cached outgoing
+atmospheric transmission are connected to the production globe. The diagnostic
+supports matching city-free references, rotation and pressure overrides. The
+full check passed with 1,309 tests; see the foundations guide for capture results.
 
 Extend cached solid textures with urban coverage and a separate emission
 channel. Integrate the latter into radiance composition and add the narrow
@@ -232,6 +232,14 @@ appearance remain intact. Review real rotating captures before proceeding.
 Suggested commit: `Render restrained orbital city lights and urban surfaces`.
 
 ### M3 Show settlements on map and surface
+
+Status: verified. `SettlementSurfaceRenderer` prepares four-colour regional
+artwork and compact landing-map symbols from existing settlement sites. Scene
+integration preserves terminal foreground markers using the buffer's
+raster-occlusion API, including narrow-screen terrain legends. Landing-map
+cache matching includes settlement identity and version. The full check passed
+with 1,326 tests across 176 files; desktop, narrow, sealed-habitat, uninhabited
+and depot-only captures were inspected. See the foundations guide for results.
 
 Add landing-map symbols from the same site records, with correct longitude
 wrapping and matching locations. Draw prepared regional settlement motifs in

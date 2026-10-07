@@ -42,6 +42,7 @@ import {
 } from './scenes/orbit_stellar_light';
 import { toneMapOrbitRadiance } from './scenes/orbit_tone_map';
 import { getOrbitSettlementNightFactor } from './scenes/orbit_settlement_light';
+import { SettlementSurfaceRenderer } from './scenes/settlement_surface_renderer';
 import {
   getDashboardVisibleRows,
   TextDashboardLine,
@@ -134,6 +135,8 @@ interface OrbitLandingMapCache {
   surfaceColours: string[] | null;
   liquid: SurfaceLiquidOverlay | null;
   materials: SurfaceMaterialMap | null;
+  settlements: SurfaceSettlementLayer | null;
+  settlementVersion: number | null;
   colours: string[];
 }
 
@@ -165,6 +168,7 @@ export class SceneRenderer {
   private screenBuffer: ScreenBuffer; // Main buffer for primary content
   private readonly giantAtmosphereRenderer = new GiantAtmosphereRenderer();
   private readonly solidPlanetOrbitTextureRenderer = new SolidPlanetOrbitTextureRenderer();
+  private readonly settlementSurfaceRenderer = new SettlementSurfaceRenderer();
   private drawingContext: DrawingContext;
   private nebulaRenderer: NebulaRenderer;
   private systemDataGenerator: SystemDataGenerator;
@@ -221,6 +225,13 @@ export class SceneRenderer {
 
       const surface = readReadySurfaceData(planet);
       if (!surface?.heightmap || !surface.heightLevelColors) continue;
+      this.settlementSurfaceRenderer.prepare(
+        surface.settlements ?? null,
+        surface.heightmap,
+        surface.heightLevelColors,
+        surface.liquidOverlay,
+        surface.materialMap ?? null
+      );
       this.solidPlanetOrbitTextureRenderer.prepareTexture(
         planet,
         surface.heightmap,
@@ -1020,7 +1031,7 @@ export class SceneRenderer {
     );
   }
 
-  /** Draws the surface of a solid planet. */
+  /** Draws prepared ground and city motifs beneath resources, vehicles, scan controls and telemetry. */
   private drawSolidPlanetSurface(
     player: PlayerViewSnapshot,
     planet: Planet,
@@ -1060,6 +1071,13 @@ export class SceneRenderer {
     const centerY = Math.floor(viewport.height / 2);
     const startMapX = Math.floor(player.position.surfaceX - Math.floor(centerX / cellScale));
     const startMapY = Math.floor(player.position.surfaceY - Math.floor(centerY / cellScale));
+    const settlements = this.settlementSurfaceRenderer.prepare(
+      surfaceData?.settlements ?? null,
+      map,
+      heightColors,
+      liquidOverlay,
+      surfaceData?.materialMap ?? null
+    );
     for (let y = 0; y < viewport.height; y++) {
       for (let x = 0; x < viewport.width; x++) {
         const mapX = startMapX + Math.floor(x / cellScale);
@@ -1096,6 +1114,15 @@ export class SceneRenderer {
           );
       }
     }
+    if (settlements)
+      this.settlementSurfaceRenderer.drawSurface(
+        this.screenBuffer,
+        settlements,
+        viewport,
+        startMapX,
+        startMapY,
+        cellScale
+      );
     if (surfaceOverlay?.ship)
       this.drawParkedShipMarker(surfaceOverlay.ship, viewport, surfaceOverlay.surfaceCellScale);
     this.screenBuffer.drawChar(
@@ -1156,6 +1183,9 @@ export class SceneRenderer {
     planet: Planet
   ): void {
     if (elementKey && elementKey !== '' && !planet.isMined(mapX, mapY)) {
+      // Sub-cell artwork is composited above ordinary text regardless of call
+      // order. Reserve this resource cell so the deposit remains actionable.
+      this.screenBuffer.occludeScaledGlyphs(screenX, screenY, 1, 1);
       this.screenBuffer.drawChar('%', screenX, screenY, '#000000', terrainColor);
     }
   }
@@ -2320,7 +2350,7 @@ export class SceneRenderer {
     }
   }
 
-  /** Draws orbit landing map. */
+  /** Draws cached natural terrain and settlement symbols beneath the movable landing cursor. */
   private drawOrbitLandingMap(
     model: OrbitScreenModel,
     x: number,
@@ -2390,7 +2420,7 @@ export class SceneRenderer {
     );
   }
 
-  /** Returns a cached body-fixed landing-map raster and rebuilds it when surface data arrives. */
+  /** Caches terrain and city navigation symbols, invalidating on source, city revision or size changes. */
   private getOrbitLandingMapColours(
     planet: Planet,
     map: number[][] | null,
@@ -2410,7 +2440,9 @@ export class SceneRenderer {
       cached.surfaceHeightmap === map &&
       cached.surfaceColours === colours &&
       cached.liquid === liquid &&
-      cached.materials === materials
+      cached.materials === materials &&
+      cached.settlements === settlements &&
+      cached.settlementVersion === (settlements?.version ?? null)
     ) {
       return cached.colours;
     }
@@ -2441,6 +2473,10 @@ export class SceneRenderer {
         raster[row * width + col] = colour;
       }
     }
+    if (map && colours) {
+      const cities = this.settlementSurfaceRenderer.prepare(settlements, map, colours, liquid, materials);
+      if (cities) this.settlementSurfaceRenderer.paintLandingMap(cities, raster, width, height);
+    }
 
     this.orbitLandingMapCache.set(planet, {
       width,
@@ -2449,6 +2485,8 @@ export class SceneRenderer {
       surfaceColours: colours,
       liquid,
       materials,
+      settlements,
+      settlementVersion: settlements?.version ?? null,
       colours: raster,
     });
     return raster;
@@ -2747,7 +2785,7 @@ export class SceneRenderer {
       this.screenBuffer.drawChar('█', x, thumbY + i, TEXT_PALETTE.cyanActive, CONFIG.DEFAULT_BG_COLOUR);
   }
 
-  /** Draws surface hud. */
+  /** Draws surface telemetry and reserves the central vehicle reticle above sub-cell decoration. */
   private drawSurfaceHud(
     player: PlayerViewSnapshot,
     planet: Planet,
@@ -2782,6 +2820,7 @@ export class SceneRenderer {
 
     const crossX = viewport.x + Math.floor(viewport.width / 2);
     const crossY = viewport.y + Math.floor(viewport.height / 2);
+    this.screenBuffer.occludeScaledGlyphs(crossX - 1, crossY - 1, 3, 3);
     this.screenBuffer.drawChar('+', crossX - 1, crossY, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
     this.screenBuffer.drawChar('+', crossX + 1, crossY, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
     this.screenBuffer.drawChar('+', crossX, crossY - 1, TEXT_PALETTE.inverseText, TEXT_PALETTE.cyanActive);
@@ -2893,7 +2932,7 @@ export class SceneRenderer {
     this.drawSurfaceCrewSidebar(model, viewport);
   }
 
-  /** Draws surface scan cursor. */
+  /** Draws the scan arrows above both terminal terrain and settlement raster pixels. */
   private drawSurfaceScanCursor(
     cursor: { dx: number; dy: number },
     viewport: { x: number; y: number; width: number; height: number }
@@ -2911,13 +2950,14 @@ export class SceneRenderer {
     const lit = Math.floor(performance.now() / 350) % 2 === 0;
     const fg = lit ? TEXT_PALETTE.amber : TEXT_PALETTE.amberDim;
     const bg = lit ? null : CONFIG.DEFAULT_BG_COLOUR;
+    this.screenBuffer.occludeScaledGlyphs(x - 1, y - 1, 3, 3);
     if (y > viewport.y) this.screenBuffer.drawChar('^', x, y - 1, fg, bg);
     if (y < viewport.y + viewport.height - 1) this.screenBuffer.drawChar('v', x, y + 1, fg, bg);
     if (x > viewport.x) this.screenBuffer.drawChar('<', x - 1, y, fg, bg);
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, fg, bg);
   }
 
-  /** Draws parked ship marker. */
+  /** Draws the parked ship and approach brackets above settlement decoration. */
   private drawParkedShipMarker(
     ship: { x: number; y: number },
     viewport: { x: number; y: number; width: number; height: number },
@@ -2940,6 +2980,7 @@ export class SceneRenderer {
         : phase > 0.33
           ? TEXT_PALETTE.cyanBorder
           : TEXT_PALETTE.textMuted;
+    this.screenBuffer.occludeScaledGlyphs(x - 1, y, 3, 1);
     this.screenBuffer.drawChar('S', x, y, TEXT_PALETTE.inverseText, colour);
     if (x > viewport.x) this.screenBuffer.drawChar('<', x - 1, y, colour, null);
     if (x < viewport.x + viewport.width - 1) this.screenBuffer.drawChar('>', x + 1, y, colour, null);
@@ -3036,7 +3077,7 @@ export class SceneRenderer {
     });
   }
 
-  /** Shows material brightness, or the legacy elevation palette when no material map exists. */
+  /** Shows material/elevation colours, keeping narrow-view labels above settlement raster pixels. */
   private drawSurfaceColourLegend(planet: Planet): void {
     const surface = readReadySurfaceData(planet);
     const materialPalette = surface?.materialMap?.palette;
@@ -3056,20 +3097,13 @@ export class SceneRenderer {
         this.screenBuffer.drawChar(GLYPHS.BLOCK, startX + w, startY + i, colour, colour);
       }
     }
-    this.screenBuffer.drawString(
-      materialPalette ? 'Dark' : 'Low',
-      startX - 4,
-      startY,
-      TEXT_PALETTE.text,
-      null
-    );
-    this.screenBuffer.drawString(
-      materialPalette ? 'Light' : 'High',
-      startX - (materialPalette ? 5 : 3),
-      startY + legendHeight - 1,
-      TEXT_PALETTE.text,
-      null
-    );
+    const lowLabel = materialPalette ? 'Dark' : 'Low';
+    const highLabel = materialPalette ? 'Light' : 'High';
+    const highLabelX = startX - (materialPalette ? 5 : 3);
+    this.screenBuffer.occludeScaledGlyphs(startX - 4, startY, lowLabel.length, 1);
+    this.screenBuffer.occludeScaledGlyphs(highLabelX, startY + legendHeight - 1, highLabel.length, 1);
+    this.screenBuffer.drawString(lowLabel, startX - 4, startY, TEXT_PALETTE.text, null);
+    this.screenBuffer.drawString(highLabel, highLabelX, startY + legendHeight - 1, TEXT_PALETTE.text, null);
   }
 
   /** Helper to draw an error message centered on the screen */

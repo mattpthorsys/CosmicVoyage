@@ -1,6 +1,7 @@
 # Planetary City Foundations
 
-Status: M0, M1 and M2 are implemented and verified. Map/surface presentation is M3 in the
+Status: M0-M3 are implemented and verified. M4 cache-transition hardening and
+M5 final visual/performance tuning remain. See the
 [implementation plan](plans/planetary-cities-first-version.md).
 
 ## Visual Budgets
@@ -67,7 +68,7 @@ advisory; it completes successfully.
 The settlement diagnostic generated 10 sites for the real starting colony,
 6 for the completed-colony fixture and 3 for the partial-colony fixture.
 Uninhabited and depot-only fixtures have no settlement layer. Retain these
-captures as the city-free visual baseline while implementing M2/M3.
+captures as the city-free visual baseline for M2/M3 comparisons.
 
 ## Orbital Rendering (M2)
 
@@ -80,8 +81,9 @@ none of these optional channels. The nominal added numeric storage is about
 0.8 MiB per prepared colony texture, before JavaScript object overhead.
 
 The shared camera, body transform, tilt and Mercator sampling place urban tint
-and lights on exactly the same terrain. `sampleMap` continues to sample natural
-colours for M3, using the same cache without discarding the orbital channels.
+and lights on exactly the same terrain. `sampleMap` samples natural colours
+under the landing-map navigation symbols, using the same cache without
+discarding the orbital channels.
 Texture matching includes settlement-layer identity and generation version.
 
 `orbit_settlement_light.ts` owns the art budgets: a 35% urban tint at full
@@ -125,6 +127,71 @@ emission, and the 10-bar diagnostic attenuates it. At the diagnostic's maximum
 pixel quantisation; night lighting is the long-range settlement cue. M3's map
 and regional views will provide the closer-scale city presentation.
 
+## Map And Regional Presentation (M3)
+
+`src/rendering/scenes/settlement_surface_renderer.ts` owns the shared map
+projection and a small library of urban, sealed-habitat and industrial motifs.
+Preparation blends four restrained structure colours into each site's existing
+dry material and selects a fixed orientation from native coordinates. It is
+cached by settlement-layer identity/version and terrain, palette, liquid and
+material identities. No world generation, PRNG consumption or mutation is
+introduced by drawing.
+
+Landing-map annotations are compact, three-pixel symbols projected into the
+same integer native cell used by the landing cursor. Co-located sites share a
+marker without shifting their coordinates. Icons wrap horizontally at the seam
+and clip at latitude limits. They are navigation annotations, not enlarged
+physical city footprints; `SceneRenderer` caches them above natural terrain,
+invalidating when settlement data or map dimensions change. Moving the cursor
+does not rebuild the raster or erase a site from the cache.
+
+Regional travel draws half-cell roof, pad and short-connection motifs only in
+prepared dry settlement cells. Transparent pixels keep the original terrain
+visible. Motifs shrink for expanded-map scales, remain inside a native cell,
+and move with the ground. Even a tiny fractional city core gets a compact
+regional symbol; low-coverage outskirts remain sparse. The final duplicated
+longitude column uses the first column's artwork; latitude does not wrap.
+
+The raster canvas is above terminal cells regardless of call order. Mineral
+markers, parked ship, player/reticle, scan arrows and narrow-screen legend
+labels explicitly reserve their cells through the existing
+`ScreenBuffer.occludeScaledGlyphs` API. Cities cannot cover those controls.
+Sidebar and notification areas remain outside the clipped decoration viewport.
+Mining, vehicle movement, natural terrain arrays and biological encounters
+remain unchanged; cities are still decorative, not new service locations.
+
+The settlement diagnostic now centres regional travel near the selected real
+site and captures matching `landingMapNoCities` and `surfaceTravelNoCities`
+references. `groundEffect` reports actual displayed pixel differences;
+`groundFocus` records the selected site and vehicle coordinates. Use `--site`
+to inspect another settlement and `--cols`/`--rows` to change the terminal grid.
+Use new directories to preserve earlier baseline captures:
+
+```bash
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body starting-colony --cols 120 --rows 64 --out /tmp/cosmic-cities-m3-desktop
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body starting-colony --cols 40 --rows 45 --out /tmp/cosmic-cities-m3-narrow
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body colony-partial --out /tmp/cosmic-cities-m3-sealed
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body uninhabited --out /tmp/cosmic-cities-m3-uninhabited
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body depot-only --out /tmp/cosmic-cities-m3-depot
+```
+
+M3 helper tests cover deterministic four-colour motifs, native movement,
+different cell scales, tiny cores, seam aliases, latitude clipping, liquid
+rejection and preparation invalidation. Production renderer tests cover map
+cursor/site alignment, map cache refresh, desktop/narrow viewport bounds,
+unchanged city-free terminal drawing, ground-relative movement and actual
+buffer rectangle compositing beneath foreground glyphs. `npm run check` passed
+with 1,326 tests across 176 files, including 17 new M3 rendering cases. Browser
+captures were inspected at 120x64 and 40x45 terminal grids, for a partial
+sealed colony, and for uninhabited and depot-only worlds. The starting colony
+changed 1,008 landing-map output pixels and 176 regional surface pixels; the
+partial colony changed 416 and 192 respectively. Uninhabited and depot-only
+captures had zero changes. Capture directories are `/tmp/cosmic-cities-m3-desktop`,
+`/tmp/cosmic-cities-m3-narrow`, `/tmp/cosmic-cities-m3-sealed`,
+`/tmp/cosmic-cities-m3-uninhabited` and `/tmp/cosmic-cities-m3-depot`.
+M4 retains the broader loading, body-switching, modal, save/reload and lifecycle
+transition audit; M5 retains final visual and performance tuning.
+
 ## Generated Data Ownership
 
 `src/entities/planet/surface_settlements.ts` owns the typed colony profile,
@@ -165,7 +232,7 @@ npm run test:surface
 npm run check
 ```
 
-The checks above are complete for M0-M2. M2 adds focused texture tests for
+The M0-M3 checks above are complete. M2 adds focused texture tests for
 fractional brightness, mip conservation, seam wrapping, daylight tint and cache
 reuse. Optical checks compare outgoing transmission with a ground-to-camera
 reference. Actual globe tests cover combined stellar illumination, spectrum,

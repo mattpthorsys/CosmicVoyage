@@ -330,7 +330,7 @@ export class ScreenBuffer {
     this.scaledGlyphs.push(glyph);
   }
 
-  /** Hides high-resolution glyphs below an opaque text modal for the current frame. */
+  /** Reserves foreground terminal cells or modal bounds above raster artwork for the current frame. */
   occludeScaledGlyphs(x: number, y: number, width: number, height: number): void {
     if (width > 0 && height > 0) this.scaledOcclusionRects.push({ x, y, width, height });
   }

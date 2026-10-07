@@ -19,10 +19,25 @@ async function main() {
       body: { type: 'string' },
       rotation: { type: 'string' },
       pressure: { type: 'string' },
+      site: { type: 'string' },
+      cols: { type: 'string' },
+      rows: { type: 'string' },
     },
   });
   const url = new URL(values.url);
-  for (const key of ['phase', 'stars', 'radius', 'seed', 'suite', 'body', 'rotation', 'pressure']) {
+  for (const key of [
+    'phase',
+    'stars',
+    'radius',
+    'seed',
+    'suite',
+    'body',
+    'rotation',
+    'pressure',
+    'site',
+    'cols',
+    'rows',
+  ]) {
     if (values[key] !== undefined) url.searchParams.set(key, values[key]);
   }
   const output = path.resolve(values.out);
@@ -111,6 +126,8 @@ async function main() {
           bare: fixture.stages.bare.statistics,
           atmosphere: fixture.stages.atmosphere.statistics,
           cityEffect: fixture.cityEffect,
+          groundFocus: fixture.groundFocus,
+          groundEffect: fixture.groundEffect,
           captureMeanMs:
             fixture.frames.reduce((sum, frame) => sum + frame.milliseconds, 0) / fixture.frames.length,
         })),

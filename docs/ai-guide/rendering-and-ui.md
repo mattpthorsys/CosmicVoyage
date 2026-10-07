@@ -121,9 +121,15 @@ stellar contributions and passes only through the cached ground-to-camera
 transmission; reflected-light transfer includes sunlight attenuation and must
 not be reused for it. Ground viewing transmission already includes covered
 limb area. Urban colour and emission share terrain projection and rotation.
-The landing-map terrain still uses the natural colour channel until M3 adds
-settlement marks. See [planetary city foundations](../planetary-cities.md) for
-the current implementation, art budgets and M2 verification results.
+The landing-map terrain uses the natural colour channel, with compact settlement
+symbols composed only when its raster cache rebuilds. Cache matching includes
+settlement-layer identity and version. `SettlementSurfaceRenderer` prepares
+four-colour regional motifs outside drawing loops; these half-cell pixels stay
+inside their native terrain cells and the travel viewport. Reserve mineral,
+vehicle, ship, scan, HUD and narrow-screen legend cells using
+`ScreenBuffer.occludeScaledGlyphs`: call order alone does not put terminal text
+above the raster layer. See [planetary city foundations](../planetary-cities.md)
+for ownership, art budgets and verification status.
 
 Nearby orbital bodies are prepared during the existing predictive surface
 prefetch window and one body texture is built per browser idle callback.
