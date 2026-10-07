@@ -396,7 +396,7 @@ export class Planet {
     });
   }
 
-  /** Creates surface generation request. */
+  /** Creates a serializable surface request with managed environment and explicit colony metadata. */
   private createSurfaceGenerationRequest(): SurfaceGenerationRequest {
     return {
       planetType: this.type,
@@ -405,6 +405,15 @@ export class Planet {
       atmosphere: this.effectiveAtmosphere,
       terrainAtmosphere: this.atmosphere,
       planetAbundance: this.elementAbundance,
+      // Terraforming is the existing explicit surface-colony designation.
+      // A nearby station or a native biosphere does not supply this profile.
+      settlementProfile: this.terraforming
+        ? {
+            stage: this.terraforming.stage,
+            diameterKm: this.diameter,
+            breathable: isBreathableTerraformingProfile(this.terraforming),
+          }
+        : undefined,
       profile: {
         mineralRichness: this.mineralRichness,
         baseMinerals: this.baseMinerals,

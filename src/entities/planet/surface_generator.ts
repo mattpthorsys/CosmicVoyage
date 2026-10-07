@@ -7,6 +7,11 @@ import { generateRgbPaletteCache, generateHeightLevelColors } from './surface_co
 import { createSurfaceLiquidOverlay, isLiquidCovered, SurfaceLiquidOverlay } from './surface_liquid';
 import { RgbColour } from '../../rendering/colour';
 import { createSurfaceMaterialMap, SurfaceMaterialMap } from './surface_material';
+import {
+  createSurfaceSettlementLayer,
+  type SurfaceSettlementLayer,
+  type SurfaceSettlementProfile,
+} from './surface_settlements';
 
 // Interface for the generated surface data package
 export interface SurfaceData {
@@ -16,6 +21,7 @@ export interface SurfaceData {
   surfaceElementMap: string[][] | null;
   liquidOverlay: SurfaceLiquidOverlay | null;
   materialMap?: SurfaceMaterialMap | null;
+  settlements?: SurfaceSettlementLayer | null;
 }
 
 export interface SurfaceGenerationRequest {
@@ -26,6 +32,7 @@ export interface SurfaceGenerationRequest {
   terrainAtmosphere?: Atmosphere;
   planetAbundance: Record<string, number>;
   profile?: SurfaceElementGenerationProfile;
+  settlementProfile?: SurfaceSettlementProfile;
 }
 
 /** Worker-safe pure surface generation entry point. */
@@ -37,7 +44,8 @@ export function generateSurfaceDataFromRequest(request: SurfaceGenerationRequest
     request.atmosphere,
     request.planetAbundance,
     request.profile ?? {},
-    request.terrainAtmosphere ?? request.atmosphere
+    request.terrainAtmosphere ?? request.atmosphere,
+    request.settlementProfile
   );
 }
 
@@ -58,10 +66,11 @@ export class SurfaceGenerator {
     logger.debug(`[SurfaceGen] Initialized for Type: ${planetType}, Seed: ${mapSeed}. Element Noise Seeded.`);
   }
 
-  /** Generates all necessary surface data based on planet type. */
+  /** Generates natural surface data and an optional independent colony settlement layer. */
   generateSurfaceData(
     planetAbundance: Record<string, number>,
-    profile: SurfaceElementGenerationProfile = {}
+    profile: SurfaceElementGenerationProfile = {},
+    settlementProfile?: SurfaceSettlementProfile
   ): SurfaceData {
     return generateSurfaceDataInternal(
       this.planetType,
@@ -69,7 +78,9 @@ export class SurfaceGenerator {
       this.prng,
       this.atmosphere,
       planetAbundance,
-      profile
+      profile,
+      this.atmosphere,
+      settlementProfile
     );
   }
 } // End SurfaceGenerator class
@@ -82,7 +93,8 @@ function generateSurfaceDataInternal(
   atmosphere: Atmosphere,
   planetAbundance: Record<string, number>,
   profile: SurfaceElementGenerationProfile = {},
-  terrainAtmosphere: Atmosphere = atmosphere
+  terrainAtmosphere: Atmosphere = atmosphere,
+  settlementProfile?: SurfaceSettlementProfile
 ): SurfaceData {
   logger.info(`[SurfaceGen:${planetType}] Generating surface data...`);
   let heightmap: number[][] | null = null;
@@ -158,7 +170,20 @@ function generateSurfaceDataInternal(
     }
   }
 
-  return { heightmap, heightLevelColors, rgbPaletteCache, surfaceElementMap, liquidOverlay, materialMap };
+  // Decoration is prepared last from its own root seed. It neither changes
+  // generated ground nor consumes the deposit generator's PRNG state.
+  const settlements = heightmap
+    ? createSurfaceSettlementLayer(mapSeed, heightmap, liquidOverlay, settlementProfile)
+    : null;
+  return {
+    heightmap,
+    heightLevelColors,
+    rgbPaletteCache,
+    surfaceElementMap,
+    liquidOverlay,
+    materialMap,
+    settlements,
+  };
 }
 
 /** Masks submerged elements. */

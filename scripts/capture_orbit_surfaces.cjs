@@ -15,11 +15,12 @@ async function main() {
       stars: { type: 'string', default: '1' },
       radius: { type: 'string', default: '26' },
       seed: { type: 'string', default: 'orbit-surface-baseline-v1' },
+      suite: { type: 'string', default: 'surfaces' },
       body: { type: 'string' },
     },
   });
   const url = new URL(values.url);
-  for (const key of ['phase', 'stars', 'radius', 'seed', 'body']) {
+  for (const key of ['phase', 'stars', 'radius', 'seed', 'suite', 'body']) {
     if (values[key] !== undefined) url.searchParams.set(key, values[key]);
   }
   const output = path.resolve(values.out);

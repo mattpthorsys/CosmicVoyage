@@ -9,6 +9,8 @@ import {
   getSurfaceGenerationProvider,
   setSurfaceGenerationProvider,
 } from '../../../entities/planet/surface_generation_provider';
+import { createSurfaceSettlementLayer } from '../../../entities/planet/surface_settlements';
+import { settlementTerrainFixture, settlementTerraformingFixture } from '../../fixtures/settlements';
 
 const initialProvider = getSurfaceGenerationProvider();
 afterEach(() => setSurfaceGenerationProvider(initialProvider));
@@ -90,6 +92,44 @@ describe('Planet surface readiness', () => {
     expect(requests[1].terrainAtmosphere).toEqual(requests[0].terrainAtmosphere);
     expect(requests[1].atmosphere).toBe(planet.effectiveAtmosphere);
     expect(requests[1].profile?.managedWaterFraction).toBe(0.63);
+    expect(requests[0].settlementProfile).toBeUndefined();
+    expect(requests[1].settlementProfile).toEqual({
+      stage: 'complete',
+      diameterKm: planet.diameter,
+      breathable: true,
+    });
+  });
+
+  it('regenerates the same city layer after renaming and reapplying identical colony inputs', () => {
+    const requests: SurfaceGenerationRequest[] = [];
+    const terrain = settlementTerrainFixture('dry');
+    setSurfaceGenerationProvider({
+      generateSurfaceData: (request) => {
+        requests.push(request);
+        return {
+          ...surfacePackage(108),
+          heightmap: terrain.heightmap,
+          settlements: createSurfaceSettlementLayer(
+            request.mapSeed,
+            terrain.heightmap,
+            null,
+            request.settlementProfile
+          ),
+        };
+      },
+    });
+    const planet = new Planet('Colony I', 'Rock', AU_IN_METERS, 0, new PRNG('city-renaming'), 'G2V');
+    const environment = settlementTerraformingFixture('complete');
+    planet.applyTerraforming(environment, 'First Name');
+    planet.ensureSurfaceReady();
+    const first = readReadySurfaceData(planet)?.settlements;
+    expect(first?.sites.length).toBeGreaterThan(0);
+    planet.applyTerraforming(environment, 'Second Name');
+    expect(readReadySurfaceData(planet)).toBeNull();
+    planet.ensureSurfaceReady();
+    expect(readReadySurfaceData(planet)?.settlements).toEqual(first);
+    expect(requests[0].mapSeed).toBe(requests[1].mapSeed);
+    expect(requests[0].settlementProfile).toEqual(requests[1].settlementProfile);
   });
 
   it('waits for the latest environment when an older worker finishes after terraforming changes', async () => {
@@ -111,6 +151,40 @@ describe('Planet surface readiness', () => {
     expect(planet.heightmap).toEqual([[2]]);
     expect(planet.isSurfacePreparing()).toBe(false);
     expect(resolve).toHaveLength(2);
+  });
+
+  it('does not publish an obsolete colony layer when its worker completes after a colony revision', async () => {
+    const terrain = settlementTerrainFixture('dry');
+    const pending: { request: SurfaceGenerationRequest; resolve: (surface: SurfaceData) => void }[] = [];
+    setSurfaceGenerationProvider({
+      generateSurfaceData: () => surfacePackage(0),
+      generateSurfaceDataAsync: (request) =>
+        new Promise<SurfaceData>((resolve) => pending.push({ request, resolve })),
+    });
+    const planet = new Planet('Changing I', 'Rock', AU_IN_METERS, 0, new PRNG('city-race'), 'G2V');
+    planet.applyTerraforming(settlementTerraformingFixture('partial'));
+    const oldPreparation = planet.prepareSurfaceReady();
+    planet.applyTerraforming(settlementTerraformingFixture('complete'));
+    const currentPreparation = planet.prepareSurfaceReady();
+    /** Builds a response from the exact profile captured by each queued worker request. */
+    const response = (request: SurfaceGenerationRequest): SurfaceData => ({
+      ...surfacePackage(108),
+      heightmap: terrain.heightmap,
+      settlements: createSurfaceSettlementLayer(
+        request.mapSeed,
+        terrain.heightmap,
+        null,
+        request.settlementProfile
+      ),
+    });
+    pending[0].resolve(response(pending[0].request));
+    await Promise.resolve();
+    expect(readReadySurfaceData(planet)).toBeNull();
+    const current = response(pending[1].request);
+    pending[1].resolve(current);
+    await Promise.all([oldPreparation, currentPreparation]);
+    expect(readReadySurfaceData(planet)?.settlements).toBe(current.settlements);
+    expect(current.settlements?.sites.some((site) => site.archetype === 'urban')).toBe(true);
   });
 
   it('describes frozen managed water as ice rather than as open surface oceans', () => {
@@ -137,6 +211,14 @@ describe('Planet surface readiness', () => {
     expect(readReadySurfaceData({ heightmap, surfaceElementMap } as never)).toMatchObject({
       heightmap,
       surfaceElementMap,
+      settlements: null,
     });
+    const terrain = settlementTerrainFixture('dry');
+    const settlements = createSurfaceSettlementLayer('adapter', terrain.heightmap, null, {
+      stage: 'partial',
+      diameterKm: 12800,
+      breathable: false,
+    });
+    expect(readReadySurfaceData({ heightmap, settlements } as never)?.settlements).toBe(settlements);
   });
 });

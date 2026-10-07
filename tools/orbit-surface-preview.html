@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Orbital surface diagnostics</title>
+    <link rel="stylesheet" href="../src/assets/fonts/fonts.css" />
     <style>
       * {
         box-sizing: border-box;
@@ -82,6 +83,8 @@
     </script>
     <script type="module">
       import { Planet } from '../src/entities/planet.ts';
+      import { SolarSystem } from '../src/entities/solar_system.ts';
+      import { CONFIG } from '../src/config.ts';
       import { PRNG } from '../src/utils/prng.ts';
       import { AU_IN_METERS } from '../src/constants/physics.ts';
       import { getSurfaceDisplayColour } from '../src/entities/planet/surface_material.ts';
@@ -93,20 +96,31 @@
       import { hexToRgb } from '../src/rendering/colour.ts';
       import { orbitSurfaceNormal, orbitSunDirection } from '../src/rendering/scenes/orbit_lighting.ts';
       import { logger, LogLevel } from '../src/utils/logger.ts';
+      import {
+        SETTLEMENT_VISUAL_PRESETS,
+        settlementTerraformingFixture,
+      } from '../src/tests/fixtures/settlements.ts';
 
       logger.setLogLevel(LogLevel.ERROR);
       const query = new URLSearchParams(location.search);
       const fullPhase = 1 - 0.55 / (2 * Math.PI);
-      const phases = { full: fullPhase, quarter: (fullPhase + 0.25) % 1, crescent: 0.35 };
+      const phases = {
+        full: fullPhase,
+        quarter: (fullPhase + 0.25) % 1,
+        crescent: 0.35,
+        night: (fullPhase + 0.5) % 1,
+      };
       const phaseName = query.get('phase') ?? 'full';
       const phase = phases[phaseName];
-      if (phase === undefined) throw new Error('phase must be full, quarter, or crescent');
+      if (phase === undefined) throw new Error('phase must be full, quarter, crescent, or night');
       const radius = Number(query.get('radius') ?? 26);
       if (!Number.isInteger(radius) || radius < 10 || radius > 26) throw new Error('radius must be 10..26');
       const starCount = Number(query.get('stars') ?? 1);
       if (![1, 2, 3].includes(starCount)) throw new Error('stars must be 1, 2, or 3');
       const seed = query.get('seed') ?? 'orbit-surface-baseline-v1';
-      const presets = [
+      const suite = query.get('suite') ?? 'surfaces';
+      if (!['surfaces', 'settlements'].includes(suite)) throw new Error('Unknown diagnostic suite');
+      const surfacePresets = [
         { id: 'lunar', type: 'Lunar', distanceAu: 1 },
         { id: 'rock', type: 'Rock', distanceAu: 1 },
         { id: 'carbon', type: 'CarbonRich', distanceAu: 0.9 },
@@ -114,18 +128,21 @@
         { id: 'ocean', type: 'Oceanic', distanceAu: 1 },
         { id: 'greenhouse', type: 'Greenhouse', distanceAu: 0.7 },
         { id: 'dwarf-ice', type: 'DwarfIce', distanceAu: 35 },
-      ].filter((preset) => !query.has('body') || preset.id === query.get('body'));
+      ];
+      const presets = (suite === 'settlements' ? SETTLEMENT_VISUAL_PRESETS : surfacePresets).filter(
+        (preset) => !query.has('body') || preset.id === query.get('body')
+      );
       if (!presets.length) throw new Error('Unknown body preset');
       const size = 96;
       const rotation = 0.35;
       const step = 1 / 2048;
       const manifest = {
         version: 1,
-        settings: { seed, phaseName, phase, radius, starCount, rotation, rotationStep: step },
+        settings: { seed, suite, phaseName, phase, radius, starCount, rotation, rotationStep: step },
         fixtures: [],
       };
       document.querySelector('#settings').textContent =
-        `${seed} | ${phaseName} | ${radius * 2} globe pixels | ${starCount} stellar sources`;
+        `${suite} | ${seed} | ${phaseName} | ${radius * 2} globe pixels | ${starCount} stellar sources`;
       const generator = new SystemDataGenerator(new PRNG('orbit-surface-diagnostics'));
 
       /** Creates a native-resolution canvas with a black background. */
@@ -171,7 +188,7 @@
         };
       }
 
-      /** Selects the same interior, sun-facing surface pixels for every globe stage. */
+      /** Selects common interior pixels, including unlit ground for night diagnostics. */
       function globeMask(sources) {
         const mask = new Uint8Array(size * size);
         for (let y = 0; y < size; y++) {
@@ -182,10 +199,11 @@
             const normal = orbitSurfaceNormal(nx, ny);
             if (!normal) continue;
             mask[y * size + x] = Number(
-              sources.some((source) => {
-                const sun = orbitSunDirection(phase * 2 * Math.PI - (source.longitudeOffset ?? 0));
-                return normal.x * sun.x + normal.y * sun.y + normal.z * sun.z > 0.25;
-              })
+              phaseName === 'night' ||
+                sources.some((source) => {
+                  const sun = orbitSunDirection(phase * 2 * Math.PI - (source.longitudeOffset ?? 0));
+                  return normal.x * sun.x + normal.y * sun.y + normal.z * sun.z > 0.25;
+                })
             );
           }
         }
@@ -264,14 +282,26 @@
       /** Generates one real terrain fixture and captures it through the production globe renderer. */
       async function collectFixture(preset) {
         const start = performance.now();
-        const planet = new Planet(
-          preset.id,
-          preset.type,
-          preset.distanceAu * AU_IN_METERS,
-          0,
-          new PRNG(seed),
-          'G2V'
-        );
+        let planet;
+        if (preset.id === 'starting-colony') {
+          const root = new PRNG(seed);
+          const systems = new SystemDataGenerator(root);
+          const x = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X;
+          const y = CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y;
+          const hub = new SolarSystem(systems.getSystemProperties(x, y), x, y, root);
+          if (!hub.colonyWorld) throw new Error('Starting hub has no colony');
+          planet = hub.colonyWorld;
+        } else {
+          planet = new Planet(
+            preset.id,
+            preset.type,
+            preset.distanceAu * AU_IN_METERS,
+            0,
+            new PRNG(seed),
+            'G2V'
+          );
+        }
+        if (preset.stage) planet.applyTerraforming(settlementTerraformingFixture(preset.stage));
         planet.ensureSurfaceReady();
         const generationMs = performance.now() - start;
         const surface = planet.getSurfaceDataIfReady();
@@ -283,7 +313,8 @@
         Object.defineProperty(bare, 'effectiveAtmosphere', {
           value: { pressure: 0, density: 'None', composition: {} },
         });
-        const flux = 1361 / preset.distanceAu ** 2;
+        const flux =
+          preset.id === 'starting-colony' ? planet.referenceStellarFluxWm2 : 1361 / preset.distanceAu ** 2;
         const sources = [
           {
             id: 'A',
@@ -350,13 +381,75 @@
           return result;
         }
 
+        /** Captures the production landing map or regional travel path at fixed terrain coordinates. */
+        function renderGround(view) {
+          const groundSize = size * 4;
+          const groundMain = canvasAt(groundSize);
+          const groundRaster = canvasAt(groundSize);
+          const groundBuffer = new ScreenBuffer(
+            groundMain,
+            groundMain.getContext('2d'),
+            false,
+            groundRaster,
+            groundRaster.getContext('2d')
+          );
+          groundBuffer.updateDimensions(size / 2, size / 2, 8, 8);
+          const groundRenderer = new SceneRenderer(
+            groundBuffer,
+            new DrawingContext(groundBuffer),
+            new NebulaRenderer(),
+            generator
+          );
+          const centre = Math.floor(surface.heightmap.length / 2);
+          if (view === 'map') {
+            groundRenderer.drawOrbitLandingMap(
+              {
+                selectedBody: planet,
+                mapSize: surface.heightmap.length,
+                landingCursorX: centre,
+                landingCursorY: centre,
+                mode: 'landing',
+              },
+              2,
+              2,
+              44,
+              36
+            );
+          } else {
+            groundRenderer.drawPlanetSurface(
+              {
+                position: {
+                  worldX: 0,
+                  worldY: 0,
+                  systemX: 0,
+                  systemY: 0,
+                  surfaceX: centre,
+                  surfaceY: centre,
+                },
+                render: { char: '@', fgColor: '#00A0A0' },
+                resources: { credits: 5000, fuel: 500, maxFuel: 500 },
+                /** Supplies the snapshot distance contract without introducing a mutable Player. */
+                distanceSqToSystemCoords(x, y) {
+                  return x * x + y * y;
+                },
+              },
+              planet
+            );
+          }
+          groundBuffer.renderFull();
+          const result = canvasAt(groundSize);
+          result.getContext('2d').drawImage(groundMain, 0, 0);
+          result.getContext('2d').drawImage(groundRaster, 0, 0);
+          return result;
+        }
+
         const section = document.createElement('section');
         section.dataset.body = preset.id;
         const heading = document.createElement('h2');
         heading.textContent = `${preset.id} / ${planet.type}`;
         const properties = document.createElement('p');
         properties.className = 'properties';
-        properties.textContent = `${planet.diameter.toFixed(0)} km | ${planet.gravity.toFixed(2)} g | ${planet.surfaceTemp.toFixed(0)} K | ${planet.atmosphere.pressure.toPrecision(3)} bar | ${planet.hydrosphere}`;
+        properties.textContent = `${planet.diameter.toFixed(0)} km | ${planet.gravity.toFixed(2)} g | ${planet.effectiveSurfaceTemp.toFixed(0)} K | ${planet.effectiveAtmosphere.pressure.toPrecision(3)} bar | ${planet.effectiveHydrosphere}`;
         const views = document.createElement('div');
         views.className = 'views';
         section.append(heading, properties, views);
@@ -395,6 +488,23 @@
           atmospheric,
           mask
         );
+        if (suite === 'settlements') {
+          const groundMask = new Uint8Array(size * size * 16).fill(1);
+          stages.landingMap = await recordStage(
+            views,
+            'landingMap',
+            'Landing map',
+            renderGround('map'),
+            groundMask
+          );
+          stages.surfaceTravel = await recordStage(
+            views,
+            'surfaceTravel',
+            'Regional travel',
+            renderGround('surface'),
+            groundMask
+          );
+        }
         const frames = [];
         let previous = atmospheric.getContext('2d').getImageData(0, 0, size, size);
         for (let frame = 1; frame <= 6; frame++) {
@@ -410,11 +520,12 @@
           mapSeed: planet.mapSeed,
           diameterKm: planet.diameter,
           gravityG: planet.gravity,
-          temperatureK: planet.surfaceTemp,
+          temperatureK: planet.effectiveSurfaceTemp,
           axialTilt: planet.axialTilt,
           atmosphere: planet.effectiveAtmosphere,
           hydrosphere: planet.effectiveHydrosphere,
           liquid: surface.liquidOverlay,
+          settlements: surface.settlements ?? null,
           sources,
           timings: { generationMs, prepareMs, firstFrameMs },
           frames,
@@ -422,8 +533,13 @@
         };
       }
 
+      /** Prepares the selected fixture suite and publishes its serializable capture report. */
       window.orbitSurfaceDiagnostics = (async () => {
         try {
+          await Promise.all([
+            document.fonts.load('8px "PxPlus_IBM_CGA"'),
+            document.fonts.load('8px "PxPlus_IBM_CGAthin"'),
+          ]);
           for (const preset of presets) {
             document.querySelector('#status').textContent = `Rendering ${preset.id}...`;
             await new Promise((resolve) => setTimeout(resolve, 0));

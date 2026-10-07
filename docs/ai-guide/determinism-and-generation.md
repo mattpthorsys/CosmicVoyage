@@ -85,6 +85,15 @@ Planet surface data includes:
 - resource/deposit map;
 - liquid overlay.
 
+Solid human colony worlds also prepare an optional decorative settlement layer.
+`surface_settlements.ts` derives an independent, versioned seed from `Planet.mapSeed`,
+places bounded dry-ground regions and retains physical patches plus sparse fractional
+coverage/emission. It must not alter geology, liquids, materials, deposits or their
+PRNG state. Colony names and preparation/worker ordering do not enter its seed.
+The profile is explicit; native life and orbital depots never imply surface cities.
+City rendering is deferred to later milestones. See
+[planetary-cities.md](../planetary-cities.md) for ownership and pending verification.
+
 Avoid triggering expensive generation from innocent property reads. The
 long-term direction is explicit preparation followed by side-effect-free
 access.
