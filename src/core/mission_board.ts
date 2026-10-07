@@ -50,6 +50,17 @@ export interface ScanMissionObjective {
   location?: MissionBodyLocation;
 }
 
+export interface DeliveryMissionObjective {
+  id: string;
+  kind: 'delivery';
+  targetName: string;
+  targetLabel: string;
+  itemKey: string;
+  quantity: number;
+  stationId: string;
+  location?: never;
+}
+
 export interface SpecimenMissionObjective {
   id: string;
   kind: 'specimen';
@@ -100,7 +111,11 @@ export type BiologicalMissionObjective =
   | BiologicalDataObjective
   | BiologicalBehaviourObjective;
 
-export type MissionObjective = ScanMissionObjective | BiologicalMissionObjective | HeavyHaulObjective;
+export type MissionObjective =
+  | ScanMissionObjective
+  | DeliveryMissionObjective
+  | BiologicalMissionObjective
+  | HeavyHaulObjective;
 
 /** Narrows actual biological requests; other non-scan objectives are not implicitly biology. */
 export function isBiologicalMissionObjective(
@@ -124,7 +139,8 @@ export function getHeavyHaulObjective(mission: StarbaseMission): HeavyHaulObject
 export interface StarbaseMission {
   id: string;
   title: string;
-  type: 'survey' | 'charting' | 'recovery' | 'xenobiology' | 'heavy-haul';
+  type: 'survey' | 'charting' | 'recovery' | 'xenobiology' | 'heavy-haul' | 'supply';
+  sponsor?: 'robotic-depot';
   issuer: string;
   summary: string;
   detail: string;

@@ -3,8 +3,9 @@
 Status: M0-M2 implemented and verified (1,179 tests plus lint, typecheck and
 production build). A Chrome smoke check rendered the medical bay at desktop and
 narrow sizes. The scripted end-to-end Playwright flow remains available for an
-environment with Playwright installed. M3 is implemented with verification pending;
-M4 onwards remain planned. See [the
+environment with Playwright installed. M3-M4 are implemented with runtime/browser
+verification pending; both pass static type, lint and function-doc checks.
+M5 onwards remain planned. See [the
 current depot guide](../automated-depots.md) for controls, recipes, ownership
 and verification commands.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
@@ -328,7 +329,7 @@ save lifecycle, without introducing async saves inside a partially applied actio
 Each milestone is a coherent commit after its verification gate. Add the focused
 tests during implementation, then tell the user before running tests/browser
 checks so they can switch to Luna. Do not describe written tests as verified.
-For this M0-M2 batch, implementation commits precede the requested separate Luna
+For the M0-M2 and M3-M4 batches, implementation commits precede the requested separate Luna
 verification stage; corrective commits follow if that stage identifies problems.
 
 ### M0: Persistent Operations And Inventory Boundaries
@@ -381,6 +382,10 @@ Suggested commit: `Add supply-limited robotic medical treatment at depots`.
 
 ### M3: Capped Autonomous Extraction
 
+Implemented: catalogue-only iron/ice sources, slow capped analytic catch-up,
+fractional carry, overflow discard, supply-dependent profiles, resource report
+and schema-22 migration. Runtime tests await Luna.
+
 Determine real suitable source descriptors, derive conservative depot extraction
 profiles and implement analytic catch-up. Supply-dependent depots stay useful
 without miners. Show output, caps and last update in a short resource report.
@@ -397,6 +402,11 @@ eligibility, bulk versus partitioned catch-up and repeated reloads.
 Suggested commit: `Add capped elapsed-time resource extraction to frontier depots`.
 
 ### M4: Local Robot Supply And Survey Contracts
+
+Implemented: two supply/one survey slots, finite sponsor escrow, 90-day offer
+refresh, explicit ship-hold deliveries, address/body-path-aware scan progression,
+claimable readouts, atomic checkpointed settlement, cancellation confirmations,
+stable selected rows and schema-23 migration. Runtime/browser tests await Luna.
 
 Add the explicit delivery objective and update all objective-union consumers:
 mission progress, shortfalls, journal, navigation, formatting, confirmations,

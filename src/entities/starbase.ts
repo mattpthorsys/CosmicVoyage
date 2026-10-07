@@ -36,7 +36,7 @@ const DEPOT_CAPABILITIES: StationCapabilities = Object.freeze({
   fuel: true,
   medical: true,
   repairs: 'basic',
-  missions: false,
+  missions: true,
   crew: false,
   equipment: 'minimal',
   shipyard: false,
@@ -117,7 +117,11 @@ export class Starbase {
       this.capabilities.fuel ? 'Fuel' : null,
       this.capabilities.medical ? 'Robotic Medical' : null,
       `${this.capabilities.repairs === 'full' ? 'Full' : 'Basic'} Repair`,
-      this.capabilities.missions ? 'Mission Office' : null,
+      this.capabilities.missions
+        ? this.kind === 'automated-depot'
+          ? 'Robot Contract Board'
+          : 'Mission Office'
+        : null,
       this.capabilities.shipyard ? 'Shipyard' : null,
     ].filter((service): service is string => Boolean(service));
     return [

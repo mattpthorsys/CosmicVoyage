@@ -1,5 +1,6 @@
 import type { SolarSystem } from '../entities/solar_system';
 import type { Starbase } from '../entities/starbase';
+import { getHostLabel } from '../entities/stellar_body';
 import { getSystemPlanetPaths } from './save_game';
 import type { DepotExtractionOutput } from './depot_types';
 
@@ -14,7 +15,7 @@ export function deriveDepotExtraction(station: Starbase, system: SolarSystem): D
     const parent = system.planets[parentIndex];
     return (
       parent &&
-      JSON.stringify(parent.orbitHost) === JSON.stringify(station.orbitHost) &&
+      getHostLabel(parent.orbitHost) === getHostLabel(station.orbitHost) &&
       Math.abs(parent.orbitDistance - station.orbitDistance) <= MAX_SOURCE_SEPARATION_M &&
       !['GasGiant', 'IceGiant', 'Molten'].includes(planet.type) &&
       planet.surfaceTemp < 650 &&

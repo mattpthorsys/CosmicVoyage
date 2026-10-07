@@ -19,6 +19,7 @@ import { Starbase } from '../entities/starbase';
 import { NavigationMarker } from '../entities/navigation_marker';
 import { InfrastructureRegistry } from './infrastructure_registry';
 import { DepotService } from './depot_service';
+import { DepotContracts, type DepotContractCheckpoint, type DepotContractResult } from './depot_contracts';
 import {
   DepotServiceConsole,
   createDepotServiceDialog,
@@ -403,6 +404,7 @@ export class Game {
   private readonly eventUnsubscribers: Unsubscribe[];
   private _starbaseCommerce?: StarbaseCommerceService;
   private _depotService?: DepotService;
+  private _depotContracts?: DepotContracts;
   private _depotConsole?: DepotServiceConsole;
   private _travelMode?: TravelModeController;
   private _orbitModeState?: OrbitModeController;
@@ -476,6 +478,18 @@ export class Game {
     return (this._depotConsole ??= new DepotServiceConsole());
   }
 
+  /** Coordinates bounded robotic jobs through the existing stock, mission and operational owners. */
+  private get depotContracts(): DepotContracts {
+    return (this._depotContracts ??= new DepotContracts(
+      this.depotService,
+      this.starbaseCommerce,
+      this.missionProgress,
+      this.player,
+      this.cargoSystem,
+      this.gameSeedPRNG.getInitialSeed()
+    ));
+  }
+
   /** Initialises real service inventories on materialisation, never inside station rendering. */
   private prepareSystemDepots(system: SolarSystem): void {
     const address = systemAddress(system);
@@ -490,6 +504,7 @@ export class Game {
         commissioned,
         system
       );
+      this.depotContracts.refreshStation(station, system, this.gameClockElapsedSeconds ?? 0);
     }
   }
 
@@ -547,6 +562,7 @@ export class Game {
     else if (intent?.kind === 'offer-homebound') this.openHomeboundVoyage(intent.assetId);
     else if (intent?.kind === 'begin-homebound') this.beginHomeboundVoyage(intent.assetId, intent.quote);
     else if (intent?.kind === 'depot-service') this.performDepotService(intent.quote);
+    else if (intent?.kind === 'depot-contract') this.performDepotContract(intent.missionId, intent.action);
     this.forceFullRender = true;
     this._publishStatusUpdate();
   }
@@ -1575,7 +1591,7 @@ export class Game {
 
   /** Returns mission progression, including for lightweight prototype-based test harnesses. */
   private get missionProgress(): MissionProgressService {
-    this._missionProgress ??= new MissionProgressService();
+    this._missionProgress ??= new MissionProgressService(() => this.player.cargoHold.items);
     return this._missionProgress;
   }
 
@@ -1994,7 +2010,7 @@ export class Game {
     this.systemDataGenerator = new SystemDataGenerator(this.gameSeedPRNG);
     this.hyperspaceSurveyService = new HyperspaceSurveyService(this.systemDataGenerator);
     this._scanService = new ScanService();
-    this._missionProgress = new MissionProgressService();
+    this._missionProgress = new MissionProgressService(() => this.player.cargoHold.items);
     this._surfacePrefetch = new SurfacePrefetchService();
     this.renderer = new RendererFacade(
       canvasId,
@@ -2119,6 +2135,14 @@ export class Game {
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
     this.starbaseCommerce.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.economy);
     this.depotService.restoreSnapshot(isLegacyGalaxyMigration ? {} : save.depots);
+    // Board refresh must see restored accepted jobs before station materialisation allocates new offer slots.
+    this.missionProgress.restoreSnapshot({
+      acceptedMissionIds: isLegacyGalaxyMigration ? [] : save.acceptedMissionIds,
+      readyMissionIds: isLegacyGalaxyMigration ? [] : save.readyMissionIds,
+      completedMissionIds: save.completedMissionIds,
+      activeMissions: isLegacyGalaxyMigration ? {} : save.activeMissions,
+      missionObjectiveProgress: isLegacyGalaxyMigration ? {} : save.missionObjectiveProgress,
+    });
     // Restore deployment identities before a docked location tries to resolve its station.
     this.infrastructureRegistry.restore(
       isLegacyGalaxyMigration ? [] : save.infrastructure,
@@ -2198,13 +2222,6 @@ export class Game {
     }
     if (this.activeEncounter) this.interfaceMode.close();
     this.gameClockElapsedSeconds = Math.max(0, save.gameClockElapsedSeconds);
-    this.missionProgress.restoreSnapshot({
-      acceptedMissionIds: isLegacyGalaxyMigration ? [] : save.acceptedMissionIds,
-      readyMissionIds: isLegacyGalaxyMigration ? [] : save.readyMissionIds,
-      completedMissionIds: save.completedMissionIds,
-      activeMissions: isLegacyGalaxyMigration ? {} : save.activeMissions,
-      missionObjectiveProgress: isLegacyGalaxyMigration ? {} : save.missionObjectiveProgress,
-    });
     this.heavyHaulService.restoreSnapshot(
       isLegacyGalaxyMigration ? createHeavyHaulSnapshot() : save.heavyHaul,
       this.gameClockElapsedSeconds
@@ -2334,6 +2351,8 @@ export class Game {
     if (!this.stateManager.currentSystem) this.materializedOrbitalSystem = null;
     if (this.stateManager.currentSystem) {
       this.prepareMaterializedSystem(this.stateManager.currentSystem);
+      // Local manoeuvring advances the calendar on the same cached system instance; catch up before docking pauses it.
+      if (newState === 'starbase') this.prepareSystemDepots(this.stateManager.currentSystem);
       if (newState === 'system') {
         const system = this.stateManager.currentSystem;
         this.scanService.resolveCatalogueTarget(
@@ -2961,6 +2980,15 @@ export class Game {
     );
     const rows = this.getStarbaseRows(starbase, this.starbaseMode.sectionId);
     const selectedIndex = clampIndex(this.starbaseMode.getSelection(), rows.length);
+
+    if (
+      starbase.kind === 'automated-depot' &&
+      this.starbaseMode.sectionId === 'missions' &&
+      this.inputManager.wasActionJustPressed('BIOLOGY_COLLECT')
+    ) {
+      this.reviewDepotCancellation(rows[selectedIndex]?.id);
+      return true;
+    }
 
     if (this.inputManager.wasActionJustPressed('MOVE_UP')) {
       this.starbaseMode.moveSelection(-1, rows.length, visibleRows);
@@ -3835,6 +3863,16 @@ export class Game {
 
   /** Resolves and executes an action selected from the command bar. */
   private executeCommandBarAction(action: string): void {
+    if (
+      action === 'DEPOT_CANCEL_CONTRACT' &&
+      this.stateManager.state === 'starbase' &&
+      this.stateManager.currentStarbase?.kind === 'automated-depot' &&
+      this.starbaseMode.sectionId === 'missions'
+    ) {
+      const rows = this.getStarbaseRows(this.stateManager.currentStarbase, 'missions');
+      this.reviewDepotCancellation(rows[this.getStarbaseSelection()]?.id);
+      return;
+    }
     switch (action) {
       case 'TRAVEL_MOVE':
         this.travelMode.commandMoving = true;
@@ -5441,7 +5479,12 @@ export class Game {
   ): void {
     const systemName =
       target instanceof SolarSystem ? target.name : (this.stateManager.currentSystem?.name ?? null);
-    const updates = this.missionProgress.recordDiscovery(target, systemName, discoveryLevel);
+    const updates = this.missionProgress.recordDiscovery(
+      target,
+      systemName,
+      discoveryLevel,
+      target instanceof SolarSystem ? target : (this.stateManager.currentSystem ?? undefined)
+    );
     for (const update of updates) {
       const counts = this.missionProgress.getObjectiveCounts(update.mission);
       this.player.awardCrewExperience('astroscience', 5);
@@ -9682,10 +9725,17 @@ export class Game {
       context: state,
       targetName: this.getCommandStripTargetName(),
       primaryButtonId: this.choosePrimaryAction(actions)?.id,
-      buttons: actions
-        .filter((action) => action.enabled)
-        .slice(0, 7)
-        .map((action) => commandButton(action.id, action.label, action.action, { key: action.key })),
+      buttons: [
+        ...actions
+          .filter((action) => action.enabled)
+          .slice(0, 7)
+          .map((action) => commandButton(action.id, action.label, action.action, { key: action.key })),
+        ...(state === 'starbase' &&
+        this.stateManager.currentStarbase?.kind === 'automated-depot' &&
+        this.starbaseMode.sectionId === 'missions'
+          ? [commandButton('cancel-contract', 'Cancel selected job', 'DEPOT_CANCEL_CONTRACT', { key: 'C' })]
+          : []),
+      ],
     };
   }
 
@@ -10491,6 +10541,10 @@ export class Game {
     }
 
     const status = this.missionProgress.getStatus(mission, this.ownedSpecimens);
+    if (mission.sponsor === 'robotic-depot' && status === 'READY') {
+      this.performDepotContract(mission.id, 'settle');
+      return;
+    }
     if (status === 'COMPLETE') {
       this.starbaseMode.alert = formatMissionDetail(mission, status);
       return;
@@ -10534,11 +10588,21 @@ export class Game {
       station.id !== stationId ||
       !this.getCurrentStarbaseMissions(station).some((offer) => offer.id === mission.id) ||
       this.missionProgress.getStatus(mission, this.ownedSpecimens) !== 'AVAILABLE' ||
-      !this.missionProgress.accept(mission)
+      (mission.sponsor !== 'robotic-depot' && !this.missionProgress.accept(mission))
     ) {
       this.showTerminalDialog(
         createMissionStatusDialog(mission, 'This offer is no longer available at the issuing station.', false)
       );
+      return;
+    }
+    if (mission.sponsor === 'robotic-depot') {
+      const system = this.stateManager.currentSystem;
+      if (!system) return;
+      const result = this.depotContracts.accept(mission, station, system, (outcome) =>
+        this.checkpointDepotContract(outcome)
+      );
+      this.statusMessage = this.starbaseMode.alert = result.message;
+      this.showTerminalDialog(createMissionStatusDialog(mission, result.message, result.ok));
       return;
     }
     for (const evidence of Object.values(this.xenobiology.snapshot.evidence)) {
@@ -10557,25 +10621,40 @@ export class Game {
     this.showTerminalDialog(createMissionStatusDialog(mission, this.starbaseMode.alert, true));
   }
 
-  /** Builds one real biological offer once surface data is ready, retaining authoritative accepted targets. */
+  /** Reads the dedicated robot board or prepares staffed-port offers, retaining authoritative accepted terms. */
   private getCurrentStarbaseMissions(starbase: Starbase): StarbaseMission[] {
     const system = this.stateManager.currentSystem;
     if (!system) return [];
+    if (starbase.kind === 'automated-depot') {
+      const combined = new Map(
+        this.depotContracts.list(starbase, system).map((mission) => [mission.id, mission])
+      );
+      for (const mission of this.missionProgress.getStationMissions(starbase.name, starbase.id))
+        combined.set(mission.id, mission);
+      const order = new Map(
+        (this.depotService.getRecord(starbase.id)?.jobs?.offers ?? []).map((offer, index) => [
+          offer.id,
+          index,
+        ])
+      );
+      // Acceptance replaces the selected offer in place; it must not move that row to the end of the board.
+      return [...combined.values()].sort(
+        (a, b) => (order.get(a.id) ?? order.size) - (order.get(b.id) ?? order.size)
+      );
+    }
     const biospheres: BiosphereDefinition[] = [];
     const pending: Planet[] = [];
-    if (starbase.kind !== 'automated-depot') {
-      for (const { planet } of getSystemPlanetPaths(system)) {
-        const biosphere = this.getBiosphere(planet);
-        if (!biosphere) continue;
-        biospheres.push(biosphere);
-        if (!planet.isSurfaceReady()) pending.push(planet);
-      }
-      // Use the existing serialized worker queue. Board rendering never invokes synchronous terrain getters.
-      this.surfacePrefetch.enqueue(pending.slice(0, 2), () => {
-        if (this.stateManager.state === 'starbase' && this.stateManager.currentSystem === system)
-          this.forceFullRender = true;
-      });
+    for (const { planet } of getSystemPlanetPaths(system)) {
+      const biosphere = this.getBiosphere(planet);
+      if (!biosphere) continue;
+      biospheres.push(biosphere);
+      if (!planet.isSurfaceReady()) pending.push(planet);
     }
+    // Use the existing serialized worker queue. Board rendering never invokes synchronous terrain getters.
+    this.surfacePrefetch.enqueue(pending.slice(0, 2), () => {
+      if (this.stateManager.state === 'starbase' && this.stateManager.currentSystem === system)
+        this.forceFullRender = true;
+    });
     const contracts = createBiologicalContracts(
       starbase,
       system.name,
@@ -10608,6 +10687,86 @@ export class Game {
     for (const mission of this.missionProgress.getStationMissions(starbase.name, starbase.id))
       combined.set(mission.id, mission);
     return [...combined.values()];
+  }
+
+  /** Persists mission progression, cargo, payment, stock and sponsor escrow as one prospective outcome. */
+  private checkpointDepotContract(outcome: DepotContractCheckpoint): void {
+    if (!this.journeyCheckpointWriter) return;
+    const save = this.createSaveGame();
+    this.journeyCheckpointWriter({
+      ...save,
+      ...outcome.missions,
+      depots: outcome.depots,
+      economy: outcome.economy,
+      player: { ...save.player, resources: outcome.resources, cargoHold: outcome.cargoHold },
+    });
+  }
+
+  /** Keeps cancellation explicit and separate from Esc, which still departs the station. */
+  private reviewDepotCancellation(missionId?: string): void {
+    const mission = missionId && this.missionProgress.getMission(missionId);
+    if (!mission || mission.sponsor !== 'robotic-depot') return;
+    this.showTerminalDialog({
+      title: 'CANCEL ROBOT CONTRACT',
+      kind: 'confirmation',
+      defaultYes: false,
+      intent: { kind: 'depot-contract', action: 'cancel', missionId: mission.id },
+      lines: [
+        { segments: [{ text: mission.title, tone: 'cyan', font: 'thick' }] },
+        {
+          segments: [
+            {
+              text: 'Release sponsor escrow and withdraw this job? No payment or cargo transfer.',
+              tone: 'amber',
+              font: 'thin',
+            },
+          ],
+        },
+        {
+          segments: [
+            {
+              text: 'The current offer is retired until the next board refresh.',
+              tone: 'muted',
+              font: 'thin',
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  /** Commits funded robot handoffs and publishes only the final receipt and credit/cargo effects. */
+  private performDepotContract(missionId: string, action: 'settle' | 'cancel'): void {
+    const station = this.stateManager.currentStarbase;
+    if (this.stateManager.state !== 'starbase' || station?.kind !== 'automated-depot') return;
+    const mission = this.missionProgress.getMission(missionId);
+    const result: DepotContractResult =
+      action === 'settle'
+        ? this.depotContracts.settle(missionId, station, (outcome) => this.checkpointDepotContract(outcome))
+        : this.depotContracts.cancel(missionId, station, (outcome) => this.checkpointDepotContract(outcome));
+    this.statusMessage = this.starbaseMode.alert = result.message;
+    if (result.ok && result.credits)
+      eventManager.publish(GameEvents.PLAYER_CREDITS_CHANGED, {
+        newCredits: this.player.resources.credits,
+        amountChanged: result.credits,
+      });
+    if (result.ok && action === 'settle')
+      for (const objective of mission?.objectives ?? [])
+        if (objective.kind === 'delivery')
+          eventManager.publish(GameEvents.PLAYER_CARGO_REMOVED, {
+            elementKey: objective.itemKey,
+            amountRemoved: objective.quantity,
+          });
+    this.showTerminalDialog({
+      title: result.ok
+        ? action === 'settle'
+          ? 'ROBOT CONTRACT SETTLED'
+          : 'CONTRACT CANCELLED'
+        : 'HANDOFF REFUSED',
+      kind: 'message',
+      caution: !result.ok,
+      lines: [{ segments: [{ text: result.message, tone: result.ok ? 'green' : 'red', font: 'thin' }] }],
+    });
   }
 
   /** Delegates atomic physical delivery, publishing credit and crew effects only after all owners commit. */

@@ -54,6 +54,24 @@ export function createDepotResourceDialog(
         )
       ),
       line('Manufactured supplies and reactor feedstock require deliveries.', 'muted'),
+      ...(record.jobs
+        ? [
+            line('SPONSOR ESCROW', 'cyan', true),
+            line(
+              `${record.jobs.availableCredits.toLocaleString()} Cr unreserved / ${Object.values(
+                record.jobs.reservedCredits
+              )
+                .reduce((total, amount) => total + amount, 0)
+                .toLocaleString()} Cr committed`,
+              'amber'
+            ),
+            line(
+              `Next board refresh: ${(record.jobs.nextRefreshSeconds / 86400).toFixed(1)} elapsed days`,
+              'muted'
+            ),
+            line('Supply handoffs and local surveys are listed under Missions.', 'green'),
+          ]
+        : []),
     ],
   };
 }

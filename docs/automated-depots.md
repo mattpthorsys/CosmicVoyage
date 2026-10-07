@@ -1,12 +1,13 @@
 # Automated Depots
 
-Status: M0-M3 implemented; M3 awaits Luna verification. The M0-M2 baseline
-passed `npm run check` with all 1,179 tests. A
-headless Chrome smoke check rendered the medical bay at desktop and narrow sizes,
+Status: M0-M4 implemented; M3-M4 await Luna runtime/browser verification.
+Application/test type checking, ESLint and function-documentation checks pass.
+The M0-M2 baseline passed `npm run check` with all 1,179 tests. A headless Chrome
+smoke check rendered the medical bay at desktop and narrow sizes,
 confirmed both fonts and the No-default treatment quote, and reported no browser
 errors. The full scripted Playwright interaction flow was not run because this
-environment has no installed Playwright package. Robot contracts, chart
-exchange and broadcasts remain planned.
+environment has no installed Playwright package. Chart exchange and broadcasts
+remain M5-M6 planning work.
 
 ## Playing
 
@@ -89,10 +90,53 @@ medicines, trusses and reactor isotopes are never mined. Natural depots start on
 first materialisation; delivered ones start at commissioning. Migrated v21 depot
 profiles begin extraction assessment on revisit without historical output.
 
+## Robot Contracts (M4)
+
+Open **Missions** at an automated depot. Its dedicated robotic board offers at
+most two supply requests and one local orbital survey, selected from actual stock
+shortages and unmeasured catalogue bodies. It does not open biological research,
+staff recruitment, shipyard work or the staffed-port mission generator.
+
+Select a job and press **Enter**, then **Y/N** to accept or decline. The briefing
+and **J** mission journal give the required goods or survey body and full
+hyperspace coordinates/contact slot. Acceptance reserves the quoted payment but
+does not consume cargo or pay immediately. The selected row stays in place.
+
+Supply work uses the **ship hold**, not goods left in the rover. Bring the full
+requested lot, select its **CLAIMABLE** row under Missions and press Enter. One
+handoff consumes that lot, replenishes the depot's actual shared stock, completes
+the mission and pays the reserved reward. Ordinary selling does not complete
+the request. Selling or transferring the required cargo away returns it to ACTIVE.
+Replenished or full stores do not invalidate an already accepted promise; a
+contract intake can use overflow receiving storage.
+
+Survey work requires an actual orbital measurement of the specified body, then
+a return to the issuing depot. Full system addresses and stable body paths are
+checked: similarly named systems or planets elsewhere cannot fulfil a scan job.
+Already measured bodies do not create new robot survey offers. Remote charts
+are not substituted for these observations.
+
+**C** on an accepted job opens a No-default cancellation confirmation. Cancellation
+returns escrow to its sponsor, consumes no cargo and retires that offer until
+the next scheduled revision. Completion and refusal receipts remain visible
+until acknowledged; all reading/confirmation time is paused.
+
+Each depot starts with **6,000 Cr** of finite sponsor funding. Supplies pay twice
+their catalogue material value plus an 80 Cr logistics fee; a local survey pays
+420 Cr. The board refreshes on access at most once per **90 simulated days**.
+Opening menus, buying stock or sleeping through missed cycles does not reroll
+offers immediately or accumulate new funds. Resource report lists unreserved
+and committed funds and the next refresh epoch. Sponsor replenishment is outside
+this milestone.
+
 ## Ownership And Persistence
 
 - `core/depot_types.ts`: typed operational records, work orders and validation.
 - `core/depot_extraction.ts`: catalogue-only source assessment and capped elapsed-time rules.
+- `core/depot_contracts.ts`: prepared bounded offers, funded acceptance, atomic
+  supply/survey settlement, cancellation and checkpoint coordination.
+- `core/depot_contract_validation.ts`: restricted robot definitions and
+  cross-owner mission/escrow validation at import.
 - `core/depot_rules.ts`: pure stock/cargo/credit-limited quotes and sealed recipes.
 - `core/depot_service.ts`: once-only initialisation, supported targets and coordinated
   service commits, including a detached pre-commit checkpoint.
@@ -105,14 +149,18 @@ profiles begin extraction assessment on revisit without historical output.
 - `Game`: prepares stations, wires modal input/drawing, persists outcomes and publishes
   resource effects only after a successful commit.
 
-Save schema 22 extends compact `depots` operational records with extraction profiles
-and bounded fractional carry, keyed by stable station
-ID. Older saves migrate with an empty ledger. Existing stock is preserved;
+Save schema 23 stores extraction profiles/carry and small sponsor/offer records
+inside `depots`, keyed by stable station ID. Canonical accepted terms remain in
+the ordinary mission ledger. Schema 21 records migrate with extraction pending;
+schema 22 preserves extraction and starts with an uninitialised job board. Older
+saves migrate with an empty depot ledger. Existing stock is preserved;
 only missing new service listings are seeded. Natural depots initialise on first
 materialisation; delivered depots retain their commissioning epoch. Dedicated
 depot seeds do not consume procedural galaxy/system streams.
 
 Quotes bind target health, funds, supplies, cargo consent and operational revision.
+Robot acceptance, cancellation and payment checkpoint cargo, economy, missions,
+depot escrow and player resources as one detached outcome before assignment.
 Changed or repeated confirmations are refused. Failed checkpoint writes leave
 crew, damage, fuel, cargo, credits and station supplies untouched. Crew IDs and
 health bounds are validated at the save boundary.
@@ -133,6 +181,23 @@ delivered-depot fixture through the normal save importer, checks confirmation,
 partial repairs/fuel/treatment, cargo consent, depleted-stock persistence,
 paused time, desktop/narrow terminal rendering and browser errors. Captures and
 the importable fixture are written to `/tmp/cosmic-depots` by default.
+It now also covers robot acceptance/decline, CLAIMABLE cargo, handoff/payment,
+save/reload, stable mission selection and resource reports. That extended flow
+has been written but not run yet.
+
+M3-M4 Luna gate:
+
+```bash
+npm run test:run -- src/tests/core/depot_extraction.test.ts src/tests/core/depot_contracts.test.ts src/tests/core/depot_service.test.ts src/tests/core/mission_progress.test.ts src/tests/core/interface/depot_contract_integration.test.ts src/tests/core/interface/depot_service_integration.test.ts src/tests/core/interface/save_game.test.ts
+npm run check
+COSMIC_URL=http://127.0.0.1:5173/ node scripts/check_depot_browser.cjs
+```
+
+Also run staffed-port, mission journal, biological delivery and heavy-haul
+regressions. Browser verification needs Playwright or an explicitly documented
+alternative; do not describe prepared checks as passed. Source/clock, saturation,
+fractional carry, funding, cancellation, wrong-address, sold-cargo, full-store,
+duplicate-payment and storage-failure cases are covered by the new focused suites.
 
 Personally check a depot with damage, low fuel and an injured crew member.
 Compare service supply readouts with Buy/Sell stocks, perform partial work,

@@ -162,6 +162,15 @@ export function createMissionAcceptanceDialog(
       ),
       line(`Payment ${mission.rewardCredits.toLocaleString()} Cr / ${mission.risk} risk`, 'amber'),
       line(`Issued by ${mission.originStarbaseName}`, 'muted'),
+      ...(mission.sponsor === 'robotic-depot' && mission.systemAddress
+        ? [
+            line(
+              `Destination X ${mission.systemAddress.worldX} / Y ${mission.systemAddress.worldY} / contact ${mission.systemAddress.systemSlot + 1}`,
+              'green'
+            ),
+            line('Payment reserved in sponsor escrow; claim through Missions.', 'amber'),
+          ]
+        : []),
       line('Add this contract to your active missions?', 'green'),
     ],
   };

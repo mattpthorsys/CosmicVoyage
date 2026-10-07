@@ -23,6 +23,7 @@ export function resolveMissionNavigation(
 ): StarbaseMission {
   if (
     mission.type === 'heavy-haul' ||
+    mission.sponsor === 'robotic-depot' ||
     mission.systemName !== system.name ||
     (mission.systemAddress && !isMissionSystem(mission.systemAddress, system))
   )

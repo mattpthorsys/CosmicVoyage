@@ -182,8 +182,11 @@ export class StarbaseController {
         };
       case 'missions':
         return {
-          title: 'Mission Board',
-          subtitle: 'Local contracts authorised by station offices.',
+          title: starbase.kind === 'automated-depot' ? 'Robotic Contract Board' : 'Mission Board',
+          subtitle:
+            starbase.kind === 'automated-depot'
+              ? 'Supply handoffs / local measurements / finite sponsor escrow'
+              : 'Local contracts authorised by station offices.',
           columns: ['CONTRACT', 'PAY', 'RISK', 'STATUS', 'SUMMARY'],
           widths: [22, 9, 7, 10, 32],
         };

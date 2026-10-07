@@ -1,5 +1,5 @@
 import { CONFIG } from '../config';
-import type { MissionSystemAddress } from './mission_board';
+import type { MissionSystemAddress, StarbaseMission } from './mission_board';
 import type { EconomySnapshot } from './starbase_commerce';
 
 export const DEPOT_PROFILE_VERSION = 1;
@@ -14,6 +14,14 @@ export interface DepotExtractionOutput {
   carry: number;
 }
 
+export interface DepotJobState {
+  availableCredits: number;
+  revision: number;
+  nextRefreshSeconds: number;
+  offers: StarbaseMission[];
+  reservedCredits: Record<string, number>;
+}
+
 export interface DepotRecord {
   readonly stationId: string;
   readonly address: MissionSystemAddress;
@@ -24,6 +32,7 @@ export interface DepotRecord {
   revision: number;
   /** Null means a migrated record awaits source assessment; an empty array is supply-dependent. */
   extraction: DepotExtractionOutput[] | null;
+  jobs: DepotJobState | null;
 }
 
 export type DepotSnapshot = Record<string, DepotRecord>;
@@ -73,7 +82,9 @@ export interface DepotQuoteInputs {
   readonly prices: Readonly<Record<string, number>>;
 }
 
-export type DepotDialogIntent = { readonly kind: 'depot-service'; readonly quote: DepotServiceQuote };
+export type DepotDialogIntent =
+  | { readonly kind: 'depot-service'; readonly quote: DepotServiceQuote }
+  | { readonly kind: 'depot-contract'; readonly missionId: string; readonly action: 'settle' | 'cancel' };
 
 /** Validates operational epochs and shared market identity before restoring imported depot state. */
 export function validateDepotSnapshot(

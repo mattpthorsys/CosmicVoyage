@@ -18,8 +18,9 @@ import { Planet } from '../entities/planet';
 import { SolarSystem } from '../entities/solar_system';
 import { StellarBody } from '../entities/stellar_body';
 import type { BiosphereDefinition, EncounterField } from '../entities/biology/biology_types';
-import { resolveMissionNavigation } from './mission_navigation';
+import { resolveMissionNavigation, isMissionSystem } from './mission_navigation';
 import { createBiologicalReference } from './biological_mission_guidance';
+import { getSystemPlanetPaths } from './save_game';
 
 export interface MissionProgressSnapshot {
   acceptedMissionIds: string[];
@@ -43,6 +44,9 @@ export class MissionProgressService {
   private activeMissions: Record<string, StarbaseMission> = {};
   private missionObjectiveProgress: Record<string, string[]> = {};
 
+  /** Reads current ship cargo on demand so sales, transfers and restored hold replacements invalidate delivery readiness. */
+  constructor(private readonly cargoItems: () => Readonly<Record<string, number>> = () => ({})) {}
+
   /** Returns the current status of a generated mission. */
   getStatus(mission: StarbaseMission, specimens: readonly SpecimenContainer[] = []): MissionStatus {
     const status = getMissionStatus(mission, {
@@ -52,7 +56,7 @@ export class MissionProgressService {
     });
     if (
       (status === 'ACTIVE' || status === 'READY') &&
-      mission.objectives.some((objective) => objective.kind === 'specimen')
+      mission.objectives.some((objective) => objective.kind === 'specimen' || objective.kind === 'delivery')
     ) {
       const counts = this.getObjectiveCounts(mission, specimens);
       return counts.completed === counts.total ? 'READY' : 'ACTIVE';
@@ -77,12 +81,18 @@ export class MissionProgressService {
       mission.objectives.filter((objective) => objective.kind === 'specimen'),
       specimens
     );
+    const cargo = { ...this.cargoItems() };
     return mission.objectives
-      .filter((objective) =>
-        objective.kind === 'specimen'
+      .filter((objective) => {
+        if (objective.kind === 'delivery') {
+          if ((cargo[objective.itemKey] ?? 0) < objective.quantity) return false;
+          cargo[objective.itemKey] -= objective.quantity;
+          return true;
+        }
+        return objective.kind === 'specimen'
           ? allocated.has(objective.id)
-          : this.missionObjectiveProgress[mission.id]?.includes(objective.id)
-      )
+          : this.missionObjectiveProgress[mission.id]?.includes(objective.id);
+      })
       .map((objective) => objective.id);
   }
 
@@ -99,13 +109,15 @@ export class MissionProgressService {
           objective.id,
           objective.kind === 'specimen'
             ? specimenObjectiveShortfall(objective, specimens)
-            : objective.kind === 'biology-data'
-              ? `Detailed analysis not recorded: ${objective.targetLabel}.`
-              : objective.kind === 'biology-behaviour'
-                ? `Field episode not recorded: ${objective.targetLabel}.`
-                : objective.kind === 'haul'
-                  ? `Deploy the external package at ${objective.destination.systemName}.`
-                  : `Survey incomplete: ${objective.targetLabel}.`,
+            : objective.kind === 'delivery'
+              ? `Ship hold: ${this.cargoItems()[objective.itemKey] ?? 0} / ${objective.quantity} m^3 ${objective.targetName}. Deliver through Missions at ${mission.originStarbaseName}.`
+              : objective.kind === 'biology-data'
+                ? `Detailed analysis not recorded: ${objective.targetLabel}.`
+                : objective.kind === 'biology-behaviour'
+                  ? `Field episode not recorded: ${objective.targetLabel}.`
+                  : objective.kind === 'haul'
+                    ? `Deploy the external package at ${objective.destination.systemName}.`
+                    : `Survey incomplete: ${objective.targetLabel}.`,
         ])
     );
   }
@@ -130,7 +142,12 @@ export class MissionProgressService {
     }
     this.acceptedMissionIds.add(mission.id);
     const accepted = structuredClone(mission);
-    this.activeMissions[mission.id] = mission.type === 'heavy-haul' ? freezeHaulTerms(accepted) : accepted;
+    this.activeMissions[mission.id] =
+      mission.type === 'heavy-haul'
+        ? freezeHaulTerms(accepted)
+        : mission.sponsor === 'robotic-depot'
+          ? freezeRobotTerms(accepted)
+          : accepted;
     this.missionObjectiveProgress[mission.id] = [];
     return true;
   }
@@ -175,16 +192,39 @@ export class MissionProgressService {
   recordDiscovery(
     target: Planet | SolarSystem | StellarBody,
     systemName: string | null,
-    level: DiscoveryLevel
+    level: DiscoveryLevel,
+    system?: SolarSystem
   ): MissionDiscoveryUpdate[] {
     const updates: MissionDiscoveryUpdate[] = [];
     for (const mission of Object.values(this.activeMissions)) {
       if (this.readyMissionIds.has(mission.id)) continue;
+      if (mission.systemAddress && (!system || !isMissionSystem(mission.systemAddress, system))) continue;
+      if (
+        mission.systemAddress &&
+        system &&
+        !(target instanceof SolarSystem
+          ? target === system
+          : target instanceof Planet
+            ? getSystemPlanetPaths(system).some(({ planet }) => planet === target)
+            : system.stars.includes(target))
+      )
+        continue;
       if (systemName && mission.systemName !== systemName) continue;
       const completed = new Set(this.missionObjectiveProgress[mission.id] ?? []);
       const newlyCompleted = mission.objectives
         .filter((objective) => !completed.has(objective.id))
-        .filter((objective) => isMissionObjectiveCompletedByDiscovery(objective, target, level))
+        .filter((objective) => {
+          if (objective.kind === 'scan' && objective.location) {
+            if (
+              !system ||
+              !getSystemPlanetPaths(system).some(
+                ({ path, planet }) => path === objective.location?.bodyPath && planet === target
+              )
+            )
+              return false;
+          }
+          return isMissionObjectiveCompletedByDiscovery(objective, target, level);
+        })
         .map((objective) => objective.id);
       if (newlyCompleted.length === 0) continue;
 
@@ -206,7 +246,13 @@ export class MissionProgressService {
   ): StarbaseMission | null {
     const mission = this.activeMissions[missionId];
     const specimens = specimen ? ('id' in specimen ? [specimen] : specimen) : [];
-    if (!mission || mission.type === 'heavy-haul' || this.getStatus(mission, specimens) !== 'READY')
+    if (
+      !mission ||
+      mission.type === 'heavy-haul' ||
+      mission.sponsor === 'robotic-depot' ||
+      mission.type === 'supply' ||
+      this.getStatus(mission, specimens) !== 'READY'
+    )
       return null;
     if (mission.originStarbaseId) {
       if (mission.originStarbaseId !== starbaseId) return null;
@@ -223,6 +269,33 @@ export class MissionProgressService {
   /** Reads the accepted contract so changing generation or board readiness cannot change its target. */
   getMission(missionId: string): StarbaseMission | undefined {
     return this.activeMissions[missionId];
+  }
+
+  /** Completes funded robot work only at its issuing depot; the contract owner commits cargo, stock and escrow together. */
+  completeDepotAtStation(missionId: string, stationId: string): StarbaseMission | null {
+    const mission = this.activeMissions[missionId];
+    if (
+      !mission ||
+      mission.sponsor !== 'robotic-depot' ||
+      mission.originStarbaseId !== stationId ||
+      this.getStatus(mission) !== 'READY'
+    )
+      return null;
+    this.readyMissionIds.delete(missionId);
+    this.completedMissionIds.add(missionId);
+    delete this.activeMissions[missionId];
+    delete this.missionObjectiveProgress[missionId];
+    return mission;
+  }
+
+  /** Cancels only robot work; its sponsor releases escrow and retires the current offer separately. */
+  cancelDepot(missionId: string): boolean {
+    if (this.activeMissions[missionId]?.sponsor !== 'robotic-depot') return false;
+    this.acceptedMissionIds.delete(missionId);
+    this.readyMissionIds.delete(missionId);
+    delete this.activeMissions[missionId];
+    delete this.missionObjectiveProgress[missionId];
+    return true;
   }
 
   /** Settles only a haul at its frozen destination; the caller coordinates deployment and credits atomically. */
@@ -271,7 +344,7 @@ export class MissionProgressService {
   /** Supplies reference traits to older accepted contracts from already generated target fields. */
   resolveBiologicalReferences(fields: Readonly<Record<string, EncounterField>>): void {
     for (const mission of this.getActiveMissions()) {
-      if (mission.type === 'heavy-haul') continue;
+      if (mission.type === 'heavy-haul' || mission.sponsor === 'robotic-depot') continue;
       mission.objectives = mission.objectives.map((objective) => {
         if (!isBiologicalMissionObjective(objective) || objective.reference) return objective;
         const species = fields[objective.siteId]?.species.find((entry) => entry.id === objective.speciesId);
@@ -337,8 +410,20 @@ export class MissionProgressService {
     this.activeMissions = structuredClone(snapshot.activeMissions);
     for (const mission of Object.values(this.activeMissions))
       if (mission.type === 'heavy-haul') freezeHaulTerms(mission);
+      else if (mission.sponsor === 'robotic-depot') freezeRobotTerms(mission);
     this.missionObjectiveProgress = structuredClone(snapshot.missionObjectiveProgress);
   }
+}
+
+/** Protects reserved robotic quantities, coordinates and rewards from later navigation or board updates. */
+function freezeRobotTerms(mission: StarbaseMission): StarbaseMission {
+  if (mission.systemAddress) Object.freeze(mission.systemAddress);
+  for (const objective of mission.objectives) {
+    if (objective.location) Object.freeze(objective.location);
+    Object.freeze(objective);
+  }
+  Object.freeze(mission.objectives);
+  return Object.freeze(mission);
 }
 
 /** Freezes only canonical haul definitions; legacy biological metadata still resolves through its existing path. */

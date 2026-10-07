@@ -94,6 +94,7 @@ export class DepotService {
       lastUpdatedSeconds: commissionedAtSeconds,
       revision: 0,
       extraction: system ? deriveDepotExtraction(station, system) : null,
+      jobs: null,
     };
     for (const output of record.extraction ?? [])
       this.commerce.initialiseStock(station.id, output.itemKey, 0);

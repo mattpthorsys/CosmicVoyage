@@ -130,6 +130,18 @@ export class StarbaseCommerceService {
     item.units += Math.min(units, Math.max(0, capacity - item.units));
   }
 
+  /** Prepares a recognized delivery for checkpoint-before-commit transactions; intake is independent of mining caps. */
+  prepareStockDeposit(stationId: string, itemKey: string, units: number): EconomySnapshot | null {
+    if (!Number.isSafeInteger(units) || units <= 0) return null;
+    const quote = this.getTradeQuote(stationId, itemKey);
+    if (!quote) return null;
+    const snapshot = this.createSnapshot();
+    const item = snapshot[stationId].items[itemKey] ?? { ...quote, units: 0 };
+    if (item.units > Number.MAX_SAFE_INTEGER - units) return null;
+    snapshot[stationId].items[itemKey] = { ...item, units: item.units + units };
+    return snapshot;
+  }
+
   /** Consumes a whole validated work order atomically, never partly debiting an unavailable recipe. */
   consumeStock(stationId: string, requirements: Readonly<Record<string, number>>): boolean {
     const snapshot = this.prepareStockConsumption(stationId, requirements);

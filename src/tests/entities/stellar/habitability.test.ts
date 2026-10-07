@@ -456,7 +456,7 @@ describe('habitability and human settlement', () => {
     expect(system.starbase?.kind).toBe('automated-depot');
     expect(system.starbase?.capabilities.fuel).toBe(true);
     expect(system.starbase?.capabilities.repairs).toBe('basic');
-    expect(system.starbase?.capabilities.missions).toBe(false);
+    expect(system.starbase?.capabilities.missions).toBe(true);
     expect(system.starbase?.capabilities.crew).toBe(false);
     expect(system.starbase?.capabilities.shipyard).toBe(false);
     expect(system.colonyWorld).toBeNull();

@@ -85,7 +85,7 @@ export function createStarbaseScreenModel(args: {
   const viewport = setSelection(args.selectedIndex, args.rows.length, args.visibleRowCount, args.viewOffset);
   const footer = [
     `Cr ${args.player.resources.credits.toLocaleString()}   Fuel ${args.player.resources.fuel.toFixed(0)}/${args.player.resources.maxFuel}   Cargo ${cargoTotal}/${args.player.cargoHold.capacity} m^3`,
-    'Up/Down select  PgUp/PgDn page  Left/Right sections  Enter use  L depart',
+    `Up/Down select  PgUp/PgDn page  Left/Right sections  Enter use${args.starbase.kind === 'automated-depot' && args.sectionId === 'missions' ? '  C cancel job' : ''}  L depart`,
   ];
 
   return {

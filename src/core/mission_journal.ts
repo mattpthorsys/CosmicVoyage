@@ -130,7 +130,7 @@ export class MissionJournal {
     };
     if (!entry) {
       line('NO ACTIVE CONTRACTS', 'cyan', true);
-      line('Accept a contract from a staffed station mission board.', 'muted');
+      line('Accept a contract from a station or robotic depot mission board.', 'muted');
     } else {
       const { mission, status } = entry;
       line(mission.title, 'cyan', true);
@@ -182,6 +182,14 @@ export class MissionJournal {
         const prefix = `${mission.objectives.length > 1 && index === landingIndex ? '> ' : ''}${complete ? 'COMPLETE' : 'NEEDED'} / `;
         line(`${prefix}${objective.targetLabel}`, complete ? 'green' : 'amber');
         const location = objective.location;
+        if (objective.kind === 'delivery') {
+          line(`Ship hold required: ${objective.quantity} m^3 ${objective.targetName}`, 'cyan');
+          line(`Receiving depot: ${mission.originStarbaseName}`, 'green');
+          line(
+            'Supply handoff through Missions / ordinary cargo sale does not complete the contract.',
+            'muted'
+          );
+        }
         if (location) line(`Body: ${location.bodyName}`, 'cyan');
         if (location?.surface) {
           line(`Habitat: ${location.surface.label}`);

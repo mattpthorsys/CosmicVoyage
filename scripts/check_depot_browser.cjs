@@ -32,6 +32,7 @@ async function main() {
         await import('/src/core/infrastructure_registry.ts');
       const { StarbaseCommerceService } = await import('/src/core/starbase_commerce.ts');
       const { DepotService } = await import('/src/core/depot_service.ts');
+      const { createDepotServiceRows } = await import('/src/core/depot_service_console.ts');
       const { createHeavyHaulSnapshot } = await import('/src/core/heavy_haul_types.ts');
       const { createObservatorySnapshot } = await import('/src/core/observatory_types.ts');
       const { createXenobiologySnapshot } = await import('/src/entities/biology/biology_types.ts');
@@ -135,6 +136,13 @@ async function main() {
         stationId: station.id,
         sessionKey: SESSION_SAVE_KEY,
         servicesIndex: getStationSections(station).findIndex((section) => section.id === 'services'),
+        missionsIndex: getStationSections(station).findIndex((section) => section.id === 'missions'),
+        serviceRows: createDepotServiceRows(
+          service.quote(station.id, 'repair', 'all'),
+          service.quote(station.id, 'fuel', 'fuel'),
+          0,
+          service.quote(station.id, 'medical', 'all')
+        ).map((row) => row.id),
       };
     });
     fs.writeFileSync(path.join(output, 'depot-fixture.json'), JSON.stringify(fixture.save, null, 2));
@@ -209,8 +217,10 @@ async function main() {
       return pixels;
     };
     /** Opens a known service row and skips its reveal without issuing a work order. */
-    const open = async (row) => {
+    const open = async (serviceId) => {
       for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');
+      const row = fixture.serviceRows.indexOf(serviceId);
+      assert(row >= 0, `Service row missing: ${serviceId}`);
       for (let index = 0; index < row; index++) await press('ArrowDown');
       await press('Enter');
       await page.locator('[data-command-id="review"]').waitFor();
@@ -224,13 +234,18 @@ async function main() {
     };
     const metrics = {};
     const cases = [
-      { kind: 'repair', row: 0, stock: 'REPAIR_SPARES', partial: 90 },
-      { kind: 'medical', row: 2, stock: 'MEDICAL_SUPPLIES', partial: 10 },
-      { kind: 'fuel', row: 1, stock: 'HELIUM_3', partial: fixture.save.player.resources.maxFuel - 10 },
+      { kind: 'repair', serviceId: 'repair', stock: 'REPAIR_SPARES', partial: 90 },
+      { kind: 'medical', serviceId: 'medical', stock: 'MEDICAL_SUPPLIES', partial: 10 },
+      {
+        kind: 'fuel',
+        serviceId: 'refuel',
+        stock: 'HELIUM_3',
+        partial: fixture.save.player.resources.maxFuel - 10,
+      },
     ];
     for (const test of cases) {
       await load(fixture.save);
-      await open(test.row);
+      await open(test.serviceId);
       metrics[test.kind] = await capture(`desktop-${test.kind}`);
       const before = await checkpoint();
       await review();
@@ -282,9 +297,68 @@ async function main() {
       assert.deepEqual(restored.economy, complete.economy, 'Reload replenished depleted stock.');
       assert.deepEqual(restored.depots, complete.depots, 'Reload changed operational state.');
     }
-    await page.setViewportSize({ width: 390, height: 844 });
+    // Robot work uses the same importer, station navigation, confirmation and checkpoint path as services.
     await load(fixture.save);
-    await open(2);
+    const boardSave = await checkpoint();
+    const supply = boardSave.depots[fixture.stationId].jobs.offers.find((offer) => offer.type === 'supply');
+    assert(supply, 'The controlled shortages did not produce a funded supply job.');
+    const objective = supply.objectives[0];
+    boardSave.player.cargoHold.items[objective.itemKey] = objective.quantity;
+    await load(boardSave);
+    for (let index = 0; index < fixture.missionsIndex; index++) await press('ArrowRight');
+    await press('ArrowDown'); // Journal is followed by the first prepared supply offer.
+    await press('Enter');
+    await page.locator('[data-command-id="dialog-yes"]').waitFor();
+    await capture('desktop-robot-contract-confirmation');
+    await press('n');
+    assert.equal((await checkpoint()).activeMissions[supply.id], undefined, 'No accepted a contract.');
+    await press('Enter');
+    await press('y');
+    const accepted = await checkpoint();
+    assert.equal(accepted.depots[fixture.stationId].jobs.reservedCredits[supply.id], supply.rewardCredits);
+    assert.equal(accepted.player.resources.credits, boardSave.player.resources.credits);
+    const readiness = await page.evaluate(
+      async ({ saved, missionId }) => {
+        const { MissionProgressService } = await import('/src/core/mission_progress.ts');
+        const progress = new MissionProgressService(() => saved.player.cargoHold.items);
+        progress.restoreSnapshot(saved);
+        return progress.getStatus(saved.activeMissions[missionId]);
+      },
+      { saved: accepted, missionId: supply.id }
+    );
+    assert.equal(readiness, 'READY');
+    await press('Enter'); // Acknowledge acceptance; selection must remain on the same contract.
+    await capture('desktop-robot-contract-claimable');
+    await press('Enter');
+    await capture('desktop-robot-delivery-receipt');
+    const delivered = await checkpoint();
+    assert(delivered.completedMissionIds.includes(supply.id));
+    assert.equal(
+      delivered.player.resources.credits,
+      accepted.player.resources.credits + supply.rewardCredits
+    );
+    assert.equal(delivered.player.cargoHold.items[objective.itemKey], undefined);
+    assert.equal(
+      delivered.economy[fixture.stationId].items[objective.itemKey].units,
+      accepted.economy[fixture.stationId].items[objective.itemKey].units + objective.quantity
+    );
+    await page.reload();
+    await page.locator('#continueSessionButton').click();
+    await page.waitForFunction(() => document.querySelector('#splashScreen').hidden);
+    const reloaded = await checkpoint();
+    assert.deepEqual(reloaded.depots, delivered.depots);
+    assert.deepEqual(reloaded.player, delivered.player);
+    assert(reloaded.completedMissionIds.includes(supply.id));
+
+    await load(fixture.save);
+    for (let index = 0; index < fixture.servicesIndex; index++) await press('ArrowRight');
+    await press('Enter'); // Resource report is the first service row.
+    await page.locator('[data-command-id="dialog-continue"]').waitFor();
+    await capture('desktop-resource-report');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await capture('narrow-resource-report');
+    await load(fixture.save);
+    await open('medical');
     metrics.narrow = await capture('narrow-medical');
     await press('PageDown');
     await capture('narrow-medical-page');

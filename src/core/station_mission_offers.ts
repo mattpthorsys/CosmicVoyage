@@ -36,7 +36,7 @@ export function selectStationMissionOffers(
   address: MissionSystemAddress,
   candidates: readonly StarbaseMission[]
 ): StarbaseMission[] {
-  if (!station.capabilities.missions) return [];
+  if (!station.capabilities.missions || station.kind === 'automated-depot') return [];
   const profile = getStationMissionProfile(seed, station.id, address);
   const groups = [
     { limit: profile.survey, types: ['survey', 'charting', 'recovery'] },
