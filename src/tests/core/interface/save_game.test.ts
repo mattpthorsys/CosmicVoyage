@@ -177,6 +177,28 @@ function createLegacyLocation() {
 }
 
 describe('versioned robotic depot state', () => {
+  it('migrates v21 operational records without inventing historical extraction', () => {
+    const save = createSave();
+    const player = new Player();
+    const cargo = new CargoSystem();
+    const commerce = new StarbaseCommerceService(player, cargo, 123);
+    const service = new DepotService(commerce, save.seed, player, cargo);
+    const station = new Starbase('v21-depot', new PRNG(save.seed), 'Remote', 'automated-depot');
+    service.ensureStation(station, { worldX: 1, worldY: 2, systemSlot: 0 }, 0);
+    const depots = service.createSnapshot();
+    const { extraction: _extraction, ...legacyRecord } = depots[station.id];
+    const old = {
+      ...save,
+      version: 21,
+      economy: commerce.createSnapshot(),
+      depots: { [station.id]: legacyRecord },
+    };
+    const migrated = parseGameSave(old);
+    expect(migrated.version).toBe(SAVE_GAME_VERSION);
+    expect(migrated.depots[station.id].extraction).toBeNull();
+    expect(migrated.economy).toEqual(old.economy);
+  });
+
   it('migrates schema 20 without inventing inventories or changing contractor allowances', () => {
     const current = createSave();
     const { depots: _depots, ...previous } = current;

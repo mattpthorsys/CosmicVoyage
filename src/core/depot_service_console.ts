@@ -10,7 +10,7 @@ import {
   type TextTone,
   type TextTableRow,
 } from './text_ui';
-import type { DepotDialogIntent, DepotServiceKind, DepotServiceQuote } from './depot_types';
+import type { DepotDialogIntent, DepotServiceKind, DepotServiceQuote, DepotRecord } from './depot_types';
 import type { TerminalDialogSpec } from './terminal_dialog';
 import { getTradeItemInfo } from './starbase_commerce';
 import type { CrewMember } from './crew';
@@ -24,6 +24,40 @@ function line(text: string, tone: TextTone = 'normal', heading = false): TextDas
   return { segments: text ? [{ text, tone, font: heading ? 'thick' : 'thin' }] : [] };
 }
 
+/** Shows real extraction sources and shared stocks in a scrollable, paused resource report. */
+export function createDepotResourceDialog(
+  stationName: string,
+  record: DepotRecord,
+  stock: Readonly<Record<string, number>>
+): TerminalDialogSpec<DepotDialogIntent> {
+  return {
+    title: 'DEPOT RESOURCE REPORT',
+    kind: 'message',
+    lines: [
+      line(stationName, 'cyan', true),
+      line(`Operational update: ${(record.lastUpdatedSeconds / 86400).toFixed(1)} elapsed days`, 'muted'),
+      line('EXTRACTION', 'cyan', true),
+      ...(record.extraction?.length
+        ? record.extraction.flatMap((output) => [
+            line(getTradeItemInfo(output.itemKey)?.name ?? output.itemKey, 'green', true),
+            line(`Source: ${output.sourceBodyName}`, 'cyan'),
+            line(`${output.unitsPerMonth} m^3 / 30 days; autonomous surface collection`, 'muted'),
+            line(`${stock[output.itemKey] ?? 0} m^3 stored / ${output.capacity} m^3 mining cap`, 'amber'),
+          ])
+        : [line('Supply-dependent / no suitable nearby extraction source', 'amber')]),
+      line('Full mining stores suspend collection; surplus is not banked.', 'muted'),
+      line('SERVICE RESERVES', 'cyan', true),
+      ...['TITANIUM_TRUSS', 'REPAIR_SPARES', 'MEDICAL_SUPPLIES', 'HELIUM_3', 'DEUTERIUM_PELLETS'].map((key) =>
+        line(
+          `${getTradeItemInfo(key)?.name ?? key}: ${stock[key] ?? 0} m^3`,
+          (stock[key] ?? 0) > 0 ? 'green' : 'amber'
+        )
+      ),
+      line('Manufactured supplies and reactor feedstock require deliveries.', 'muted'),
+    ],
+  };
+}
+
 /** Presents finite robotic work without treating a stock shortage as a permanently disabled service. */
 export function createDepotServiceRows(
   repair: DepotServiceQuote,
@@ -32,6 +66,12 @@ export function createDepotServiceRows(
   medical?: DepotServiceQuote
 ): TextTableRow[] {
   return [
+    {
+      id: 'resources',
+      cells: ['Resource report', '--', 'ONLINE', 'Extraction sources / reserves / storage limits.'],
+      detail: 'Review autonomous collection and the finite stocks shared by trade and services.',
+      cellTones: ['cyan', 'muted', 'green', 'normal'],
+    },
     {
       id: 'repair',
       cells: [

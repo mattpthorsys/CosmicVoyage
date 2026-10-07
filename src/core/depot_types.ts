@@ -5,6 +5,15 @@ import type { EconomySnapshot } from './starbase_commerce';
 export const DEPOT_PROFILE_VERSION = 1;
 export const DEPOT_SERVICE_GOODS = ['TITANIUM_TRUSS', 'REPAIR_SPARES', 'MEDICAL_SUPPLIES'] as const;
 
+export interface DepotExtractionOutput {
+  readonly itemKey: 'IRON' | 'WATER_ICE';
+  readonly sourceBodyPath: string;
+  readonly sourceBodyName: string;
+  readonly unitsPerMonth: number;
+  readonly capacity: number;
+  carry: number;
+}
+
 export interface DepotRecord {
   readonly stationId: string;
   readonly address: MissionSystemAddress;
@@ -13,6 +22,8 @@ export interface DepotRecord {
   readonly initialisedAtSeconds: number;
   lastUpdatedSeconds: number;
   revision: number;
+  /** Null means a migrated record awaits source assessment; an empty array is supply-dependent. */
+  extraction: DepotExtractionOutput[] | null;
 }
 
 export type DepotSnapshot = Record<string, DepotRecord>;
@@ -109,5 +120,30 @@ export function validateDepotSnapshot(
     for (const key of DEPOT_SERVICE_GOODS)
       if (!Object.hasOwn(economy[id].items, key))
         throw new Error(`Depot service inventory is missing: ${key}.`);
+    if (record.extraction !== null) {
+      if (!Array.isArray(record.extraction) || record.extraction.length > 2)
+        throw new Error('Invalid depot extraction profile.');
+      const keys = new Set<string>();
+      for (const output of record.extraction) {
+        if (
+          !output ||
+          !['IRON', 'WATER_ICE'].includes(output.itemKey) ||
+          keys.has(output.itemKey) ||
+          typeof output.sourceBodyPath !== 'string' ||
+          !/^planet:\d+(\/moon:\d+)?$/.test(output.sourceBodyPath) ||
+          typeof output.sourceBodyName !== 'string' ||
+          !output.sourceBodyName.trim() ||
+          output.sourceBodyName.length > 512 ||
+          output.unitsPerMonth !== (output.itemKey === 'IRON' ? 2 : 3) ||
+          output.capacity !== 24 ||
+          !Number.isFinite(output.carry) ||
+          output.carry < 0 ||
+          output.carry >= 1 ||
+          !Object.hasOwn(economy[id].items, output.itemKey)
+        )
+          throw new Error('Invalid depot extraction output.');
+        keys.add(output.itemKey);
+      }
+    }
   }
 }

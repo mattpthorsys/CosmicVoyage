@@ -15,6 +15,8 @@ import { HULL_REPAIR_COST_PER_POINT, ROVER_REPAIR_COST_PER_POINT } from './ship_
 import type { Player } from './player';
 import type { CargoSystem } from '../systems/cargo_systems';
 import { CONFIG } from '../config';
+import type { SolarSystem } from '../entities/solar_system';
+import { catchUpDepotOutput, deriveDepotExtraction } from './depot_extraction';
 
 export interface DepotServiceResult {
   readonly ok: boolean;
@@ -46,11 +48,13 @@ export class DepotService {
     station: Starbase,
     address: MissionSystemAddress,
     gameClockSeconds: number,
-    commissionedAtSeconds = gameClockSeconds
+    commissionedAtSeconds = gameClockSeconds,
+    system?: SolarSystem
   ): void {
     if (station.kind !== 'automated-depot') return;
     if (
       !Number.isFinite(gameClockSeconds) ||
+      gameClockSeconds < 0 ||
       !Number.isFinite(commissionedAtSeconds) ||
       commissionedAtSeconds < 0 ||
       commissionedAtSeconds > gameClockSeconds
@@ -67,23 +71,54 @@ export class DepotService {
         throw new Error('Depot identity belongs to another system.');
       if (gameClockSeconds < existing.lastUpdatedSeconds)
         throw new Error('Depot epoch exceeds the game clock.');
-      // M0-M2 advance only the watermark; extraction will be added explicitly in M3.
-      existing.lastUpdatedSeconds = gameClockSeconds;
+      if (existing.extraction === null && system) {
+        existing.extraction = deriveDepotExtraction(station, system);
+        // Legacy visits did not run miners. Source assessment starts now, with no invented historical output.
+        existing.lastUpdatedSeconds = gameClockSeconds;
+        for (const output of existing.extraction)
+          this.commerce.initialiseStock(station.id, output.itemKey, 0);
+      }
+      this.advanceRecord(existing, gameClockSeconds);
       return;
     }
     const rng = new PRNG(`${this.worldSeed}:robotic-depot:v1:${station.id}`);
     this.commerce.initialiseStock(station.id, 'TITANIUM_TRUSS', rng.randomInt(4, 8));
     this.commerce.initialiseStock(station.id, 'REPAIR_SPARES', rng.randomInt(3, 6));
     this.commerce.initialiseStock(station.id, 'MEDICAL_SUPPLIES', rng.randomInt(2, 4));
-    this.records.set(station.id, {
+    const record: DepotRecord = {
       stationId: station.id,
       address: { ...address },
       profileVersion: DEPOT_PROFILE_VERSION,
       profile: 'robotic-basic',
       initialisedAtSeconds: commissionedAtSeconds,
-      lastUpdatedSeconds: gameClockSeconds,
+      lastUpdatedSeconds: commissionedAtSeconds,
       revision: 0,
-    });
+      extraction: system ? deriveDepotExtraction(station, system) : null,
+    };
+    for (const output of record.extraction ?? [])
+      this.commerce.initialiseStock(station.id, output.itemKey, 0);
+    this.records.set(station.id, record);
+    this.advanceRecord(record, gameClockSeconds);
+  }
+
+  /** Applies elapsed simulation time once on access, including travel and hypersleep without frame-by-frame mining. */
+  private advanceRecord(record: DepotRecord, gameClockSeconds: number): void {
+    const elapsed = gameClockSeconds - record.lastUpdatedSeconds;
+    let changed = false;
+    for (const output of record.extraction ?? []) {
+      const result = catchUpDepotOutput(
+        output,
+        this.commerce.getStock(record.stationId, output.itemKey),
+        elapsed
+      );
+      if (result.added) {
+        this.commerce.addStock(record.stationId, output.itemKey, result.added, output.capacity);
+        changed = true;
+      }
+      output.carry = result.carry;
+    }
+    record.lastUpdatedSeconds = gameClockSeconds;
+    if (changed) record.revision++;
   }
 
   /** Returns a detached record, never allowing presentation code to mutate operational state. */

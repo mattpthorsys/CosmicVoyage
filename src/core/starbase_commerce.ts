@@ -120,6 +120,16 @@ export class StarbaseCommerceService {
     return this.getOrCreateStation(stationId).items[itemKey]?.units ?? 0;
   }
 
+  /** Deposits recognized physical goods into the sole market inventory, with an optional production cap. */
+  addStock(stationId: string, itemKey: string, units: number, capacity = Number.MAX_SAFE_INTEGER): void {
+    if (!Number.isSafeInteger(units) || units < 0 || !Number.isSafeInteger(capacity) || capacity < 0)
+      throw new Error('Invalid station stock deposit.');
+    this.initialiseStock(stationId, itemKey, 0);
+    const item = this.getOrCreateStation(stationId).items[itemKey];
+    // Deliveries and existing traded goods can exceed a mining cap; never delete previously owned stock.
+    item.units += Math.min(units, Math.max(0, capacity - item.units));
+  }
+
   /** Consumes a whole validated work order atomically, never partly debiting an unavailable recipe. */
   consumeStock(stationId: string, requirements: Readonly<Record<string, number>>): boolean {
     const snapshot = this.prepareStockConsumption(stationId, requirements);

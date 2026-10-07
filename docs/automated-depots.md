@@ -1,11 +1,12 @@
 # Automated Depots
 
-Status: M0-M2 implemented. `npm run check` passed with all 1,179 tests. A
+Status: M0-M3 implemented; M3 awaits Luna verification. The M0-M2 baseline
+passed `npm run check` with all 1,179 tests. A
 headless Chrome smoke check rendered the medical bay at desktop and narrow sizes,
 confirmed both fonts and the No-default treatment quote, and reported no browser
 errors. The full scripted Playwright interaction flow was not run because this
-environment has no installed Playwright package. Mining, robot contracts, chart
-exchange and broadcasts remain M3+ planning work.
+environment has no installed Playwright package. Robot contracts, chart
+exchange and broadcasts remain planned.
 
 ## Playing
 
@@ -63,13 +64,35 @@ with explicit cargo consent. Contractor commissioning fuel stays in the existing
 infrastructure allowance and is never converted into saleable stock. A normal
 refuel request uses that allowance first, when available.
 
-Supplies are finite in M0-M2. Revisiting, reopening a screen, reloading or advancing
-years through hypersleep does not refill them. Sell suitable goods to the depot or
-authorise carried supplies when stock is depleted.
+Manufactured and reactor supplies remain finite. Sell suitable goods to the depot
+or authorise carried supplies when stock is depleted.
+
+## Autonomous Extraction (M3)
+
+Services / **Resource report** shows verified sources, rates, shared reserves and
+the last operational update. Nearby accessible solid bodies with actual catalogue
+iron or cold water-ice abundance can support collection of 2 m^3 iron or 3 m^3 ice
+per 30 simulated days. Each mining output stops at 24 m^3; imported/traded stock
+above that cap is retained. Rates represent small autonomous collection hardware,
+not a detailed mine or a claim about terrestrial mining productivity.
+
+Source screening requires the same orbital host, parent orbit within 0.75 AU,
+gravity at most 1.5 g, pressure at most 10 atm and temperature below 650 K
+(below 260 K for ice). It reads catalogue data only; no terrain generation or
+galaxy PRNG is involved. Unsupported depots stay supply-dependent.
+
+Catch-up is analytic and lazy on system materialisation/service access. Total
+simulation time counts, including ordinary travel, observatory integrations and
+hypersleep; paused reading contributes nothing. Full stores discard excess and
+fractional surplus, so depletion cannot release years of banked output. Spares,
+medicines, trusses and reactor isotopes are never mined. Natural depots start on
+first materialisation; delivered ones start at commissioning. Migrated v21 depot
+profiles begin extraction assessment on revisit without historical output.
 
 ## Ownership And Persistence
 
 - `core/depot_types.ts`: typed operational records, work orders and validation.
+- `core/depot_extraction.ts`: catalogue-only source assessment and capped elapsed-time rules.
 - `core/depot_rules.ts`: pure stock/cargo/credit-limited quotes and sealed recipes.
 - `core/depot_service.ts`: once-only initialisation, supported targets and coordinated
   service commits, including a detached pre-commit checkpoint.
@@ -82,7 +105,8 @@ authorise carried supplies when stock is depleted.
 - `Game`: prepares stations, wires modal input/drawing, persists outcomes and publishes
   resource effects only after a successful commit.
 
-Save schema 21 adds compact `depots` operational records keyed by stable station
+Save schema 22 extends compact `depots` operational records with extraction profiles
+and bounded fractional carry, keyed by stable station
 ID. Older saves migrate with an empty ledger. Existing stock is preserved;
 only missing new service listings are seeded. Natural depots initialise on first
 materialisation; delivered depots retain their commissioning epoch. Dedicated

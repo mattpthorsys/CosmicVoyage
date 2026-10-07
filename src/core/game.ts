@@ -23,6 +23,7 @@ import {
   DepotServiceConsole,
   createDepotServiceDialog,
   createDepotServiceRows,
+  createDepotResourceDialog,
 } from './depot_service_console';
 import type { DepotDialogIntent, DepotServiceKind, DepotServiceQuote } from './depot_types';
 import { materializeHaulSites } from './haul_sites';
@@ -482,7 +483,13 @@ export class Game {
     for (const station of system.stations ?? []) {
       if (station.kind !== 'automated-depot') continue;
       const commissioned = assets.find((asset) => asset.assetId === station.id)?.commissionedAtSeconds;
-      this.depotService.ensureStation(station, address, this.gameClockElapsedSeconds ?? 0, commissioned);
+      this.depotService.ensureStation(
+        station,
+        address,
+        this.gameClockElapsedSeconds ?? 0,
+        commissioned,
+        system
+      );
     }
   }
 
@@ -10305,6 +10312,27 @@ export class Game {
     }
     if (this.starbaseMode.sectionId === 'services' && row.id === 'medical') {
       this.openDepotServiceConsole('medical');
+      return;
+    }
+    if (
+      this.starbaseMode.sectionId === 'services' &&
+      row.id === 'resources' &&
+      starbase.kind === 'automated-depot'
+    ) {
+      const system = this.stateManager.currentSystem;
+      if (!system) return;
+      this.prepareSystemDepots(system);
+      const record = this.depotService.getRecord(starbase.id);
+      if (record)
+        this.showTerminalDialog(
+          createDepotResourceDialog(
+            starbase.name,
+            record,
+            Object.fromEntries(
+              this.starbaseCommerce.getManifest(starbase.id).map((item) => [item.itemKey, item.units])
+            )
+          )
+        );
       return;
     }
     if (this.starbaseMode.sectionId === 'missions') {
