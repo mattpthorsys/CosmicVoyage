@@ -1,8 +1,11 @@
 # Automated Frontier Depots: Implementation Plan
 
-Status: M0-M2 implemented; automated verification pending the requested Luna stage.
-M3 onwards remain planned. See [the current depot guide](../automated-depots.md)
-for implemented controls, recipes, ownership and verification commands.
+Status: M0-M2 implemented and verified (1,179 tests plus lint, typecheck and
+production build). A Chrome smoke check rendered the medical bay at desktop and
+narrow sizes. The scripted end-to-end Playwright flow remains available for an
+environment with Playwright installed. M3 onwards remain planned. See [the
+current depot guide](../automated-depots.md) for controls, recipes, ownership
+and verification commands.
 Baseline inspected on 2026-10-07: save schema 20. Recheck the current schema and
 module boundaries before implementation; do not overwrite intervening changes.
 

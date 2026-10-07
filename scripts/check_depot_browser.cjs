@@ -75,7 +75,6 @@ async function main() {
       player.ship.damage.hullIntegrity = 80;
       player.terrainVehicle.integrity = 80;
       player.crew[0].hitPoints -= 10;
-      player.crew[1].hitPoints -= 1;
       const cargo = new CargoSystem();
       for (const [key, units] of Object.entries({
         REPAIR_SPARES: 2,

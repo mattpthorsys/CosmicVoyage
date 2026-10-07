@@ -1,8 +1,11 @@
 # Automated Depots
 
-Status: M0-M2 implemented. Tests have been written but not run; automated and
-browser verification are deferred to the requested Luna stage. Mining, robot
-contracts, chart exchange and broadcasts remain M3+ planning work.
+Status: M0-M2 implemented. `npm run check` passed with all 1,179 tests. A
+headless Chrome smoke check rendered the medical bay at desktop and narrow sizes,
+confirmed both fonts and the No-default treatment quote, and reported no browser
+errors. The full scripted Playwright interaction flow was not run because this
+environment has no installed Playwright package. Mining, robot contracts, chart
+exchange and broadcasts remain M3+ planning work.
 
 ## Playing
 
@@ -92,7 +95,7 @@ health bounds are validated at the save boundary.
 
 ## Verification Handoff
 
-Run these after switching to Luna:
+To repeat automated verification:
 
 ```bash
 npm run test:run -- src/tests/core/depot_service.test.ts src/tests/core/interface/depot_service_console.test.ts src/tests/core/interface/depot_service_integration.test.ts src/tests/core/interface/save_game.test.ts src/tests/core/starbase_commerce.test.ts src/tests/entities/stellar/starbase.test.ts src/tests/core/ship/ship_repair_console.test.ts src/tests/core/navigation/heavy_haul_gameplay.test.ts src/tests/core/navigation/heavy_haul_commissioning.test.ts src/tests/core/interface/mission_dialogs.test.ts src/tests/core/ship/ship_menu.test.ts
