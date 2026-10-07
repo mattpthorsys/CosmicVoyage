@@ -23,6 +23,7 @@ async function main() {
       cols: { type: 'string' },
       rows: { type: 'string' },
       transitions: { type: 'boolean', default: false },
+      'real-colonies': { type: 'string' },
     },
   });
   const url = new URL(values.url);
@@ -38,6 +39,7 @@ async function main() {
     'site',
     'cols',
     'rows',
+    'real-colonies',
   ]) {
     if (values[key] !== undefined) url.searchParams.set(key, values[key]);
   }

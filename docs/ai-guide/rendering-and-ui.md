@@ -116,8 +116,11 @@ coastal lighting and reflection; do not turn it back into a per-pixel binary
 threshold.
 
 Colony orbital textures also prepare optional urban albedo, Float32 coverage
-and linear emission mip channels. Artificial light is added once after all
-stellar contributions and passes only through the cached ground-to-camera
+and linear emission mip channels. At the 256x128 base resolution, the optional
+channels hold 829,920 typed-array bytes per prepared colony texture, in
+addition to 174,720 natural bytes, before JavaScript object overhead.
+Artificial light is added once after all stellar contributions and passes only
+through the cached ground-to-camera
 transmission; reflected-light transfer includes sunlight attenuation and must
 not be reused for it. Ground viewing transmission already includes covered
 limb area. Urban colour and emission share terrain projection and rotation.
@@ -133,6 +136,15 @@ bounds too; closing them relies on a complete new scene frame, not retained
 raster pixels. Grid replacement discards staged glyphs and foreground masks
 from the previous dimensions. See [planetary city foundations](../planetary-cities.md)
 for ownership, art budgets and verification status.
+
+For reproducible city captures, run `scripts/capture_orbit_surfaces.cjs` with
+`--suite settlements --real-colonies 3`; this includes nearby generated
+complete and partial colonies. Its Chrome virtual-time figures are not valid
+frame timings. `scripts/profile_planetary_cities.cjs` uses a normal Chrome clock
+to time the production orbital view after warm-up, including full/diff buffer
+composition, and reports preparation time and texture bytes separately. The
+one-star case is below 16.7 ms at 120x64 on the reference setup; the shared
+three-star atmospheric path is above that threshold even without cities.
 
 Nearby orbital bodies are prepared during the existing predictive surface
 prefetch window and one body texture is built per browser idle callback.

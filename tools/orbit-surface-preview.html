@@ -91,6 +91,7 @@
       import { ScreenBuffer } from '../src/rendering/screen_buffer.ts';
       import { SceneRenderer } from '../src/rendering/scene_renderer.ts';
       import { RendererFacade } from '../src/rendering/renderer_facade.ts';
+      import { createOrbitScreenModel } from '../src/core/orbit_ui.ts';
       import { DrawingContext } from '../src/rendering/drawing_context.ts';
       import { NebulaRenderer } from '../src/rendering/nebula_renderer.ts';
       import { SystemDataGenerator } from '../src/generation/system_data_generator.ts';
@@ -125,6 +126,12 @@
       const groundCols = Number(query.get('cols') ?? 120);
       const groundRows = Number(query.get('rows') ?? 64);
       const transitions = query.get('transitions') === '1';
+      const benchmark = query.get('benchmark') === '1';
+      const realColonyCount = Number(query.get('real-colonies') ?? 0);
+      if (!Number.isInteger(realColonyCount) || realColonyCount < 0 || realColonyCount > 4)
+        throw new Error('real-colonies must be 0..4');
+      if (realColonyCount && suite !== 'settlements')
+        throw new Error('real-colonies requires the settlement suite');
       if (!Number.isInteger(siteIndex) || siteIndex < 0) throw new Error('site must be a nonnegative index');
       if (!Number.isInteger(groundCols) || groundCols < 24 || groundCols > 180)
         throw new Error('cols must be 24..180');
@@ -139,9 +146,60 @@
         { id: 'greenhouse', type: 'Greenhouse', distanceAu: 0.7 },
         { id: 'dwarf-ice', type: 'DwarfIce', distanceAu: 35 },
       ];
-      const presets = (suite === 'settlements' ? SETTLEMENT_VISUAL_PRESETS : surfacePresets).filter(
-        (preset) => !query.has('body') || preset.id === query.get('body')
-      );
+      const cosmosRoot = new PRNG(seed);
+      const cosmosGenerator = new SystemDataGenerator(cosmosRoot);
+      const generator = new SystemDataGenerator(new PRNG('orbit-surface-diagnostics'));
+
+      /** Finds naturally catalogued nearby colonies with both open and sealed environments. */
+      function discoverGeneratedColonies(count) {
+        const wantedPartial = Math.max(1, Math.floor(count / 2));
+        const wantedComplete = count - wantedPartial;
+        const found = { complete: [], partial: [] };
+        const centerX = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X;
+        const centerY = CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y;
+        for (let radius = 1; radius <= 100; radius++) {
+          for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+              if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+              const worldX = centerX + dx;
+              const worldY = centerY + dy;
+              const summary = cosmosGenerator.getSystemMapProperties(worldX, worldY);
+              const stage = summary.settlementStage;
+              if (stage !== 'complete' && stage !== 'partial') continue;
+              if (found[stage].length >= (stage === 'complete' ? wantedComplete : wantedPartial)) continue;
+              const system = new SolarSystem(
+                cosmosGenerator.getSystemProperties(worldX, worldY),
+                worldX,
+                worldY,
+                cosmosRoot
+              );
+              if (!system.colonyWorld || system.colonyWorld.terraforming?.stage !== stage) continue;
+              found[stage].push({
+                id: `colony-${worldX}-${worldY}`,
+                worldX,
+                worldY,
+                generatedStage: stage,
+                type: system.colonyWorld.type,
+                distanceAu: system.colonyWorld.orbitDistance / AU_IN_METERS,
+              });
+            }
+          }
+          if (found.complete.length >= wantedComplete && found.partial.length >= wantedPartial) break;
+        }
+        if (found.complete.length < wantedComplete || found.partial.length < wantedPartial)
+          throw new Error(
+            `Only found ${found.complete.length} complete and ${found.partial.length} partial colonies`
+          );
+        return [...found.complete, ...found.partial];
+      }
+
+      const presets = (
+        realColonyCount
+          ? [SETTLEMENT_VISUAL_PRESETS[0], ...discoverGeneratedColonies(realColonyCount)]
+          : suite === 'settlements'
+            ? SETTLEMENT_VISUAL_PRESETS
+            : surfacePresets
+      ).filter((preset) => !query.has('body') || preset.id === query.get('body'));
       if (!presets.length) throw new Error('Unknown body preset');
       const size = 96;
       const rotation = Number(query.get('rotation') ?? 0.35);
@@ -167,12 +225,13 @@
           groundCols,
           groundRows,
           transitions,
+          benchmark,
+          realColonyCount,
         },
         fixtures: [],
       };
       document.querySelector('#settings').textContent =
         `${suite} | ${seed} | ${phaseName} | ${radius * 2} globe pixels | ${starCount} stellar sources`;
-      const generator = new SystemDataGenerator(new PRNG('orbit-surface-diagnostics'));
 
       /** Creates a native-resolution canvas with a black background. */
       function canvasAt(width, height = width) {
@@ -316,18 +375,104 @@
         };
       }
 
+      /** Times a warmed production orbital screen and counts its cached typed-array storage. */
+      function profileOrbitRender(planet, sources, siteX, siteY) {
+        const main = canvasAt(groundCols * 8, groundRows * 8);
+        const raster = canvasAt(groundCols * 8, groundRows * 8);
+        const buffer = new ScreenBuffer(main, main.getContext('2d'), false, raster, raster.getContext('2d'));
+        buffer.updateDimensions(groundCols, groundRows, 8, 8);
+        const renderer = new SceneRenderer(
+          buffer,
+          new DrawingContext(buffer),
+          new NebulaRenderer(),
+          generator
+        );
+        const prepareStart = performance.now();
+        renderer.prepareOrbitAssets([planet]);
+        const texturePrepareMs = performance.now() - prepareStart;
+        const texture = renderer.solidPlanetOrbitTextureRenderer.textureCache.get(planet);
+        if (!texture) throw new Error(`Orbital texture was not prepared for ${planet.name}`);
+        const textureBytes = texture.levels.reduce(
+          (total, level) => total + level.colours.byteLength + level.liquidCoverage.byteLength,
+          0
+        );
+        const settlementBytes = texture.levels.reduce(
+          (total, level) =>
+            total +
+            (level.settlements
+              ? level.settlements.colours.byteLength +
+                level.settlements.coverage.byteLength +
+                level.settlements.emission.byteLength
+              : 0),
+          0
+        );
+        const model = createOrbitScreenModel({
+          parentPlanet: planet,
+          selectedBody: planet,
+          selectedIndex: 0,
+          mode: 'landing',
+          landingCursorX: siteX,
+          landingCursorY: siteY,
+          rotationPhase: rotation,
+          illuminationPhase: phase,
+          stellarSources: sources,
+        });
+        const firstStart = performance.now();
+        renderer.drawOrbitInterface(model);
+        buffer.renderFull();
+        const firstFrameMs = performance.now() - firstStart;
+        for (let i = 0; i < 8; i++) {
+          renderer.drawOrbitInterface({
+            ...model,
+            rotationPhase: (rotation + (i + 1) * step) % 1,
+            illuminationPhase: (phase + (i + 1) * step) % 1,
+          });
+          buffer.renderDiff();
+        }
+        const durations = [];
+        for (let i = 0; i < 40; i++) {
+          const started = performance.now();
+          renderer.drawOrbitInterface({
+            ...model,
+            rotationPhase: (rotation + (i + 9) * step) % 1,
+            illuminationPhase: (phase + (i + 9) * step) % 1,
+          });
+          buffer.renderDiff();
+          durations.push(performance.now() - started);
+        }
+        durations.sort((a, b) => a - b);
+        return {
+          texturePrepareMs,
+          firstFrameMs,
+          warmMeanMs: durations.reduce((total, duration) => total + duration, 0) / durations.length,
+          warmMedianMs: durations[Math.floor(durations.length / 2)],
+          warmP95Ms: durations[Math.ceil(durations.length * 0.95) - 1],
+          warmMaxMs: durations.at(-1),
+          frameCount: durations.length,
+          viewport: { cols: groundCols, rows: groundRows },
+          rasterPixelsLastFrame: buffer.getLastRenderStats().scaledPixels,
+          textureBytes,
+          settlementBytes,
+        };
+      }
+
       /** Generates one real terrain fixture and captures it through the production globe renderer. */
       async function collectFixture(preset) {
         const start = performance.now();
         let planet;
         let parentSystem = null;
-        if (preset.id === 'starting-colony') {
-          const root = new PRNG(seed);
-          const systems = new SystemDataGenerator(root);
+        if (preset.id === 'starting-colony' || Number.isInteger(preset.worldX)) {
           const x = CONFIG.PLAYER_START_X + CONFIG.STARTING_HUB_OFFSET_X;
           const y = CONFIG.PLAYER_START_Y + CONFIG.STARTING_HUB_OFFSET_Y;
-          const hub = new SolarSystem(systems.getSystemProperties(x, y), x, y, root);
-          if (!hub.colonyWorld) throw new Error('Starting hub has no colony');
+          const worldX = preset.worldX ?? x;
+          const worldY = preset.worldY ?? y;
+          const hub = new SolarSystem(
+            cosmosGenerator.getSystemProperties(worldX, worldY),
+            worldX,
+            worldY,
+            cosmosRoot
+          );
+          if (!hub.colonyWorld) throw new Error(`Generated system ${worldX},${worldY} has no colony`);
           planet = hub.colonyWorld;
           parentSystem = hub;
         } else {
@@ -404,6 +549,12 @@
             longitudeOffset: -1.1,
           },
         ].slice(0, starCount);
+        const orbitalProfile = benchmark
+          ? {
+              withCities: profileOrbitRender(planet, sources, siteX, siteY),
+              withoutCities: surface.settlements ? profileOrbitRender(noCities, sources, siteX, siteY) : null,
+            }
+          : null;
         const mask = globeMask(sources);
         const main = canvasAt(size);
         const raster = canvasAt(size);
@@ -821,6 +972,9 @@
         }
         return {
           ...preset,
+          worldX: parentSystem?.starX ?? null,
+          worldY: parentSystem?.starY ?? null,
+          settlementStage: planet.terraforming?.stage ?? null,
           mapSeed: planet.mapSeed,
           diameterKm: planet.diameter,
           gravityG: planet.gravity,
@@ -834,6 +988,7 @@
           groundFocus: { siteId: focusSite?.id ?? null, siteX, siteY, playerX, playerY: siteY },
           groundEffect,
           transitionEffect,
+          orbitalProfile,
           sources,
           timings: { generationMs, prepareMs, firstFrameMs },
           frames,

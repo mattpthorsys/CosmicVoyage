@@ -1,9 +1,8 @@
 # Planetary Cities First Version Implementation Plan
 
-Status: M0-M4 are implemented and verified. M5 final visual/performance tuning
-remains planned. See
-[the foundations guide](../planetary-cities.md) for
-ownership and verification details.
+Status: M0-M4 are implemented and verified. M5 visual review and city-rendering
+verification are complete; a pre-existing three-star atmospheric frame-time gap
+remains documented in [the foundations guide](../planetary-cities.md).
 
 Add decorative human settlements to inhabited planets, using one generated
 settlement layer across orbital view, the landing map and surface travel.
@@ -286,6 +285,12 @@ Uninhabited scenes follow the existing rendering path without additional work.
 Suggested commit: `Harden settlement caching and rendering transitions`.
 
 ### M5 Verify performance and finish visual tuning
+
+Status: visual tuning and real-time profiling are complete on the reference
+setup. The one-star colony cases meet the 16.7 ms warmed-frame target. Three-
+star cases do not: their matching city-free references already take 22-25 ms
+at the 95th percentile. See the foundations guide for exact setup, cold costs,
+texture storage and reproducible capture commands.
 
 Run the verification matrix below and inspect actual rotating captures. Tune
 placement and colour budgets against several real colonies, not only a

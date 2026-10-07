@@ -65,7 +65,7 @@ export const SURFACE_SETTLEMENT_LIMITS = {
 // Actual emission/exposure and glyph composition belong to the rendering milestones.
 export const SETTLEMENT_APPEARANCES = {
   urban: { albedoColour: '#696D69', lightColour: '#F1C98B' },
-  sealed: { albedoColour: '#69777C', lightColour: '#C2CED5' },
+  sealed: { albedoColour: '#769396', lightColour: '#BCE5DF' },
   industrial: { albedoColour: '#6C6862', lightColour: '#D9B477' },
 } as const;
 

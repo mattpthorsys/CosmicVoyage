@@ -131,6 +131,12 @@ new values.
 - Terraformed worlds should show dark seas or substantial lakes and muted green
   lowlands near their shores. Vegetation is a restrained managed-biosphere
   signal, not a bright green recolour of every dry continent.
+- Human settlements should be rare, body-fixed signals: tiny warm night lights
+  from orbit, compact landing-map markers, and a few regional roof or pad
+  motifs rather than luminous continents. Sealed habitats use cooler teal
+  against oceanic terrain; open-air sites use muted mineral colours and amber
+  lights. A regional cell covers too much land to represent a single building,
+  so those motifs are map-scale cues, not literal street geometry.
 
 Actual displaced silhouettes are optional and should be used only when their
 benefit survives the scene's pixel scale. Bump or terrain-normal lighting is

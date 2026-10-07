@@ -1,8 +1,8 @@
 # Planetary City Foundations
 
-Status: M0-M4 are implemented and verified. M5 final visual/performance tuning
-remains planned. See the
-[implementation plan](plans/planetary-cities-first-version.md).
+Status: M0-M4 are implemented and verified. M5 visual review and city-rendering
+verification are complete, with a documented three-star atmospheric performance
+limit. See the [implementation plan](plans/planetary-cities-first-version.md).
 
 ## Visual Budgets
 
@@ -87,7 +87,7 @@ discarding the orbital channels.
 Texture matching includes settlement-layer identity and generation version.
 
 `orbit_settlement_light.ts` owns the art budgets: a 35% urban tint at full
-coverage and a 0.35 solar-relative linear emission scale. These are display
+coverage and a 0.55 solar-relative linear emission scale. These are display
 parameters for unresolved settlements, not calibrated lighting measurements.
 Emission already contains fractional coverage and is not multiplied by it again.
 Lights switch on smoothly with decreasing combined direct visible stellar
@@ -258,6 +258,68 @@ The focused suites passed 26 tests across six files. `npm run check` passed
 documentation checks, formatting, lint, both TypeScript projects, all 1,342
 tests across 178 files, and the production build. The build reports the existing
 large JavaScript chunk advisory; it completed successfully.
+
+## Visual And Performance Review (M5)
+
+`--real-colonies 3` searches deterministically around the starting hub and
+captures three generated colonies in addition to the hub. With seed
+`orbit-surface-baseline-v1`, the generated systems are (-9, 2) and (-32, 12)
+(complete oceanic colonies) and (-20, -44) (a partial oceanic colony). This
+tests real placement and terrain instead of only controlled fixture palettes.
+The partial world has just two small sealed sites; most of it remains empty.
+
+The sealed-habitat tint is now cool teal so it reads against blue oceanic
+terrain without using the warm amber of open-air cities. Night radiance was
+raised from 0.35 to 0.55 in solar-relative display units. At a 52-pixel globe,
+lights remain small and some sites are hidden on the far hemisphere or below
+pixel quantisation. Do not add a screen-space glow for those cases: the landing
+map and regional view are the readable close-range views. Captures at 120x64,
+80x45 and 40x45 grids were inspected, including a rotated night view and
+three-star quarter lighting. The 40-column capture preserves terrain and site
+marks, though the existing full surface telemetry is cramped at that width.
+
+Reproduce the visual review with Vite running:
+
+```bash
+node scripts/capture_orbit_surfaces.cjs --suite settlements --real-colonies 3 --phase night --out /tmp/cosmic-cities-m5-night
+node scripts/capture_orbit_surfaces.cjs --suite settlements --real-colonies 3 --phase quarter --stars 3 --out /tmp/cosmic-cities-m5-quarter
+node scripts/capture_orbit_surfaces.cjs --suite settlements --real-colonies 3 --phase quarter --stars 3 --cols 80 --rows 45 --out /tmp/cosmic-cities-m5-medium
+node scripts/capture_orbit_surfaces.cjs --suite settlements --real-colonies 3 --phase quarter --stars 3 --cols 40 --rows 45 --out /tmp/cosmic-cities-m5-narrow
+node scripts/capture_orbit_surfaces.cjs --suite settlements --body starting-colony --phase night --rotation 0.6 --out /tmp/cosmic-cities-m5-rotated
+```
+
+The capture script uses Chrome virtual time for deterministic screenshots; its
+`captureMeanMs` is **not** a frame-time benchmark. Use the normal-clock CDP
+profiler for timing. It creates an isolated Chrome profile and needs permission
+to open a local debugging socket:
+
+```bash
+node scripts/profile_planetary_cities.cjs --real-colonies 3 --phase night --stars 1 --out /tmp/cosmic-cities-m5-profile-night.json
+node scripts/profile_planetary_cities.cjs --real-colonies 3 --phase quarter --stars 3 --out /tmp/cosmic-cities-m5-profile-three-star.json
+```
+
+On AMD Ryzen 5 9600X, Chrome 143, 120x64 terminal cells, after eight warm-up
+frames and over 40 measured frames per body, the one-star city frames had
+95th-percentile times of 6.7-7.7 ms; matching city-free references took
+6.6-7.2 ms. Three-star city frames took 23.7-24.5 ms; matching city-free
+references took 22.4-24.5 ms. Thus cities retain the one-star 16.7 ms target
+and add little warmed cost, but the existing per-star atmospheric integration
+misses that target with three sources. Do not treat this as a city-lighting
+regression or quietly lower the optical resolution; optimize that shared path
+under separate multi-star lighting tests.
+
+Cold natural surface plus settlement generation took 764-822 ms across these
+four worlds. With the surface ready, first city texture preparation took
+17-24 ms and the first complete orbital frame took 56-63 ms; these are distinct
+from steady-state rendering. Each prepared colony texture held 174,720 bytes
+of natural typed arrays and 829,920 bytes of optional settlement channels,
+about 0.96 MiB combined before JavaScript object overhead. City-free textures
+retain only the natural channels. Preparation remains outside the frame loop.
+
+The focused city generation, lighting, texture, surface and scene regression
+checks passed (95 tests). `npm run check` passed documentation comments,
+formatting, lint, both type checks, all 1,342 tests across 178 files and the
+production build. Its existing large-chunk advisory remains non-fatal.
 
 ## Generated Data Ownership
 
