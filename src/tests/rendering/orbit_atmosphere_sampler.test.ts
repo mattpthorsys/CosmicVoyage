@@ -203,6 +203,54 @@ describe('prepared orbital atmospheric transfer', () => {
     }
   });
 
+  it.each(fixtures)('reuses prepared lookup coordinates without shifting columns for $name', (fixture) => {
+    const air = createOrbitAtmosphere(
+      fixture.pressure,
+      fixture.temperature,
+      fixture.gravity,
+      fixture.diameter,
+      fixture.gases
+    )!;
+    const table = new OrbitSolarColumnTable(air);
+    for (const fraction of [0, 0.0001, 0.01, 0.2, 0.9, 1, 1.01]) {
+      const radius = 1 + (air.outerRadius - 1) * fraction;
+      const squared = radius * radius;
+      const lookup = table.prepareLookup(squared);
+      const horizon = -Math.sqrt(Math.max(0, 1 - 1 / squared));
+      for (const cosine of [-1, horizon - 1e-7, horizon + 1e-7, 0, 0.1, 1]) {
+        const along = radius * cosine;
+        const expected = table.sample(squared, along);
+        const actual = table.sampleLookup(
+          squared,
+          along,
+          lookup?.rowOffset ?? -1,
+          lookup?.rowFraction ?? 0,
+          lookup?.distanceScale ?? 0,
+          lookup?.distanceBias ?? 0
+        );
+        if (!Number.isFinite(expected)) expect(actual).toBe(expected);
+        else expect(actual).toBeCloseTo(expected, 9);
+      }
+    }
+  });
+
+  it('resets caller-owned transfer buffers without mutating earlier independently returned values', () => {
+    const sampler = new OrbitAtmosphereSampler(createOrbitAtmosphere(1, 288, 1, 12742)!);
+    const day = { x: 0, y: 0, z: 1 };
+    const night = { x: 0, y: 0, z: -1 };
+    const expectedDay = sampler.samplePixel(0, 0, 1 / 24, day);
+    const snapshot = structuredClone(expectedDay);
+    const scratch: OrbitAtmosphereTransfer = {
+      scattering: { r: 1, g: 2, b: 3 },
+      surface: { r: 4, g: 5, b: 6 },
+    };
+    expect(sampler.samplePixel(0, 0, 1 / 24, day, scratch)).toBe(scratch);
+    expect(scratch).toEqual(expectedDay);
+    expect(sampler.samplePixel(0, 0, 1 / 24, night, scratch)).toBe(scratch);
+    expect(scratch).toEqual(sampler.samplePixel(0, 0, 1 / 24, night));
+    expect(expectedDay).toEqual(snapshot);
+  });
+
   it.each(fixtures)(
     'keeps displayed one- and three-star colours within half a channel level for $name',
     (fixture) => {

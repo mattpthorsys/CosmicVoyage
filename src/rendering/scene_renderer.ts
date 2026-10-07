@@ -32,6 +32,7 @@ import {
 import {
   createBodyOrbitAtmosphere,
   OrbitAtmosphere,
+  OrbitAtmosphereTransfer,
   orbitSourceTransmittance,
 } from './scenes/orbit_atmosphere';
 import { OrbitAtmosphereSampler } from './scenes/orbit_atmosphere_sampler';
@@ -177,6 +178,10 @@ export class SceneRenderer {
   private hyperspaceFrameCache: HyperspaceFrameCache | null = null;
   private readonly orbitProjectionCache = new Map<string, OrbitProjectionCell[]>();
   private orbitAtmosphereSampler: OrbitAtmosphereSampler | null = null;
+  private readonly orbitTransferScratch: OrbitAtmosphereTransfer = {
+    surface: { r: 0, g: 0, b: 0 },
+    scattering: { r: 0, g: 0, b: 0 },
+  };
   private readonly orbitLandingMapCache = new WeakMap<Planet, OrbitLandingMapCache>();
   private readonly giantPaletteCache = new WeakMap<Planet, RgbColour[]>();
   private lastHyperspaceRenderStats: HyperspaceRenderStats = {
@@ -1986,7 +1991,13 @@ export class SceneRenderer {
       }
       const reflectance = this.getOrbitSurfaceReflectance(surface, light.direction);
       if (sampler) {
-        const value = sampler.samplePixel(cell.dx / radius, -cell.dy / radius, 1 / radius, light.direction);
+        const value = sampler.samplePixel(
+          cell.dx / radius,
+          -cell.dy / radius,
+          1 / radius,
+          light.direction,
+          this.orbitTransferScratch
+        );
         radiance.r += (reflectance.r * value.surface.r + value.scattering.r) * light.irradiance.r;
         radiance.g += (reflectance.g * value.surface.g + value.scattering.g) * light.irradiance.g;
         radiance.b += (reflectance.b * value.surface.b + value.scattering.b) * light.irradiance.b;

@@ -99,11 +99,20 @@ Planet shadow intersections are evaluated before lookup, so interpolation does
 not smear light through the opaque globe. Out-of-domain points use the direct
 integral. Stellar marker transmission remains directly integrated.
 
-Prepared rays also retain the radius-dependent lookup coordinates, removing two
-square roots from every sun/segment evaluation. A sample position is represented
-by its distance along the camera ray, so its projection toward each star follows
-`camera dot sun + distance * (ray direction dot sun)`. The two freed position
-slots hold the lookup coordinates without enlarging the per-ray buffers.
+Prepared rays retain the radius-dependent interpolation row, its fractional
+weight, and the distance mapping's scale and bias. These are independent of
+stellar direction, so row selection and mapping setup happen once during ray
+preparation. A sample position is represented by its distance along the camera
+ray, so its projection toward each star follows
+`camera dot sun + distance * (ray direction dot sun)`. The nine-value segment
+record also contains squared radius and the three camera-path scattering weights.
+Degenerate/out-of-domain points retain the direct integration fallback.
+
+The compositor reuses one caller-owned transfer buffer for each sequential
+star/pixel evaluation. Ordinary sampler callers still receive independent
+results. Scattering sums are skipped when both endpoint samples lie inside
+the parallel-light planetary shadow: that half-cylinder is convex, so all
+intervening samples are also unlit. Ground reflection is evaluated separately.
 
 Sunlight attenuation uses a shared 160 KiB table for `exp(-opticalDepth)`, with
 512 samples per unit optical depth. Linear interpolation has relative error
@@ -123,12 +132,18 @@ pixel sizes, one/three stars and exposure adaptation. These limits must pass
 before treating the optimization as verified.
 
 The cache holds at most 32,768 prepared rays and 16,384 pixel entries. Numerical
-buffers occupy less than 59 MiB including both lookup tables; bounded JavaScript
+buffers occupy less than 75 MiB including both lookup tables; bounded JavaScript
 object overhead is additional. Beyond that budget, uncached rays are evaluated
 normally without eviction churn. Changing bodies cannot accumulate one cache
 per visited planet.
 
 ### Performance and verification
+
+The prepared row/mapping coordinates and transfer-buffer reuse were added after
+the M5 city review exposed a 22-25 ms three-star baseline. Their focused optical
+checks, raster comparisons and whole-frame remeasurement are pending Luna
+verification. The measurements below describe the preceding implementation;
+they do not demonstrate the speed of the new path.
 
 The initial CPU profile identified atmospheric transfer and its nested density
 integrals as the dominant work. Its reference dense-CO2 fixture at a 48-sample
